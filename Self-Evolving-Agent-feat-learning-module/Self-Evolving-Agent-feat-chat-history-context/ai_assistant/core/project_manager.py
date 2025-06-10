@@ -63,7 +63,8 @@ def create_project(name: str, description: Optional[str] = None) -> Optional[Dic
         "project_id": str(uuid.uuid4()),
         "name": name,
         "description": description or "",
-        "status": "planning", # Default status
+        "status": "planning",
+        "root_path": None, # New field
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "tasks": []
@@ -218,6 +219,39 @@ def get_all_projects_summary_status() -> str:
         summary_lines.append(f"  - {status.capitalize()}: {count}")
     return "\n".join(summary_lines)
 
+# Conceptual Schema for set_project_root_path tool
+# SET_PROJECT_ROOT_PATH_SCHEMA = {
+#    "name": "set_project_root_path",
+#    "description": "Sets or updates the root file path for a project. This path is where project files will be stored or looked for.",
+#    "parameters": [
+#        {"name": "identifier", "type": "str", "description": "The ID or name of the project."},
+#        {"name": "new_root_path", "type": "str", "description": "The new root path for the project (e.g., '/path/to/my_project_files')."}
+#    ],
+#    "returns": {"type": "bool", "description": "True if the path was set successfully, False otherwise."}
+# }
+def set_project_root_path(identifier: str, new_root_path: str) -> bool:
+    """Sets or updates the root file path for a project."""
+    projects = _load_projects()
+    project_found = False
+
+    abs_new_root_path = os.path.abspath(new_root_path) # Store as absolute path
+
+    for project in projects:
+        if project['project_id'] == identifier or project['name'].lower() == identifier.lower():
+            project['root_path'] = abs_new_root_path
+            project['updated_at'] = datetime.now(timezone.utc).isoformat()
+            project_found = True
+            break
+
+    if not project_found:
+        print(color_text(f"Project '{identifier}' not found for setting root path.", CLIColors.ERROR_MESSAGE))
+        return False
+
+    if _save_projects(projects):
+        print(color_text(f"Root path for project '{identifier}' set to '{abs_new_root_path}'.", CLIColors.SUCCESS))
+        return True
+    return False # pragma: no cover
+
 # Conceptual Schema for remove_project tool
 # REMOVE_PROJECT_SCHEMA = {
 #     "name": "delete_project",
@@ -298,11 +332,31 @@ if __name__ == "__main__": # pragma: no cover
         if not update_non_existent:
             print("Correctly failed to update non-existent project.")
 
+        print("\n--- Testing Set Project Root Path ---")
+        if project1: # project1 might have been renamed, use its ID
+            p1_current_info = find_project(project1['project_id'])
+            if p1_current_info:
+                print(f"\n--- Setting root path for {p1_current_info['name']} ---")
+                dummy_path = os.path.join(os.getcwd(), "test_project_dummy_root", p1_current_info['name'])
+                set_success = set_project_root_path(p1_current_info['project_id'], dummy_path)
+                print(f"Set root path success: {set_success}")
+                updated_info_p1 = get_project_info(p1_current_info['project_id'])
+                if updated_info_p1:
+                    print(f"Updated project root_path: {updated_info_p1.get('root_path')}")
+                    assert updated_info_p1.get('root_path') == os.path.abspath(dummy_path)
+
+                # Test setting root path for a non-existent project
+                print("\n--- Testing Set Project Root Path (Non-existent project) ---")
+                set_fail = set_project_root_path("non-existent-project-id-blah", "/tmp/somepath")
+                assert not set_fail, "Setting root path for non-existent project should fail."
+                print(f"Set root path for non-existent project failed as expected: {not set_fail}")
+
 
         print("\n--- Testing Get Project Info ---")
-        info_p1 = get_project_info(project1['project_id']) # Use the ID of the potentially renamed project1
+        # project1 might have been renamed, use its ID.
+        info_p1 = get_project_info(project1['project_id'] if project1 else "dummy_id_for_safety")
         if info_p1:
-            print(f"Info for project ID '{info_p1['project_id']}': Status='{info_p1['status']}', Tasks='{len(info_p1['tasks'])}'")
+            print(f"Info for project ID '{info_p1['project_id']}': Status='{info_p1['status']}', RootPath='{info_p1.get('root_path')}', Tasks='{len(info_p1['tasks'])}'")
 
         print("\n--- Current Project Status Summary ---")
         print(get_all_projects_summary_status())

@@ -48,9 +48,12 @@ class TestProjectManager(unittest.TestCase):
         self.assertEqual(created_project['name'], project_name)
         self.assertEqual(created_project['description'], project_desc)
         self.assertIn('project_id', created_project)
+        self.assertIsNone(created_project.get('root_path'), "Newly created project should have root_path as None.")
         self.mock_save_projects.assert_called_once()
         self.assertEqual(len(self.saved_projects_capture), 1)
         self.assertEqual(self.saved_projects_capture[0]['name'], project_name)
+        self.assertIsNone(self.saved_projects_capture[0].get('root_path'))
+
 
     def test_create_project_name_conflict(self):
         project_name = "Existing Project"
@@ -167,6 +170,90 @@ class TestProjectManager(unittest.TestCase):
         self.mock_load_projects.return_value = []
         updated_project = project_manager.update_project("non_existent_for_update", new_name="New Name")
         self.assertIsNone(updated_project)
+
+    # --- Tests for set_project_root_path ---
+    def test_set_project_root_path_success_by_id(self):
+        proj_id = "root_path_id_1"
+        original_updated_at = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        self.initial_projects.append({"project_id": proj_id, "name": "RootPathProject1", "description": "", "root_path": None, "updated_at": original_updated_at})
+        self.mock_load_projects.return_value = self.initial_projects
+
+        test_path = "/test/path/project1"
+        abs_test_path = os.path.abspath(test_path)
+
+        success = project_manager.set_project_root_path(proj_id, test_path)
+        self.assertTrue(success)
+        self.mock_save_projects.assert_called_once()
+        self.assertEqual(self.saved_projects_capture[0]['root_path'], abs_test_path)
+        self.assertNotEqual(self.saved_projects_capture[0]['updated_at'], original_updated_at)
+
+    def test_set_project_root_path_success_by_name(self):
+        proj_name = "RootPathProject2"
+        self.initial_projects.append({"project_id": "root_path_id_2", "name": proj_name, "description": "", "root_path": None})
+        self.mock_load_projects.return_value = self.initial_projects
+
+        test_path = "./another/path/project2" # Relative path
+        abs_test_path = os.path.abspath(test_path)
+
+        success = project_manager.set_project_root_path(proj_name, test_path)
+        self.assertTrue(success)
+        self.mock_save_projects.assert_called_once()
+        self.assertEqual(self.saved_projects_capture[0]['root_path'], abs_test_path)
+
+    def test_set_project_root_path_non_existent_project(self):
+        self.mock_load_projects.return_value = []
+        success = project_manager.set_project_root_path("non_existent_project_for_root_path", "/path")
+        self.assertFalse(success)
+        self.mock_save_projects.assert_not_called()
+
+    def test_get_project_info_shows_root_path(self):
+        proj_id = "info_id_1"
+        test_path = "/test/info/path"
+        abs_test_path = os.path.abspath(test_path)
+        self.initial_projects.append({"project_id": proj_id, "name": "InfoProject", "root_path": abs_test_path})
+        self.mock_load_projects.return_value = self.initial_projects
+
+        info = project_manager.get_project_info(proj_id)
+        self.assertIsNotNone(info)
+        self.assertEqual(info.get('root_path'), abs_test_path)
+
+    def test_list_projects_includes_root_path(self):
+        # Ensure create_project adds root_path: None, and it's present in list_projects
+        project_manager.create_project("ProjectWithNoneRootPath", "Desc")
+        # self.saved_projects_capture will have the project from create_project
+
+        # Reset load mock to return the captured state from create_project
+        self.mock_load_projects.return_value = self.saved_projects_capture
+
+        listed_projects = project_manager.list_projects()
+        self.assertGreater(len(listed_projects), 0)
+        self.assertIn('root_path', listed_projects[0]) # Check the first project added
+        self.assertIsNone(listed_projects[0].get('root_path')) # Should be None initially
+
+        # Now set a root path and check again
+        if listed_projects:
+            proj_id_to_set = listed_projects[0]['project_id']
+            path_to_set = "/tmp/path_for_list_test"
+            abs_path_to_set = os.path.abspath(path_to_set)
+
+            # set_project_root_path will call _load_projects again.
+            # Ensure it sees the project to update, then capture its save.
+            # The current self.saved_projects_capture from create_project is what _load_projects will return.
+            project_manager.set_project_root_path(proj_id_to_set, path_to_set)
+
+            # Now, _load_projects should return the result of the save from set_project_root_path
+            self.mock_load_projects.return_value = self.saved_projects_capture
+
+            listed_projects_after_set = project_manager.list_projects()
+            self.assertGreater(len(listed_projects_after_set), 0)
+            found_updated = False
+            for p in listed_projects_after_set:
+                if p['project_id'] == proj_id_to_set:
+                    self.assertEqual(p.get('root_path'), abs_path_to_set)
+                    found_updated = True
+                    break
+            self.assertTrue(found_updated, "Updated project with root_path not found in list_projects.")
+
 
     # --- Tests for remove_project ---
     def test_remove_project_success_by_id(self):

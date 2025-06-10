@@ -53,6 +53,113 @@ class TestActionExecutor(unittest.TestCase):
     def tearDown(self):
         core_global_reflection_log.log_entries = self.original_log_entries
 
+# Mock classes for ExecutionAgent tests
+class MockToolSystemForExecutionAgent:
+    def __init__(self):
+        self.tools_called_with_args = []
+        self.tool_outputs = {} # Store predefined outputs for tools
+
+    async def execute_tool(self, name, args=(), kwargs=None, task_manager=None, notification_manager=None): # Match signature
+        self.tools_called_with_args.append({"name": name, "args": args, "kwargs": kwargs or {}})
+        print(f"[MockToolSystemForExecutionAgent] Called: {name} with args: {args}, kwargs: {kwargs}")
+        if name in self.tool_outputs:
+            output = self.tool_outputs[name]
+            if callable(output): # Allow dynamic output based on args
+                return output(*args, **(kwargs or {}))
+            return output
+        return f"Mock success for {name}"
+
+    def list_tools_with_sources(self): # Needed by PlannerAgent
+        # Provide a basic structure; adapt if PlannerAgent needs more details
+        return {
+            "request_user_clarification": {"description": "Asks for clarification.", "schema_details": {}},
+            "some_other_tool": {"description": "Another tool.", "schema_details": {}},
+        }
+
+    def list_tools(self): # Needed by PlannerAgent if it uses this
+        return {name: data["description"] for name, data in self.list_tools_with_sources().items()}
+
+
+class MockPlannerAgentForExecutionAgent(PlannerAgent): # Inherit from real PlannerAgent
+    async def create_plan_with_llm(self, goal_description, available_tools, project_context_summary=None, project_name_for_context=None):
+        # Not actively used if ExecutionAgent doesn't re-plan in this specific test
+        return []
+    async def replan_after_failure(self, original_goal, failure_analysis, available_tools, ollama_model_name=None):
+        # Not actively used if ExecutionAgent doesn't re-plan in this specific test
+        return []
+
+class MockLearningAgentForExecutionAgent: # Simple mock, doesn't need to inherit
+    def process_reflection_entry(self, entry):
+        print(f"[MockLearningAgentForExecutionAgent] Processing reflection for goal: {entry.goal_description}")
+
+
+class TestExecutionAgentFlows(unittest.IsolatedAsyncioTestCase): # Use IsolatedAsyncioTestCase for async tests
+
+    async def test_execute_plan_with_clarification_tool(self):
+        """
+        Tests ExecutionAgent's ability to execute a plan involving the
+        request_user_clarification tool and use its output in a subsequent step.
+        """
+        execution_agent = ExecutionAgent()
+        mock_tool_system = MockToolSystemForExecutionAgent()
+        mock_planner_agent = MockPlannerAgentForExecutionAgent()
+        mock_learning_agent = MockLearningAgentForExecutionAgent()
+
+        # Define the output for the clarification tool
+        clarification_response = "my_preferred_file.txt"
+        mock_tool_system.tool_outputs["request_user_clarification"] = clarification_response
+
+        test_plan = [
+            {"tool_name": "request_user_clarification", "args": ("What is your preferred filename?",), "kwargs": {}},
+            {"tool_name": "some_other_tool", "args": ("[[step_1_output]]", "static_value"), "kwargs": {}}
+        ]
+
+        goal_desc = "Test goal using clarification"
+
+        # Execute the plan
+        # ExecutionAgent.execute_plan returns -> Tuple[List[Dict[str, Any]], List[Any]] (final_plan, results)
+        final_plan, results = await execution_agent.execute_plan(
+            goal_description=goal_desc,
+            initial_plan=test_plan,
+            tool_system=mock_tool_system,
+            planner_agent=mock_planner_agent,
+            learning_agent=mock_learning_agent
+            # task_manager and notification_manager can be None for this test if not essential to the flow
+        )
+
+        self.assertEqual(len(mock_tool_system.tools_called_with_args), 2, "Expected two tools to be called")
+
+        # Check call to request_user_clarification
+        clarification_call = mock_tool_system.tools_called_with_args[0]
+        self.assertEqual(clarification_call["name"], "request_user_clarification")
+        self.assertEqual(clarification_call["args"], ("What is your preferred filename?",))
+
+        # Check call to some_other_tool
+        other_tool_call = mock_tool_system.tools_called_with_args[1]
+        self.assertEqual(other_tool_call["name"], "some_other_tool")
+        # Verify that the output of the first step was correctly substituted
+        self.assertEqual(other_tool_call["args"], (clarification_response, "static_value"))
+
+        # Check overall results
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], clarification_response) # Result of first step
+        # The result of the second step would be the mock output for "some_other_tool"
+        self.assertEqual(results[1], f"Mock success for some_other_tool")
+
+        # Ensure the final plan matches the initial plan if no re-planning occurred
+        self.assertEqual(final_plan, test_plan)
+
+
+class TestActionExecutor(unittest.TestCase):
+
+    def setUp(self):
+        self.executor = ActionExecutor(learning_agent=mock.MagicMock()) # Pass a mock LearningAgent
+        self.original_log_entries = list(core_global_reflection_log.log_entries)
+        core_global_reflection_log.log_entries = []
+
+    def tearDown(self):
+        core_global_reflection_log.log_entries = self.original_log_entries
+
     @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code')
     @patch('ai_assistant.execution.action_executor.global_reflection_log.log_execution')
     @patch.object(ActionExecutor, '_run_post_modification_test', new_callable=AsyncMock)

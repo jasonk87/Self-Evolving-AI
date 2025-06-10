@@ -127,8 +127,145 @@ def read_text_from_file(full_filepath: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while reading file '{full_filepath}': {e}"
 
+# LIST_PROJECT_FILES_SCHEMA = {
+#    "name": "list_project_files",
+#    "description": "Lists files and directories within a specified project's root directory or a given subdirectory of that project. Requires the project to have its root_path set.",
+#    "parameters": [
+#        {"name": "project_identifier", "type": "str", "description": "The ID or name of the project."},
+#        {"name": "sub_directory", "type": "str", "description": "Optional. A relative path to a subdirectory within the project to list. If omitted, lists the project's root."}
+#    ],
+#    "returns": {
+#        "type": "dict",
+#        "description": "On success: {'status': 'success', 'path_listed': str, 'files': List[str], 'directories': List[str]}. On error: {'status': 'error', 'message': str}."
+#    }
+# }
+def list_project_files(project_identifier: str, sub_directory: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Lists files and directories within a specified project's root path or a subdirectory thereof.
+
+    Args:
+        project_identifier: The ID or name of the project.
+        sub_directory: Optional. A subdirectory within the project to list.
+                       If None, lists contents of the project's root_path.
+
+    Returns:
+        A dictionary with "status": "success", "path_listed": "absolute_path",
+        "files": list_of_files, "directories": list_of_directories.
+        Or {"status": "error", "message": "error description"}.
+    """
+    from ai_assistant.core.project_manager import find_project # Delayed import to avoid circularity if models are in same dir
+
+    project = find_project(project_identifier)
+    if not project:
+        return {"status": "error", "message": f"Project '{project_identifier}' not found."}
+
+    root_path = project.get("root_path")
+    if not root_path:
+        return {"status": "error", "message": f"Project '{project_identifier}' (ID: {project.get('project_id')}) does not have a root_path defined."}
+
+    if not os.path.isdir(root_path): # Ensure stored root_path is actually a directory
+            return {"status": "error", "message": f"Project root path '{root_path}' for '{project_identifier}' is not a valid directory."}
+
+    path_to_list = os.path.abspath(root_path) # Start with absolute root path
+
+    if sub_directory:
+        # Securely join path, preventing traversal outside project root
+        prospective_path = os.path.abspath(os.path.normpath(os.path.join(path_to_list, sub_directory)))
+        # Check if the resulting path is still within or same as the root_path
+        if os.path.commonpath([path_to_list, prospective_path]) != path_to_list:
+            return {"status": "error", "message": f"Subdirectory '{sub_directory}' attempts to traverse outside project root '{path_to_list}'."}
+        path_to_list = prospective_path
+
+    if not os.path.isdir(path_to_list):
+            return {"status": "error", "message": f"Target path '{path_to_list}' is not a valid directory."}
+
+    try:
+        entries = os.listdir(path_to_list)
+        files = [entry for entry in entries if os.path.isfile(os.path.join(path_to_list, entry))]
+        directories = [entry for entry in entries if os.path.isdir(os.path.join(path_to_list, entry))]
+
+        return {
+            "status": "success",
+            "path_listed": path_to_list, # Already an absolute path
+            "files": sorted(files),
+            "directories": sorted(directories)
+        }
+    except FileNotFoundError: # Should be caught by isdir check above, but as safeguard
+        return {"status": "error", "message": f"Path not found: {path_to_list}"} # pragma: no cover
+    except PermissionError: # pragma: no cover
+        return {"status": "error", "message": f"Permission denied to list directory: {path_to_list}"}
+    except Exception as e: # pragma: no cover
+        return {"status": "error", "message": f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
+
+# GET_PROJECT_FILE_CONTENT_SCHEMA = {
+#    "name": "get_project_file_content",
+#    "description": "Reads and returns the content of a specific file within a given project. Requires the project to have its root_path set.",
+#    "parameters": [
+#        {"name": "project_identifier", "type": "str", "description": "The ID or name of the project."},
+#        {"name": "file_path_in_project", "type": "str", "description": "The relative path of the file within the project's root directory (e.g., 'src/main.py')."}
+#    ],
+#    "returns": {
+#        "type": "dict",
+#        "description": "On success: {'status': 'success', 'file_path': str, 'content': str}. On error: {'status': 'error', 'message': str}."
+#    }
+# }
+def get_project_file_content(project_identifier: str, file_path_in_project: str) -> Dict[str, Any]:
+    """
+    Reads the content of a specified file within a project.
+
+    Args:
+        project_identifier: The ID or name of the project.
+        file_path_in_project: The relative path to the file within the project's root directory.
+
+    Returns:
+        A dictionary with "status": "success", "file_path": "absolute_path", "content": "file_content".
+        Or {"status": "error", "message": "error description"}.
+    """
+    from ai_assistant.core.project_manager import find_project # Delayed import
+
+    project = find_project(project_identifier)
+    if not project:
+        return {"status": "error", "message": f"Project '{project_identifier}' not found."}
+
+    root_path = project.get("root_path")
+    if not root_path:
+        return {"status": "error", "message": f"Project '{project_identifier}' (ID: {project.get('project_id')}) does not have a root_path defined."}
+
+    if not os.path.isdir(root_path):
+        return {"status": "error", "message": f"Project root path '{root_path}' for '{project_identifier}' is not a valid directory."}
+
+    target_file_path = os.path.abspath(os.path.normpath(os.path.join(root_path, file_path_in_project)))
+
+    # Security check: Ensure the target path is within the project's root path
+    if os.path.commonpath([root_path, target_file_path]) != root_path:
+        return {"status": "error", "message": f"File path '{file_path_in_project}' attempts to traverse outside project root."}
+
+    if not os.path.exists(target_file_path):
+        return {"status": "error", "message": f"File not found at '{target_file_path}'."}
+
+    if not os.path.isfile(target_file_path):
+        return {"status": "error", "message": f"Path '{target_file_path}' is a directory, not a file."}
+
+    try:
+        with open(target_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return {
+            "status": "success",
+            "file_path": target_file_path,
+            "content": content
+        }
+    except PermissionError: # pragma: no cover
+        return {"status": "error", "message": f"Permission denied to read file: {target_file_path}"}
+    except IOError as e: # pragma: no cover
+            return {"status": "error", "message": f"IOError reading file {target_file_path}: {str(e)}"}
+    except Exception as e: # pragma: no cover
+        return {"status": "error", "message": f"Failed to read project file '{file_path_in_project}' from '{project_identifier}': {str(e)}"}
+
 if __name__ == '__main__':
     import shutil # For cleaning up test directories
+    import tempfile # For list_project_files tests
+    from unittest.mock import patch # For list_project_files tests
+    from typing import List, Dict, Any, Optional # For list_project_files tests, already at top for module
 
     print("--- Testing File System Tools ---")
 
@@ -241,5 +378,147 @@ if __name__ == '__main__':
             print(f"Error removing base test directory '{BASE_PROJECTS_DIR}': {e}")
     else:
         print(f"Base test directory '{BASE_PROJECTS_DIR}' was not created or already cleaned up.")
+
+    # --- Tests for list_project_files ---
+    print("\n--- Testing list_project_files ---")
+
+    # Mock find_project for list_project_files tests
+    # Using a global-like variable for the temp directory to ensure it's accessible in mock_find_project_func
+    # and cleaned up after tests. This is a common pattern for __main__ tests.
+    _test_temp_root_dir_for_list_files = tempfile.TemporaryDirectory()
+
+    mock_project_data_with_path = {"project_id": "p1_list_test", "name": "ListTestProject",
+                                   "root_path": os.path.join(_test_temp_root_dir_for_list_files.name, "ListTestProjectRoot")}
+    mock_project_data_no_path = {"project_id": "p2_list_test", "name": "NoPathListProject", "root_path": None}
+    mock_project_data_invalid_path = {"project_id": "p3_list_test", "name": "InvalidPathListProject",
+                                      "root_path": os.path.join(_test_temp_root_dir_for_list_files.name, "file_instead_of_dir.txt")}
+
+    os.makedirs(mock_project_data_with_path["root_path"], exist_ok=True)
+    with open(os.path.join(mock_project_data_with_path["root_path"], "file1.txt"), "w") as f: f.write("f1")
+    os.makedirs(os.path.join(mock_project_data_with_path["root_path"], "subdir1"), exist_ok=True)
+    with open(os.path.join(mock_project_data_with_path["root_path"], "subdir1", "file2.txt"), "w") as f: f.write("f2")
+
+    # Create the "invalid path" which is a file
+    with open(mock_project_data_invalid_path["root_path"], "w") as f: f.write("I am a file, not a directory.")
+
+
+    def mock_find_project_list_files(identifier):
+        if identifier == "ListTestProject" or identifier == "p1_list_test":
+            return mock_project_data_with_path
+        if identifier == "NoPathListProject": return mock_project_data_no_path
+        if identifier == "InvalidPathListProject": return mock_project_data_invalid_path
+        return None
+
+    with patch('ai_assistant.custom_tools.file_system_tools.find_project', side_effect=mock_find_project_list_files):
+        # Test 1: List root of existing project with path
+        print("\nTest 1: List project root (ListTestProject)")
+        result1 = list_project_files("ListTestProject")
+        print(f"Result 1: {result1}")
+        assert result1["status"] == "success"
+        assert "file1.txt" in result1["files"]
+        assert "subdir1" in result1["directories"]
+        assert os.path.isabs(result1["path_listed"])
+
+        # Test 2: List subdirectory
+        print("\nTest 2: List subdirectory (ListTestProject/subdir1)")
+        result2 = list_project_files("ListTestProject", sub_directory="subdir1")
+        print(f"Result 2: {result2}")
+        assert result2["status"] == "success"
+        assert "file2.txt" in result2["files"]
+        assert not result2["directories"]
+
+        # Test 3: List non-existent subdirectory
+        print("\nTest 3: List non-existent subdirectory (ListTestProject/non_existent_subdir)")
+        result3 = list_project_files("ListTestProject", sub_directory="non_existent_subdir")
+        print(f"Result 3: {result3}")
+        assert result3["status"] == "error"
+        assert "not a valid directory" in result3["message"].lower()
+
+        # Test 4: Path traversal attempt
+        print("\nTest 4: Path traversal attempt (ListTestProject/../outside)")
+        # Note: os.path.join on "root", "../something" will resolve to "root/../something" -> "something"
+        # The commonpath check should catch this if root_path is /tmp/xyz/ListTestProjectRoot
+        # and prospective_path becomes /tmp/xyz/outside_project
+        result4 = list_project_files("ListTestProject", sub_directory="../../outside_project")
+        print(f"Result 4: {result4}")
+        assert result4["status"] == "error"
+        assert "traverse outside project root" in result4["message"].lower()
+
+        # Test 5: Project with no root_path
+        print("\nTest 5: Project with no root_path (NoPathListProject)")
+        result5 = list_project_files("NoPathListProject")
+        print(f"Result 5: {result5}")
+        assert result5["status"] == "error"
+        assert "does not have a root_path defined" in result5["message"].lower()
+
+        # Test 6: Project not found
+        print("\nTest 6: Project not found (FakeListProject)")
+        result6 = list_project_files("FakeListProject")
+        print(f"Result 6: {result6}")
+        assert result6["status"] == "error"
+        assert "not found" in result6["message"].lower()
+
+        # Test 7: Project with invalid (non-dir) root_path
+        print("\nTest 7: Project with invalid root_path (InvalidPathListProject)")
+        result7 = list_project_files("InvalidPathListProject")
+        print(f"Result 7: {result7}")
+        assert result7["status"] == "error"
+        assert "not a valid directory" in result7["message"].lower()
+
+        print("\n--- Testing get_project_file_content ---")
+        # Test GFC 1: Read existing file in root
+        print("\nTest GFC 1: Read file in project root (ListTestProject/file1.txt)")
+        content_res1 = get_project_file_content("ListTestProject", "file1.txt")
+        print(f"Content Result 1: {content_res1.get('status')}")
+        assert content_res1["status"] == "success"
+        assert content_res1["content"] == "f1"
+        assert content_res1["file_path"] == os.path.join(mock_project_data_with_path["root_path"], "file1.txt")
+
+        # Test GFC 2: Read existing file in subdir
+        print("\nTest GFC 2: Read file in subdir (ListTestProject/subdir1/file2.txt)")
+        content_res2 = get_project_file_content("ListTestProject", "subdir1/file2.txt")
+        print(f"Content Result 2: {content_res2.get('status')}")
+        assert content_res2["status"] == "success"
+        assert content_res2["content"] == "f2"
+
+        # Test GFC 3: Read non-existent file
+        print("\nTest GFC 3: Read non-existent file (ListTestProject/non_existent.txt)")
+        content_res3 = get_project_file_content("ListTestProject", "non_existent.txt")
+        print(f"Content Result 3: {content_res3}")
+        assert content_res3["status"] == "error"
+        assert "not found" in content_res3["message"].lower()
+
+        # Test GFC 4: Path traversal attempt for read
+        print("\nTest GFC 4: Path traversal read (ListTestProject/../../outside.txt)")
+        content_res4 = get_project_file_content("ListTestProject", "../../outside_project_file.txt")
+        print(f"Content Result 4: {content_res4}")
+        assert content_res4["status"] == "error"
+        assert "traverse outside project root" in content_res4["message"].lower()
+
+        # Test GFC 5: Attempt to read a directory
+        print("\nTest GFC 5: Read a directory (ListTestProject/subdir1)")
+        content_res5 = get_project_file_content("ListTestProject", "subdir1")
+        print(f"Content Result 5: {content_res5}")
+        assert content_res5["status"] == "error"
+        assert "is a directory, not a file" in content_res5["message"].lower()
+
+        # Test GFC 6: Project with no root_path
+        print("\nTest GFC 6: Project with no root_path (NoPathListProject)")
+        content_res6 = get_project_file_content("NoPathListProject", "anyfile.txt")
+        print(f"Content Result 6: {content_res6}")
+        assert content_res6["status"] == "error"
+        assert "does not have a root_path defined" in content_res6["message"].lower()
+
+        # Test GFC 7: Project not found
+        print("\nTest GFC 7: Project not found (FakeProjectToRead)")
+        content_res7 = get_project_file_content("FakeProjectToRead", "anyfile.txt")
+        print(f"Content Result 7: {content_res7}")
+        assert content_res7["status"] == "error"
+        assert "not found" in content_res7["message"].lower()
+
+
+    # Cleanup the temporary directory used for list_project_files tests
+    _test_temp_root_dir_for_list_files.cleanup()
+    print(f"Cleaned up temp directory for list_project_files: {_test_temp_root_dir_for_list_files.name}")
     
     print("\n--- All File System Tools Tests Finished ---")
