@@ -60,10 +60,11 @@ class ActiveTask:
         self.last_updated_at = datetime.now(timezone.utc)
 
 class TaskManager:
-    def __init__(self):
+    def __init__(self, notification_manager: Optional[NotificationManager] = None): # Direct type hint
         self._active_tasks: Dict[str, ActiveTask] = {}
         self._completed_tasks_archive: List[ActiveTask] = []
         self._archive_limit = 100
+        self.notification_manager = notification_manager
 
     def add_task(self, task_type: ActiveTaskType, description: str, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ActiveTask:
         new_task = ActiveTask(task_type=task_type, description=description, related_item_id=related_item_id, details=details or {})
@@ -89,10 +90,39 @@ class TaskManager:
                 ActiveTaskStatus.FAILED_UNKNOWN,
                 ActiveTaskStatus.USER_CANCELLED,
                 ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
-                ActiveTaskStatus.POST_MOD_TEST_FAILED
+                ActiveTaskStatus.POST_MOD_TEST_FAILED,
+                ActiveTaskStatus.FAILED_CODE_GENERATION # Added to terminal statuses for notifications
             ]
             if new_status in terminal_statuses:
                 print(f"TaskManager: Task {task_id} reached terminal status: {new_status.name}. Archiving.")
+                if self.notification_manager:
+                    notif_type = NotificationType.GENERAL_INFO # Default
+                    if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
+                        notif_type = NotificationType.TASK_COMPLETED_SUCCESSFULLY
+                    elif new_status == ActiveTaskStatus.CRITIC_REVIEW_REJECTED:
+                        notif_type = NotificationType.TASK_FAILED_CRITIC_REVIEW
+                    elif new_status == ActiveTaskStatus.POST_MOD_TEST_FAILED:
+                        notif_type = NotificationType.TASK_FAILED_POST_MOD_TEST
+                    elif new_status == ActiveTaskStatus.FAILED_DURING_APPLY:
+                        notif_type = NotificationType.TASK_FAILED_APPLY
+                    elif new_status == ActiveTaskStatus.FAILED_CODE_GENERATION:
+                        notif_type = NotificationType.TASK_FAILED_CODE_GENERATION
+                    elif new_status in [ActiveTaskStatus.FAILED_PRE_REVIEW, ActiveTaskStatus.FAILED_UNKNOWN]:
+                        notif_type = NotificationType.TASK_FAILED_UNKNOWN
+                    elif new_status == ActiveTaskStatus.USER_CANCELLED:
+                        notif_type = NotificationType.TASK_CANCELLED
+
+                    summary = f"Task '{task.description[:50]}...' {new_status.name}."
+                    if task.status_reason:
+                        summary += f" Reason: {task.status_reason}"
+
+                    self.notification_manager.add_notification(
+                        event_type=notif_type,
+                        summary_message=summary,
+                        related_item_id=task.task_id,
+                        related_item_type="task",
+                        details_payload={"task_type": task.task_type.name, "description": task.description}
+                    )
                 self._archive_task(task_id)
         else:
             print(f"TaskManager: Error - Task {task_id} not found for status update.")
@@ -131,9 +161,26 @@ class TaskManager:
 # Commented out to prefer dependency injection where possible.
 # If a global instance is needed for direct CLI or simple integrations, it can be uncommented.
 
+from .notification_manager import NotificationManager, NotificationType # Moved import to top
+
 if __name__ == '__main__': # pragma: no cover
     print("--- TaskManager Basic Test ---")
-    tm = TaskManager()
+    # For testing with notifications, a mock NotificationManager might be useful here,
+    # or ensuring NotificationManager can run standalone for its __main__ test.
+    # For this simple test, we'll instantiate a real one if its dependencies are simple.
+    # Assuming NotificationManager can be instantiated without complex deps for this basic test.
+
+    # Since NotificationManager writes to a file, we might want to control its path here
+    # or use a mock that doesn't write files.
+    # For now, let it use its default path which might create a file during test.
+    # Adding a basic try-except for robust testing if NM has issues.
+    try:
+        notif_mgr_for_test = NotificationManager()
+    except Exception as e: # pylint: disable=broad-except
+        print(f"TaskManager __main__: Could not initialize NotificationManager for test ({e}), using None.")
+        notif_mgr_for_test = None
+
+    tm = TaskManager(notification_manager=notif_mgr_for_test)
 
     # Add a task
     task1_desc = "Develop a new tool for calculating planetary orbits."

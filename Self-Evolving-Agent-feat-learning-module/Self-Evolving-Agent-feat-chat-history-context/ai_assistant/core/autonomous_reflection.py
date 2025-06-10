@@ -24,6 +24,7 @@ from ..memory.event_logger import log_event # Adjusted for consistency, though o
 from ai_assistant.config import get_model_for_task, is_debug_mode # Removed review_reflection_suggestion import
 from ai_assistant.learning.evolution import apply_code_modification # Added import
 from datetime import datetime, timezone, timedelta 
+from .notification_manager import NotificationManager # Added import
 
 logger = logging.getLogger(__name__) # Ensure logger is defined for the module
 
@@ -553,7 +554,8 @@ def run_self_reflection_cycle(
     available_tools: Dict[str, str], 
     llm_model_name: Optional[str] = None, # Changed default to None
     max_log_entries: int = DEFAULT_MAX_ENTRIES_TO_FETCH, 
-    min_entries_for_analysis: int = DEFAULT_MIN_ENTRIES_FOR_ANALYSIS 
+    min_entries_for_analysis: int = DEFAULT_MIN_ENTRIES_FOR_ANALYSIS,
+    notification_manager: Optional[NotificationManager] = None # Added
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Runs a full self-reflection cycle:
@@ -741,6 +743,7 @@ def run_self_reflection_cycle(
 def select_suggestion_for_autonomous_action(
     suggestions: List[Dict[str, Any]],
     supported_action_types: Optional[List[str]] = None,
+    notification_manager: Optional[NotificationManager] = None # Added
     # Add tool_system if needed by future action types, not currently used directly by MODIFY_TOOL_CODE handler
 ) -> Optional[Dict[str, Any]]:
     """
@@ -1013,7 +1016,8 @@ if __name__ == '__main__':
         
         selected_mtc = select_suggestion_for_autonomous_action(
             mock_suggestions_for_select_test, 
-            supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"]
+            supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"],
+            notification_manager=None # Pass None for the test
         )
         
         if selected_mtc:
@@ -1037,7 +1041,8 @@ if __name__ == '__main__':
         
         selected_mtc_fail = select_suggestion_for_autonomous_action(
             [mock_suggestions_for_select_test[0]], # Only the MTC001 suggestion
-            supported_action_types=["MODIFY_TOOL_CODE"]
+            supported_action_types=["MODIFY_TOOL_CODE"],
+            notification_manager=None # Pass None for the test
         )
         if selected_mtc_fail:
             print(f"Selected suggestion (MTC Fail Test): {selected_mtc_fail.get('suggestion_id')}")
@@ -1055,7 +1060,8 @@ if __name__ == '__main__':
         ]
         selected_rejected = select_suggestion_for_autonomous_action(
             suggestions_for_rejected_test,
-            supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION"]
+            supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION"],
+            notification_manager=None # Pass None for the test
         )
         if selected_rejected:
             print(f"Selected suggestion (Rejected Test): {selected_rejected.get('suggestion_id')}")

@@ -5,10 +5,11 @@ import sys
 import json
 import inspect
 import asyncio
-from typing import Callable, Dict, Any, Optional, Tuple, List
+from typing import Callable, Dict, Any, Optional, Tuple, List # TYPE_CHECKING removed
 from ai_assistant.config import is_debug_mode, get_data_dir # Import get_data_dir
 from ai_assistant.core.self_modification import get_function_source_code
 from ..core.task_manager import TaskManager # Added for type hinting
+from ..core.notification_manager import NotificationManager # Made unconditional
 
 # --- Constants ---
 DEFAULT_TOOLS_FILE_DIR = get_data_dir() # Use centralized data directory from config
@@ -278,11 +279,13 @@ class ToolSystem:
         """Retrieves tool metadata from the registry."""
         return self._tool_registry.get(name)
 
-    async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None, task_manager: Optional[TaskManager] = None) -> Any:
+    async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
+                         task_manager: Optional[TaskManager] = None,
+                         notification_manager: Optional[NotificationManager] = None) -> Any: # Type hint updated
         """
         Executes a registered tool by its name.
         Loads the tool function dynamically if not already cached.
-        If task_manager is provided and the tool accepts a 'task_manager' argument, it will be passed.
+        If task_manager or notification_manager is provided and the tool accepts them, they will be passed.
         Handles both synchronous and asynchronous tool functions.
         """
         if kwargs is None:
@@ -294,19 +297,14 @@ class ToolSystem:
 
         func_to_execute = tool_info.get('callable_cache')
 
-        # If the function is not cached, load it dynamically
         if not func_to_execute:
             module_path = tool_info['module_path']
             function_name = tool_info['function_name']
             if is_debug_mode():
                 print(f"ToolSystem: Tool '{name}': Function not cached. Attempting to load from {module_path}.{function_name}")
             try:
-                # Dynamically import the module
-                # Using asyncio.to_thread for the import part as importlib can sometimes block
                 module = await asyncio.to_thread(importlib.import_module, module_path)
-                # Get the function from the module
                 func_to_execute = getattr(module, function_name)
-                # Cache the loaded function for future calls
                 self._tool_registry[name]['callable_cache'] = func_to_execute
                 if is_debug_mode():
                     print(f"ToolSystem: Tool '{name}': Function loaded and cached successfully.")
@@ -321,23 +319,27 @@ class ToolSystem:
              raise ToolExecutionError(f"Tool '{name}': Loaded attribute '{tool_info['function_name']}' is not callable.")
 
         final_kwargs = kwargs.copy()
-        if task_manager:
-            try:
-                sig = inspect.signature(func_to_execute)
-                if 'task_manager' in sig.parameters:
-                    final_kwargs['task_manager'] = task_manager
-                    if is_debug_mode():
-                        print(f"ToolSystem: Injecting TaskManager into tool '{name}'.")
-            except ValueError: # inspect.signature can fail for some built-ins
-                if is_debug_mode():
-                    print(f"ToolSystem: Warning - Could not inspect signature for tool '{name}'. TaskManager not injected.")
-                pass
-            except TypeError: # For some callables that inspect.signature doesn't support well
-                if is_debug_mode():
-                    print(f"ToolSystem: Warning - TypeError inspecting signature for tool '{name}'. TaskManager not injected.")
-                pass
 
-        # Execute the function
+        # Try to get signature once for both injections
+        sig = None
+        try:
+            sig = inspect.signature(func_to_execute)
+        except (ValueError, TypeError): # inspect.signature can fail for some built-ins or non-Python functions
+            if is_debug_mode():
+                print(f"ToolSystem: Warning - Could not inspect signature for tool '{name}'. Dependency injection might be limited.")
+            pass # Proceed without signature-based injection if inspection fails
+
+        if sig:
+            if task_manager and 'task_manager' in sig.parameters:
+                final_kwargs['task_manager'] = task_manager
+                if is_debug_mode():
+                    print(f"ToolSystem: Injecting TaskManager into tool '{name}'.")
+
+            if notification_manager and 'notification_manager' in sig.parameters:
+                final_kwargs['notification_manager'] = notification_manager
+                if is_debug_mode():
+                    print(f"ToolSystem: Injecting NotificationManager into tool '{name}'.")
+
         try:
             if is_debug_mode():
                 print(f"ToolSystem: Executing tool '{name}' with args={args}, final_kwargs={final_kwargs}")
@@ -579,8 +581,12 @@ def get_tool(name: str) -> Optional[Dict[str, Any]]:
 
 # Update module-level wrapper if it's intended for external use and needs this new param.
 # For now, assuming direct tool_system_instance.execute_tool is used more internally where task_manager is available.
-async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None, task_manager: Optional[TaskManager] = None) -> Any:
-    return await tool_system_instance.execute_tool(name, args, kwargs, task_manager=task_manager)
+async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
+                       task_manager: Optional[TaskManager] = None,
+                       notification_manager: Optional[NotificationManager] = None) -> Any: # Type hint updated
+    return await tool_system_instance.execute_tool(name, args, kwargs,
+                                                  task_manager=task_manager,
+                                                  notification_manager=notification_manager)
 def list_tools() -> Dict[str, str]:
     return tool_system_instance.list_tools()
 def save_registered_tools() -> bool: # Should primarily be called internally by ToolSystem
@@ -603,14 +609,14 @@ async def main_test(): # pragma: no cover
 
     print("\nTesting execution of 'greet_user' tool:")
     try:
-        greeting = await execute_tool("greet_user", args=("ModuleTester",))
+        greeting = await execute_tool("greet_user", args=("ModuleTester",), notification_manager=None)
         print(f"Greeting result: {greeting}")
     except Exception as e:
         print(f"Error executing greet_user: {e}")
 
     print("\nTesting execution of 'add_numbers' tool:")
     try:
-        sum_result = await execute_tool("add_numbers", args=(5, "7")) # "7" to test type conversion
+        sum_result = await execute_tool("add_numbers", args=(5, "7"), notification_manager=None) # "7" to test type conversion
         print(f"Sum result: {sum_result}")
     except Exception as e:
         print(f"Error executing add_numbers: {e}")
@@ -618,11 +624,11 @@ async def main_test(): # pragma: no cover
     print("\nTesting new 'manage_auto_approve_list' tool (if registered):")
     if "manage_auto_approve_list" in all_tools:
         try:
-            list_result = await execute_tool("manage_auto_approve_list", args=("list",))
+            list_result = await execute_tool("manage_auto_approve_list", args=("list",), notification_manager=None)
             print(f"Manage auto-approve list result: {list_result}")
-            add_result = await execute_tool("manage_auto_approve_list", args=("add", "greet_user"))
+            add_result = await execute_tool("manage_auto_approve_list", args=("add", "greet_user"), notification_manager=None)
             print(f"Add 'greet_user' to auto-approve: {add_result}")
-            list_after_add = await execute_tool("manage_auto_approve_list", args=("list",))
+            list_after_add = await execute_tool("manage_auto_approve_list", args=("list",), notification_manager=None)
             print(f"List after add: {list_after_add}")
         except Exception as e:
             print(f"Error executing manage_auto_approve_list: {e}")

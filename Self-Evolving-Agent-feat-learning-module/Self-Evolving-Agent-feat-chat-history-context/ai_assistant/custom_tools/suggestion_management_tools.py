@@ -1,11 +1,13 @@
 # ai_assistant/custom_tools/suggestion_management_tools.py
 from typing import Optional, Dict, Any, Literal
 from ai_assistant.core.suggestion_manager import approve_suggestion, deny_suggestion, find_suggestion
+from ai_assistant.core.notification_manager import NotificationManager # Made unconditional
 
 def manage_suggestion_status(
     suggestion_id: str,
     action: Literal["approve", "deny"],
-    reason: Optional[str] = None
+    reason: Optional[str] = None,
+    notification_manager: Optional[NotificationManager] = None # Type hint updated
 ) -> Dict[str, Any]:
     """
     Approves or denies a specific suggestion by its ID.
@@ -30,14 +32,12 @@ def manage_suggestion_status(
         return {"status": "error", "message": f"Suggestion ID '{suggestion_id}' not found."}
 
     if action_lower == "approve":
-        if approve_suggestion(suggestion_id, reason):
+        if approve_suggestion(suggestion_id, reason, notification_manager=notification_manager): # Pass NM
             return {"status": "success", "message": f"Suggestion '{suggestion_id}' approved. Reason: {reason or 'N/A'}."}
         else: # pragma: no cover
-            # This path might be hard to hit if find_suggestion works and approve_suggestion only fails on IO,
-            # but good to have for logical completeness.
             return {"status": "error", "message": f"Failed to approve suggestion '{suggestion_id}'. It might have been already actioned or an issue occurred."}
     elif action_lower == "deny":
-        if deny_suggestion(suggestion_id, reason):
+        if deny_suggestion(suggestion_id, reason, notification_manager=notification_manager): # Pass NM
             return {"status": "success", "message": f"Suggestion '{suggestion_id}' denied. Reason: {reason or 'N/A'}."}
         else: # pragma: no cover
             return {"status": "error", "message": f"Failed to deny suggestion '{suggestion_id}'. It might have been already actioned or an issue occurred."}
@@ -59,6 +59,9 @@ def manage_suggestion_status(
 if __name__ == '__main__': # pragma: no cover
     from unittest.mock import patch
     import uuid
+    # Import NotificationManager for __main__ testing purposes
+    from ai_assistant.core.notification_manager import NotificationManager
+
 
     print("--- Testing suggestion_management_tools.py ---")
 
@@ -71,30 +74,37 @@ if __name__ == '__main__': # pragma: no cover
     def mock_find_suggestion_impl(s_id):
         return mock_suggestions_db.get(s_id)
 
-    def mock_approve_suggestion_impl(s_id, reason=None):
+    def mock_approve_suggestion_impl(s_id, reason=None, notification_manager=None): # Add notification_manager to mock signature
         if s_id in mock_suggestions_db:
-            # Simulate that only 'pending' can be approved for this test
             if mock_suggestions_db[s_id]["status"] == "pending":
                 mock_suggestions_db[s_id]["status"] = "approved"
                 mock_suggestions_db[s_id"]["reason_for_status"] = reason
+                # Simulate notification manager being called by the actual approve_suggestion
+                if notification_manager:
+                    print(f"Mock approve_suggestion: Notif manager would be used for {s_id}")
                 return True
         return False
 
-    def mock_deny_suggestion_impl(s_id, reason=None):
+    def mock_deny_suggestion_impl(s_id, reason=None, notification_manager=None): # Add notification_manager to mock signature
         if s_id in mock_suggestions_db:
-             # Simulate that only 'pending' can be denied for this test
             if mock_suggestions_db[s_id]["status"] == "pending":
                 mock_suggestions_db[s_id]["status"] = "denied"
                 mock_suggestions_db[s_id]["reason_for_status"] = reason
+                if notification_manager:
+                    print(f"Mock deny_suggestion: Notif manager would be used for {s_id}")
                 return True
         return False
+
+    # Dummy NotificationManager for testing tool calls, or None
+    test_nm_instance = NotificationManager() # This will create a test_notifications.json if not mocked further
+    # test_nm_instance = None # Alternative for tests not focusing on NM pathway
 
     with patch('ai_assistant.custom_tools.suggestion_management_tools.find_suggestion', side_effect=mock_find_suggestion_impl) as mocked_find, \
          patch('ai_assistant.custom_tools.suggestion_management_tools.approve_suggestion', side_effect=mock_approve_suggestion_impl) as mocked_approve, \
          patch('ai_assistant.custom_tools.suggestion_management_tools.deny_suggestion', side_effect=mock_deny_suggestion_impl) as mocked_deny:
 
         print("\n--- Test Case: Approve a valid pending suggestion ---")
-        result_approve = manage_suggestion_status("sugg_valid_pending", "approve", "User liked it.")
+        result_approve = manage_suggestion_status("sugg_valid_pending", "approve", "User liked it.", notification_manager=test_nm_instance)
         print(f"Result: {result_approve}")
         assert result_approve["status"] == "success"
         assert "approved" in result_approve["message"]

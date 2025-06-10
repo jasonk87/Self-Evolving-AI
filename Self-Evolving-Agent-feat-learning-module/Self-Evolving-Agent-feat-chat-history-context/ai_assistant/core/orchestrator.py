@@ -15,6 +15,7 @@ from ..utils.display_utils import CLIColors, color_text # Added import
 from ..execution.action_executor import ActionExecutor # Added import
 from ..memory.persistent_memory import load_learned_facts # Added import
 from .task_manager import TaskManager # Added import
+from .notification_manager import NotificationManager # Added import
 import uuid # Added import
 
 class DynamicOrchestrator:
@@ -27,13 +28,15 @@ class DynamicOrchestrator:
                  planner: PlannerAgent,
                  executor: ExecutionAgent,
                  learning_agent: LearningAgent,
-                 action_executor: ActionExecutor, # Added action_executor
-                 task_manager: Optional[TaskManager] = None): # New parameter
+                 action_executor: ActionExecutor,
+                 task_manager: Optional[TaskManager] = None,
+                 notification_manager: Optional[NotificationManager] = None): # New parameter
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
         self.action_executor = action_executor
-        self.task_manager = task_manager # Store TaskManager instance
+        self.task_manager = task_manager
+        self.notification_manager = notification_manager # Store NotificationManager instance
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
@@ -313,7 +316,8 @@ class DynamicOrchestrator:
                 tool_system_instance,
                 self.planner,
                 self.learning_agent,
-                task_manager=self.task_manager # Pass it here
+                task_manager=self.task_manager,
+                notification_manager=self.notification_manager # Pass it here
             )
             # Update self.current_plan to the plan that was actually run for logging/context
             self.current_plan = final_plan_attempted

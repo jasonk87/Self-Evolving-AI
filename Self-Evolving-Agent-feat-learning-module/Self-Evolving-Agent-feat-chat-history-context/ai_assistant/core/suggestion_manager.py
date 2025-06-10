@@ -2,10 +2,11 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional # TYPE_CHECKING removed
 
 from ai_assistant.config import get_data_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text
+from .notification_manager import NotificationManager, NotificationType # NotificationManager added to direct imports
 
 SUGGESTIONS_FILE_NAME = "suggestions.json"
 
@@ -92,20 +93,54 @@ def _update_suggestion_status(suggestion_id: str, new_status: str, reason: Optio
 
     if _save_suggestions(suggestions):
         print(color_text(f"Status of suggestion '{suggestion_id}' updated to '{new_status}'.", CLIColors.SUCCESS))
+        # Notification logic will be added to the public-facing functions
         return True
     return False
 
-def approve_suggestion(suggestion_id: str, reason: Optional[str] = None) -> bool:
+def approve_suggestion(suggestion_id: str, reason: Optional[str] = None, notification_manager: Optional[NotificationManager] = None) -> bool:
     """Approves a suggestion."""
-    return _update_suggestion_status(suggestion_id, "approved", reason)
+    if _update_suggestion_status(suggestion_id, "approved", reason):
+        if notification_manager:
+            sugg = find_suggestion(suggestion_id) # Re-fetch to get updated data for payload
+            notification_manager.add_notification(
+                NotificationType.SUGGESTION_APPROVED_USER,
+                f"Suggestion '{suggestion_id}' approved. Reason: {reason or 'N/A'}",
+                related_item_id=suggestion_id,
+                related_item_type="suggestion",
+                details_payload=sugg
+            )
+        return True
+    return False
 
-def deny_suggestion(suggestion_id: str, reason: Optional[str] = None) -> bool:
+def deny_suggestion(suggestion_id: str, reason: Optional[str] = None, notification_manager: Optional[NotificationManager] = None) -> bool:
     """Denies a suggestion."""
-    return _update_suggestion_status(suggestion_id, "denied", reason)
+    if _update_suggestion_status(suggestion_id, "denied", reason):
+        if notification_manager:
+            sugg = find_suggestion(suggestion_id)
+            notification_manager.add_notification(
+                NotificationType.SUGGESTION_DENIED_USER,
+                f"Suggestion '{suggestion_id}' denied. Reason: {reason or 'N/A'}",
+                related_item_id=suggestion_id,
+                related_item_type="suggestion",
+                details_payload=sugg
+            )
+        return True
+    return False
 
-def mark_suggestion_implemented(suggestion_id: str, reason: Optional[str] = "Successfully implemented.") -> bool:
+def mark_suggestion_implemented(suggestion_id: str, reason: Optional[str] = "Successfully implemented.", notification_manager: Optional[NotificationManager] = None) -> bool:
     """Marks a suggestion as implemented."""
-    return _update_suggestion_status(suggestion_id, "implemented", reason)
+    if _update_suggestion_status(suggestion_id, "implemented", reason):
+        if notification_manager:
+            sugg = find_suggestion(suggestion_id)
+            notification_manager.add_notification(
+                NotificationType.SUGGESTION_IMPLEMENTED,
+                f"Suggestion '{suggestion_id}' marked as implemented. Reason: {reason or 'N/A'}",
+                related_item_id=suggestion_id,
+                related_item_type="suggestion",
+                details_payload=sugg
+            )
+        return True
+    return False
 
 def get_suggestions_summary_status() -> str:
     """Returns a summary string of all suggestion statuses."""
@@ -128,7 +163,12 @@ def _normalize_description(description: str) -> str:
     return description.lower().strip()
 
 # Example of how a new suggestion might be added internally by the system
-def add_new_suggestion(type: str, description: str, source_reflection_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def add_new_suggestion(
+    type: str,
+    description: str,
+    source_reflection_id: Optional[str] = None,
+    notification_manager: Optional[NotificationManager] = None # Type hint updated
+) -> Optional[Dict[str, Any]]:
     """
     Adds a new suggestion to the system (typically called by AI components).
     Performs deduplication based on normalized description.
@@ -155,12 +195,19 @@ def add_new_suggestion(type: str, description: str, source_reflection_id: Option
     }
     suggestions.append(new_suggestion)
     if _save_suggestions(suggestions):
-        # This print might be too verbose if called frequently by AI, consider logging
-        # print(color_text(f"New suggestion '{new_suggestion['suggestion_id']}' added.", CLIColors.SYSTEM_MESSAGE))
+        if notification_manager:
+            notification_manager.add_notification(
+                event_type=NotificationType.NEW_SUGGESTION_CREATED_AI, # Or a more specific type if available
+                summary_message=f"New suggestion added: {new_suggestion['description'][:70]}...",
+                related_item_id=new_suggestion['suggestion_id'],
+                related_item_type="suggestion",
+                details_payload=new_suggestion # Send full suggestion as details
+            )
         return new_suggestion
     return None # Should not happen if _save_suggestions is successful
 
 if __name__ == "__main__": # pragma: no cover
+    from .notification_manager import NotificationManager # For __main__ test
     print("--- Testing Suggestion Manager ---")
 
     # Clean up suggestions.json before running tests if it exists
@@ -230,18 +277,39 @@ if __name__ == "__main__": # pragma: no cover
     # then add, then check that the count increased by exactly the number of *unique* new suggestions.
     # For now, visual inspection of the output and the specific duplicate checks above are key.
 
+    # For __main__ tests, we can create a dummy NotificationManager if we want to test that path
+    # For simplicity, we'll pass None for now, or a real one if its setup is simple.
+    test_notification_manager_instance = NotificationManager() if NotificationManager else None # Use real if available for test
+    # To prevent file writes from NotificationManager during suggestion_manager tests,
+    # it would be better to mock NotificationManager.add_notification when testing suggestion_manager itself.
+    # However, for this __main__ block, we are just ensuring the functions can be called.
+
+    # Update add_new_suggestion calls to include notification_manager
+    sugg1 = add_new_suggestion("enhancement", sugg1_desc, source_reflection_id=reflection_id_example, notification_manager=test_notification_manager_instance)
+    if sugg1:
+        print(f"Added Sugg1: {sugg1['suggestion_id']} - {sugg1['description']}, linked to reflection: {sugg1.get('source_reflection_id')}")
+        assert sugg1.get('source_reflection_id') == reflection_id_example
+
+    sugg2 = add_new_suggestion("feedback", sugg2_desc, notification_manager=test_notification_manager_instance)
+    if sugg2:
+        print(f"Added Sugg2: {sugg2['suggestion_id']} - {sugg2['description']}, linked to reflection: {sugg2.get('source_reflection_id')}")
+        assert sugg2.get('source_reflection_id') is None
+
+    sugg1_dup = add_new_suggestion("enhancement", sugg1_desc, notification_manager=test_notification_manager_instance)
+    sugg2_dup = add_new_suggestion("feedback", sugg2_dup_desc_variant, notification_manager=test_notification_manager_instance)
+
 
     if sugg1 and sugg2: # Only proceed if initial suggestions were added
         print("\n--- Testing Status Updates ---")
-        approve_suggestion(sugg1['suggestion_id'], "This is a great idea for Q4.")
-        deny_suggestion(sugg2['suggestion_id'], "UI simplification is out of scope for current sprint.")
+        approve_suggestion(sugg1['suggestion_id'], "This is a great idea for Q4.", notification_manager=test_notification_manager_instance)
+        deny_suggestion(sugg2['suggestion_id'], "UI simplification is out of scope for current sprint.", notification_manager=test_notification_manager_instance)
 
         # Create a third suggestion to mark as implemented
         sugg3_desc = "Document the new API endpoints."
-        sugg3 = add_new_suggestion("documentation", sugg3_desc)
+        sugg3 = add_new_suggestion("documentation", sugg3_desc, notification_manager=test_notification_manager_instance)
         if sugg3:
             print(f"Added Sugg3: {sugg3['suggestion_id']} - {sugg3['description']}")
-            mark_suggestion_implemented(sugg3['suggestion_id'], "Documentation has been written and merged.")
+            mark_suggestion_implemented(sugg3['suggestion_id'], "Documentation has been written and merged.", notification_manager=test_notification_manager_instance)
 
         updated_sugg1 = find_suggestion(sugg1['suggestion_id'])
         updated_sugg2 = find_suggestion(sugg2['suggestion_id'])

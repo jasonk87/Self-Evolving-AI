@@ -36,10 +36,11 @@ import datetime
 import os
 import asyncio
 import uuid # Added for entry_id in MockReflectionLogEntry
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple # TYPE_CHECKING removed
 from enum import Enum, auto
 from dataclasses import dataclass, field, asdict
-from ..core.task_manager import TaskManager # Added
+from ..core.task_manager import TaskManager
+from ..core.notification_manager import NotificationManager # Made unconditional
 
 from ai_assistant.core.reflection import ReflectionLogEntry
 from ai_assistant.memory.persistent_memory import save_actionable_insights, load_actionable_insights, ACTIONABLE_INSIGHTS_FILEPATH
@@ -81,11 +82,17 @@ class ActionableInsight:
             self.insight_id = f"{self.type.name}_{uuid.uuid4().hex[:8]}"
 class LearningAgent:
     def __init__(self, insights_filepath: Optional[str] = None,
-                 task_manager: Optional[TaskManager] = None): # New parameter
+                 task_manager: Optional[TaskManager] = None,
+                 notification_manager: Optional[NotificationManager] = None): # Type hint updated
         self.insights: List[ActionableInsight] = []
         self.insights_filepath = insights_filepath if insights_filepath is not None else ACTIONABLE_INSIGHTS_FILEPATH
-        self.task_manager = task_manager # Store it
-        self.action_executor = ActionExecutor(learning_agent=self, task_manager=self.task_manager) # Pass it
+        self.task_manager = task_manager
+        self.notification_manager = notification_manager # Store it
+        self.action_executor = ActionExecutor(
+            learning_agent=self,
+            task_manager=self.task_manager,
+            notification_manager=self.notification_manager # Pass it
+        )
         self._load_insights()
 
     def _load_insights(self):
@@ -302,10 +309,16 @@ if __name__ == '__main__': # pragma: no cover
                 f.write("def echo_message(message: str) -> str:\n    return message\n")
 
         # Instantiate TaskManager for the test, or pass None
-        test_task_manager = TaskManager() # Example: Instantiate for test
-        # Alternatively, pass None: test_task_manager = None
+        # test_notification_manager should be instantiated if specific notification functionality is tested here.
+        # For now, passing None as the primary tests are for learning logic, not notification side-effects.
+        test_task_manager = TaskManager(notification_manager=None) # TaskManager now needs it
+        test_notification_manager_for_agent = None
 
-        agent = LearningAgent(insights_filepath=test_insights_file, task_manager=test_task_manager)
+        agent = LearningAgent(
+            insights_filepath=test_insights_file,
+            task_manager=test_task_manager,
+            notification_manager=test_notification_manager_for_agent
+        )
 
         # Test process_reflection_entry correctly uses entry.entry_id
         # Use the actual ReflectionLogEntry

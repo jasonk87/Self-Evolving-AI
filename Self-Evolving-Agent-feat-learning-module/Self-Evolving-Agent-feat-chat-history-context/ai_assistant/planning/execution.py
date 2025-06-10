@@ -10,6 +10,7 @@ from ai_assistant.memory.event_logger import log_event
 from ai_assistant.learning.learning import LearningAgent # Import LearningAgent
 from ai_assistant.planning.planning import PlannerAgent # Added for re-planning
 from ..core.task_manager import TaskManager # Added for TaskManager
+from ..core.notification_manager import NotificationManager # Added for NotificationManager
 
 class ExecutionAgent:
     """
@@ -26,7 +27,8 @@ class ExecutionAgent:
         tool_system: Any,
         planner_agent: PlannerAgent, # Added for re-planning
         learning_agent: LearningAgent, # Added LearningAgent
-        task_manager: Optional[TaskManager] = None, # New parameter
+        task_manager: Optional[TaskManager] = None,
+        notification_manager: Optional[NotificationManager] = None, # New parameter
         ollama_model_name: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], List[Any]]: # Returns final_plan, results
         """
@@ -121,7 +123,8 @@ class ExecutionAgent:
                                 tool_name,
                                 args=final_args_for_tool,
                                 kwargs=final_kwargs_for_tool,
-                                task_manager=task_manager # Pass task_manager
+                                task_manager=task_manager,
+                                notification_manager=notification_manager # Pass notification_manager
                             )
                             current_step_error_details = {} 
                             if attempt > 0:

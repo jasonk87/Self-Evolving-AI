@@ -17,6 +17,7 @@ from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
+from ..core.notification_manager import NotificationManager, NotificationType # Added
 from datetime import timezone # Ensure timezone is available
 
 if TYPE_CHECKING:
@@ -92,15 +93,17 @@ class ActionExecutor:
     and attempting to execute them.
     """
     def __init__(self, learning_agent: "LearningAgent",
-                 task_manager: Optional[TaskManager] = None): # New parameter
+                 task_manager: Optional[TaskManager] = None,
+                 notification_manager: Optional[NotificationManager] = None): # New parameter
         """
         Initializes the ActionExecutor.
         """
         if is_debug_mode():
             print("[DEBUG] Initializing ActionExecutor...")
         print("ActionExecutor initialized.")
-        self.learning_agent = learning_agent # learning_agent is used by _run_post_modification_test
-        self.task_manager = task_manager # Store it
+        self.learning_agent = learning_agent
+        self.task_manager = task_manager
+        self.notification_manager = notification_manager # Store it
 
         from ai_assistant.llm_interface import ollama_client as default_llm_provider
         from ai_assistant.core import self_modification as default_self_modification_service
@@ -108,15 +111,30 @@ class ActionExecutor:
         self.code_service = CodeService(
             llm_provider=default_llm_provider,
             self_modification_service=default_self_modification_service,
-            task_manager=self.task_manager # Pass it down
+            task_manager=self.task_manager,
+            notification_manager=self.notification_manager # Add this line
         )
         if is_debug_mode():
             print(f"[DEBUG] CodeService instance in ActionExecutor: {self.code_service}")
             print(f"[DEBUG] TaskManager instance in ActionExecutor: {self.task_manager}")
+            print(f"[DEBUG] NotificationManager instance in ActionExecutor: {self.notification_manager}")
 
     def _update_task_if_manager(self, task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step_desc: Optional[str] = None):
         if task_id and self.task_manager:
             self.task_manager.update_task_status(task_id, status, reason=reason, step_desc=step_desc)
+
+    def _add_notification_if_manager(
+        self,
+        event_type: NotificationType,
+        summary_message: str,
+        related_item_id: Optional[str] = None,
+        related_item_type: Optional[str] = None,
+        details_payload: Optional[Dict[str, Any]] = None
+    ):
+        if self.notification_manager:
+            self.notification_manager.add_notification(
+                event_type, summary_message, related_item_id, related_item_type, details_payload
+            )
 
     def _find_original_reflection_entry(self, entry_id: str) -> Optional[ReflectionLogEntry]:
         """
@@ -282,19 +300,36 @@ class ActionExecutor:
                     post_modification_test_details={"notes": test_run_notes}
                 )
                 if final_overall_success and source_insight_id and source_insight_id != "NO_INSIGHT_ID":
-                    mark_suggestion_implemented(source_insight_id, f"Tool modification '{tool_name}' applied and tested successfully.")
+                    # Pass notification_manager to mark_suggestion_implemented
+                    mark_suggestion_implemented(source_insight_id, f"Tool modification '{tool_name}' applied and tested successfully.", notification_manager=self.notification_manager)
+                    self._add_notification_if_manager(
+                        NotificationType.SELF_MODIFICATION_APPLIED,
+                        f"Tool '{tool_name}' modified and passed tests successfully.",
+                        related_item_id=tool_name,
+                        related_item_type="agent_tool",
+                        details_payload={"module_path": module_path, "function_name": function_name, "change_description": original_description}
+                    )
+                elif not final_overall_success and edit_success and test_passed_status is False: # Edit succeeded, but test failed
+                    self._add_notification_if_manager(
+                        NotificationType.SELF_MODIFICATION_FAILED_TESTS,
+                        f"Tool '{tool_name}' modification failed post-modification tests. Reversion success: {reversion_successful}.",
+                        related_item_id=tool_name,
+                        related_item_type="agent_tool",
+                        details_payload={"module_path": module_path, "function_name": function_name, "reversion_notes": reversion_notes}
+                    )
+                # Other failure cases (e.g., edit_success is False) are handled by TaskManager's notification for the parent task,
+                # or if the edit itself failed, no specific "test failed" notification is needed here.
                 return final_overall_success
 
             except Exception as e_log: # pragma: no cover
-                # This exception is for logging failure, not the modification itself if that succeeded
                 print(f"ActionExecutor: CRITICAL - Failed to log successful/failed modification: {e_log}")
-                # If modification was successful but logging failed, still return modification success
                 return final_overall_success if 'final_overall_success' in locals() else False
 
 
         except Exception as e_main_apply: # pragma: no cover
             error_message = f"Major exception during code application process for {tool_name} (from {source_of_code}): {e_main_apply}"
             print(f"ActionExecutor: {error_message}")
+            # TaskManager will send a notification if action_task_id is set to a failed state
             global_reflection_log.log_execution(
                 goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
                 plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": tool_name, "module_path": module_path}}],
@@ -520,8 +555,14 @@ class ActionExecutor:
                 if any(entry.get("text", "").strip().lower() == normalized_fact_to_learn.lower() for entry in current_facts):
                     log_message = f"Fact '{normalized_fact_to_learn}' already exists. No action taken."
                     # ... (global_reflection_log as before) ...
-                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact already known: {normalized_fact_to_learn}")
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact already known: {normalized_fact_to_learn}", notification_manager=self.notification_manager)
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Fact is a duplicate.", step_desc="Duplicate check complete.")
+                    self._add_notification_if_manager(
+                        NotificationType.GENERAL_INFO,
+                        f"Fact already known, not re-learned: {normalized_fact_to_learn[:70]}...",
+                        related_item_id=source_insight_id,
+                        related_item_type="suggestion_leading_to_fact_assessment"
+                    )
                     return True
 
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Assessing fact value")
@@ -529,8 +570,14 @@ class ActionExecutor:
                 if not is_valuable:
                     log_message = f"Fact '{normalized_fact_to_learn}' assessed as NOT VALUABLE. Reason: {assessment_reason}."
                     # ... (global_reflection_log as before) ...
-                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {log_message}")
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {log_message}", notification_manager=self.notification_manager)
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason=f"Fact not valuable: {assessment_reason}", step_desc="Fact assessment complete.")
+                    self._add_notification_if_manager(
+                        NotificationType.GENERAL_INFO,
+                        f"Fact assessed as not valuable, not learned: {normalized_fact_to_learn[:70]}...",
+                        related_item_id=source_insight_id,
+                        related_item_type="suggestion_leading_to_fact_assessment"
+                    )
                     return True
 
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Categorizing fact")
@@ -548,8 +595,15 @@ class ActionExecutor:
                 if save_learned_facts(current_facts):
                     log_message = f"Successfully added valuable fact: '{normalized_fact_to_learn}' (Category: {determined_category})."
                     # ... (global_reflection_log as before) ...
-                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Valuable fact added: {normalized_fact_to_learn}")
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Valuable fact added: {normalized_fact_to_learn} (Category: {determined_category})", notification_manager=self.notification_manager)
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Fact learned and saved.")
+                    self._add_notification_if_manager(
+                        NotificationType.FACT_LEARNED,
+                        f"New fact learned: {new_fact_entry['text'][:70]}... (Category: {new_fact_entry['category']})",
+                        related_item_id=new_fact_entry['fact_id'],
+                        related_item_type="fact",
+                        details_payload={"category": new_fact_entry['category'], "source": new_fact_entry['source'], "text": new_fact_entry['text']}
+                    )
                     return True
                 else: # pragma: no cover
                     # ... (global_reflection_log as before) ...
@@ -630,10 +684,19 @@ if __name__ == '__main__': # pragma: no cover
         # Let's use the actual LearningAgent for this test, assuming it can be instantiated simply.
         # If LearningAgent has complex dependencies for init, a mock would be better.
         # For this main test, we'll pass task_manager=None as LearningAgent isn't fully set up here for TaskManager
-        mock_task_manager = TaskManager() # Create a real one for testing, or None
-        test_learning_agent = LearningAgent(insights_filepath="test_action_executor_insights.json", task_manager=mock_task_manager) # Assuming LA takes TM
-        executor = ActionExecutor(learning_agent=test_learning_agent, task_manager=mock_task_manager)
+        mock_notification_manager = NotificationManager() # Instantiate for all components
+        mock_task_manager = TaskManager(notification_manager=mock_notification_manager)
 
+        test_learning_agent = LearningAgent(
+            insights_filepath="test_action_executor_insights.json",
+            task_manager=mock_task_manager,
+            notification_manager=mock_notification_manager
+        )
+        executor = ActionExecutor(
+            learning_agent=test_learning_agent,
+            task_manager=mock_task_manager,
+            notification_manager=mock_notification_manager
+        )
 
         original_timestamp = datetime.datetime.now(timezone.utc) - datetime.timedelta(minutes=5) # Use timezone.utc
         original_goal = "Test original goal that failed"

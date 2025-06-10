@@ -14,6 +14,7 @@ try:
     from ..tools.tool_system import tool_system_instance # To get list of available tools
     from ..config import get_model_for_task # To get appropriate model
     from .task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added
+    from .notification_manager import NotificationManager # Made unconditional
 except ImportError as e: # pragma: no cover
     print(f"Error importing modules in suggestion_processor.py: {e}. Fallbacks or direct paths might be needed if run standalone.")
     # Fallback for direct execution or if structure is different than expected during execution
@@ -69,17 +70,20 @@ JSON Response:
 class SuggestionProcessor:
     def __init__(self, action_executor: ActionExecutor,
                  code_service: CodeService,
-                 task_manager: Optional[TaskManager] = None): # New parameter
+                 task_manager: Optional[TaskManager] = None,
+                 notification_manager: Optional[NotificationManager] = None): # Type hint updated
         """
         Initializes the SuggestionProcessor.
         Args:
             action_executor: An instance of ActionExecutor to dispatch actions.
             code_service: An instance of CodeService to access LLM capabilities.
             task_manager: Optional TaskManager instance for status reporting.
+            notification_manager: Optional NotificationManager instance.
         """
         self.action_executor = action_executor
         self.code_service = code_service
         self.task_manager = task_manager
+        self.notification_manager = notification_manager # Store it
         # self.llm_provider = code_service.llm_provider # Direct access if needed
 
     def _update_task_if_manager(self, task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step_desc: Optional[str] = None):
@@ -244,6 +248,7 @@ class SuggestionProcessor:
 if __name__ == '__main__': # pragma: no cover
     from ai_assistant.core.learning import LearningAgent # For example instantiation
     from ai_assistant.llm_interface.ollama_client import OllamaProvider # For example instantiation
+    from .notification_manager import NotificationManager # For test
 
     async def main_suggestion_processor_test():
         # This is a very basic test and requires a running Ollama instance
@@ -252,12 +257,16 @@ if __name__ == '__main__': # pragma: no cover
 
         # Setup mock LLM provider for CodeService if needed, or ensure one is running
         # For this test, we assume CodeService can be initialized and will use its default LLM provider.
-        # If OllamaProvider needs specific setup (e.g., model name), it should be done here.
 
         # Simplified setup for ActionExecutor and CodeService
-        # In a real app, these would be part of the main agent setup.
+        mock_notification_manager = NotificationManager() # Instantiate for all components
+        mock_task_manager = TaskManager(notification_manager=mock_notification_manager)
+
         try:
-            learning_agent_instance = LearningAgent() # Requires insights file path, provide dummy if needed
+            learning_agent_instance = LearningAgent(
+                task_manager=mock_task_manager,
+                notification_manager=mock_notification_manager
+            )
         except Exception as e_la:
             print(f"Could not init LearningAgent for test: {e_la}, using None.")
             learning_agent_instance = None
@@ -265,12 +274,22 @@ if __name__ == '__main__': # pragma: no cover
         # Ensure ActionExecutor can be initialized (it depends on LearningAgent)
         if learning_agent_instance:
             try:
-                # Default CodeService initialization (relies on config for LLM provider)
-                # For __main__ test, task_manager can be None.
-                code_service_instance = CodeService(task_manager=None)
-                action_executor_instance = ActionExecutor(learning_agent=learning_agent_instance)
+                code_service_instance = CodeService(
+                    task_manager=mock_task_manager,
+                    notification_manager=mock_notification_manager # Pass to CodeService
+                )
+                action_executor_instance = ActionExecutor(
+                    learning_agent=learning_agent_instance,
+                    task_manager=mock_task_manager,
+                    notification_manager=mock_notification_manager
+                )
 
-                processor = SuggestionProcessor(action_executor_instance, code_service_instance, task_manager=None)
+                processor = SuggestionProcessor(
+                    action_executor_instance,
+                    code_service_instance,
+                    task_manager=mock_task_manager,
+                    notification_manager=mock_notification_manager
+                )
 
                 # Add a dummy suggestion to process if the file is empty or doesn't exist
                 # This ensures _identify_target_tool_from_suggestion has something to work with

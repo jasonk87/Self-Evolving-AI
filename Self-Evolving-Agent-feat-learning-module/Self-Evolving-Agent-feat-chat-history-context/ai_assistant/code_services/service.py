@@ -446,49 +446,36 @@ class CodeService:
 
         elif context == "EXPERIMENTAL_HIERARCHICAL_OUTLINE":
             high_level_description = prompt_or_description
-            # Initialize logs for this specific context handling
             logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_OUTLINE. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
-
             self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Calling _generate_hierarchical_outline")
 
-            # Call the refactored private method
             outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
-
-            # Append logs from the private method call to the current context's logs
             logs.extend(outline_gen_result.get("logs", []))
 
-            # Format the result to match the expected structure for this context
             result = {
-                "status": outline_gen_result.get("status", "ERROR_UNDEFINED_OUTLINE_FAILURE"), # Default status if not in result
+                "status": outline_gen_result.get("status", "ERROR_UNDEFINED_OUTLINE_FAILURE"),
                 "outline_str": outline_gen_result.get("outline_str"),
                 "parsed_outline": outline_gen_result.get("parsed_outline"),
-                "code_string": None,  # Explicitly None as per requirements for this context
-                "metadata": None,     # Explicitly None as per requirements for this context
+                "code_string": None,
+                "metadata": None,
                 "logs": logs,
                 "error": outline_gen_result.get("error")
             }
 
-            # Update task status based on the outcome of the outline generation
             if result["status"] == "SUCCESS_OUTLINE_GENERATED":
                 self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Hierarchical outline generated successfully.")
             else:
-                # Use a more specific failure status if possible, or fall back to FAILED_UNKNOWN
                 failure_reason = result.get("error", "Outline generation failed.")
                 step_description = result.get("status", "Outline generation failed")
                 self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=failure_reason, step_desc=step_description)
-
             return result
 
         elif context == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
             high_level_description = prompt_or_description
             logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_FULL_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
-
             self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating outline via _generate_hierarchical_outline")
 
-            # Directly call _generate_hierarchical_outline
             outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
-
-            # Append logs from the outline generation
             logs.extend(outline_gen_result.get("logs", []))
             parsed_outline = outline_gen_result.get("parsed_outline")
             current_status = outline_gen_result.get("status")
@@ -497,29 +484,28 @@ class CodeService:
             if current_status != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
                 logs.append("Outline generation failed or outline is empty, cannot proceed to detail generation.")
                 result = {
-                    "status": current_status if current_status else "ERROR_OUTLINE_GENERATION_FAILED",
+                    "status": current_status or "ERROR_OUTLINE_GENERATION_FAILED",
                     "parsed_outline": parsed_outline,
                     "component_details": None,
                     "code_string": None,
                     "metadata": None,
                     "logs": logs,
-                    "error": current_error if current_error else "Outline generation failed or outline was empty."
+                    "error": current_error or "Outline generation failed or outline was empty."
                 }
                 self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error"), step_desc=result.get("status"))
                 return result
 
-            self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating details for components based on new outline")
+            self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating details for components based on outline")
             component_details: Dict[str, Optional[str]] = {}
             all_details_succeeded = True
             any_detail_succeeded = False
 
             components_to_generate = []
-            # Extract functions and methods from outline to prepare for detail generation
-            if parsed_outline.get("components"): # pragma: no branch
+            if parsed_outline.get("components"):
                 for component_def in parsed_outline["components"]:
                     if component_def.get("type") == "function":
                         components_to_generate.append(component_def)
-                    elif component_def.get("type") == "class" and component_def.get("methods"): # pragma: no branch
+                    elif component_def.get("type") == "class" and component_def.get("methods"):
                         for method_def in component_def["methods"]:
                             method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
                             components_to_generate.append({
@@ -529,13 +515,11 @@ class CodeService:
                                 "class_context": component_def
                             })
 
-            logs.append(f"Found {len(components_to_generate)} components (functions/methods) for detail generation.")
+            logs.append(f"Found {len(components_to_generate)} components for detail generation.")
 
             for comp_def_for_detail_gen in components_to_generate:
                 current_comp_key = comp_def_for_detail_gen.get("name")
-
                 logs.append(f"Generating details for component key: {current_comp_key}")
-                # Use the parsed_outline obtained from the direct call
                 detail_code = await self._generate_detail_for_component(
                     component_definition=comp_def_for_detail_gen,
                     full_outline=parsed_outline,
@@ -545,29 +529,26 @@ class CodeService:
                     component_details[current_comp_key] = detail_code
                     logs.append(f"Successfully generated details for {current_comp_key}.")
                     any_detail_succeeded = True
-                else: # pragma: no cover
+                else:
                     component_details[current_comp_key] = None
                     logs.append(f"Failed to generate details for {current_comp_key}.")
                     all_details_succeeded = False
 
-            # Determine status and error based on detail generation outcomes
-            # current_error already holds error from outline generation, if any.
-            # We might want to append or prioritize detail generation errors.
             detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
-            if not current_error: # Only set detail error if no outline error
-                current_error = None # Reset for detail specific errors.
+            # Retain outline error if it exists, otherwise set based on detail generation
+            if not current_error: current_error = None
 
-            if all_details_succeeded and any_detail_succeeded :
+            if all_details_succeeded and any_detail_succeeded:
                 detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
             elif any_detail_succeeded:
-                 detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
-                 if not current_error: current_error = "Some component details failed generation."
+                detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                if not current_error: current_error = "Some component details failed generation."
             else:
-                 if not components_to_generate:
-                     detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED" # No components, so details are "successful"
-                     logs.append("No components found in outline for detail generation.")
-                 elif not current_error: # Only set if no prior error from outline or partial success
-                     current_error = "All component details failed generation."
+                if not components_to_generate:
+                    detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED" # No components means "success"
+                    logs.append("No components found in outline for detail generation.")
+                elif not current_error: # Details failed, and no prior outline error
+                    current_error = "All component details failed generation."
 
             logs.append(f"Detail generation phase status: {detail_gen_status}")
 
@@ -575,25 +556,24 @@ class CodeService:
                 "status": detail_gen_status,
                 "parsed_outline": parsed_outline,
                 "component_details": component_details,
-                "code_string": None, # This context does NOT assemble code
+                "code_string": None,
                 "metadata": None,
                 "logs": logs,
-                "error": current_error # This will now include errors from outline or detail phase
+                "error": current_error
             }
 
             if detail_gen_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
-                 self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Outline and all component details generated.")
+                self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Outline and all component details generated.")
             elif detail_gen_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
-                 self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Partial success in generating component details."), step_desc=detail_gen_status)
-            else: # ERROR_DETAIL_GENERATION_FAILED or if outline failed initially
-                 self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Failed to generate component details."), step_desc=detail_gen_status)
+                self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Partial success in generating component details."), step_desc=detail_gen_status)
+            else:
+                self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Failed to generate component details."), step_desc=detail_gen_status)
             return result
 
         elif context == "HIERARCHICAL_GEN_COMPLETE_TOOL":
             high_level_description = prompt_or_description
             logs = [f"Context: HIERARCHICAL_GEN_COMPLETE_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
 
-            # Step 1: Generate Outline
             self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating outline for complete tool")
             outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
 
@@ -603,31 +583,30 @@ class CodeService:
             current_error = outline_gen_result.get("error")
 
             if current_status != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
-                logs.append("Outline generation failed or produced no data. Cannot proceed with detail generation or assembly.")
+                logs.append("Outline generation failed or produced no data. Cannot proceed.")
                 result = {
-                    "status": current_status if current_status else "ERROR_OUTLINE_GENERATION_FAILED",
+                    "status": current_status or "ERROR_OUTLINE_GENERATION_FAILED",
                     "parsed_outline": parsed_outline,
                     "component_details": None,
                     "code_string": None,
                     "metadata": None,
                     "logs": logs,
-                    "error": current_error if current_error else "Outline generation failed or was empty."
+                    "error": current_error or "Outline generation failed or was empty."
                 }
                 self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc="Outline generation failed")
                 return result
 
-            # Step 2: Generate Details for each component
             self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating details for components")
             component_details: Dict[str, Optional[str]] = {}
             all_details_succeeded = True
             any_detail_succeeded = False
 
             components_to_generate = []
-            if parsed_outline.get("components"): # pragma: no branch
+            if parsed_outline.get("components"):
                 for component_def in parsed_outline["components"]:
                     if component_def.get("type") == "function":
                         components_to_generate.append(component_def)
-                    elif component_def.get("type") == "class" and component_def.get("methods"): # pragma: no branch
+                    elif component_def.get("type") == "class" and component_def.get("methods"):
                         for method_def in component_def["methods"]:
                             method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
                             components_to_generate.append({
@@ -645,53 +624,44 @@ class CodeService:
                     logs.append(f"Generating details for component: {comp_name_key}")
                     detail_code = await self._generate_detail_for_component(
                         component_definition=comp_def_for_detail,
-                        full_outline=parsed_outline, # Pass the successfully generated outline
+                        full_outline=parsed_outline,
                         llm_config=llm_config
                     )
                     if detail_code:
                         component_details[comp_name_key] = detail_code
                         logs.append(f"Successfully generated details for {comp_name_key}.")
                         any_detail_succeeded = True
-                    else: # pragma: no cover
+                    else:
                         component_details[comp_name_key] = None
                         logs.append(f"Failed to generate details for {comp_name_key}.")
                         all_details_succeeded = False
-            else:
-                logs.append("No components listed in outline for detail generation. Proceeding to assembly if main block exists.")
-                all_details_succeeded = True # No details failed as none were attempted
-                any_detail_succeeded = True # Considered successful if no components needed detailing
+            else: # No components to generate
+                logs.append("No components listed in outline for detail generation. Proceeding to assembly.")
+                # all_details_succeeded remains True, any_detail_succeeded remains False (or could be True if we consider "no details needed" a success)
+                # For status logic below, this means it will likely hit SUCCESS_HIERARCHICAL_DETAILS_GENERATED or use existing outline error.
 
-            # Determine status after detail generation
-            detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
-            # current_error might still hold an error from outline phase; don't overwrite unless detail phase also fails
-            if not current_error: current_error = None # Clear for detail-specific errors
-
-            if all_details_succeeded and any_detail_succeeded:
-                detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
-            elif any_detail_succeeded: # pragma: no cover
-                detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
-                if not current_error: current_error = "Some component details failed generation."
-            else: # No detail succeeded AND there were components to generate
-                if components_to_generate: # only error if components were expected
-                    if not current_error: current_error = "All component details failed generation."
-                else: # No components to generate, and none succeeded (which is fine)
+            # Determine status after detail generation. Preserve outline error if it exists.
+            detail_gen_status = current_status # Start with outline status
+            if current_status == "SUCCESS_OUTLINE_GENERATED": # Only update status if outline was OK
+                if all_details_succeeded and (any_detail_succeeded or not components_to_generate):
                     detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
-
+                elif any_detail_succeeded:
+                    detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                    if not current_error: current_error = "Some component details failed generation."
+                elif components_to_generate: # No details succeeded, but components were expected
+                    detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
+                    if not current_error: current_error = "All component details failed generation."
+                # If no components and no details, it's SUCCESS_HIERARCHICAL_DETAILS_GENERATED (covered by first condition)
 
             logs.append(f"Detail generation phase status: {detail_gen_status}")
-
-            # If detail generation completely failed and there was no prior outline error, set status
-            if detail_gen_status == "ERROR_DETAIL_GENERATION_FAILED" and not current_error :
-                 current_error = "Detail generation failed for all components."
-
 
             # Step 3: Assemble Components
             self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Assembling code components")
             assembled_code: Optional[str] = None
-            assembly_status = "ERROR_ASSEMBLY_FAILED"
+            assembly_status = "ERROR_ASSEMBLY_FAILED" # Default if assembly is skipped or fails
 
-            # Only proceed to assembly if the outline was good and we have either some details or no components were needed
-            if parsed_outline and (detail_gen_status != "ERROR_DETAIL_GENERATION_FAILED" or not components_to_generate) :
+            # Only proceed to assembly if details were at least partially successful or not needed, and outline was good.
+            if detail_gen_status not in ["ERROR_OUTLINE_GENERATION_FAILED", "ERROR_DETAIL_GENERATION_FAILED"] :
                 try:
                     assembled_code = self._assemble_components(parsed_outline, component_details)
                     logs.append(f"Assembly attempt complete. Assembled code length: {len(assembled_code or '')}")
@@ -705,34 +675,33 @@ class CodeService:
                             assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
                         elif detail_gen_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
                             assembly_status = "PARTIAL_HIERARCHICAL_ASSEMBLED"
-                        else: # ERROR_DETAIL_GENERATION_FAILED but some placeholders might be assembled
-                            assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED_PLACEHOLDERS"
-                    else: # No components, no main block, empty outline essentially.
-                        assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED" # Assembled "nothing" successfully
+                        else: # Should not happen if detail_gen_status was ERROR...
+                            assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED_PLACEHOLDERS" # Fallback if logic is imperfect
+                    else: # No components, no main block -> empty string is successful assembly
+                        assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
                         logs.append("Assembly resulted in empty code as outline was effectively empty.")
 
-                except Exception as e_assemble: # pragma: no cover
+                except Exception as e_assemble:
                     logger.error(f"Error during code assembly: {e_assemble}", exc_info=True)
                     logs.append(f"Exception during assembly: {e_assemble}")
                     if not current_error: current_error = f"Assembly failed: {e_assemble}"
                     assembly_status = "ERROR_ASSEMBLY_FAILED"
-            else:
-                logs.append("Skipping assembly due to failures in outline or detail generation.")
-                assembly_status = detail_gen_status # Carry over the error status from detail/outline
-                if not current_error: current_error = "Assembly skipped due to prior errors."
+            else: # Outline or detail generation failed, so assembly is skipped.
+                logs.append(f"Skipping assembly due to prior errors (status: {detail_gen_status}).")
+                assembly_status = detail_gen_status # Carry over the error status
+                if not current_error: current_error = "Assembly skipped due to prior errors in outline/detail generation."
 
             logs.append(f"Assembly phase status: {assembly_status}")
 
-            # Step 4: Save to file (if assembly was attempted and produced code)
+            # Step 4: Save to file
             saved_to_path_val: Optional[str] = None
-            final_status = assembly_status # This will be updated if saving fails
+            final_status = assembly_status
 
-            if assembled_code: # Lint and Save only if code was assembled
+            if assembled_code:
                 self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Running linter on assembled code")
                 lint_messages, lint_run_error = await self._run_linter(assembled_code)
                 if lint_run_error:
                     logs.append(f"Linter execution error for assembled code: {lint_run_error}")
-                    # Optionally, append to current_error or set final_status, but for now, just log.
                 if lint_messages:
                     logs.append("Linting issues found in assembled code:")
                     logs.extend(lint_messages)
@@ -743,35 +712,29 @@ class CodeService:
                     if write_to_file(target_path, assembled_code):
                         saved_to_path_val = target_path
                         logs.append(f"Successfully saved assembled code to {target_path}")
-                    else: # pragma: no cover
+                    else:
                         final_status = "ERROR_SAVING_ASSEMBLED_CODE"
                         if not current_error: current_error = f"Failed to save assembled code to {target_path}."
                         logs.append(current_error)
                         logger.error(current_error)
-            elif not assembled_code and target_path and assembly_status not in ["ERROR_ASSEMBLY_FAILED", "ERROR_ASSEMBLY_EMPTY_CODE"] and not current_error:
-                # This case means assembly was "successful" but produced no code (e.g. empty outline)
-                # and no prior errors occurred. We shouldn't try to save.
-                logs.append("No assembled code to save (outline might have been empty or only placeholders).")
-            elif not assembled_code and target_path : # Assembly failed or resulted in empty code with errors
-                 logs.append(f"No assembled code to save due to status: {assembly_status}. Error: {current_error}")
-
+            elif target_path : # No assembled code to save
+                 logs.append(f"No assembled code to save (status: {assembly_status}). Error: {current_error}")
 
             result = {
                 "status": final_status,
-                "parsed_outline": parsed_outline, # From step 1
-                "component_details": component_details, # From step 2
-                "code_string": assembled_code, # From step 3
-                "metadata": None, # Hierarchical gen doesn't produce this type of metadata directly
-                "saved_to_path": saved_to_path_val, # From step 4
+                "parsed_outline": parsed_outline,
+                "component_details": component_details,
+                "code_string": assembled_code,
+                "metadata": None,
+                "saved_to_path": saved_to_path_val,
                 "logs": logs,
                 "error": current_error
             }
 
-            # Final task status update
-            if "SUCCESS_HIERARCHICAL_ASSEMBLED" in final_status: # Catches ASSEMBLED and ASSEMBLED_PLACEHOLDERS
-                 self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Hierarchical generation, assembly, and saving (if path provided) complete.")
+            if "SUCCESS_HIERARCHICAL_ASSEMBLED" in final_status:
+                self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Hierarchical generation, assembly, and saving complete.")
             else:
-                 self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=current_error, step_desc=final_status) # Or more specific failure status
+                self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=current_error, step_desc=final_status)
             return result
 
         else: # pragma: no cover
@@ -1479,10 +1442,21 @@ if __name__ == '__main__': # pragma: no cover
             # Check for NEW_TOOL prompt
             if LLM_NEW_TOOL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
                  logger.info("MockLLMProvider: Matched NEW_TOOL prompt.")
+                 # Specific prompts for lint testing (NEW_TOOL context)
+                 if "generate bad code for lint test" in prompt:
+                     logger.info("MockLLMProvider: Matched 'generate bad code for lint test' FOR NEW_TOOL.")
+                     return '# METADATA: {"suggested_function_name": "new_tool_bad_lint", "suggested_tool_name": "newToolBadLint", "suggested_description": "Tool with bad lint."}\nBAD_CODE_EXAMPLE_FOR_LINT_TEST'
+                 if "generate good code for lint test" in prompt:
+                     logger.info("MockLLMProvider: Matched 'generate good code for lint test' FOR NEW_TOOL.")
+                     return '# METADATA: {"suggested_function_name": "new_tool_good_lint", "suggested_tool_name": "newToolGoodLint", "suggested_description": "Tool with good lint."}\nGOOD_CODE_EXAMPLE_FOR_LINT_TEST'
+                 if "generate code for linter failure test" in prompt:
+                     logger.info("MockLLMProvider: Matched 'generate code for linter failure test' FOR NEW_TOOL.")
+                     return '# METADATA: {"suggested_function_name": "new_tool_linter_fail", "suggested_tool_name": "newToolLinterFail", "suggested_description": "Tool for linter fail."}\nLINTER_FAILURE_EXAMPLE_FOR_LINT_TEST'
+                 # Default NEW_TOOL response
                  return '# METADATA: {"suggested_function_name": "mock_sum_function", "suggested_tool_name": "mockSumTool", "suggested_description": "A mock sum function."}\ndef mock_sum_function(a: int, b: int) -> int:\n    """Adds two integers."""\n    return a + b'
 
             # Check for SELF_FIX_TOOL prompt
-            elif LLM_CODE_FIX_PROMPT_TEMPLATE.splitlines()[1] in prompt: # Using a unique line from the template
+            elif LLM_CODE_FIX_PROMPT_TEMPLATE.splitlines()[1] in prompt:
                  logger.info("MockLLMProvider: Matched SELF_FIX_TOOL prompt.")
                  return "def function_to_be_fixed_by_main_svc(val: int) -> int:\n    return val + 10 # Fixed!\n"
 
@@ -1494,79 +1468,80 @@ if __name__ == '__main__': # pragma: no cover
 
                 base_outline = {
                     "module_name": "test_module.py",
-                    "description": "A test module.",
+                    "description": "A test module generated by mock.",
                     "imports": ["json", "os"],
                     "components": [],
-                    "main_execution_block": "if __name__ == '__main__':\n    print('Test module ready!')"
+                    "main_execution_block": "if __name__ == '__main__':\n    print('Mock test module ready!')"
                 }
 
                 if "generate bad code for lint test hierarchical" in desc_text:
                     logger.info("MockLLMProvider: Outline for HIERARCHICAL BAD LINT TEST.")
                     base_outline["components"].append({
                         "type": "function", "name": "buggy_function_bad_lint", "signature": "() -> None",
-                        "description": "A function designed to have lint errors.", "body_placeholder": "Implement with syntax errors."
+                        "description": "A function designed to have lint errors for hierarchical test.", "body_placeholder": "Implement with syntax errors for bad lint test."
                     })
                 elif "generate good code for lint test hierarchical" in desc_text:
                     logger.info("MockLLMProvider: Outline for HIERARCHICAL GOOD LINT TEST.")
                     base_outline["components"].append({
                         "type": "function", "name": "good_function_good_lint", "signature": "() -> str",
-                        "description": "A function designed to be lint-free.", "body_placeholder": "Implement correctly."
+                        "description": "A function designed to be lint-free for hierarchical test.", "body_placeholder": "Implement correctly for good lint test."
                     })
                 elif "generate code for linter failure test hierarchical" in desc_text:
                     logger.info("MockLLMProvider: Outline for HIERARCHICAL LINTER FAILURE TEST.")
                     base_outline["components"].append({
                         "type": "function", "name": "function_linter_fail", "signature": "() -> None",
-                        "description": "A function that might represent code triggering linter issues.", "body_placeholder": "Implement."
+                        "description": "A function for hierarchical linter failure test.", "body_placeholder": "Implement for linter failure test."
                     })
-                else: # Default todo_cli outline for other hierarchical tests
-                    logger.info("MockLLMProvider: Using default todo_cli.py outline.")
+                else:
+                    logger.info("MockLLMProvider: Using default todo_cli.py outline for hierarchical generation.")
+                    # This is the detailed outline for todo_cli.py example
                     return json.dumps({
                         "module_name": "todo_cli.py",
-                        "description": "A CLI tool for managing a to-do list.",
+                        "description": "A CLI tool for managing a to-do list, generated by mock LLM.",
                         "imports": ["json", "argparse"],
                         "components": [
                             {
                                 "type": "function", "name": "load_todos", "signature": "(filepath: str) -> list",
-                                "description": "Loads to-dos from a JSON file.", "body_placeholder": "Read JSON file, handle errors."
+                                "description": "Loads to-dos from a JSON file.", "body_placeholder": "Read JSON file, handle FileNotFoundError, return empty list if not found."
                             },
                             {
                                 "type": "function", "name": "save_todos", "signature": "(filepath: str, todos: list) -> None",
-                                "description": "Saves to-dos to a JSON file.", "body_placeholder": "Write JSON file, handle errors."
+                                "description": "Saves to-dos to a JSON file.", "body_placeholder": "Write JSON file, use indent=2 for readability."
                             },
                             {
-                                "type": "class", "name": "TodoManager", "description": "Manages todo operations.",
-                                "attributes": [{"name": "filepath", "type": "str", "description": "Path to the todo file"}],
+                                "type": "class", "name": "TodoManager", "description": "Manages todo operations using a JSON file.",
+                                "attributes": [{"name": "filepath", "type": "str", "description": "Path to the todo JSON file"}],
                                 "methods": [
                                     {
                                         "type": "method", "name": "__init__", "signature": "(self, filepath: str)",
-                                        "description": "Initializes TodoManager.", "body_placeholder": "self.filepath = filepath"
+                                        "description": "Initializes TodoManager with the filepath.", "body_placeholder": "self.filepath = filepath"
                                     },
                                     {
                                         "type": "method", "name": "add_item", "signature": "(self, item_text: str)",
-                                        "description": "Adds an item using the manager.", "body_placeholder": "Load, add, save."
+                                        "description": "Adds a new todo item.", "body_placeholder": "Load todos, append new item (dict with 'task' and 'done': False), then save todos. Use self.filepath."
                                     }
                                 ]
                             }
                         ],
-                        "main_execution_block": "if __name__ == '__main__':\n    # main_cli_logic()\n    print('CLI Tool Ready!')"
+                        "main_execution_block": "if __name__ == '__main__':\n    parser = argparse.ArgumentParser(description='Manage your to-do list.')\n    # Add arguments for add, list, etc.\n    # args = parser.parse_args()\n    # Implement CLI logic based on args\n    print('Mock CLI Tool Ready!')"
                     })
-                return json.dumps(base_outline)
+                return json.dumps(base_outline) # For lint-specific hierarchical tests
 
             # Check for COMPONENT_DETAIL prompt
             elif LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
                 logger.info("MockLLMProvider: Matched COMPONENT_DETAIL prompt.")
-                # Specific component mocks for linting tests
-                if "buggy_function_bad_lint" in prompt:
-                    logger.info("MockLLMProvider: Detail for buggy_function_bad_lint.")
-                    return "BAD_CODE_EXAMPLE_FOR_LINT_TEST" # This exact string is caught by mock_run_linter
-                elif "good_function_good_lint" in prompt:
-                    logger.info("MockLLMProvider: Detail for good_function_good_lint.")
-                    return "GOOD_CODE_EXAMPLE_FOR_LINT_TEST" # Caught by mock_run_linter
-                elif "function_linter_fail" in prompt:
-                    logger.info("MockLLMProvider: Detail for function_linter_fail.")
-                    return "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST" # Caught by mock_run_linter
+                # Specific component mocks for hierarchical linting tests
+                if "buggy_function_bad_lint" in prompt: # From "generate bad code for lint test hierarchical" outline
+                    logger.info("MockLLMProvider: Detail for buggy_function_bad_lint (hierarchical).")
+                    return "def buggy_function_bad_lint() -> None:\n    BAD_CODE_EXAMPLE_FOR_LINT_TEST # Intentionally bad"
+                elif "good_function_good_lint" in prompt: # From "generate good code for lint test hierarchical" outline
+                    logger.info("MockLLMProvider: Detail for good_function_good_lint (hierarchical).")
+                    return "def good_function_good_lint() -> str:\n    return 'GOOD_CODE_EXAMPLE_FOR_LINT_TEST' # Intentionally good"
+                elif "function_linter_fail" in prompt: # From "generate code for linter failure test hierarchical" outline
+                    logger.info("MockLLMProvider: Detail for function_linter_fail (hierarchical).")
+                    return "def function_linter_fail() -> None:\n    # This code will cause the mock linter to simulate a failure\n    LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST"
 
-                # Existing component mocks for todo_cli
+                # Existing component mocks for todo_cli.py example
                 elif "load_todos" in prompt:
                     return "def load_todos(filepath: str) -> list:\n    \"\"\"Loads to-dos from a JSON file.\"\"\"\n    try:\n        with open(filepath, 'r') as f:\n            return json.load(f)\n    except FileNotFoundError:\n        return []"
                 elif "save_todos" in prompt:
@@ -1574,9 +1549,9 @@ if __name__ == '__main__': # pragma: no cover
                 elif "TodoManager.__init__" in prompt:
                     return "def __init__(self, filepath: str):\n    \"\"\"Initializes TodoManager.\"\"\"\n    self.filepath = filepath"
                 elif "TodoManager.add_item" in prompt:
-                     return "def add_item(self, item_text: str):\n    \"\"\"Adds an item using the manager.\"\"\"\n    # todos = self.load_todos(self.filepath)\n    # todos.append({'task': item_text, 'done': False})\n    # self.save_todos(self.filepath, todos)\n    print(f\"Added: {item_text} to {{self.filepath}}\") # Simplified for mock"
+                     return "def add_item(self, item_text: str):\n    \"\"\"Adds an item using the manager.\"\"\"\n    # todos = load_todos(self.filepath) # Assuming load_todos is global or part of a larger context not passed here\n    # For mock, let's simplify to avoid needing full context\n    # todos.append({'task': item_text, 'done': False})\n    # save_todos(self.filepath, todos)\n    print(f\"Mock TodoManager added: {item_text} to {{self.filepath}}\") # Simplified for mock"
 
-                logger.warning(f"MockLLMProvider: No specific mock for COMPONENT_DETAIL prompt part: {prompt[:100]}...") # pragma: no cover
+                logger.warning(f"MockLLMProvider: No specific mock for COMPONENT_DETAIL prompt part: {prompt[:100]}...")
                 return f"# Code for component based on prompt: {prompt[:100]}...\npass # Default mock implementation"
 
             # Check for GRANULAR_REFACTOR prompt
@@ -1603,21 +1578,11 @@ if __name__ == '__main__': # pragma: no cover
                 return "import unittest\n\nclass TestGeneratedCode(unittest.TestCase):\n    def test_something(self):\n        self.fail('Not implemented')"
 
             # Specific prompts for lint testing (primarily for NEW_TOOL context now)
-            if "generate bad code for lint test" in prompt and LLM_NEW_TOOL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
-                logger.info("MockLLMProvider: Matched 'generate bad code for lint test' FOR NEW_TOOL.")
-                # For NEW_TOOL, it expects metadata + code
-                return '# METADATA: {"suggested_function_name": "new_tool_bad_lint", "suggested_tool_name": "newToolBadLint", "suggested_description": "Tool with bad lint."}\nBAD_CODE_EXAMPLE_FOR_LINT_TEST'
-            if "generate good code for lint test" in prompt and LLM_NEW_TOOL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
-                logger.info("MockLLMProvider: Matched 'generate good code for lint test' FOR NEW_TOOL.")
-                return '# METADATA: {"suggested_function_name": "new_tool_good_lint", "suggested_tool_name": "newToolGoodLint", "suggested_description": "Tool with good lint."}\nGOOD_CODE_EXAMPLE_FOR_LINT_TEST'
-            if "generate code for linter failure test" in prompt and LLM_NEW_TOOL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
-                logger.info("MockLLMProvider: Matched 'generate code for linter failure test' FOR NEW_TOOL.")
-                return '# METADATA: {"suggested_function_name": "new_tool_linter_fail", "suggested_tool_name": "newToolLinterFail", "suggested_description": "Tool for linter fail."}\nLINTER_FAILURE_EXAMPLE_FOR_LINT_TEST'
-
+            # Note: Lint-specific NEW_TOOL prompts are handled within the NEW_TOOL block above.
             logger.warning(f"MockLLMProvider: No specific mock for prompt starting with: {prompt[:60]}...")
             return "// NO_CODE_SUGGESTION_POSSIBLE (MockLLMProvider Fallback)"
 
-    class MockSelfModService: # Unchanged from previous version, seems fine
+    class MockSelfModService:
         def get_function_source_code(self, module_path, function_name):
             logger.info(f"MockSelfModService.get_function_source_code called for {module_path}.{function_name}")
             if module_path == "ai_assistant.custom_tools.dummy_tool_main_test_svc" and \
@@ -1638,17 +1603,21 @@ if __name__ == '__main__': # pragma: no cover
         original_run_linter = code_service._run_linter # Save original
 
         async def mock_run_linter(code_string: str) -> Tuple[List[str], Optional[str]]:
-            logger.info(f"mock_run_linter called with code_string: '{code_string[:30]}...'")
-            if code_string == "GOOD_CODE_EXAMPLE_FOR_LINT_TEST":
+            logger.info(f"mock_run_linter called with code_string snippet: '{code_string[:50].replace(chr(10),' ')}...'")
+            if "GOOD_CODE_EXAMPLE_FOR_LINT_TEST" in code_string: # Check if the good marker is in the assembled code
+                logger.info("mock_run_linter: Detected GOOD_CODE marker.")
                 return ([], None)
-            elif code_string == "BAD_CODE_EXAMPLE_FOR_LINT_TEST":
-                return (["LINT (Mocked): E999 SyntaxError at 1:1: Example syntax error"], None)
-            elif code_string == "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST":
-                return ([], "Mocked linter execution error: Linters not found.")
-            return (["LINT (Mocked): Unexpected code for lint test"], None) # Default mock response
+            elif "BAD_CODE_EXAMPLE_FOR_LINT_TEST" in code_string: # Check for bad marker
+                logger.info("mock_run_linter: Detected BAD_CODE marker.")
+                return (["LINT (Mocked): E999 SyntaxError at 1:1: Example syntax error from BAD_CODE marker"], None)
+            elif "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST" in code_string: # Check for linter failure marker
+                logger.info("mock_run_linter: Detected LINTER_FAILURE marker.")
+                return ([], "Mocked linter execution error: Linters not found due to LINTER_FAILURE marker.")
+            logger.info("mock_run_linter: No specific marker detected, assuming good code for mock.")
+            return ([], None) # Default to no lint issues if no specific marker
 
         # Setup test output directory for __main__
-        test_output_dir = tempfile.mkdtemp(prefix="codeservice_main_test_")
+        test_output_dir = tempfile.mkdtemp(prefix="codesvc_main_test_")
         print(f"Test outputs will be saved in: {test_output_dir}")
 
         # --- Test NEW_TOOL (including Linter) ---
@@ -1751,51 +1720,46 @@ if __name__ == '__main__': # pragma: no cover
         # MockLLMProvider's HIERARCHICAL_OUTLINE + COMPONENT_DETAIL will result in "BAD_CODE_EXAMPLE_FOR_LINT_TEST"
         # if _assemble_components simply joins them. We'll adjust the component detail mock for this.
         # For this test, let's assume the assembly of "load_todos" (good) and a new "buggy_function" (bad)
-        # will result in a string that our mock_run_linter will interpret as "BAD_CODE_EXAMPLE_FOR_LINT_TEST".
-        # This requires MockLLMProvider to yield "BAD_CODE_EXAMPLE_FOR_LINT_TEST" when asked for *assembled* code.
-        # The current mock structure for hierarchical generation is complex. Let's simplify:
-        # We will make the "HIERARCHICAL_GEN_COMPLETE_TOOL" prompt itself trigger a specific assembled code.
+        # will result in a string that our mock_run_linter will interpret based on markers.
 
+        hier_bad_lint_path = os.path.join(test_output_dir, "hier_bad_lint.py")
         complete_tool_result_bad_lint = await code_service.generate_code(
             context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-            prompt_or_description="generate bad code for lint test hierarchical", # Updated prompt
+            prompt_or_description="generate bad code for lint test hierarchical",
             target_path=hier_bad_lint_path
         )
-        print(f"  Bad Lint - Status: {complete_tool_result_bad_lint.get('status')}, Saved: {complete_tool_result_bad_lint.get('saved_to_path')}")
-        assert any("LINT (Mocked): E999 SyntaxError" in log for log in complete_tool_result_bad_lint.get("logs", [])), "Bad lint message not found in hierarchical logs"
-        if complete_tool_result_bad_lint.get("code_string"):
-             assert "BAD_CODE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_bad_lint.get("code_string", ""), "Bad lint code not found in assembled output"
-        print("    Verified: Bad lint message and code in hierarchical logs.")
+        print(f"  Hierarchical Bad Lint - Status: {complete_tool_result_bad_lint.get('status')}, Saved: {complete_tool_result_bad_lint.get('saved_to_path')}")
+        assert any("LINT (Mocked): E999 SyntaxError" in log for log in complete_tool_result_bad_lint.get("logs", [])), "Bad lint message not found in HIERARCHICAL logs"
+        assert "BAD_CODE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_bad_lint.get("code_string", ""), "Bad lint code marker not found in HIERARCHICAL assembled output"
+        print("    Verified: Bad lint message and code marker in HIERARCHICAL logs/output.")
 
-        # Test 2: Good code for linting from assembly
+        # Test 2: Good code for linting from assembly (HIERARCHICAL_GEN_COMPLETE_TOOL)
         hier_good_lint_path = os.path.join(test_output_dir, "hier_good_lint.py")
         complete_tool_result_good_lint = await code_service.generate_code(
             context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-            prompt_or_description="generate good code for lint test hierarchical", # Updated prompt
+            prompt_or_description="generate good code for lint test hierarchical",
             target_path=hier_good_lint_path
         )
-        print(f"  Good Lint - Status: {complete_tool_result_good_lint.get('status')}, Saved: {complete_tool_result_good_lint.get('saved_to_path')}")
-        assert not any("LINT (Mocked):" in log for log in complete_tool_result_good_lint.get("logs", [])), "Good lint hierarchical test should have no lint messages"
-        if complete_tool_result_good_lint.get("code_string"):
-            assert "GOOD_CODE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_good_lint.get("code_string", ""), "Good lint code not found in assembled output"
-        print("    Verified: No lint messages and good code in hierarchical logs.")
+        print(f"  Hierarchical Good Lint - Status: {complete_tool_result_good_lint.get('status')}, Saved: {complete_tool_result_good_lint.get('saved_to_path')}")
+        assert not any("LINT (Mocked):" in log for log in complete_tool_result_good_lint.get("logs", [])), "Good lint HIERARCHICAL test should have no lint messages"
+        assert "GOOD_CODE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_good_lint.get("code_string", ""), "Good lint code marker not found in HIERARCHICAL assembled output"
+        print("    Verified: No lint messages and good code marker in HIERARCHICAL logs/output.")
 
-        # Test 3: Linter execution failure for assembled code
+        # Test 3: Linter execution failure for assembled code (HIERARCHICAL_GEN_COMPLETE_TOOL)
         hier_linter_fail_path = os.path.join(test_output_dir, "hier_linter_fail.py")
         complete_tool_result_linter_fail = await code_service.generate_code(
             context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-            prompt_or_description="generate code for linter failure test hierarchical", # Updated prompt
+            prompt_or_description="generate code for linter failure test hierarchical",
             target_path=hier_linter_fail_path
         )
-        print(f"  Linter Fail - Status: {complete_tool_result_linter_fail.get('status')}, Saved: {complete_tool_result_linter_fail.get('saved_to_path')}")
-        assert any("Linter execution error for assembled code: Mocked linter execution error" in log for log in complete_tool_result_linter_fail.get("logs", [])), "Hierarchical linter execution error not found"
-        if complete_tool_result_linter_fail.get("code_string"):
-            assert "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_linter_fail.get("code_string", ""), "Linter fail code not found in assembled output"
-        print("    Verified: Hierarchical linter execution error and relevant code in logs.")
+        print(f"  Hierarchical Linter Fail - Status: {complete_tool_result_linter_fail.get('status')}, Saved: {complete_tool_result_linter_fail.get('saved_to_path')}")
+        assert any("Linter execution error for assembled code: Mocked linter execution error" in log for log in complete_tool_result_linter_fail.get("logs", [])), "HIERARCHICAL linter execution error not found in logs"
+        assert "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST" in complete_tool_result_linter_fail.get("code_string", ""), "Linter fail code marker not found in HIERARCHICAL assembled output"
+        print("    Verified: HIERARCHICAL linter execution error and relevant code marker in logs/output.")
 
-        code_service._run_linter = original_run_linter # Restore
+        code_service._run_linter = original_run_linter # Restore original linter
 
-        # --- Test GRANULAR_CODE_REFACTOR (Standard, no linter here by design) ---
+        # --- Test GRANULAR_CODE_REFACTOR ---
         print("\n--- Testing: modify_code (GRANULAR_CODE_REFACTOR) ---")
         granular_original_code = "def process_data(data_list):\n    for item in data_list:\n        print(item)\n    return len(data_list)"
         granular_section_id = "for item in data_list:\n        print(item)"
