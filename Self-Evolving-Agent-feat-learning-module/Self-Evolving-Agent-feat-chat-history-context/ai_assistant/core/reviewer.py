@@ -13,6 +13,11 @@ You are a meticulous AI code reviewer. Your task is to review the provided code 
 {code_to_review}
 ```
 
+**Code Diff (Changes Made):**
+```
+{code_diff}
+```
+
 **Original Requirements:**
 {original_requirements}
 
@@ -83,7 +88,8 @@ class ReviewerAgent:
         code_to_review: str,
         original_requirements: str,
         related_tests: Optional[str] = None,
-        attempt_number: int = 1  # New parameter
+        attempt_number: int = 1,
+        code_diff: Optional[str] = None # New parameter
     ) -> Dict[str, Any]:
         """
         Reviews the given code against original requirements and related tests.
@@ -113,9 +119,11 @@ class ReviewerAgent:
             }
 
         tests_for_prompt = related_tests if related_tests and related_tests.strip() else "No specific tests provided for review context."
+        code_diff_for_prompt = code_diff if code_diff and code_diff.strip() else "No diff provided. Full code is under review."
 
         prompt = REVIEW_CODE_PROMPT_TEMPLATE.format(
             code_to_review=code_to_review,
+            code_diff=code_diff_for_prompt,
             original_requirements=original_requirements,
             related_tests=tests_for_prompt
         )
@@ -240,8 +248,16 @@ Test 2: add("5", "10") should return 15
 Test 3: add(-1, 1) should return 0
 Test 4: add("abc", "10") should ideally raise an error or return a specific value indicating failure.
 """
+        sample_diff_for_code1 = """--- a/example.py
++++ b/example.py
+
+ def add(a, b):
+     # This function adds two numbers
+-    return a + b
++    return int(a) + int(b) # Attempt to handle strings
+"""
         print("\n--- Reviewing Code 1 (Needs Changes) ---")
-        review1 = await reviewer.review_code(code1, reqs1, tests1, attempt_number=1)
+        review1 = await reviewer.review_code(code1, reqs1, tests1, attempt_number=1, code_diff=sample_diff_for_code1)
         print(json.dumps(review1, indent=2))
 
         # Test Case 2: Good code

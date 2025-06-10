@@ -127,7 +127,8 @@ class ActionExecutor:
                 module_path=module_path,
                 function_name=function_name,
                 new_code_string=code_to_apply,
-                project_root_path=project_root
+                project_root_path=project_root,
+                change_description=original_description # Add this argument
             )
             edit_success = "success" in modification_result_msg.lower()
             print(f"ActionExecutor: Code modification result for {tool_name} (from {source_of_code}): {modification_result_msg}")
@@ -154,9 +155,10 @@ class ActionExecutor:
                     if original_code_from_backup:
                         try:
                             revert_msg = self_modification.edit_function_source_code(
-                                module_path, function_name, 
+                                module_path, function_name,
                                 original_code_from_backup,
-                                project_root_path=project_root
+                                project_root_path=project_root,
+                                change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test." # Add this argument
                             )
                             reversion_successful = "success" in revert_msg.lower()
                             reversion_notes = f"Reverted: {reversion_successful}. Msg: {revert_msg}"

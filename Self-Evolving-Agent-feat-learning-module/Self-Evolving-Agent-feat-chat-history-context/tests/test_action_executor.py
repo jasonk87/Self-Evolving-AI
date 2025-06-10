@@ -60,10 +60,12 @@ class TestActionExecutor(unittest.TestCase):
         mock_edit_code.return_value = "Successfully modified function 'test_func' in module 'test_module'."
         mock_run_post_mod_test.return_value = (True, "Post-modification test passed successfully.")
 
+        original_desc = "This is the original description for the change."
         action_details = {
             "module_path": "test_module.py", "function_name": "test_func", "tool_name": "test_tool",
             "suggested_code_change": "def test_func(): pass # new code",
-            "original_reflection_entry_id": "entry_id_for_test_pass"
+            "original_reflection_entry_id": "entry_id_for_test_pass",
+            "suggested_change_description": original_desc # This should be passed as change_description
         }
         proposed_action = {"source_insight_id": "insight1", "action_type": "PROPOSE_TOOL_MODIFICATION", "details": action_details}
 
@@ -71,6 +73,9 @@ class TestActionExecutor(unittest.TestCase):
 
         self.assertTrue(result)
         mock_edit_code.assert_called_once()
+        args, kwargs = mock_edit_code.call_args
+        self.assertEqual(kwargs.get('change_description'), original_desc)
+
         mock_run_post_mod_test.assert_called_once()
         final_log_call_args = mock_log_execution.call_args_list[-1].kwargs
         self.assertTrue(final_log_call_args.get('overall_success'))
@@ -107,9 +112,15 @@ class TestActionExecutor(unittest.TestCase):
             modification_instruction="Needs a fix via CodeService.",
             module_path="test_module.py",
             function_name="old_func",
-            existing_code=None # ActionExecutor calls CodeService with existing_code=None
+            existing_code=None
         )
-        mock_edit_code.assert_called_once_with(module_path="test_module.py", function_name="old_func", new_code_string="def new_llm_func(): return 'fixed_by_codeservice'")
+        mock_edit_code.assert_called_once()
+        args, kwargs = mock_edit_code.call_args
+        self.assertEqual(kwargs.get('module_path'), "test_module.py")
+        self.assertEqual(kwargs.get('function_name'), "old_func")
+        self.assertEqual(kwargs.get('new_code_string'), "def new_llm_func(): return 'fixed_by_codeservice'")
+        self.assertEqual(kwargs.get('change_description'), "Needs a fix via CodeService.") # Verify here
+
         mock_run_post_mod_test.assert_called_once()
 
         code_service_log_call = next(call for call in mock_log_execution.call_args_list if call.kwargs.get('status_override') == "CODE_SERVICE_GEN_SUCCESS")
@@ -158,15 +169,27 @@ class TestActionExecutor(unittest.TestCase):
         ]
         mock_run_post_mod_test.return_value = (False, "Post-mod test failed critically.")
         mock_get_backup.return_value = "def test_func(): pass # Original backup code"
+        original_desc_for_revert_test = "Buggy change attempt"
         action_details = {
             "module_path": "test_module.py", "function_name": "test_func", "tool_name": "test_tool",
             "suggested_code_change": "def test_func(): pass # new potentially buggy code",
-            "original_reflection_entry_id": "dummy_orig_ref_id_for_revert_test"
+            "original_reflection_entry_id": "dummy_orig_ref_id_for_revert_test",
+            "suggested_change_description": original_desc_for_revert_test
         }
         proposed_action = {"source_insight_id": "insight_revert", "action_type": "PROPOSE_TOOL_MODIFICATION", "details": action_details}
         result = asyncio.run(self.executor.execute_action(proposed_action))
         self.assertFalse(result)
         self.assertEqual(mock_edit_code.call_count, 2)
+
+        # Check first call (attempt)
+        args_attempt, kwargs_attempt = mock_edit_code.call_args_list[0]
+        self.assertEqual(kwargs_attempt.get('change_description'), original_desc_for_revert_test)
+
+        # Check second call (revert)
+        args_revert, kwargs_revert = mock_edit_code.call_args_list[1]
+        self.assertIn("Reverting function 'test_func' to backup", kwargs_revert.get('change_description'))
+        self.assertEqual(kwargs_revert.get('new_code_string'), "def test_func(): pass # Original backup code")
+
         final_log_call_args = mock_log_execution.call_args_list[-1].kwargs
         self.assertTrue(final_log_call_args.get('modification_details', {}).get('reversion_attempted'))
         self.assertTrue(final_log_call_args.get('modification_details', {}).get('reversion_successful'))

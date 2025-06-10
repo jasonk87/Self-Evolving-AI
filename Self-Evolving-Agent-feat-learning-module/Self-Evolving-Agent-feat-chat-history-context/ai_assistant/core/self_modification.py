@@ -7,6 +7,11 @@ import os
 import shutil
 import logging
 import sys
+from .diff_utils import generate_diff
+from .critical_reviewer import CriticalReviewCoordinator
+from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
+import asyncio # For running the async review process
+from unittest.mock import patch, AsyncMock # For __main__ block mocking
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -56,28 +61,81 @@ def get_function_source_code(module_path: str, function_name: str) -> Optional[s
         print(f"Error getting source code for '{function_name}' in '{module_path}': {e}")
         return None
 
-def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str) -> str:
+def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str, change_description: str) -> str:
     """
-    Edits the source code of a specified function within a given module file using AST.
+    Edits the source code of a specified function within a given module file using AST,
+    after critical review.
 
     Args:
         module_path: The Python module path (e.g., "ai_assistant.custom_tools.my_extra_tools").
         function_name: The name of the function to modify.
         new_code_string: A string containing the new, complete source code for the function.
         project_root_path: The absolute path to the root of the project.
+        change_description: A description of the change being made, for review context.
 
     Returns:
         A success message if the modification was successful, or an error message string if not.
     """
-    file_path = "" # Initialize to ensure it's defined for logging in case of early error
+    file_path = ""
     try:
-        # Construct the full path to the module file
+        if not os.path.isabs(project_root_path):
+            # Attempt to make it absolute, or raise error if it's critical for your setup
+            # For now, we'll log a warning and proceed, but this might need stricter handling.
+            logger.warning(f"project_root_path '{project_root_path}' is not absolute. Attempting to resolve.")
+            project_root_path = os.path.abspath(project_root_path)
+            if not os.path.isdir(project_root_path): # pragma: no cover
+                 err_msg = f"Error: Resolved project_root_path '{project_root_path}' is not a valid directory."
+                 logger.error(err_msg)
+                 return err_msg
+
         relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
         file_path = os.path.join(project_root_path, relative_module_file_path)
-        
-        if not os.path.exists(file_path):
-            err_msg = f"Error: Module file not found at '{file_path}' derived from module path '{module_path}'."
+
+        original_function_code_for_diff = get_function_source_code(module_path, function_name)
+        if original_function_code_for_diff is None:
+            err_msg = f"Error: Could not retrieve original source code for function '{function_name}' in module '{module_path}' for review."
             logger.error(err_msg)
+            return err_msg
+
+        code_diff = generate_diff(original_function_code_for_diff, new_code_string, file_name=f"{module_path}/{function_name}")
+        if not code_diff:
+            logger.info(f"Proposed code for '{function_name}' in '{module_path}' is identical to the current code. No changes to apply.")
+            return f"No changes detected for function '{function_name}' in module '{module_path}'. Code is identical."
+
+        # --- Critical Review Step ---
+        critic1 = ReviewerAgent()
+        critic2 = ReviewerAgent()
+        coordinator = CriticalReviewCoordinator(critic1, critic2)
+
+        logger.info(f"Requesting critical review for changes to '{function_name}' in '{module_path}'...")
+        try:
+            unanimous_approval, reviews = asyncio.run(coordinator.request_critical_review(
+                original_code=original_function_code_for_diff,
+                new_code_string=new_code_string,
+                code_diff=code_diff,
+                original_requirements=change_description,
+                related_tests=None
+            ))
+        except Exception as e_review:
+            err_msg = f"Error during critical review process for '{function_name}': {e_review}"
+            logger.error(err_msg, exc_info=True)
+            return err_msg
+
+        if not unanimous_approval:
+            review_summaries = []
+            for i, r in enumerate(reviews):
+                review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
+            err_msg = (f"Change to function '{function_name}' in module '{module_path}' rejected by critical review. "
+                       f"No modifications will be applied. Reviews: {' | '.join(review_summaries)}")
+            logger.warning(err_msg)
+            return err_msg
+        else:
+            logger.info(f"Change to function '{function_name}' in '{module_path}' approved by critical review. Proceeding with file modification.")
+        # --- End Critical Review Step ---
+
+        if not os.path.exists(file_path): # Should be checked after review confirms path is valid
+            err_msg = f"Error: Module file not found at '{file_path}' derived from module path '{module_path}'. (Post-review check)"
+            logger.error(err_msg) # Should not happen if get_function_source_code succeeded
             return err_msg
 
         backup_file_path = file_path + ".bak"
@@ -85,7 +143,7 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
         logger.info(f"Backup of '{file_path}' created at '{backup_file_path}'.")
 
         with open(file_path, 'r', encoding='utf-8') as f:
-            original_source = f.read()
+            original_source = f.read() # Full original source for AST parsing
 
         original_ast = ast.parse(original_source, filename=file_path)
 
@@ -257,17 +315,30 @@ if __name__ == '__main__': # pragma: no cover
     print("\nTest E1: Successful edit of 'core_function_one'")
     new_code_core_one = (
         "def core_function_one():\n"
-        "    print('This is core_function_one MODIFIED')\n"
-        "    # Added a comment\n"
-        "    return 100"
+        "    print('This is core_function_one MODIFIED by main test')\n" # Ensure it's different from other tests
+        "    # Added a comment for main test\n"
+        "    return 200"
     )
-    result_e1 = edit_function_source_code(
-        module_path_core, 
-        "core_function_one", 
-        new_code_core_one, 
-        project_root_path=os.path.abspath(TEST_DIR))
-    print(f"Test E1 Result: {result_e1}")
-    assert "success" in result_e1.lower()
+
+    # Mock the critical review process for the __main__ tests
+    mock_reviews_main_test = [{"status": "approved", "comments": "Mock auto-approved for __main__ test"}] * 2
+
+    # Patch target needs to be where CriticalReviewCoordinator is *looked up*
+    # which is in the self_modification module's namespace.
+    with patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review',
+               new_callable=AsyncMock,
+               return_value=(True, mock_reviews_main_test)) as mock_review_call_main:
+        result_e1 = edit_function_source_code(
+            module_path_core,
+            "core_function_one",
+            new_code_core_one,
+            project_root_path=os.path.abspath(TEST_DIR),
+            change_description="Main test E1: Modifying core_function_one"
+        )
+        print(f"Test E1 Result: {result_e1}")
+        assert "success" in result_e1.lower()
+        # mock_review_call_main.assert_called_once() # Verify review was called
+
     with open(core_test_module_path_str, "r", encoding="utf-8") as f:
         content = f.read()
         assert "MODIFIED" in content and "core_function_two" in content
@@ -321,18 +392,23 @@ if __name__ == '__main__': # pragma: no cover
     # Restore original_core_function_one_code to the .py file (not from backup, but from variable)
     # This ensures that if other tests run using this file, they get the original.
     # The .bak file for core_function_one still holds the original_core_function_one_code.
-    print("\nRestoring core_function_one in .py file to its known original state for subsequent tests...")
-    # We need to be careful here. The `original_core_function_one_code` variable might not be exactly what `ast.unparse` would produce.
-    # The most reliable way to restore is from the .bak file content if it's guaranteed to be the original.
-    # Or, re-parse the original_core_function_one_code and unparse it to get a canonical form.
+    print("\nRestoring core_function_one in .py file to its known original state (from backup content) for subsequent tests...")
 
-    # Let's use the content we know was in the backup from the successful GBC.1 test.
-    # Note: edit_function_source_code now requires project_root_path.
-    # The TEST_DIR is the root for these test modules.
-    if retrieved_backup_code: # This is the unparsed original code from the .bak file
-        restore_result = edit_function_source_code(module_path_core, "core_function_one", retrieved_backup_code, project_root_path=os.path.abspath(TEST_DIR))
-        print(f"Restoration of core_function_one in .py: {restore_result}")
-        assert "success" in restore_result.lower()
+    if retrieved_backup_code:
+        # Patch review again for this internal call to edit_function_source_code
+        with patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review',
+                   new_callable=AsyncMock,
+                   return_value=(True, mock_reviews_main_test)) as mock_restore_review_call:
+            restore_result = edit_function_source_code(
+                module_path_core,
+                "core_function_one",
+                retrieved_backup_code,
+                project_root_path=os.path.abspath(TEST_DIR),
+                change_description="Main test: Restoring core_function_one from backup content"
+            )
+            print(f"Restoration of core_function_one in .py: {restore_result}")
+            assert "success" in restore_result.lower()
+            # mock_restore_review_call.assert_called_once()
     else: # pragma: no cover
         print("Could not restore core_function_one as backup code was not retrieved.")
 
