@@ -1,0 +1,112 @@
+{
+    "project_name": "MyWebApp",
+    "sanitized_project_name": "mywebapp",
+    "project_directory": "c:\\Users\\Owner\\Desktop\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-chat-history-context\\ai_assistant\\ai_generated_projects\\mywebapp",
+    "project_description": "A project to manage a to-do list",
+    "creation_timestamp": "2025-06-05T00:53:31.077503+00:00",
+    "last_modified_timestamp": "2025-06-05T00:58:03.708355+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "The main application file that handles user interaction and orchestrates the to-do list functionality.",
+                "key_components": [
+                    "command_line_interface",
+                    "to_do_manager_interaction",
+                    "data_saving"
+                ],
+                "file_dependencies": [
+                    "to_do_manager.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T00:53:44.585247+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for to_do_manager.py",
+            "details": {
+                "filename": "to_do_manager.py",
+                "original_description": "Contains the core logic for managing to-do items \u2013 adding, deleting, marking as complete, and listing.",
+                "key_components": [
+                    "add_item",
+                    "delete_item",
+                    "mark_complete",
+                    "list_items"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T00:57:42.979439+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for data_storage.py",
+            "details": {
+                "filename": "data_storage.py",
+                "original_description": "Handles the storage and retrieval of to-do items.",
+                "key_components": [
+                    "save_to_file",
+                    "load_from_file"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T00:57:52.398947+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK004",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for ui.py",
+            "details": {
+                "filename": "ui.py",
+                "original_description": "Provides the command-line user interface for interacting with the to-do list manager.",
+                "key_components": [
+                    "display_menu",
+                    "get_user_input",
+                    "process_command"
+                ],
+                "file_dependencies": [
+                    "to_do_manager.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T00:58:03.708355+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

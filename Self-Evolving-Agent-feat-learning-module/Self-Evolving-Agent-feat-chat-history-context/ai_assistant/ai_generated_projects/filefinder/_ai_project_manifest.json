@@ -1,0 +1,104 @@
+{
+    "project_name": "FileFinder",
+    "sanitized_project_name": "filefinder",
+    "project_directory": "c:\\Users\\Owner\\Desktop\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-chat-history-context\\ai_assistant\\ai_generated_projects\\filefinder",
+    "project_description": "A tool to find files in a directory based on a pattern",
+    "creation_timestamp": "2025-06-05T03:41:46.037192+00:00",
+    "last_modified_timestamp": "2025-06-05T03:43:30.315582+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "The main script that takes the directory path and search pattern as input and orchestrates the file search.",
+                "key_components": [
+                    "get_user_input",
+                    "call_search_function",
+                    "print_results"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T03:43:03.736299+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for pattern_matching.py",
+            "details": {
+                "filename": "pattern_matching.py",
+                "original_description": "This module contains the logic for matching the search pattern against the filenames.",
+                "key_components": [
+                    "implement_pattern_matching_algorithm"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T03:43:13.099068+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for file_system_operations.py",
+            "details": {
+                "filename": "file_system_operations.py",
+                "original_description": "Handles the interaction with the file system, including listing files and checking for file existence.",
+                "key_components": [
+                    "list_files_in_directory",
+                    "check_file_exists"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T03:43:22.645000+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK004",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for utils.py",
+            "details": {
+                "filename": "utils.py",
+                "original_description": "Provides utility functions for error handling, logging, and other general-purpose tasks.",
+                "key_components": [
+                    "handle_file_not_found_error",
+                    "log_search_results"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T03:43:30.313550+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

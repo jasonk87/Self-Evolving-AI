@@ -1,0 +1,143 @@
+{
+    "project_name": "SnakeGame",
+    "sanitized_project_name": "snakegame",
+    "project_directory": "c:\\Users\\Owner\\Desktop\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-chat-history-context\\ai_assistant\\ai_generated_projects\\snakegame",
+    "project_description": "Create a Python project to implement the Snake game.",
+    "creation_timestamp": "2025-06-05T04:45:58.833804+00:00",
+    "last_modified_timestamp": "2025-06-05T04:50:08.647307+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "The main game control file, managing the game loop and coordinating all other components.",
+                "key_components": [
+                    "initialize_game_state",
+                    "run_game_loop",
+                    "handle_input",
+                    "update_game_state",
+                    "render_game"
+                ],
+                "file_dependencies": [
+                    "snake.py",
+                    "food.py",
+                    "display.py",
+                    "utils.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T04:49:14.956411+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for snake.py",
+            "details": {
+                "filename": "snake.py",
+                "original_description": "Defines the Snake class, handling its movement, growth, and collision detection.",
+                "key_components": [
+                    "Snake class",
+                    "move",
+                    "grow",
+                    "check_collision",
+                    "reset"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T04:49:32.121278+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for food.py",
+            "details": {
+                "filename": "food.py",
+                "original_description": "Defines the Food class, responsible for generating food at random locations and updating its position.",
+                "key_components": [
+                    "Food class",
+                    "generate_food",
+                    "move_food",
+                    "reset"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T04:49:42.468923+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK004",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for display.py",
+            "details": {
+                "filename": "display.py",
+                "original_description": "Handles the graphical display of the game, including drawing the snake, food, and game boundaries.",
+                "key_components": [
+                    "initialize_display",
+                    "draw_snake",
+                    "draw_food",
+                    "draw_boundaries",
+                    "update_display"
+                ],
+                "file_dependencies": [
+                    "snake.py",
+                    "food.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T04:49:57.168204+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK005",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for utils.py",
+            "details": {
+                "filename": "utils.py",
+                "original_description": "Contains utility functions used throughout the game, such as input handling and collision detection.",
+                "key_components": [
+                    "handle_input",
+                    "check_collision",
+                    "get_key_press"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-05T04:50:08.647307+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

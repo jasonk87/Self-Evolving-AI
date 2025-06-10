@@ -1,0 +1,91 @@
+{
+    "project_name": "MyHangmanGame",
+    "sanitized_project_name": "myhangmangame",
+    "project_directory": "c:\\Users\\Owner\\Desktop\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-learning-module\\Self-Evolving-Agent-feat-chat-history-context\\ai_assistant\\ai_generated_projects\\myhangmangame",
+    "project_description": "A game that displays hangman graphics",
+    "creation_timestamp": "2025-06-03T16:20:15.655363+00:00",
+    "last_modified_timestamp": "2025-06-03T16:48:23.738268+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for game.py",
+            "details": {
+                "filename": "game.py",
+                "original_description": "Main game script that handles user input and updates the game state.",
+                "key_components": [
+                    "handle_user_input",
+                    "update_game_state",
+                    "display_hangman"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-03T16:29:54.902955+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for graphics.py",
+            "details": {
+                "filename": "graphics.py",
+                "original_description": "Module for generating and displaying hangman graphics.",
+                "key_components": [
+                    "generate_hangman_image",
+                    "draw_hangman_on_screen"
+                ],
+                "file_dependencies": [
+                    "utils/helper"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-03T16:41:32.755698+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for user_input.py",
+            "details": {
+                "filename": "user_input.py",
+                "original_description": "Module for handling user input (e.g., letters) and updating the game state accordingly.",
+                "key_components": [
+                    "handle_letter_input",
+                    "check_for_win_conditions",
+                    "generate_error_message"
+                ],
+                "file_dependencies": [
+                    "graphics"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-06-03T16:48:23.738268+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

@@ -1,0 +1,254 @@
+{
+    "echo_message": {
+        "tool_name": "echo_message",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "echo_message",
+        "description": "Repeats a message a specified number of times.",
+        "type": "custom_discovered"
+    },
+    "process_search_results": {
+        "tool_name": "process_search_results",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "process_search_results",
+        "description": "Processes JSON search results based on a specified instruction to generate a response.",
+        "type": "custom_discovered"
+    },
+    "search_duckduckgo": {
+        "tool_name": "search_duckduckgo",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "search_duckduckgo",
+        "description": "Searches the internet using DuckDuckGo and returns the results as a JSON string.",
+        "type": "custom_discovered"
+    },
+    "search_google_custom_search": {
+        "tool_name": "search_google_custom_search",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "search_google_custom_search",
+        "description": "Searches Google. Args: query (str). Optional in kwargs: num_results (str, 1-10, default '5').",
+        "type": "custom_discovered"
+    },
+    "subtract_numbers": {
+        "tool_name": "subtract_numbers",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "subtract_numbers",
+        "description": "Subtracts the second number from the first.",
+        "type": "custom_discovered"
+    },
+    "get_self_awareness_info_and_converse": {
+        "tool_name": "get_self_awareness_info_and_converse",
+        "module_path": "ai_assistant.custom_tools.awareness_tools",
+        "function_name": "get_self_awareness_info_and_converse",
+        "description": "Provides a conversational response about the AI's current status,",
+        "type": "custom_discovered"
+    },
+    "manage_tool_confirmation_settings": {
+        "tool_name": "manage_tool_confirmation_settings",
+        "module_path": "ai_assistant.custom_tools.config_management_tools",
+        "function_name": "manage_tool_confirmation_settings",
+        "description": "Manages the list of tools that require explicit user confirmation before execution.",
+        "type": "custom_discovered"
+    },
+    "add_dependency_to_project": {
+        "tool_name": "add_dependency_to_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "add_dependency_to_project",
+        "description": "Adds a dependency to the specified project's manifest.",
+        "type": "custom_discovered"
+    },
+    "build_project": {
+        "tool_name": "build_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "build_project",
+        "description": "Builds the specified project based on 'build_config' in the manifest.",
+        "type": "custom_discovered"
+    },
+    "generate_code_for_project_file": {
+        "tool_name": "generate_code_for_project_file",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "generate_code_for_project_file",
+        "description": "Generates code for a specific file within an AI-managed project,",
+        "type": "custom_discovered"
+    },
+    "initiate_ai_project": {
+        "tool_name": "initiate_ai_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "initiate_ai_project",
+        "description": "Initializes a new AI-managed software project. ",
+        "type": "custom_discovered"
+    },
+    "request_code_review_tool": {
+        "tool_name": "request_code_review_tool",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "request_code_review_tool",
+        "description": "Requests a review for the provided code against original requirements and related tests.",
+        "type": "custom_discovered"
+    },
+    "run_project_tests": {
+        "tool_name": "run_project_tests",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "run_project_tests",
+        "description": "Runs the tests for the specified project based on 'test_config' in the manifest.",
+        "type": "custom_discovered"
+    },
+    "execute_project_coding_plan": {
+        "tool_name": "execute_project_coding_plan",
+        "module_path": "ai_assistant.custom_tools.project_execution_tools",
+        "function_name": "execute_project_coding_plan",
+        "description": "Executes the coding plan for a given project by generating code for all",
+        "type": "custom_discovered"
+    },
+    "generate_and_review_code_tool": {
+        "tool_name": "generate_and_review_code_tool",
+        "module_path": "ai_assistant.custom_tools.project_execution_tools",
+        "function_name": "generate_and_review_code_tool",
+        "description": "Generates Python code based on a description, then reviews it automatically.",
+        "type": "custom_discovered"
+    },
+    "execute_python_script_in_project": {
+        "tool_name": "execute_python_script_in_project",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "execute_python_script_in_project",
+        "description": "Executes a specified Python script within a given project directory.",
+        "type": "custom_discovered"
+    },
+    "run_all_tests": {
+        "tool_name": "run_all_tests",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "run_all_tests",
+        "description": "No description available.",
+        "type": "custom_discovered"
+    },
+    "setup_test_environment": {
+        "tool_name": "setup_test_environment",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "setup_test_environment",
+        "description": "No description available.",
+        "type": "custom_discovered"
+    },
+    "teardown_test_environment": {
+        "tool_name": "teardown_test_environment",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "teardown_test_environment",
+        "description": "No description available.",
+        "type": "custom_discovered"
+    },
+    "create_project_directory": {
+        "tool_name": "create_project_directory",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "create_project_directory",
+        "description": "Creates a new project directory under the BASE_PROJECTS_DIR.",
+        "type": "custom_discovered"
+    },
+    "read_text_from_file": {
+        "tool_name": "read_text_from_file",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "read_text_from_file",
+        "description": "Reads and returns the text content from the specified file.",
+        "type": "custom_discovered"
+    },
+    "sanitize_project_name": {
+        "tool_name": "sanitize_project_name",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "sanitize_project_name",
+        "description": "Sanitizes a project name to create a safe directory name.",
+        "type": "custom_discovered"
+    },
+    "write_text_to_file": {
+        "tool_name": "write_text_to_file",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "write_text_to_file",
+        "description": "Writes the given text content to the specified file.",
+        "type": "custom_discovered"
+    },
+    "push_ai_generated_commits": {
+        "tool_name": "push_ai_generated_commits",
+        "module_path": "ai_assistant.custom_tools.git_tools",
+        "function_name": "push_ai_generated_commits",
+        "description": "Pushes locally committed AI self-modifications to a remote repository ",
+        "type": "custom_discovered"
+    },
+    "learn_fact": {
+        "tool_name": "learn_fact",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "learn_fact",
+        "description": "Learns a new fact by adding it to the knowledge base via LLM curation.",
+        "type": "custom_discovered"
+    },
+    "recall_facts": {
+        "tool_name": "recall_facts",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "recall_facts",
+        "description": "Retrieves a list of learned facts from the curated fact store.",
+        "type": "custom_discovered"
+    },
+    "run_periodic_fact_store_curation_async": {
+        "tool_name": "run_periodic_fact_store_curation_async",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "run_periodic_fact_store_curation_async",
+        "description": "Performs a periodic curation of the entire fact store using the LLM.",
+        "type": "custom_discovered"
+    },
+    "generate_new_tool_from_description": {
+        "tool_name": "generate_new_tool_from_description",
+        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
+        "function_name": "generate_new_tool_from_description",
+        "description": "Generates Python code for a new tool based on a description and saves it",
+        "type": "custom_discovered"
+    },
+    "get_generated_tools_path": {
+        "tool_name": "get_generated_tools_path",
+        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
+        "function_name": "get_generated_tools_path",
+        "description": "Returns the absolute path to the directory where generated tools are stored.",
+        "type": "custom_discovered"
+    },
+    "greet_user": {
+        "tool_name": "greet_user",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_example_greet_user",
+        "description": "Greets the user. Args: name (str)",
+        "type": "builtin"
+    },
+    "add_numbers": {
+        "tool_name": "add_numbers",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_example_add_numbers",
+        "description": "Adds two integers. Args: a (int), b (int)",
+        "type": "builtin"
+    },
+    "multiply_numbers": {
+        "tool_name": "multiply_numbers",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_example_multiply_numbers",
+        "description": "Multiplies two floats. Args: x (float), y (float)",
+        "type": "builtin"
+    },
+    "no_op_tool": {
+        "tool_name": "no_op_tool",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_example_no_op_tool",
+        "description": "Does nothing, useful for default plans.",
+        "type": "builtin"
+    },
+    "view_function_code": {
+        "tool_name": "view_function_code",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_tool_view_function_code",
+        "description": "Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).",
+        "type": "builtin"
+    },
+    "simulate_edit_function_code": {
+        "tool_name": "simulate_edit_function_code",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_tool_simulate_edit_function_code",
+        "description": "Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).",
+        "type": "builtin"
+    },
+    "maybe_fail_tool": {
+        "tool_name": "maybe_fail_tool",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_example_maybe_fail_tool",
+        "description": "A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.",
+        "type": "builtin"
+    }
+}
