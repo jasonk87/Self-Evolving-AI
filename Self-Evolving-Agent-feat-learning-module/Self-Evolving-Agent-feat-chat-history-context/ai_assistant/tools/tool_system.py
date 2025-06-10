@@ -8,6 +8,7 @@ import asyncio
 from typing import Callable, Dict, Any, Optional, Tuple, List
 from ai_assistant.config import is_debug_mode, get_data_dir # Import get_data_dir
 from ai_assistant.core.self_modification import get_function_source_code
+from ..core.task_manager import TaskManager # Added for type hinting
 
 # --- Constants ---
 DEFAULT_TOOLS_FILE_DIR = get_data_dir() # Use centralized data directory from config
@@ -43,7 +44,7 @@ class ToolSystem:
         custom_tool_modules_to_discover = [
             ("ai_assistant.custom_tools.my_extra_tools", "my_extra_tools.py"),
             ("ai_assistant.custom_tools.awareness_tools", "awareness_tools.py"),
-            ("ai_assistant.custom_tools.config_management_tools", "config_management_tools.py"), # Added new module
+            ("ai_assistant.custom_tools.config_management_tools", "config_management_tools.py"),
             ("ai_assistant.custom_tools.conversational_tools", "conversational_tools.py"),
             ("ai_assistant.custom_tools.project_management_tools", "project_management_tools.py"),
             ("ai_assistant.custom_tools.project_execution_tools", "project_execution_tools.py"),
@@ -51,8 +52,9 @@ class ToolSystem:
             ("ai_assistant.custom_tools.file_system_tools", "file_system_tools.py"),
             ("ai_assistant.custom_tools.git_tools", "git_tools.py"),
             ("ai_assistant.custom_tools.knowledge_tools", "knowledge_tools.py"),
-            ("ai_assistant.custom_tools.meta_programming_tools", "meta_programming_tools.py"), # For generate_new_tool_from_description
-            ("ai_assistant.custom_tools.generated", "generated_tools_module"), # For tools created by generate_new_tool_from_description
+            ("ai_assistant.custom_tools.meta_programming_tools", "meta_programming_tools.py"),
+            ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"), # Added
+            ("ai_assistant.custom_tools.generated", "generated_tools_module"),
         ]
 
         any_new_tools_registered_overall = False
@@ -106,18 +108,33 @@ class ToolSystem:
             # Ensure description is a single line for brevity in some displays, or take first line.
             first_line_of_docstring = docstring.splitlines()[0] if docstring else "No description available."
 
+            tool_description_for_registration = first_line_of_docstring
+            discovered_schema_details = None
+            schema_variable_name = f"{name.upper()}_SCHEMA"
+            if hasattr(module_to_inspect, schema_variable_name):
+                potential_schema = getattr(module_to_inspect, schema_variable_name)
+                if isinstance(potential_schema, dict) and "name" in potential_schema and "description" in potential_schema:
+                    discovered_schema_details = potential_schema
+                    tool_description_for_registration = discovered_schema_details.get("description", first_line_of_docstring)
+                    if is_debug_mode():
+                        print(f"ToolSystem: Found schema '{schema_variable_name}' for tool '{name}'. Using schema description.")
+                elif is_debug_mode():
+                    print(f"ToolSystem: Found schema variable '{schema_variable_name}' for tool '{name}', but it's not a valid schema dict.")
+
+
             if is_debug_mode():
                 print(f"ToolSystem: Attempting to register discovered custom tool '{name}' from '{module_path_str}'.")
             try:
                 self.register_tool(
                     tool_name=name,
-                    description=first_line_of_docstring, # Use concise description
-                    module_path=module_path_str, # Store the full Python import path
-                    function_name_in_module=name, # The actual name of the function in its module
-                    tool_type="custom_discovered", # Mark its origin
-                    func_callable=func_object # Cache the callable for direct execution
+                    description=tool_description_for_registration,
+                    module_path=module_path_str,
+                    function_name_in_module=name,
+                    tool_type="custom_discovered",
+                    func_callable=func_object,
+                    schema_details=discovered_schema_details # Pass schema
                 )
-                new_tools_registered_in_this_module = True # Mark that a new tool was registered
+                new_tools_registered_in_this_module = True
                 if is_debug_mode():
                     print(f"ToolSystem: Successfully registered custom tool '{name}'.")
             except ToolAlreadyRegisteredError as e:
@@ -202,8 +219,9 @@ class ToolSystem:
         description: str,
         module_path: str,
         function_name_in_module: str,
-        tool_type: str = "dynamic", # e.g., "builtin", "custom_discovered", "dynamic_llm_generated"
-        func_callable: Optional[Callable] = None # Pre-resolved callable if available
+        tool_type: str = "dynamic",
+        func_callable: Optional[Callable] = None,
+        schema_details: Optional[Dict[str, Any]] = None # New parameter
     ) -> bool:
         """
         Registers a new tool or updates an existing one.
@@ -238,7 +256,8 @@ class ToolSystem:
             "function_name": function_name_in_module, # Name of the function within its module
             "description": description,
             "type": tool_type,
-            "callable_cache": func_callable # Store the callable if provided, else None
+            "callable_cache": func_callable,
+            "schema_details": schema_details # Store schema_details
         }
         self._tool_registry[tool_name] = tool_entry
         return True
@@ -259,10 +278,11 @@ class ToolSystem:
         """Retrieves tool metadata from the registry."""
         return self._tool_registry.get(name)
 
-    async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None) -> Any:
+    async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None, task_manager: Optional[TaskManager] = None) -> Any:
         """
         Executes a registered tool by its name.
         Loads the tool function dynamically if not already cached.
+        If task_manager is provided and the tool accepts a 'task_manager' argument, it will be passed.
         Handles both synchronous and asynchronous tool functions.
         """
         if kwargs is None:
@@ -300,16 +320,33 @@ class ToolSystem:
         if not callable(func_to_execute): # pragma: no cover
              raise ToolExecutionError(f"Tool '{name}': Loaded attribute '{tool_info['function_name']}' is not callable.")
 
+        final_kwargs = kwargs.copy()
+        if task_manager:
+            try:
+                sig = inspect.signature(func_to_execute)
+                if 'task_manager' in sig.parameters:
+                    final_kwargs['task_manager'] = task_manager
+                    if is_debug_mode():
+                        print(f"ToolSystem: Injecting TaskManager into tool '{name}'.")
+            except ValueError: # inspect.signature can fail for some built-ins
+                if is_debug_mode():
+                    print(f"ToolSystem: Warning - Could not inspect signature for tool '{name}'. TaskManager not injected.")
+                pass
+            except TypeError: # For some callables that inspect.signature doesn't support well
+                if is_debug_mode():
+                    print(f"ToolSystem: Warning - TypeError inspecting signature for tool '{name}'. TaskManager not injected.")
+                pass
+
         # Execute the function
         try:
             if is_debug_mode():
-                print(f"ToolSystem: Executing tool '{name}' with args={args}, kwargs={kwargs}")
+                print(f"ToolSystem: Executing tool '{name}' with args={args}, final_kwargs={final_kwargs}")
             # Check if the function is an async function
             if inspect.iscoroutinefunction(func_to_execute):
-                result = await func_to_execute(*args, **kwargs)
+                result = await func_to_execute(*args, **final_kwargs)
             else:
                 # Run synchronous function in a separate thread to avoid blocking asyncio event loop
-                result = await asyncio.to_thread(func_to_execute, *args, **kwargs)
+                result = await asyncio.to_thread(func_to_execute, *args, **final_kwargs)
             if is_debug_mode():
                 print(f"ToolSystem: Tool '{name}' executed successfully. Result (first 200 chars): {str(result)[:200]}")
             return result
@@ -329,20 +366,20 @@ class ToolSystem:
         including module_path, function_name, and description.
 
         The key of the outer dictionary is the tool_name (registry key).
-        The inner dictionary contains 'module_path', 'function_name', and 'description'.
+        The inner dictionary contains 'module_path', 'function_name', 'description', and 'schema_details'.
         """
         detailed_tools = {}
         for tool_name, tool_data in self._tool_registry.items():
-            # Ensure all expected keys are present, providing defaults if necessary for robustness
             detailed_tools[tool_name] = {
                 "module_path": tool_data.get("module_path", "N/A"),
-                "function_name": tool_data.get("function_name", tool_name), # Default to tool_name if specific function_name missing
-                "description": tool_data.get("description", "No description available.")
+                "function_name": tool_data.get("function_name", tool_name),
+                "description": tool_data.get("description", "No description available."),
+                "schema_details": tool_data.get("schema_details") # Include schema_details
             }
         return detailed_tools
 
     def save_registered_tools(self) -> bool:
-        """Saves the metadata of all registered tools (excluding callables) to a JSON file."""
+        """Saves the metadata of all registered tools (excluding callables and schema details if complex) to a JSON file."""
         # Ensure the 'data' directory exists
         os.makedirs(DEFAULT_TOOLS_FILE_DIR, exist_ok=True)
 
@@ -430,12 +467,13 @@ class ToolSystem:
                 # 'tool_name' is the key in loaded_tool_metadata, so it's implicitly present.
                 # We use tool_data.get('tool_name', tool_name) to be safe if tool_name wasn't stored inside tool_data itself.
                 self.register_tool(
-                    tool_name=tool_data.get('tool_name', tool_name), # Use key if internal 'tool_name' is missing
+                    tool_name=tool_data.get('tool_name', tool_name),
                     description=tool_data['description'],
                     module_path=tool_data['module_path'],
                     function_name_in_module=tool_data['function_name'],
-                    tool_type=tool_data.get('type', 'dynamic'), # Default to 'dynamic' if type is missing
-                    func_callable=None # Callables are loaded on demand for persisted tools
+                    tool_type=tool_data.get('type', 'dynamic'),
+                    func_callable=None, # Callables are loaded on demand
+                    schema_details=tool_data.get('schema_details') # Load schema_details
                 )
                 loaded_count +=1
             except ToolAlreadyRegisteredError as e: # pragma: no cover
@@ -539,8 +577,10 @@ def remove_tool(name: str) -> bool:
 def get_tool(name: str) -> Optional[Dict[str, Any]]:
     return tool_system_instance.get_tool(name)
 
-async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None) -> Any:
-    return await tool_system_instance.execute_tool(name, args, kwargs)
+# Update module-level wrapper if it's intended for external use and needs this new param.
+# For now, assuming direct tool_system_instance.execute_tool is used more internally where task_manager is available.
+async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None, task_manager: Optional[TaskManager] = None) -> Any:
+    return await tool_system_instance.execute_tool(name, args, kwargs, task_manager=task_manager)
 def list_tools() -> Dict[str, str]:
     return tool_system_instance.list_tools()
 def save_registered_tools() -> bool: # Should primarily be called internally by ToolSystem

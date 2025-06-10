@@ -14,6 +14,9 @@ from ..planning.execution import ExecutionAgent # Assuming execution is also in 
 from ..core.reflection import global_reflection_log, analyze_last_failure, get_learnings_from_reflections
 from ai_assistant.core import self_modification
 from ai_assistant.memory.awareness import get_tool_associations
+from ai_assistant.core.task_manager import TaskManager # Added
+from ai_assistant.learning.learning import LearningAgent # Ensure LearningAgent is imported
+from ai_assistant.execution.action_executor import ActionExecutor # Ensure ActionExecutor is imported for context, though not directly instantiated here for Orchestrator
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task, is_debug_mode 
 from typing import Tuple, List, Dict, Any, Optional # Tuple already imported
@@ -33,10 +36,13 @@ from ai_assistant.code_services.service import CodeService
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.core.orchestrator import DynamicOrchestrator # Orchestrator instance
 from ai_assistant.core import project_manager
-from ai_assistant.core import suggestion_manager
+from ai_assistant.core import suggestion_manager as suggestion_manager_module # Renamed to avoid conflict
 from ai_assistant.core import status_reporting # For status commands
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
+from ai_assistant.custom_tools.awareness_tools import get_system_status_summary, get_item_details_by_id, list_formatted_suggestions
+from ai_assistant.custom_tools.suggestion_management_tools import manage_suggestion_status
+# json is already imported
 
 # State variable for pending tool confirmation
 _pending_tool_confirmation_details: Optional[Dict[str, Any]] = None
@@ -69,9 +75,31 @@ async def _handle_code_generation_and_registration(tool_description_for_generati
 
     from ai_assistant.llm_interface import ollama_client as default_llm_provider
     from ai_assistant.core import self_modification as default_self_modification_service
+
+    # Access the global task_manager instance, assuming it's initialized in start_cli
+    # This requires task_manager to be accessible, e.g., passed as an argument or as a global module variable
+    # For simplicity in this refactor, we'll assume it's passed or accessible globally.
+    # If _orchestrator is global, task_manager could be too, or part of a context object.
+    # Let's assume task_manager is available in the scope calling this function,
+    # or it's a global initialized in start_cli. For now, we'll assume it's passed.
+    # This function will need to be refactored to accept task_manager if it's not global.
+    # For now, let's assume task_manager is available in the global scope of cli.py or passed to this function.
+    # This is a placeholder, as direct global access isn't ideal.
+    # The ideal way is to pass task_manager to this function if it's not part of a class.
+    # As _handle_code_generation_and_registration is a top-level async def,
+    # it would be better if task_manager is passed to it from start_cli.
+    # However, to keep the diff minimal for *this* step, we'll assume it's accessible.
+    # This should be revisited if task_manager is not truly global in cli.py.
+
+    # This function is called from start_cli, we will pass task_manager to it.
+    # So, change signature: async def _handle_code_generation_and_registration(tool_description_for_generation: str, task_manager: Optional[TaskManager]):
+
+    global _task_manager_cli_instance # Kludge for now, see notes above. Will be properly passed.
+
     code_service = CodeService(
         llm_provider=default_llm_provider,
-        self_modification_service=default_self_modification_service
+        self_modification_service=default_self_modification_service,
+        task_manager=_task_manager_cli_instance # Pass task_manager
     )
 
     print(color_text(f"Requesting CodeService to generate new tool (context='NEW_TOOL')...", CLIColors.DEBUG_MESSAGE))
@@ -431,9 +459,7 @@ async def _handle_cli_results(queue: asyncio.Queue):
             item_type = result_item.get("type")
 
             if item_type == "status_update":
-                # This message is usually short and indicates completion/failure of a background task.
-                # It's printed on its own line.
-                print_formatted_text(result_item.get('message')) # Assumes message is ANSI
+                print_formatted_text(result_item.get('message'))
             elif item_type == "command_result":
                 original_prompt = result_item.get("prompt", "Unknown prompt")
                 success = result_item.get("success")
@@ -444,7 +470,6 @@ async def _handle_cli_results(queue: asyncio.Queue):
                     print_formatted_text(format_message("AI", response_msg, CLIColors.AI_RESPONSE))
                 else:
                     print_formatted_text(format_message("ERROR", response_msg, CLIColors.ERROR_MESSAGE))
-                # The main loop will handle drawing a separator after all results for a cycle are printed.
             elif item_type == "learning_result":
                 facts = result_item.get("facts", [])
                 learned_from_prompt = result_item.get("original_prompt", "a recent interaction")
@@ -452,22 +477,25 @@ async def _handle_cli_results(queue: asyncio.Queue):
                     print_formatted_text(format_message("LEARNED", f"From '{learned_from_prompt}', I've noted: {', '.join(facts)}", CLIColors.SUCCESS))
             queue.task_done()
         except asyncio.QueueEmpty:
-            break # Should not happen with `while not queue.empty()` but good practice
+            break
         except Exception as e: # pragma: no cover
             print_formatted_text(ANSI(color_text(f"\nError displaying result: {e}", CLIColors.ERROR_MESSAGE)))
 
-# Task to periodically process results from the queue
 async def periodic_results_processor(queue: asyncio.Queue, running_event: asyncio.Event):
     """Periodically checks the queue and displays results if the CLI is running."""
     while running_event.is_set():
         if not queue.empty():
-            await _handle_cli_results(queue) # This function already handles multiple items
-        await asyncio.sleep(0.1) # Check every 100ms, yield control
+            await _handle_cli_results(queue)
+        await asyncio.sleep(0.1)
+
+# Global TaskManager instance for the CLI session
+_task_manager_cli_instance: Optional[TaskManager] = None
 
 async def start_cli():
-    global _pending_tool_confirmation_details, _orchestrator, _results_queue
+    global _pending_tool_confirmation_details, _orchestrator, _results_queue, _task_manager_cli_instance
 
-    # Welcome banner
+    _task_manager_cli_instance = TaskManager() # Instantiate TaskManager
+
     print_formatted_text(ANSI("\n"))
     print_formatted_text(draw_separator())
     print_formatted_text(format_header("AI Assistant CLI"))
@@ -476,16 +504,34 @@ async def start_cli():
     print_formatted_text(draw_separator())
     print_formatted_text(ANSI("\n"))
     
-    # Initialize components
-    from ai_assistant.learning.learning import LearningAgent
-    learning_agent = LearningAgent()
-    executor = ExecutionAgent()
-    planner = PlannerAgent()
+    # Initialize components, passing task_manager
+    # LearningAgent is already imported
+    # ActionExecutor is also imported
 
-    _orchestrator = DynamicOrchestrator(planner, executor, learning_agent)
+    # insights_file_path_actual would be determined here, e.g. from config or default
+    insights_file_path_actual = os.path.join(os.path.expanduser("~"), ".ai_assistant", "actionable_insights.json") # Example path
+    os.makedirs(os.path.dirname(insights_file_path_actual), exist_ok=True)
+
+
+    learning_agent = LearningAgent(insights_filepath=insights_file_path_actual, task_manager=_task_manager_cli_instance)
+
+    action_executor_for_orchestrator = ActionExecutor(
+        learning_agent=learning_agent,
+        task_manager=_task_manager_cli_instance
+    )
+
+    execution_agent = ExecutionAgent()
+    planner_agent = PlannerAgent()
+
+    _orchestrator = DynamicOrchestrator(
+        planner=planner_agent,
+        executor=execution_agent, # This is ai_assistant.planning.execution.ExecutionAgent
+        learning_agent=learning_agent,
+        action_executor=action_executor_for_orchestrator, # Pass the ActionExecutor instance
+        task_manager=_task_manager_cli_instance # Add this argument
+    )
     _results_queue = asyncio.Queue()
 
-    # Use PromptSession for async input
     session = PromptSession(format_input_prompt())
 
     user_command_tasks: List[asyncio.Task] = [] # Tasks spawned by user commands
@@ -565,20 +611,24 @@ async def start_cli():
                         print_formatted_text(format_message("CMD", "/suggestions <action>", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Manage AI suggestions and improvements", CLIColors.SYSTEM_MESSAGE)))
                         print_formatted_text(ANSI("\n    " + color_text("Suggestion Actions:", CLIColors.BOLD)))
-                        print_formatted_text(ANSI(color_text("      • list              : List all suggestions", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • approve <id>      : Approve a suggestion", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • deny <id> [reason]: Deny a suggestion", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • status           : Show suggestions status", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • list [status_filter]: List suggestions (default: pending, or 'all')", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • approve <id> [reason]: Approve a suggestion using manage_suggestion_status tool", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • deny <id> [reason]: Deny a suggestion using manage_suggestion_status tool", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • status           : Show suggestions summary status", CLIColors.SYSTEM_MESSAGE)))
 
-                        # System Status
-                        print_formatted_text(format_message("CMD", "/status [component | all]", CLIColors.COMMAND))
-                        print_formatted_text(ANSI(color_text("      Show system status", CLIColors.SYSTEM_MESSAGE)))
+                        # System Status & Tasks
+                        print_formatted_text(format_message("CMD", "/status [component | all | item <type> <id>]", CLIColors.COMMAND))
+                        print_formatted_text(ANSI(color_text("      Show system status or details for a specific item.", CLIColors.SYSTEM_MESSAGE)))
                         print_formatted_text(ANSI("\n    " + color_text("Status Components:", CLIColors.BOLD)))
                         print_formatted_text(ANSI(color_text("      • tools            : Show tools status", CLIColors.SYSTEM_MESSAGE)))
                         print_formatted_text(ANSI(color_text("      • projects         : Show projects status", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • suggestions      : Show suggestions status", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • system           : Show overall system status", CLIColors.SYSTEM_MESSAGE)))
-                        print_formatted_text(ANSI(color_text("      • all              : Show all status information", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • suggestions      : Show suggestions summary status", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • system           : Show overall system status (deprecated, use /tasks)", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • item <type> <id> : Get details for item (type: task, suggestion, project)", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text("      • all              : Show all component statuses", CLIColors.SYSTEM_MESSAGE)))
+
+                        print_formatted_text(format_message("CMD", "/tasks [list [active_limit] [archived_limit]]", CLIColors.COMMAND))
+                        print_formatted_text(ANSI(color_text("      Show current and recent system tasks summary.", CLIColors.SYSTEM_MESSAGE)))
 
                         # Tool Generation and Reviews
                         print_formatted_text(format_message("CMD", "/generate_tool_code_with_llm \"<description>\"", CLIColors.COMMAND))
@@ -621,7 +671,8 @@ async def start_cli():
                                 print_formatted_text(format_message("ERROR", "Usage: /tools add <tool_description>", CLIColors.ERROR_MESSAGE))
                                 continue
                             description = " ".join(args_cmd[1:])
-                            await _handle_code_generation_and_registration(description)
+                            # Pass the task_manager to the handler
+                            await _handle_code_generation_and_registration(description, _task_manager_cli_instance)
                         elif action == "remove":
                             if not tool_name:
                                 print_formatted_text(format_message("ERROR", "Usage: /tools remove <tool_name>", CLIColors.ERROR_MESSAGE))
@@ -743,62 +794,99 @@ async def start_cli():
                             continue
 
                         action = args_cmd[0].lower()
-                        suggestion_id = args_cmd[1] if len(args_cmd) > 1 else None
-                        reason = " ".join(args_cmd[2:]) if len(args_cmd) > 2 else None
 
                         if action == "list":
-                            suggestions = suggestion_manager.list_suggestions()
-                            if suggestions:
-                                print_formatted_text(format_header("Suggestions List"))
-                                for sug in suggestions:
-                                    print_formatted_text(ANSI(f"- ID: {color_text(sug['suggestion_id'], CLIColors.COMMAND)}, Type: {sug['type']}, Status: {color_text(sug['status'], CLIColors.SYSTEM_MESSAGE)}"))
-                                    print_formatted_text(ANSI(f"  Description: {color_text(sug['description'], CLIColors.SYSTEM_MESSAGE)}"))
-                                    if sug.get('reason_for_status'):
-                                        print_formatted_text(ANSI(f"  Reason: {color_text(sug['reason_for_status'], CLIColors.SYSTEM_MESSAGE)}"))
+                            status_query = args_cmd[1] if len(args_cmd) > 1 else "pending"
+                            formatted_suggs = list_formatted_suggestions(status_filter=status_query)
+                            if formatted_suggs:
+                                print_formatted_text(format_header(f"Suggestions (Status: {status_query.capitalize()})"))
+                                print_formatted_text(ANSI(json.dumps(formatted_suggs, indent=2)))
                             else:
-                                print_formatted_text(format_message("INFO", "No suggestions found.", CLIColors.SYSTEM_MESSAGE))
-                        elif action == "approve":
+                                print_formatted_text(format_message("INFO", f"No suggestions found with status '{status_query}'.", CLIColors.SYSTEM_MESSAGE))
+
+                        elif action in ["approve", "deny"]:
+                            suggestion_id = args_cmd[1] if len(args_cmd) > 1 else None
+                            reason = " ".join(args_cmd[2:]) if len(args_cmd) > 2 else None
                             if not suggestion_id:
-                                print_formatted_text(format_message("ERROR", "Usage: /suggestions approve <suggestion_id>", CLIColors.ERROR_MESSAGE))
+                                print_formatted_text(format_message("ERROR", f"Usage: /suggestions {action} <suggestion_id> [reason]", CLIColors.ERROR_MESSAGE))
                                 continue
-                            suggestion_manager.approve_suggestion(suggestion_id, reason)
-                        elif action == "deny":
-                            if not suggestion_id:
-                                print_formatted_text(format_message("ERROR", "Usage: /suggestions deny <suggestion_id>", CLIColors.ERROR_MESSAGE))
-                                continue
-                            suggestion_manager.deny_suggestion(suggestion_id, reason)
+
+                            result = manage_suggestion_status(suggestion_id, action, reason) # type: ignore
+                            if result.get("status") == "success":
+                                print_formatted_text(format_message("SUCCESS", result.get("message",""), CLIColors.SUCCESS))
+                            else:
+                                print_formatted_text(format_message("ERROR", result.get("message",""), CLIColors.ERROR_MESSAGE))
+
                         elif action == "status":
                             print_formatted_text(format_header("Overall Suggestions Status"))
-                            status_info = suggestion_manager.get_suggestions_summary_status()
+                            status_info = suggestion_manager_module.get_suggestions_summary_status()
                             print_formatted_text(ANSI(color_text(status_info, CLIColors.SYSTEM_MESSAGE)))
                         else:
-                            print_formatted_text(format_message("ERROR", f"Unknown suggestions action: {action}", CLIColors.ERROR_MESSAGE))
+                            print_formatted_text(format_message("ERROR", f"Unknown suggestions action: {action}. Try list, approve, deny, status.", CLIColors.ERROR_MESSAGE))
+
+                    elif command == "/tasks":
+                        active_limit_val = 5
+                        archived_limit_val = 3
+                        if len(args_cmd) > 0 and args_cmd[0].lower() == "list": # /tasks list [active] [archived]
+                            if len(args_cmd) > 1:
+                                try: active_limit_val = int(args_cmd[1])
+                                except ValueError:
+                                    print_formatted_text(format_message("ERROR", "Invalid active_limit, must be an integer.", CLIColors.ERROR_MESSAGE))
+                                    continue
+                            if len(args_cmd) > 2:
+                                try: archived_limit_val = int(args_cmd[2])
+                                except ValueError:
+                                    print_formatted_text(format_message("ERROR", "Invalid archived_limit, must be an integer.", CLIColors.ERROR_MESSAGE))
+                                    continue
+
+                        if _task_manager_cli_instance:
+                            summary = get_system_status_summary(_task_manager_cli_instance, active_limit_val, archived_limit_val)
+                            print_formatted_text(ANSI(summary))
+                        else: # pragma: no cover
+                            print_formatted_text(format_message("ERROR","TaskManager not available.",CLIColors.ERROR_MESSAGE))
 
                     elif command == "/status":
-                        component = args_cmd[0].lower() if args_cmd else "all"
-                        active_tasks_count = len(user_command_tasks) # Get current count
+                        if not args_cmd:
+                            print_formatted_text(format_message("ERROR", "Usage: /status <component|all|item item_type item_id>", CLIColors.ERROR_MESSAGE))
+                            continue
 
-                        if component in ["tools", "all"]:
+                        component_or_action = args_cmd[0].lower()
+                        active_tasks_count = len(user_command_tasks)
+
+                        if component_or_action == "item":
+                            if len(args_cmd) < 3:
+                                print_formatted_text(format_message("ERROR", "Usage: /status item <item_type> <item_id>", CLIColors.ERROR_MESSAGE))
+                                continue
+                            item_type_arg = args_cmd[1]
+                            item_id_arg = args_cmd[2]
+                            details = get_item_details_by_id(item_id_arg, item_type_arg, task_manager=_task_manager_cli_instance)
+                            if details:
+                                print_formatted_text(format_header(f"Details for {item_type_arg.capitalize()} ID: {item_id_arg}"))
+                                print_formatted_text(ANSI(json.dumps(details, indent=2)))
+                            else: # Should be handled by error in details dict
+                                print_formatted_text(format_message("ERROR", f"Could not retrieve details for {item_type_arg} ID {item_id_arg}.", CLIColors.ERROR_MESSAGE))
+
+                        elif component_or_action in ["tools", "all"]:
                             print_formatted_text(format_header("Tools Status"))
                             print_formatted_text(ANSI(color_text(status_reporting.get_tools_status(), CLIColors.SYSTEM_MESSAGE)))
 
-                        if component in ["projects", "all"]:
+                        elif component_or_action in ["projects", "all"]:
                             print_formatted_text(format_header("Projects Status"))
                             print_formatted_text(ANSI(color_text(status_reporting.get_projects_status(), CLIColors.SYSTEM_MESSAGE)))
 
-                        if component in ["suggestions", "all"]:
+                        elif component_or_action in ["suggestions", "all"]:
                             print_formatted_text(format_header("Suggestions Status"))
-                            print_formatted_text(ANSI(color_text(status_reporting.get_suggestions_status(), CLIColors.SYSTEM_MESSAGE)))
+                            print_formatted_text(ANSI(color_text(suggestion_manager_module.get_suggestions_summary_status(), CLIColors.SYSTEM_MESSAGE)))
 
-                        if component in ["system", "all"]:
-                            print_formatted_text(format_header("System Status"))
+                        elif component_or_action in ["system", "all"]: # System status via /tasks now preferred
+                            print_formatted_text(format_header("Legacy System Status (use /tasks for detailed task summary)"))
                             print_formatted_text(ANSI(color_text(status_reporting.get_system_status(active_tasks_count), CLIColors.SYSTEM_MESSAGE)))
                         
-                        if component == "all": # Already handled by individual sections
-                            pass
+                        if component_or_action == "all":
+                            pass # Individual sections already printed
 
-                        if component not in ["tools", "projects", "suggestions", "system", "all"]:
-                            print_formatted_text(format_message("ERROR", f"Unknown status component: {component}", CLIColors.ERROR_MESSAGE))
+                        elif component_or_action not in ["tools", "projects", "suggestions", "system", "all", "item"]:
+                            print_formatted_text(format_message("ERROR", f"Unknown status component: {component_or_action}", CLIColors.ERROR_MESSAGE))
                 else: 
                     if is_debug_mode():
                         print_formatted_text(format_message("DEBUG", f"User input: {user_input}", CLIColors.DEBUG_MESSAGE))

@@ -13,6 +13,8 @@ from ..tools.tool_system import tool_system_instance
 from ..config import is_debug_mode
 from ..utils.display_utils import CLIColors, color_text # Added import
 from ..execution.action_executor import ActionExecutor # Added import
+from ..memory.persistent_memory import load_learned_facts # Added import
+from .task_manager import TaskManager # Added import
 import uuid # Added import
 
 class DynamicOrchestrator:
@@ -25,11 +27,13 @@ class DynamicOrchestrator:
                  planner: PlannerAgent,
                  executor: ExecutionAgent,
                  learning_agent: LearningAgent,
-                 action_executor: ActionExecutor): # Added action_executor
+                 action_executor: ActionExecutor, # Added action_executor
+                 task_manager: Optional[TaskManager] = None): # New parameter
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
-        self.action_executor = action_executor # Store ActionExecutor instance
+        self.action_executor = action_executor
+        self.task_manager = task_manager # Store TaskManager instance
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
@@ -91,7 +95,8 @@ class DynamicOrchestrator:
         """
         try:
             self.current_goal = prompt
-            available_tools = tool_system_instance.list_tools()
+            # Get richer tool information, including schemas
+            available_tools_rich = tool_system_instance.list_tools_with_sources()
 
             # Log the start of processing
             log_event(
@@ -101,7 +106,106 @@ class DynamicOrchestrator:
                 metadata={"goal": prompt}
             )
 
-            # --- NEW: Contextualization Phase (Simulated) ---
+            # --- Fact Retrieval ---
+            all_learned_facts = load_learned_facts()
+            relevant_facts_for_prompt = []
+            if all_learned_facts:
+                prompt_keywords = set(prompt.lower().split())
+                # Keyword matching
+                for fact_entry in all_learned_facts:
+                    if len(relevant_facts_for_prompt) >= 7: # Hard cap to avoid too many facts early
+                        break
+                    fact_text_lower = fact_entry.get("text", "").lower()
+                    if any(keyword in fact_text_lower for keyword in prompt_keywords):
+                        relevant_facts_for_prompt.append(fact_entry)
+
+                # Category and recency based selection
+                preferred_categories = ["user_preference", "project_context", "general_knowledge"]
+                additional_facts_count = 0
+                max_additional_category_facts = 2
+
+                # Iterate in reverse for recent facts (assuming they are appended)
+                for fact_entry in reversed(all_learned_facts):
+                    if len(relevant_facts_for_prompt) >= 7: # Check hard cap again
+                        break
+                    if additional_facts_count >= max_additional_category_facts:
+                        break
+
+                    is_already_added = any(rf['fact_id'] == fact_entry['fact_id'] for rf in relevant_facts_for_prompt)
+                    if not is_already_added and fact_entry.get("category") in preferred_categories:
+                         relevant_facts_for_prompt.append(fact_entry)
+                         additional_facts_count += 1
+
+                # Ensure a final hard cap on the total number of facts passed if many keyword matches occurred
+                MAX_FACTS_FOR_PROMPT = 7
+                if len(relevant_facts_for_prompt) > MAX_FACTS_FOR_PROMPT:
+                    # Prioritize (e.g., by keeping keyword-matched ones first, then recent category ones)
+                    # For now, simple truncation of the combined list if it exceeded.
+                    # A more sophisticated approach would be to sort by relevance/recency before truncation.
+                    # Current logic might already favor keyword matches if they fill up to MAX_FACTS_FOR_PROMPT.
+                    # If category facts were added, they are from the end (most recent).
+                    # If keyword search added many, then category might add few or none.
+                    # This logic ensures we don't over-truncate if keyword search was sparse.
+
+                    # To ensure a mix, let's take a slice from keyword matches and a slice from category matches
+                    # This is getting complex for this simple heuristic. Let's simplify the cap application:
+                    # If, after both keyword and category addition, we exceed, we truncate.
+                    # The current logic first adds keyword matches (up to a limit of 7 implicitly by the outer loop),
+                    # then adds category matches (up to 2 more, if space allows and not duplicate).
+                    # So, the list could grow up to 7+2=9 in some cases. Then truncate to 7.
+                    # This is still a bit rough. A better way is to collect all candidates then rank/filter.
+                    # For this subtask, let's stick to the provided logic:
+                    # Keyword matching (limited to 5 initially within its loop)
+                    # Category matching (limited to 2 additional)
+                    # Final hard cap (if total exceeds 7)
+
+                    # Re-evaluating the provided logic snippet:
+                    # The example showed keyword matching with a limit of 5.
+                    # Then adding up to 2 from preferred categories.
+                    # Then a hard cap of 7.
+                    # Let's refine to match this intent more closely.
+
+                # Refined selection logic:
+                keyword_matched_facts = []
+                prompt_keywords = set(prompt.lower().split())
+                for fact_entry in all_learned_facts:
+                    fact_text_lower = fact_entry.get("text", "").lower()
+                    if any(keyword in fact_text_lower for keyword in prompt_keywords):
+                        if len(keyword_matched_facts) < 5: # Limit keyword-matched
+                            keyword_matched_facts.append(fact_entry)
+
+                relevant_facts_for_prompt = list(keyword_matched_facts) # Start with keyword matches
+
+                category_matched_facts_count = 0
+                # Iterate in reverse for recency for category-based selection
+                for fact_entry in reversed(all_learned_facts):
+                    if len(relevant_facts_for_prompt) >= 7: # Check overall cap
+                        break
+                    if category_matched_facts_count >= 2: # Max 2 additional from categories
+                        break
+
+                    is_already_added = any(rf['fact_id'] == fact_entry['fact_id'] for rf in relevant_facts_for_prompt)
+                    if not is_already_added and fact_entry.get("category") in ["user_preference", "project_context", "general_knowledge"]:
+                        relevant_facts_for_prompt.append(fact_entry)
+                        category_matched_facts_count +=1
+
+                # Ensure final hard cap
+                MAX_FACTS_FOR_PROMPT = 7
+                if len(relevant_facts_for_prompt) > MAX_FACTS_FOR_PROMPT:
+                    # This implies keyword matches were many. Prioritize them.
+                    # A more sophisticated sort/filter might be needed if this truncation is too naive.
+                    # For now, if keyword_matched_facts itself was > 7 (due to initial limit being 5, then adding category ones)
+                    # this will truncate. If keyword_matched_facts was < 5, and category pushed it over 7, it truncates.
+                    relevant_facts_for_prompt = relevant_facts_for_prompt[:MAX_FACTS_FOR_PROMPT]
+
+
+            learned_facts_section_str = ""
+            if relevant_facts_for_prompt:
+                facts_str_list = [f"- {fact.get('text', '')} (Category: {fact.get('category', 'N/A')}, Source: {fact.get('source', 'N/A')})" for fact in relevant_facts_for_prompt]
+                learned_facts_section_str = "\nRelevant Learned Facts:\n" + "\n".join(facts_str_list)
+            # --- End Fact Retrieval ---
+
+            # --- Contextualization Phase (Simulated for Project Files) ---
             project_context_summary = None
             project_name_for_context = None
             prompt_lower = prompt.lower()
@@ -178,11 +282,19 @@ class DynamicOrchestrator:
             if is_debug_mode():
                 print(f"DynamicOrchestrator: Creating initial plan for: {prompt}")
 
+            # Combine project context and learned facts for the planner
+            final_context_for_planner = project_context_summary if project_context_summary else ""
+            if learned_facts_section_str:
+                if final_context_for_planner:
+                    final_context_for_planner += "\n\n" + learned_facts_section_str
+                else:
+                    final_context_for_planner = learned_facts_section_str
+
             self.current_plan = await self.planner.create_plan_with_llm(
                 goal_description=prompt,
-                available_tools=available_tools,
-                project_context_summary=project_context_summary, # Pass gathered context
-                project_name_for_context=project_name_for_context # Pass project name for context
+                available_tools=available_tools_rich, # Pass richer tool info
+                project_context_summary=final_context_for_planner,
+                project_name_for_context=project_name_for_context
             )
             if not self.current_plan:
                 # If initial plan creation fails, self.current_plan is None or empty
@@ -200,7 +312,8 @@ class DynamicOrchestrator:
                 self.current_plan, # This is the initial plan
                 tool_system_instance,
                 self.planner,
-                self.learning_agent
+                self.learning_agent,
+                task_manager=self.task_manager # Pass it here
             )
             # Update self.current_plan to the plan that was actually run for logging/context
             self.current_plan = final_plan_attempted

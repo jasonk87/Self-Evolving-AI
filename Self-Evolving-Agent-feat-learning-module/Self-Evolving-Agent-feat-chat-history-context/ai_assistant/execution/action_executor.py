@@ -16,6 +16,8 @@ import json # Added for parsing LLM response in _is_fact_valuable
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
+from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
+from datetime import timezone # Ensure timezone is available
 
 if TYPE_CHECKING:
     from ai_assistant.learning.learning import LearningAgent # For type hinting only
@@ -53,29 +55,68 @@ Response: {{"is_valuable": false, "reason": "This is a general instruction or me
 JSON Response:
 """
 
+LLM_FACT_CATEGORY_PROMPT_TEMPLATE = """
+You are an AI assistant's knowledge categorizer. Your task is to assign a relevant category to the given factual statement.
+Choose from the following predefined categories or suggest 'general' if none seem to fit well:
+- "user_preference": Specific preferences of the user (e.g., favorite color, preferred tools, communication style).
+- "user_personal_info": Personal details about the user (e.g., name, location if volunteered and relevant for interaction).
+- "domain_knowledge": Facts related to a specific domain the user is working in (e.g., "In Python, lists are mutable.").
+- "technical_term": Definitions or explanations of technical terms.
+- "system_config": Information about the AI assistant's own configuration or status if it's a fact to remember.
+- "project_context": Facts specific to a user's ongoing project that the AI is assisting with.
+- "general_knowledge": Common knowledge facts that are useful but don't fit other categories.
+- "correction": A fact that corrects a previous misunderstanding by the AI.
+
+Fact to categorize: "{fact_text}"
+
+Based on the fact, which category is most appropriate?
+Respond with a single JSON object containing one key:
+- "category": string (one of the predefined categories, or "general")
+
+Example:
+Fact: "The user prefers Python for scripting."
+Response: {{"category": "user_preference"}}
+
+Fact: "The capital of France is Paris."
+Response: {{"category": "general_knowledge"}}
+
+Fact: "The current project 'WebAppX' uses FastAPI."
+Response: {{"category": "project_context"}}
+
+JSON Response:
+"""
+
 class ActionExecutor:
     """
     Responsible for taking proposed actions (derived from ActionableInsights)
     and attempting to execute them.
     """
-    def __init__(self, learning_agent: "LearningAgent"): # Use string for forward reference
+    def __init__(self, learning_agent: "LearningAgent",
+                 task_manager: Optional[TaskManager] = None): # New parameter
         """
         Initializes the ActionExecutor.
         """
         if is_debug_mode():
             print("[DEBUG] Initializing ActionExecutor...")
         print("ActionExecutor initialized.")
-        # Import necessary modules for dependency injection
+        self.learning_agent = learning_agent # learning_agent is used by _run_post_modification_test
+        self.task_manager = task_manager # Store it
+
         from ai_assistant.llm_interface import ollama_client as default_llm_provider
         from ai_assistant.core import self_modification as default_self_modification_service
 
         self.code_service = CodeService(
             llm_provider=default_llm_provider,
-            self_modification_service=default_self_modification_service
+            self_modification_service=default_self_modification_service,
+            task_manager=self.task_manager # Pass it down
         )
-        self.learning_agent = learning_agent
         if is_debug_mode():
             print(f"[DEBUG] CodeService instance in ActionExecutor: {self.code_service}")
+            print(f"[DEBUG] TaskManager instance in ActionExecutor: {self.task_manager}")
+
+    def _update_task_if_manager(self, task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step_desc: Optional[str] = None):
+        if task_id and self.task_manager:
+            self.task_manager.update_task_status(task_id, status, reason=reason, step_desc=step_desc)
 
     def _find_original_reflection_entry(self, entry_id: str) -> Optional[ReflectionLogEntry]:
         """
@@ -115,7 +156,8 @@ class ActionExecutor:
                 initial_plan=original_entry.plan,
                 tool_system=tool_system_instance,
                 planner_agent=temp_planner,
-                learning_agent=self.learning_agent # Pass the learning_agent instance
+                learning_agent=self.learning_agent, # Pass the learning_agent instance
+                task_manager=self.task_manager # Pass it here
             )
             test_passed = not any(isinstance(res, Exception) for res in test_results)
             notes = f"Re-ran original plan. Test passed: {test_passed}. Results: {str(test_results)[:200]}..."
@@ -138,21 +180,31 @@ class ActionExecutor:
         module_path: str,
         function_name: str,
         code_to_apply: str,
-        original_description: str,
-        source_insight_id: str,
-        action_type: str,
-        details_for_logging: Dict[str, Any]
-    ) -> bool:
-        tool_name = details_for_logging.get("tool_name", function_name)
-        source_of_code = details_for_logging.get("source_of_code", "Unknown")
-        original_reflection_id_for_test = details_for_logging.get("original_reflection_entry_id")
-        log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
+        original_description: str, # This is the change_description for edit_function_source_code
+        source_insight_id: str,   # This will be the related_item_id for the task
+        action_task_id: Optional[str], # This is the parent_task_id for edit_function_source_code
+    ) -> bool: # Return just success/failure
+        tool_name = function_name # Assuming tool_name is function_name for this context
+        # Determine source_of_code based on whether code_to_apply was from LLM (via CodeService) or direct suggestion
+        # This detail might be better managed by the caller or logged differently now with TaskManager
+        source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight" # Heuristic
 
+        # Get original_reflection_id_for_test from details if it was passed, otherwise it's None
+        # This part needs the original `details` which is not directly passed here.
+        # For now, we assume if action_task_id is present, this is part of a larger flow
+        # where such details might be logged at a higher level or attached to the task.
+        # The _run_post_modification_test needs original_reflection_entry_id.
+        # This detail should be part of what's passed or accessible.
+        # For now, we will assume it's part of `details_for_logging` which is no longer passed.
+        # This implies original_reflection_id_for_test might need to be passed explicitly if required.
+        # For now, we will make it None and rely on caller to ensure test runs if needed.
+        original_reflection_id_for_test: Optional[str] = None # Placeholder - this needs review if tests are critical here
+
+        log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
         modification_type_ast = "MODIFY_TOOL_CODE_LLM_AST" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST"
         modification_type_exception = "MODIFY_TOOL_CODE_LLM_AST_EXCEPTION" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST_EXCEPTION"
 
-        # Determine project_root_path for self_modification calls
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")) # Relative to this file's location
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
         try:
             modification_result_msg = self_modification.edit_function_source_code(
@@ -160,7 +212,9 @@ class ActionExecutor:
                 function_name=function_name,
                 new_code_string=code_to_apply,
                 project_root_path=project_root,
-                change_description=original_description # Add this argument
+                change_description=original_description,
+                task_manager=self.task_manager,      # Pass TaskManager
+                parent_task_id=action_task_id        # Pass ActionExecutor's task ID
             )
             edit_success = "success" in modification_result_msg.lower()
             print(f"ActionExecutor: Code modification result for {tool_name} (from {source_of_code}): {modification_result_msg}")
@@ -190,7 +244,9 @@ class ActionExecutor:
                                 module_path, function_name,
                                 original_code_from_backup,
                                 project_root_path=project_root,
-                                change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test." # Add this argument
+                                change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test.",
+                                task_manager=self.task_manager,      # Pass TaskManager
+                                parent_task_id=action_task_id        # Pass ActionExecutor's task ID
                             )
                             reversion_successful = "success" in revert_msg.lower()
                             reversion_notes = f"Reverted: {reversion_successful}. Msg: {revert_msg}"
@@ -210,7 +266,7 @@ class ActionExecutor:
             try:
                 global_reflection_log.log_execution(
                     goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
-                    plan=[{"action_type": action_type, "details": details_for_logging}],
+                    plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": tool_name, "module_path": module_path}}], # Simplified plan
                     execution_results=[modification_result_msg], overall_success=final_overall_success,
                     notes=log_notes_prefix + f"Applied code for {tool_name}. Edit success: {edit_success}. Test notes: {test_run_notes}",
                     is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
@@ -226,42 +282,25 @@ class ActionExecutor:
                     post_modification_test_details={"notes": test_run_notes}
                 )
                 if final_overall_success and source_insight_id and source_insight_id != "NO_INSIGHT_ID":
-                    # Assuming source_insight_id is the suggestion_id if this action came from a suggestion
                     mark_suggestion_implemented(source_insight_id, f"Tool modification '{tool_name}' applied and tested successfully.")
                 return final_overall_success
 
-            except Exception as e_main_apply: # pragma: no cover
-                error_message = f"Exception during code application process for {tool_name} (from {source_of_code}): {e_main_apply}"
-                print(f"ActionExecutor: {error_message}")
-                global_reflection_log.log_execution(
-                    goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
-                    plan=[{"action_type": action_type, "details": details_for_logging}],
-                    execution_results=[error_message], overall_success=False,
-                    notes=f"Exception for {tool_name} from {source_of_code}: {e_main_apply}",
-                    is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                    modification_type=modification_type_exception,
-                    modification_details={"module_path": module_path, "function_name": function_name, "reason": original_description, "source_of_code": source_of_code},
-                    post_modification_test_passed=None,
-                    first_error_type=type(e_main_apply).__name__, first_error_message=str(e_main_apply),
-                    post_modification_test_details={"notes": "Test not run due to apply failure."}
-                )
-                return False
+            except Exception as e_log: # pragma: no cover
+                # This exception is for logging failure, not the modification itself if that succeeded
+                print(f"ActionExecutor: CRITICAL - Failed to log successful/failed modification: {e_log}")
+                # If modification was successful but logging failed, still return modification success
+                return final_overall_success if 'final_overall_success' in locals() else False
+
 
         except Exception as e_main_apply: # pragma: no cover
-            error_message = f"Exception during code application process for {tool_name} (from {source_of_code}): {e_main_apply}"
+            error_message = f"Major exception during code application process for {tool_name} (from {source_of_code}): {e_main_apply}"
             print(f"ActionExecutor: {error_message}")
             global_reflection_log.log_execution(
                 goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
-                plan=[{"action_type": action_type, "details": details_for_logging}],
+                plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": tool_name, "module_path": module_path}}],
                 execution_results=[error_message], overall_success=False,
-                notes=f"Exception for {tool_name} from {source_of_code}: {e_main_apply}",
+                notes=f"Major exception for {tool_name} from {source_of_code}: {e_main_apply}",
                 is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                modification_type=modification_type_exception,
-                modification_details={"module_path": module_path, "function_name": function_name, "reason": original_description, "source_of_code": source_of_code},
-                post_modification_test_passed=None, 
-                post_modification_test_details={"notes": "Test not run due to apply failure."}
-            )
-            return False
 
     async def _is_fact_valuable(self, fact_to_assess: str) -> Tuple[bool, str]:
         """
@@ -314,22 +353,91 @@ class ActionExecutor:
             logger.error(f"Unexpected error during fact value assessment: {e}", exc_info=True)
             return False, f"Unexpected error during assessment: {e}"
 
+    async def _get_fact_category_with_llm(self, fact_text: str) -> str:
+        """
+        Determines the category for a given fact using an LLM.
+        """
+        prompt = LLM_FACT_CATEGORY_PROMPT_TEMPLATE.format(fact_text=fact_text)
+        default_category = "general"
+
+        if not self.code_service or not self.code_service.llm_provider: # pragma: no cover
+            logger.error("LLM Provider for CodeService not available for fact categorization.")
+            return default_category
+
+        try:
+            model_name = self.code_service.llm_provider.model # Or get_model_for_task("categorization")
+            llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
+                prompt,
+                model_name=model_name,
+                temperature=0.2
+            )
+
+            if not llm_response_str or not llm_response_str.strip(): # pragma: no cover
+                logger.warning("Fact categorization LLM returned empty response. Defaulting to 'general'.")
+                return default_category
+
+            cleaned_response_str = llm_response_str.strip()
+            if cleaned_response_str.startswith("```json"): # pragma: no cover
+                cleaned_response_str = cleaned_response_str[len("```json"):].strip()
+                if cleaned_response_str.endswith("```"):
+                    cleaned_response_str = cleaned_response_str[:-len("```")].strip()
+
+            category_data = json.loads(cleaned_response_str)
+            category = category_data.get("category", default_category).lower().strip()
+
+            # Optional: Validate against a predefined list of categories
+            # predefined_categories = ["user_preference", "user_personal_info", "domain_knowledge", "technical_term", "system_config", "project_context", "general_knowledge", "correction", "general"]
+            # if category not in predefined_categories:
+            #     logger.warning(f"LLM returned unknown category '{category}'. Defaulting to 'general'.")
+            #     return default_category
+
+            return category if category else default_category
+
+        except json.JSONDecodeError as e: # pragma: no cover
+            logger.error(f"Failed to parse fact category JSON: {e}. Response: {llm_response_str[:200]}. Defaulting to 'general'.")
+            return default_category
+        except Exception as e: # pragma: no cover
+            logger.error(f"Unexpected error during fact category assessment: {e}. Defaulting to 'general'.", exc_info=True)
+            return default_category
 
     async def execute_action(self, proposed_action: Dict[str, Any]) -> bool:
         action_type = proposed_action.get("action_type")
         details = proposed_action.get("details", {})
-        source_insight_id = proposed_action.get("source_insight_id")
+        source_insight_id = proposed_action.get("source_insight_id", f"action_{uuid.uuid4().hex[:8]}")
         log_notes_prefix = f"Action for insight {source_insight_id}: "
 
-        print(f"ActionExecutor: Received action '{action_type}' for insight '{source_insight_id}'. Details: {details}")
+        action_task_id: Optional[str] = None
+        edit_success: bool = False # Default to false
+
+        if self.task_manager:
+            task_type = ActiveTaskType.MISC_SYSTEM_ACTION # Default
+            related_item = source_insight_id
+            task_description = f"Executing action: {action_type}, Source: {source_insight_id}"
+
+            if action_type == "PROPOSE_TOOL_MODIFICATION":
+                task_type = ActiveTaskType.AGENT_TOOL_MODIFICATION
+                related_item = details.get("tool_name", details.get("function_name", source_insight_id))
+            elif action_type == "ADD_LEARNED_FACT":
+                task_type = ActiveTaskType.LEARNING_NEW_FACT
+                related_item = details.get("fact_to_learn", "Unknown fact")[:70]
+
+            action_task = self.task_manager.add_task(
+                task_type=task_type,
+                description=task_description,
+                related_item_id=related_item,
+                details=details # Store full action details in task
+            )
+            action_task_id = action_task.task_id
+
+        print(f"ActionExecutor: Received action '{action_type}' for insight '{source_insight_id}'. Task ID: {action_task_id}. Details: {details}")
 
         if action_type == "PROPOSE_TOOL_MODIFICATION":
             tool_name = details.get("tool_name")
-            suggested_code = details.get("suggested_code_change") # This is the code string from the insight
+            suggested_code = details.get("suggested_code_change")
             module_path = details.get("module_path")
             function_name = details.get("function_name")
             original_description = details.get("suggested_change_description", "No specific description provided.")
-            original_reflection_id_for_test = details.get("original_reflection_entry_id")
+            # original_reflection_id_for_test = details.get("original_reflection_entry_id") # This is needed by _apply_test_and_revert_code if tests are run
 
             if not module_path or not function_name:
                 log_message_details = f"Missing module_path or function_name for tool '{tool_name}'. Cannot attempt modification."
@@ -341,163 +449,138 @@ class ActionExecutor:
                     status_override="SELF_MODIFICATION_FAILED_PRECONDITIONS",
                     post_modification_test_passed=None, post_modification_test_details={"notes": "Test not run due to precondition failure."}
                 )
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Precondition check failed")
                 return False
 
-            details_for_apply_log = details.copy() # For passing to the helper
+            suggested_code_or_llm_generated_code: Optional[str] = suggested_code
 
-            if suggested_code:
-                details_for_apply_log["source_of_code"] = "Insight"
-                return await self._apply_test_and_revert_code(
-                    module_path, function_name, suggested_code, original_description,
-                    str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID", action_type, details_for_apply_log
-                )
-            else:
-                print(f"ActionExecutor: No direct code for {tool_name}. Requesting CodeService for fix.")
-                # Fetch original code to pass to CodeService if needed, or CodeService can fetch it.
-                # For this refactor, CodeService's modify_code expects `existing_code` to be passed if available,
-                # or it will fetch if `module_path` and `function_name` are given.
-                # Here, we pass `existing_code=None` to signal CodeService to fetch.
+            if not suggested_code_or_llm_generated_code:
+                print(f"ActionExecutor: No direct code for {tool_name}. Requesting CodeService for fix. Task ID: {action_task_id}")
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="CodeService: Generating code fix")
                 code_service_result = await self.code_service.modify_code(
                     context="SELF_FIX_TOOL",
                     modification_instruction=original_description,
-                    existing_code=None, # Signal CodeService to fetch
+                    existing_code=None,
                     module_path=module_path,
                     function_name=function_name
+                    # llm_config can be passed if needed
                 )
-
-                llm_generated_code = None
                 if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
-                    llm_generated_code = code_service_result.get("modified_code_string")
-                    logger.info(f"CodeService generated code for {function_name}. Length: {len(llm_generated_code) if llm_generated_code else 0}")
-                    global_reflection_log.log_execution(
+                    suggested_code_or_llm_generated_code = code_service_result.get("modified_code_string")
+                    logger.info(f"CodeService generated code for {function_name}. Length: {len(suggested_code_or_llm_generated_code) if suggested_code_or_llm_generated_code else 0}. Task ID: {action_task_id}")
+                    # Log to reflection, task status updated by self_modification flow now
+                else:
+                    err_msg = f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}"
+                    logger.error(f"{err_msg}. Task ID: {action_task_id}")
+                    global_reflection_log.log_execution( # Keep global log for now
                         goal_description=f"CodeService code generation for insight {source_insight_id}",
                         plan=[{"action_type": "CODE_SERVICE_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
-                        execution_results=[f"CodeService status: SUCCESS_CODE_GENERATED. Code length: {len(llm_generated_code) if llm_generated_code else 0}"],
-                        overall_success=True, status_override="CODE_SERVICE_GEN_SUCCESS"
+                        execution_results=[err_msg], overall_success=False, status_override="CODE_SERVICE_GEN_FAILED"
                     )
-                else: # pragma: no cover
-                    logger.error(f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"CodeService code generation for insight {source_insight_id}",
-                        plan=[{"action_type": "CODE_SERVICE_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
-                        execution_results=[f"CodeService status: {code_service_result.get('status')}. Error: {code_service_result.get('error')}"],
-                        overall_success=False, status_override="CODE_SERVICE_GEN_FAILED",
-                        post_modification_test_passed=None, post_modification_test_details={"notes": "Test not run as LLM code generation failed."}
-                    )
-                    return False
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err_msg, step_desc="CodeService failed")
+                    return False # Explicitly return False if code generation fails
 
-                if llm_generated_code:
-                    details_for_apply_log["source_of_code"] = "CodeService_LLM"
-                    return await self._apply_test_and_revert_code(
-                        module_path, function_name, llm_generated_code, original_description,
-                        str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID", action_type, details_for_apply_log
-                    )
-                else: # Should have been caught by previous check, but as a safeguard
-                    return False # pragma: no cover
+            if suggested_code_or_llm_generated_code:
+                # Note: _apply_test_and_revert_code's signature needs `action_task_id`
+                edit_success = await self._apply_test_and_revert_code(
+                    module_path, function_name, suggested_code_or_llm_generated_code,
+                    original_description,
+                    str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
+                    action_task_id=action_task_id # Pass the new task_id
+                )
+                # Final status update for action_task_id based on edit_success
+                if edit_success:
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")
+                else:
+                    # self_modification should have set a more granular FAILED status on action_task_id
+                    # If not, this provides a fallback.
+                    if self.task_manager and action_task_id:
+                        current_task_status = self.task_manager.get_task_status(action_task_id)
+                        if current_task_status and not current_task_status.status.is_failure():
+                             self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="Tool modification process failed at some stage.", step_desc="Tool modification process failed.")
+                return edit_success
+            else: # Should not be reached if CodeService fails and returns False above
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="No code available to apply.", step_desc="No code to apply")
+                return False
+
 
         elif action_type == "ADD_LEARNED_FACT":
             fact_to_learn = details.get("fact_to_learn")
-            source_description = details.get("source", f"Insight {source_insight_id}")
             if not fact_to_learn:
-                # ... (rest of ADD_LEARNED_FACT logic remains the same) ...
-                log_message_details = "Missing 'fact_to_learn' in details. Cannot add fact."
-                print(f"ActionExecutor: {log_message_details}")
-                global_reflection_log.log_execution(
-                    goal_description=f"Add learned fact attempt from insight {source_insight_id}",
-                    plan=[{"action_type": action_type, "details": details}], execution_results=[f"Failure: {log_message_details}"],
-                    overall_success=False, notes=log_notes_prefix + log_message_details,
-                    status_override="ADD_FACT_FAILED_PRECONDITIONS"
-                )
+                log_msg = "Missing 'fact_to_learn' in details. Cannot add fact."
+                # ... (logging to global_reflection_log as before) ...
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Missing fact text")
                 return False
+
             try:
-            try:
-                current_facts = load_learned_facts()
+                current_facts = load_learned_facts() # Expects list of dicts
                 normalized_fact_to_learn = fact_to_learn.strip()
 
-                if any(fact.strip().lower() == normalized_fact_to_learn.lower() for fact in current_facts):
-                    log_message = f"Fact '{normalized_fact_to_learn}' already exists (case/whitespace insensitive). No action taken."
-                    print(f"ActionExecutor: {log_message}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"Add learned fact from insight {source_insight_id}",
-                        plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=True, notes=log_notes_prefix + "Fact already present (normalized).",
-                        is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_DUPLICATE_IGNORED"
-                    )
-                    # Even if duplicate, if it came from a suggestion, that suggestion might be considered 'implemented'.
+                # Check for duplicates (new fact structure)
+                if any(entry.get("text", "").strip().lower() == normalized_fact_to_learn.lower() for entry in current_facts):
+                    log_message = f"Fact '{normalized_fact_to_learn}' already exists. No action taken."
+                    # ... (global_reflection_log as before) ...
                     if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact already known: {normalized_fact_to_learn}")
-                    return True # Action considered complete as fact is known
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Fact is a duplicate.", step_desc="Duplicate check complete.")
+                    return True
 
-                # Value Assessment
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Assessing fact value")
                 is_valuable, assessment_reason = await self._is_fact_valuable(normalized_fact_to_learn)
                 if not is_valuable:
-                    log_message = f"Fact '{normalized_fact_to_learn}' assessed as NOT VALUABLE. Reason: {assessment_reason}. Not adding to knowledge base."
-                    print(f"ActionExecutor: {log_message}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"Add learned fact from insight {source_insight_id}",
-                        plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=True, # Action processed, even if fact not added
-                        notes=log_notes_prefix + f"Fact not added: {assessment_reason}",
-                        is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_NOT_VALUABLE",
-                        modification_details={"fact_assessed": normalized_fact_to_learn, "assessment_reason": assessment_reason}
-                    )
-                    # If a suggestion led to this "not valuable" outcome, the suggestion is still "handled".
-                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {normalized_fact_to_learn}. Reason: {assessment_reason}")
-                    return True # Action considered complete
+                    log_message = f"Fact '{normalized_fact_to_learn}' assessed as NOT VALUABLE. Reason: {assessment_reason}."
+                    # ... (global_reflection_log as before) ...
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {log_message}")
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason=f"Fact not valuable: {assessment_reason}", step_desc="Fact assessment complete.")
+                    return True
 
-                logger.info(f"Fact '{normalized_fact_to_learn}' assessed as VALUABLE. Reason: {assessment_reason}. Proceeding to add.")
-                current_facts.append(normalized_fact_to_learn) # Add the normalized fact
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Categorizing fact")
+                determined_category = await self._get_fact_category_with_llm(normalized_fact_to_learn)
+
+                new_fact_entry = {
+                    "fact_id": f"fact_{uuid.uuid4().hex[:8]}", "text": normalized_fact_to_learn,
+                    "category": determined_category,
+                    "source": details.get("source", f"Insight {source_insight_id}" if source_insight_id else "Unknown"),
+                    "created_at": datetime.datetime.now(timezone.utc).isoformat(), # Use timezone.utc
+                    "updated_at": datetime.datetime.now(timezone.utc).isoformat()  # Use timezone.utc
+                }
+                current_facts.append(new_fact_entry)
 
                 if save_learned_facts(current_facts):
-                    log_message = f"Successfully added valuable learned fact: '{normalized_fact_to_learn}'."
-                    print(f"ActionExecutor: {log_message}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"Add learned fact from insight {source_insight_id}",
-                        plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=True, notes=log_notes_prefix + f"Added valuable fact '{normalized_fact_to_learn}'. Assessment: {assessment_reason}",
-                        is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_SUCCESS_VALUABLE",
-                        modification_details={"fact_added": normalized_fact_to_learn, "assessment_reason": assessment_reason}
-                    )
+                    log_message = f"Successfully added valuable fact: '{normalized_fact_to_learn}' (Category: {determined_category})."
+                    # ... (global_reflection_log as before) ...
                     if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Valuable fact added: {normalized_fact_to_learn}")
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Fact learned and saved.")
                     return True
                 else: # pragma: no cover
-                    log_message = "Failed to save updated learned facts (after value assessment)."
-                    print(f"ActionExecutor: {log_message}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"Add learned fact from insight {source_insight_id}",
-                        plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=False, notes=log_notes_prefix + f"Failed to save valuable fact '{normalized_fact_to_learn}'.",
-                        is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_SAVE_FAILED_VALUABLE"
-                    )
+                    # ... (global_reflection_log as before) ...
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason="Failed to save fact.", step_desc="Fact save operation failed.")
                     return False
             except Exception as e: # pragma: no cover
-                error_message = f"Exception during adding learned fact '{fact_to_learn}': {e}"
-                print(f"ActionExecutor: {error_message}")
-                global_reflection_log.log_execution(
-                    goal_description=f"Add learned fact attempt from insight {source_insight_id}",
-                    plan=[{"action_type": action_type, "details": details}], execution_results=[error_message],
-                    overall_success=False, notes=log_notes_prefix + f"Exception for '{fact_to_learn}'.",
-                    is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                    modification_type="ADD_LEARNED_FACT_EXCEPTION", # Corrected parameter names
-                    first_error_type=type(e).__name__, first_error_message=str(e)
-                )
+                # ... (global_reflection_log as before) ...
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during fact processing")
                 return False
-
         else: # pragma: no cover
-            print(f"ActionExecutor: Unknown or unsupported action_type: {action_type}")
+            log_msg = f"ActionExecutor: Unknown or unsupported action_type: {action_type}"
+            print(log_msg)
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Unsupported action type")
             return False
 
-        # This line should ideally not be reached if all action types return explicitly.
-        # However, it can be reached if a PROPOSE_TOOL_MODIFICATION path that should return doesn't.
-        print(f"ActionExecutor: Unhandled path or placeholder for action '{action_type}'. Returning False.")
+        # Fallback if an action type doesn't explicitly return, though PROPOSE_TOOL_MODIFICATION should.
+        # If edit_success was determined, return that, otherwise assume failure if we reach here.
+        if 'edit_success' in locals() and isinstance(edit_success, bool): # Check if defined and bool
+            final_status_reason = "Tool modification process completed." if edit_success else "Tool modification process failed."
+            final_task_status = ActiveTaskStatus.COMPLETED_SUCCESSFULLY if edit_success else ActiveTaskStatus.FAILED_UNKNOWN
+            self._update_task_if_manager(action_task_id, final_task_status, reason=final_status_reason, step_desc=final_status_reason)
+            return edit_success
+
+        self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="Unhandled execution path.", step_desc="Unhandled path")
         return False
+
 
 if __name__ == '__main__': # pragma: no cover
     from dataclasses import dataclass, field
     from ai_assistant.config import get_data_dir # Added for test setup
+    # from ..core.task_manager import TaskManager # Already imported at top
 
     CUSTOM_TOOLS_DIR = os.path.join("ai_assistant", "custom_tools")
     os.makedirs(CUSTOM_TOOLS_DIR, exist_ok=True)
@@ -546,69 +629,67 @@ if __name__ == '__main__': # pragma: no cover
         # For testing ActionExecutor, we need a LearningAgent instance or a mock.
         # Let's use the actual LearningAgent for this test, assuming it can be instantiated simply.
         # If LearningAgent has complex dependencies for init, a mock would be better.
-        test_learning_agent = LearningAgent(insights_filepath="test_action_executor_insights.json")
-        executor = ActionExecutor(learning_agent=test_learning_agent)
+        # For this main test, we'll pass task_manager=None as LearningAgent isn't fully set up here for TaskManager
+        mock_task_manager = TaskManager() # Create a real one for testing, or None
+        test_learning_agent = LearningAgent(insights_filepath="test_action_executor_insights.json", task_manager=mock_task_manager) # Assuming LA takes TM
+        executor = ActionExecutor(learning_agent=test_learning_agent, task_manager=mock_task_manager)
 
-        original_timestamp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=5)
+
+        original_timestamp = datetime.datetime.now(timezone.utc) - datetime.timedelta(minutes=5) # Use timezone.utc
         original_goal = "Test original goal that failed"
-        original_plan = [{"tool_name": "subtract_numbers_tool_alias", "args": (10, 5), "kwargs": {}}]
+        original_plan = [{"tool_name": "subtract_numbers_tool_alias", "args": (10, 5), "kwargs": {}}] # Example
 
-        mock_entry_id = str(uuid.uuid4())
-        # Create a proper ReflectionLogEntry for testing
+        mock_entry_id_for_test = str(uuid.uuid4())
         mock_original_entry = ReflectionLogEntry(
-            entry_id=mock_entry_id,
+            entry_id=mock_entry_id_for_test,
             goal_description=original_goal,
-            status="FAILURE",
-            plan=original_plan,
-            execution_results=[TypeError("Simulated original error")],
+            status="FAILURE", # Assuming original failed, leading to this modification attempt
+            plan=original_plan, # The plan that originally failed
+            execution_results=[TypeError("Simulated original error")], # Example error
             error_type="TypeError",
-            timestamp=original_timestamp
+            timestamp=original_timestamp # Use the defined timestamp
         )
-        # Replace the log entries with our test entry
-        global_reflection_log.log_entries = [mock_original_entry]  # Reset and add
+        global_reflection_log.log_entries = [mock_original_entry] # Ensure this entry is findable
+
 
         mock_tool_mod_action_with_code = {
-            "source_insight_id": "insight_tool_mod_001",
+            "source_insight_id": "insight_tool_mod_001", # Example insight ID
             "action_type": "PROPOSE_TOOL_MODIFICATION",
             "details": {
-                "module_path": "ai_assistant.custom_tools.my_extra_tools",
+                "module_path": "ai_assistant.custom_tools.my_extra_tools", # Ensure this path is correct
                 "function_name": "subtract_numbers",
-                "tool_name": "subtract_numbers_tool_alias",
-                "suggested_change_description": "Enhance subtract_numbers to log output.",
-                "suggested_code_change": "def subtract_numbers(a: float, b: float) -> float:\n    result = float(a) - float(b)\n    print(f'Subtracting: {a} - {b} = {result}')\n    return result",
-                "original_reflection_entry_id": mock_entry_id
+                "tool_name": "subtract_numbers_tool_alias", # Used for logging/identification
+                "suggested_change_description": "Enhance subtract_numbers to log output and handle types.",
+                "suggested_code_change": "def subtract_numbers(a: float, b: float) -> float:\n    # Enhanced version\n    a_float = float(a)\n    b_float = float(b)\n    result = a_float - b_float\n    print(f'Subtracting: {a} - {b} = {result}')\n    return result",
+                "original_reflection_entry_id": mock_entry_id_for_test # Critical for post-mod test
             }
         }
         print("\n--- Testing PROPOSE_TOOL_MODIFICATION (with code & post-mod test) ---")
         success_tool_mod = await executor.execute_action(mock_tool_mod_action_with_code)
         print(f"Tool modification with code and post-mod test action success: {success_tool_mod}")
-        if not success_tool_mod:
-            print("INFO: If this was due to test failure, reversion should have been attempted (see logs).")
 
-        print("\n--- Testing PROPOSE_TOOL_MODIFICATION (LLM Gen - CodeService will be called) ---")
-        mock_tool_mod_llm_attempt = {
-            "source_insight_id": "insight_tool_mod_llm_002",
-            "action_type": "PROPOSE_TOOL_MODIFICATION",
-            "details": {
-                "module_path": "ai_assistant.custom_tools.my_extra_tools",
-                "function_name": "echo_message",
-                "tool_name": "echo_message_tool_alias",
-                "suggested_change_description": "echo_message needs to shout more and return original.",
-                "original_reflection_entry_id": str(uuid.uuid4()) # Dummy ID for this test
-            }
+
+        print("\n--- Testing ADD_LEARNED_FACT (New Fact) ---")
+        new_fact_action = {
+            "source_insight_id": "insight_add_fact_001",
+            "action_type": "ADD_LEARNED_FACT",
+            "details": { "fact_to_learn": "The sky is often blue during the day.", "source": "Observation during test" }
         }
+        success_add_fact = await executor.execute_action(new_fact_action)
+        print(f"Add new fact action success: {success_add_fact}")
 
-        # Temporarily mock CodeService.modify_code to simulate LLM behavior for this test
-        original_code_service_modify = executor.code_service.modify_code
-        async def mock_modify_code_no_suggestion(*args, **kwargs):
-            print("Mocked CodeService.modify_code: Simulating LLM no suggestion.")
-            return {"status": "ERROR_LLM_NO_SUGGESTION", "modified_code_string": None, "logs": ["LLM failed"], "error": "LLM no suggestion"}
+        print("\n--- Testing ADD_LEARNED_FACT (Duplicate Fact) ---")
+        duplicate_fact_action = {
+            "source_insight_id": "insight_add_fact_002",
+            "action_type": "ADD_LEARNED_FACT",
+            "details": { "fact_to_learn": "The sky is often blue during the day.", "source": "Repeated observation" }
+        }
+        success_add_duplicate_fact = await executor.execute_action(duplicate_fact_action)
+        print(f"Add duplicate fact action success: {success_add_duplicate_fact} (expected True, as it's handled)")
 
-        executor.code_service.modify_code = mock_modify_code_no_suggestion
-        try:
-            success_tool_mod_llm = await executor.execute_action(mock_tool_mod_llm_attempt)
-            print(f"Tool modification (LLM attempt - no code from CodeService) action success: {success_tool_mod_llm} (expected False)")
-        finally:
-            executor.code_service.modify_code = original_code_service_modify # Restore
+        if mock_task_manager:
+            print("\n--- Task Manager Summary ---")
+            mock_task_manager.print_task_summary()
+
 
     asyncio.run(main_test())

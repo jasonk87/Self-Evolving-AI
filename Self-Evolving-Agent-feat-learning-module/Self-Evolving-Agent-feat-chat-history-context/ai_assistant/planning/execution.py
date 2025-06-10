@@ -9,6 +9,7 @@ from ai_assistant.memory.awareness import record_tool_goal_association
 from ai_assistant.memory.event_logger import log_event
 from ai_assistant.learning.learning import LearningAgent # Import LearningAgent
 from ai_assistant.planning.planning import PlannerAgent # Added for re-planning
+from ..core.task_manager import TaskManager # Added for TaskManager
 
 class ExecutionAgent:
     """
@@ -25,8 +26,9 @@ class ExecutionAgent:
         tool_system: Any,
         planner_agent: PlannerAgent, # Added for re-planning
         learning_agent: LearningAgent, # Added LearningAgent
+        task_manager: Optional[TaskManager] = None, # New parameter
         ollama_model_name: Optional[str] = None
-    ) -> Tuple[List[Dict[str, Any]], List[Any]]: # MODIFIED: Return final plan and its results
+    ) -> Tuple[List[Dict[str, Any]], List[Any]]: # Returns final_plan, results
         """
         Executes each step in the provided plan with retries and logs the execution.
         Includes logic for re-planning if critical failures occur.
@@ -115,7 +117,12 @@ class ExecutionAgent:
                     for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
                         try:
                             print(f"ExecutionAgent: Executing step {i+1}/{len(current_plan)} - Tool: {tool_name} (Args: {final_args_for_tool}, Kwargs: {final_kwargs_for_tool}), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")
-                            step_result = await tool_system.execute_tool(tool_name, args=final_args_for_tool, kwargs=final_kwargs_for_tool)
+                            step_result = await tool_system.execute_tool(
+                                tool_name,
+                                args=final_args_for_tool,
+                                kwargs=final_kwargs_for_tool,
+                                task_manager=task_manager # Pass task_manager
+                            )
                             current_step_error_details = {} 
                             if attempt > 0:
                                 step_attempt_note = f"Succeeded on retry (attempt {attempt+1})."

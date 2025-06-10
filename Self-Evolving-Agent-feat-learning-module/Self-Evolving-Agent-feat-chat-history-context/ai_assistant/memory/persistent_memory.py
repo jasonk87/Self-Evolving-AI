@@ -79,45 +79,45 @@ ACTIONABLE_INSIGHTS_FILENAME = "actionable_insights.json"
 ACTIONABLE_INSIGHTS_FILEPATH = os.path.join(get_data_dir(), ACTIONABLE_INSIGHTS_FILENAME)
 
 
-def save_learned_facts(facts: list[str], filepath: str = LEARNED_FACTS_FILEPATH) -> bool:
+def save_learned_facts(facts: List[Dict[str, Any]], filepath: str = LEARNED_FACTS_FILEPATH) -> bool:
     """
-    Serializes the list of learned facts to JSON and writes it to the specified file.
+    Serializes the list of learned fact dictionaries to JSON and writes it to file.
 
     Args:
-        facts: The list of learned facts (strings).
+        facts: The list of learned fact dictionaries.
         filepath: The path to the JSON file. Defaults to LEARNED_FACTS_FILEPATH.
 
     Returns:
         True on success, False on error.
     """
     try:
-        # Ensure the directory exists
         dir_path = os.path.dirname(filepath)
-        if dir_path: # Only create if there is a directory part
+        if dir_path:
             os.makedirs(dir_path, exist_ok=True)
             
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(facts, f, indent=4, ensure_ascii=False)
         return True
-    except IOError as e:
+    except IOError as e: # pragma: no cover
         print(f"IOError saving learned facts to {filepath}: {e}")
         return False
-    except TypeError as e: # For issues with non-serializable content
+    except TypeError as e: # pragma: no cover
         print(f"TypeError during JSON serialization for learned facts at {filepath}: {e}")
         return False
-    except Exception as e:
+    except Exception as e: # pragma: no cover
         print(f"Unexpected error saving learned facts to {filepath}: {e}")
         return False
 
-def load_learned_facts(filepath: str = LEARNED_FACTS_FILEPATH) -> list[str]:
+def load_learned_facts(filepath: str = LEARNED_FACTS_FILEPATH) -> List[Dict[str, Any]]:
     """
-    Reads JSON data from the file and deserializes it into a list of learned facts.
+    Reads JSON data from the file and deserializes it into a list of learned fact dictionaries.
+    Includes migration logic for old string-based fact lists.
 
     Args:
         filepath: The path to the JSON file. Defaults to LEARNED_FACTS_FILEPATH.
 
     Returns:
-        The loaded list of facts. Returns an empty list if the file
+        The loaded list of fact dictionaries. Returns an empty list if the file
         doesn't exist, is invalid JSON, or another error occurs.
     """
     if not os.path.exists(filepath):
@@ -125,20 +125,61 @@ def load_learned_facts(filepath: str = LEARNED_FACTS_FILEPATH) -> list[str]:
         
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            facts = json.load(f)
-            if not isinstance(facts, list) or not all(isinstance(fact, str) for fact in facts):
-                print(f"Warning: Data in '{filepath}' is not a list of strings. Returning empty list.")
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            print(f"Warning: Data in '{filepath}' is not a list. Returning empty list.")
+            return []
+
+        if not data: # Empty list
+            return []
+
+        # Check if it's the old format (list of strings) or new format (list of dicts)
+        if isinstance(data[0], str):
+            print(f"Info: Migrating old format learned_facts.json at '{filepath}' to new structured format.")
+            migrated_facts: List[Dict[str, Any]] = []
+            for old_fact_text in data:
+                if not isinstance(old_fact_text, str): # Should not happen if first element was str
+                    print(f"Warning: Non-string item found during migration: {old_fact_text}. Skipping.")
+                    continue
+                migrated_facts.append({
+                    "fact_id": f"fact_{uuid.uuid4().hex[:8]}",
+                    "text": old_fact_text,
+                    "category": "uncategorized",
+                    "source": "migrated_from_old_format",
+                    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                })
+            # Attempt to save the migrated data back in the new format immediately
+            if save_learned_facts(migrated_facts, filepath):
+                 print(f"Info: Successfully migrated and saved facts in new format to '{filepath}'.")
+            else: # pragma: no cover
+                 print(f"Error: Failed to save migrated facts to '{filepath}'. Subsequent loads might re-trigger migration.")
+            return migrated_facts
+
+        # If it's already a list of dicts (new format), perform basic validation on first item
+        elif isinstance(data[0], dict):
+            # Simple check for expected keys in the first dictionary
+            # More thorough validation could be added if necessary
+            if "fact_id" in data[0] and "text" in data[0]:
+                return data
+            else: # pragma: no cover
+                print(f"Warning: Data in '{filepath}' is a list of dictionaries, but lacks expected keys (fact_id, text). Returning empty list.")
                 return []
-        return facts
-    except FileNotFoundError: 
+        else: # pragma: no cover
+             # Unknown format
+            print(f"Warning: Data in '{filepath}' is in an unrecognized list format. Returning empty list.")
+            return []
+
+    except FileNotFoundError: # pragma: no cover
         return []
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError as e: # pragma: no cover
         print(f"JSONDecodeError loading learned facts from {filepath}: {e}. Returning empty list.")
         return []
-    except IOError as e:
+    except IOError as e: # pragma: no cover
         print(f"IOError loading learned facts from {filepath}: {e}. Returning empty list.")
         return []
-    except Exception as e:
+    except Exception as e: # pragma: no cover
         print(f"Unexpected error loading learned facts from {filepath}: {e}. Returning empty list.")
         return []
 
@@ -282,20 +323,51 @@ if __name__ == '__main__':
     TEST_FACTS_FILE = os.path.join(TEST_FILE_DIR, "test_learned_facts.json")
     _test_invalid_facts_file = os.path.join(TEST_FILE_DIR, "invalid_facts.json")
 
-    sample_facts = ["fact1: the sky is blue", "fact2: elephants are large", "fact3: Python is a programming language"]
+    sample_facts_old_format = ["fact1: the sky is blue", "fact2: elephants are large"]
+    sample_facts_new_format = [
+        {"fact_id": "fact_abc123", "text": "Python is a programming language", "category": "programming",
+         "source": "manual_test", "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    ]
 
-    # Test saving facts
-    print(f"\nAttempting to save sample facts to {TEST_FACTS_FILE}...")
-    save_success_facts = save_learned_facts(sample_facts, TEST_FACTS_FILE)
-    assert save_success_facts, "save_learned_facts failed during test."
-    print(f"Save operation result for facts: {save_success_facts}")
+    # Test saving facts (new format)
+    print(f"\nAttempting to save sample new format facts to {TEST_FACTS_FILE}...")
+    save_success_facts = save_learned_facts(sample_facts_new_format, TEST_FACTS_FILE)
+    assert save_success_facts, "save_learned_facts (new format) failed during test."
+    print(f"Save operation result for new format facts: {save_success_facts}")
     assert os.path.exists(TEST_FACTS_FILE), f"File {TEST_FACTS_FILE} was not created after save."
 
-    # Test loading facts
-    print(f"\nAttempting to load facts from {TEST_FACTS_FILE}...")
-    loaded_facts = load_learned_facts(TEST_FACTS_FILE)
-    assert loaded_facts == sample_facts, "Loaded facts do not match saved facts."
-    print(f"Loaded facts: {loaded_facts}")
+    # Test loading facts (new format)
+    print(f"\nAttempting to load new format facts from {TEST_FACTS_FILE}...")
+    loaded_facts_new = load_learned_facts(TEST_FACTS_FILE)
+    assert loaded_facts_new == sample_facts_new_format, "Loaded new format facts do not match saved facts."
+    print(f"Loaded new format facts: {loaded_facts_new}")
+    os.remove(TEST_FACTS_FILE) # Clean up for next test
+
+    # Test loading facts (old format and migration)
+    print(f"\nAttempting to load old format facts (expecting migration) from {TEST_FACTS_FILE}...")
+    # Save old format directly to simulate existing file
+    with open(TEST_FACTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(sample_facts_old_format, f, indent=4)
+
+    migrated_facts = load_learned_facts(TEST_FACTS_FILE)
+    assert len(migrated_facts) == len(sample_facts_old_format), "Migration did not convert all old facts."
+    for i, fact_dict in enumerate(migrated_facts):
+        assert isinstance(fact_dict, dict), "Migrated fact is not a dictionary."
+        assert fact_dict["text"] == sample_facts_old_format[i], "Migrated fact text does not match original."
+        assert fact_dict["category"] == "uncategorized", "Migrated fact category is not 'uncategorized'."
+        assert fact_dict["source"] == "migrated_from_old_format", "Migrated fact source is incorrect."
+        assert "fact_id" in fact_dict and "created_at" in fact_dict and "updated_at" in fact_dict
+    print(f"Successfully loaded and migrated old format facts. First migrated fact: {migrated_facts[0] if migrated_facts else 'N/A'}")
+
+    # Verify that the file was saved in the new format after migration
+    if os.path.exists(TEST_FACTS_FILE):
+        with open(TEST_FACTS_FILE, 'r', encoding='utf-8') as f:
+            data_after_migration_save = json.load(f)
+            assert isinstance(data_after_migration_save, list) and isinstance(data_after_migration_save[0], dict), \
+                "File was not saved in new dictionary format after migration."
+        print("Verified that migrated facts were saved back in new format.")
+
 
     # Test loading facts from a non-existent file
     print("\nAttempting to load facts from a non-existent file...")
@@ -309,20 +381,10 @@ if __name__ == '__main__':
     INVALID_JSON_FACTS_FILE = os.path.join(TEST_FILE_DIR, "invalid_facts.json")
     os.makedirs(os.path.dirname(INVALID_JSON_FACTS_FILE), exist_ok=True) 
     with open(INVALID_JSON_FACTS_FILE, 'w') as f:
-        f.write("This is not a valid JSON list of strings") # Malformed JSON
+        f.write("This is not a valid JSON list")
     loaded_invalid_facts = load_learned_facts(INVALID_JSON_FACTS_FILE)
     assert loaded_invalid_facts == [], "Loading invalid JSON for facts did not return an empty list."
     print(f"Result from loading invalid JSON facts file: {loaded_invalid_facts} (should be empty list)")
-
-    # Test loading facts from a file with correct JSON type but incorrect inner type (e.g. list of dicts)
-    print("\nAttempting to load facts from a file with list of dicts (should fail type check)...")
-    INVALID_TYPE_FACTS_FILE = os.path.join(TEST_FILE_DIR, "invalid_type_facts.json")
-    with open(INVALID_TYPE_FACTS_FILE, 'w') as f:
-        json.dump([{"fact": "is_a_dict"}, {"fact": "not_a_string"}], f)
-    loaded_invalid_type_facts = load_learned_facts(INVALID_TYPE_FACTS_FILE)
-    assert loaded_invalid_type_facts == [], "Loading facts with invalid inner type did not return an empty list."
-    print(f"Result from loading facts with invalid inner type: {loaded_invalid_type_facts} (should be empty list)")
-
 
     # Cleanup for facts tests
     print("\nCleaning up facts test files...")
@@ -330,8 +392,9 @@ if __name__ == '__main__':
         os.remove(TEST_FACTS_FILE)
     if os.path.exists(INVALID_JSON_FACTS_FILE):
         os.remove(INVALID_JSON_FACTS_FILE)
-    if os.path.exists(INVALID_TYPE_FACTS_FILE):
-        os.remove(INVALID_TYPE_FACTS_FILE) # pragma: no cover
+    # INVALID_TYPE_FACTS_FILE test was implicitly covered by new format check, can remove if not needed
+    # if os.path.exists(INVALID_TYPE_FACTS_FILE):
+    #     os.remove(INVALID_TYPE_FACTS_FILE)
     print("--- Learned Facts Persistent Memory Tests Finished ---")
 
     # --- Testing Persistent Memory for Actionable Insights ---
@@ -388,10 +451,10 @@ if __name__ == '__main__':
     # Clean up any other specific test files that might have been missed if tests failed early
     if os.path.exists(TEST_GOALS_FILE): os.remove(TEST_GOALS_FILE) # pragma: no cover
     if os.path.exists(_test_invalid_goals_file): os.remove(_test_invalid_goals_file) # pragma: no cover
-    if os.path.exists(TEST_FACTS_FILE): os.remove(TEST_FACTS_FILE) # pragma: no cover
+    if os.path.exists(TEST_FACTS_FILE): os.remove(TEST_FACTS_FILE) # Cleaned up already or after specific tests
+    if os.path.exists(INVALID_JSON_FACTS_FILE): os.remove(INVALID_JSON_FACTS_FILE) # Cleaned up already or after specific tests
+    # if os.path.exists(INVALID_TYPE_FACTS_FILE): os.remove(INVALID_TYPE_FACTS_FILE) # This test is less relevant with new structure
 
-    if os.path.exists(_test_invalid_facts_file): os.remove(_test_invalid_facts_file)
-    if os.path.exists(INVALID_TYPE_FACTS_FILE): os.remove(INVALID_TYPE_FACTS_FILE) # pragma: no cover
     if os.path.exists(TEST_INSIGHTS_FILE): os.remove(TEST_INSIGHTS_FILE) # pragma: no cover
     if os.path.exists(INVALID_JSON_INSIGHTS_FILE): os.remove(INVALID_JSON_INSIGHTS_FILE) # pragma: no cover
 

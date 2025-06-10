@@ -13,6 +13,7 @@ try:
     from ..llm_interface.ollama_client import invoke_ollama_model_async # For direct LLM call
     from ..tools.tool_system import tool_system_instance # To get list of available tools
     from ..config import get_model_for_task # To get appropriate model
+    from .task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added
 except ImportError as e: # pragma: no cover
     print(f"Error importing modules in suggestion_processor.py: {e}. Fallbacks or direct paths might be needed if run standalone.")
     # Fallback for direct execution or if structure is different than expected during execution
@@ -40,20 +41,50 @@ Respond with a single JSON object containing:
 If no specific tool can be confidently identified (e.g., confidence is "low" or "none"), return null for module_path and function_name.
 Only return a module_path and function_name if confidence is "high" or "medium".
 
+Example 1 (Confident Match):
+Suggestion: "The 'file_writer' tool should have an option to append."
+Available Tools (excerpt): { "ai_assistant.custom_tools.file_system_tools.file_writer": "Writes text to a file." }
+Expected JSON Response:
+{{
+  "module_path": "ai_assistant.custom_tools.file_system_tools",
+  "function_name": "file_writer",
+  "confidence": "high",
+  "reasoning": "The suggestion explicitly mentions the 'file_writer' tool name."
+}}
+
+Example 2 (No Confident Match):
+Suggestion: "Maybe we can improve how text is shown."
+Available Tools: {{ ... }}
+Expected JSON Response:
+{{
+  "module_path": null,
+  "function_name": null,
+  "confidence": "low",
+  "reasoning": "The suggestion is too vague and does not point to a specific existing tool."
+}}
+
 JSON Response:
 """
 
 class SuggestionProcessor:
-    def __init__(self, action_executor: ActionExecutor, code_service: CodeService):
+    def __init__(self, action_executor: ActionExecutor,
+                 code_service: CodeService,
+                 task_manager: Optional[TaskManager] = None): # New parameter
         """
         Initializes the SuggestionProcessor.
         Args:
             action_executor: An instance of ActionExecutor to dispatch actions.
             code_service: An instance of CodeService to access LLM capabilities.
+            task_manager: Optional TaskManager instance for status reporting.
         """
         self.action_executor = action_executor
         self.code_service = code_service
+        self.task_manager = task_manager
         # self.llm_provider = code_service.llm_provider # Direct access if needed
+
+    def _update_task_if_manager(self, task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step_desc: Optional[str] = None):
+        if task_id and self.task_manager:
+            self.task_manager.update_task_status(task_id, status, reason=reason, step_desc=step_desc)
 
     async def _identify_target_tool_from_suggestion(self, suggestion_description: str) -> Optional[Dict[str, str]]:
         """
@@ -130,14 +161,28 @@ class SuggestionProcessor:
         Processes pending tool improvement suggestions.
         Identifies target tools and dispatches actions to ActionExecutor.
         """
+        batch_task_id: Optional[str] = None
+        if self.task_manager:
+            batch_task_description = f"Processing up to {limit} pending tool improvement suggestions."
+            try:
+                task_type = ActiveTaskType.SUGGESTION_PROCESSING
+            except AttributeError: # pragma: no cover
+                # Fallback if SUGGESTION_PROCESSING enum member isn't defined (should not happen if task_manager.py is up-to-date)
+                print("Warning: ActiveTaskType.SUGGESTION_PROCESSING not defined. Using PROCESSING_REFLECTION for batch task type.")
+                task_type = ActiveTaskType.PROCESSING_REFLECTION
+
+            batch_task = self.task_manager.add_task(task_type=task_type, description=batch_task_description)
+            batch_task_id = batch_task.task_id
+
         pending_suggestions = [
             s for s in list_suggestions() if s.get("status") == "pending" and s.get("type") == "tool_improvement"
         ]
         if not pending_suggestions:
             print("SuggestionProcessor: No pending tool improvement suggestions to process.")
+            self._update_task_if_manager(batch_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="No pending tool improvement suggestions found.")
             return
 
-        print(f"SuggestionProcessor: Found {len(pending_suggestions)} pending tool improvement suggestions. Processing up to {limit}.")
+        print(f"SuggestionProcessor: Found {len(pending_suggestions)} pending tool improvement suggestions. Processing up to {limit}. (Batch Task ID: {batch_task_id})")
 
         processed_count = 0
         for suggestion in pending_suggestions:
@@ -146,11 +191,14 @@ class SuggestionProcessor:
 
             suggestion_id = suggestion['suggestion_id']
             suggestion_desc = suggestion['description']
+
+            self._update_task_if_manager(batch_task_id, ActiveTaskStatus.PLANNING, step_desc=f"Identifying target for suggestion {suggestion_id}: {suggestion_desc[:30]}...")
             print(f"SuggestionProcessor: Processing suggestion ID {suggestion_id}: {suggestion_desc[:70]}...")
 
             target_info = await self._identify_target_tool_from_suggestion(suggestion_desc)
 
             if target_info and target_info.get("module_path") and target_info.get("function_name"):
+                self._update_task_if_manager(batch_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Dispatching action for {suggestion_id} ({target_info['function_name']}) to ActionExecutor")
                 print(f"SuggestionProcessor: Identified target for suggestion {suggestion_id} as {target_info['module_path']}.{target_info['function_name']}. Preparing action. Reasoning: {target_info.get('reasoning')}")
 
                 action_details = {
@@ -179,13 +227,18 @@ class SuggestionProcessor:
                         # For now, ActionExecutor's reflection log captures this.
                 except Exception as e: # pragma: no cover
                     print(f"SuggestionProcessor: Error dispatching action for suggestion {suggestion_id}: {e}")
+                    self._update_task_if_manager(batch_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Error dispatching action for {suggestion_id}: {e}", step_desc=f"Error for {suggestion_id}")
                     # Future: mark suggestion as "processing_error"
             else:
                 print(f"SuggestionProcessor: Could not identify target tool for suggestion {suggestion_id}. Skipping for now.")
+                self._update_task_if_manager(batch_task_id, ActiveTaskStatus.PLANNING, reason=f"Target not identified for {suggestion_id}", step_desc=f"Skipped {suggestion_id} - target unclear")
                 # Future: mark suggestion as "needs_manual_clarification" or similar.
 
             processed_count += 1
-        print(f"SuggestionProcessor: Finished processing batch of {processed_count} suggestions.")
+
+        final_batch_reason = f"Processed {processed_count} suggestions out of {len(pending_suggestions)} pending."
+        self._update_task_if_manager(batch_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason=final_batch_reason, step_desc="Batch processing complete.")
+        print(f"SuggestionProcessor: Finished processing batch of {processed_count} suggestions. (Batch Task ID: {batch_task_id})")
 
 # Example of how this might be run (e.g., by a background service or scheduled task)
 if __name__ == '__main__': # pragma: no cover
@@ -213,10 +266,11 @@ if __name__ == '__main__': # pragma: no cover
         if learning_agent_instance:
             try:
                 # Default CodeService initialization (relies on config for LLM provider)
-                code_service_instance = CodeService()
+                # For __main__ test, task_manager can be None.
+                code_service_instance = CodeService(task_manager=None)
                 action_executor_instance = ActionExecutor(learning_agent=learning_agent_instance)
 
-                processor = SuggestionProcessor(action_executor_instance, code_service_instance)
+                processor = SuggestionProcessor(action_executor_instance, code_service_instance, task_manager=None)
 
                 # Add a dummy suggestion to process if the file is empty or doesn't exist
                 # This ensures _identify_target_tool_from_suggestion has something to work with

@@ -12,6 +12,9 @@ from .critical_reviewer import CriticalReviewCoordinator
 from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
 import asyncio # For running the async review process
 from unittest.mock import patch, AsyncMock # For __main__ block mocking
+from typing import Optional # Ensure Optional is imported for type hints
+from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
+
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -61,10 +64,14 @@ def get_function_source_code(module_path: str, function_name: str) -> Optional[s
         print(f"Error getting source code for '{function_name}' in '{module_path}': {e}")
         return None
 
-def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str, change_description: str) -> str:
+def _update_parent_task(tm: Optional[TaskManager], p_task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None):
+    if tm and p_task_id:
+        tm.update_task_status(p_task_id, status, reason=reason, step_desc=step)
+
+def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str, change_description: str, task_manager: Optional[TaskManager] = None, parent_task_id: Optional[str] = None) -> str:
     """
     Edits the source code of a specified function within a given module file using AST,
-    after critical review.
+    after critical review. Updates status of a parent_task_id via task_manager if provided.
 
     Args:
         module_path: The Python module path (e.g., "ai_assistant.custom_tools.my_extra_tools").
@@ -95,11 +102,17 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
         if original_function_code_for_diff is None:
             err_msg = f"Error: Could not retrieve original source code for function '{function_name}' in module '{module_path}' for review."
             logger.error(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Get original code for diff")
             return err_msg
 
         code_diff = generate_diff(original_function_code_for_diff, new_code_string, file_name=f"{module_path}/{function_name}")
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc="Generated diff, awaiting critical review")
+
         if not code_diff:
             logger.info(f"Proposed code for '{function_name}' in '{module_path}' is identical to the current code. No changes to apply.")
+            # If no diff, it's technically a success for this function's scope, but no change applied.
+            # The parent task might still complete successfully if this was the only action.
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Code identical, no changes applied.", step_desc="Diff generation found no changes")
             return f"No changes detected for function '{function_name}' in module '{module_path}'. Code is identical."
 
         # --- Critical Review Step ---
@@ -108,6 +121,7 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
         coordinator = CriticalReviewCoordinator(critic1, critic2)
 
         logger.info(f"Requesting critical review for changes to '{function_name}' in '{module_path}'...")
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review for {function_name}")
         try:
             unanimous_approval, reviews = asyncio.run(coordinator.request_critical_review(
                 original_code=original_function_code_for_diff,
@@ -119,6 +133,7 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
         except Exception as e_review:
             err_msg = f"Error during critical review process for '{function_name}': {e_review}"
             logger.error(err_msg, exc_info=True)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
             return err_msg
 
         if not unanimous_approval:
@@ -128,35 +143,43 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
             err_msg = (f"Change to function '{function_name}' in module '{module_path}' rejected by critical review. "
                        f"No modifications will be applied. Reviews: {' | '.join(review_summaries)}")
             logger.warning(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected")
             return err_msg
         else:
             logger.info(f"Change to function '{function_name}' in '{module_path}' approved by critical review. Proceeding with file modification.")
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Critical review approved")
         # --- End Critical Review Step ---
 
-        if not os.path.exists(file_path): # Should be checked after review confirms path is valid
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Validating file path for modification")
+        if not os.path.exists(file_path):
             err_msg = f"Error: Module file not found at '{file_path}' derived from module path '{module_path}'. (Post-review check)"
-            logger.error(err_msg) # Should not happen if get_function_source_code succeeded
+            logger.error(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="File path validation failed")
             return err_msg
 
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Creating backup of original file")
         backup_file_path = file_path + ".bak"
         shutil.copy2(file_path, backup_file_path)
         logger.info(f"Backup of '{file_path}' created at '{backup_file_path}'.")
 
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Parsing original source file via AST")
         with open(file_path, 'r', encoding='utf-8') as f:
-            original_source = f.read() # Full original source for AST parsing
+            original_source = f.read()
 
         original_ast = ast.parse(original_source, filename=file_path)
 
         try:
             new_function_ast_module = ast.parse(new_code_string)
-        except SyntaxError as e_new_code_syn: # pragma: no cover
-            err_msg = f"SyntaxError in new_code_string: {e_new_code_syn.msg} (line {e_new_code_syn.lineno}, offset {e_new_code_syn.offset})"
-            logger.error(f"{err_msg} - New code: \n{new_code_string}")
-            return err_msg
+        except SyntaxError as e_new_code_syn:
+            err_msg = f"SyntaxError in new_code_string: {e_new_code_syn.msg} (line {e_new_code_syn.lineno}, offset {e_new_code_syn.offset})" # pragma: no cover
+            logger.error(f"{err_msg} - New code: \n{new_code_string}") # pragma: no cover
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Syntax error in new code") # pragma: no cover
+            return err_msg # pragma: no cover
         
         if not new_function_ast_module.body or not isinstance(new_function_ast_module.body[0], ast.FunctionDef):
             err_msg = "Error: new_code_string does not seem to be a valid single function definition."
             logger.error(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Invalid new code structure")
             return err_msg
         
         new_function_node = new_function_ast_module.body[0]
@@ -184,39 +207,53 @@ def edit_function_source_code(module_path: str, function_name: str, new_code_str
         if not function_found_and_replaced:
             err_msg = f"Error: Function '{function_name}' not found in module '{module_path}' (file '{file_path}')."
             logger.error(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="Target function not found in AST")
             return err_msg
 
         original_ast.body = new_body
-
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Unparsing modified AST")
         try:
             new_source_code = ast.unparse(original_ast)
-        except AttributeError: # pragma: no cover
-            err_msg = "Error: ast.unparse is not available. Python 3.9+ is required."
-            logger.error(err_msg)
-            return err_msg
-        except Exception as e_unparse: # pragma: no cover
-            err_msg = f"Error unparsing modified AST for '{file_path}': {e_unparse}"
-            logger.error(err_msg, exc_info=True)
-            return err_msg
+        except AttributeError:
+            err_msg = "Error: ast.unparse is not available. Python 3.9+ is required." # pragma: no cover
+            logger.error(err_msg) # pragma: no cover
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST unparse failed (version issue)") # pragma: no cover
+            return err_msg # pragma: no cover
+        except Exception as e_unparse:
+            err_msg = f"Error unparsing modified AST for '{file_path}': {e_unparse}" # pragma: no cover
+            logger.error(err_msg, exc_info=True) # pragma: no cover
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST unparse failed") # pragma: no cover
+            return err_msg # pragma: no cover
 
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Writing modified code to file")
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_source_code)
         
+        # The final COMPLETED_SUCCESSFULLY for the parent task will be set by the caller (ActionExecutor) after post-modification tests.
+        # This function signals its own success by returning a non-error message.
+        # We can update the step description for clarity for the parent task.
+        success_step_desc = f"Code for '{function_name}' in '{module_path}' successfully written to disk."
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=success_step_desc) # Indicate this part is done.
+                                                                                                                         # ActionExecutor will then move to POST_MOD_TESTING or COMPLETED.
+
         logger.info(f"Successfully modified function '{function_name}' (replaced with '{new_function_node.name}') in module '{module_path}' (file '{file_path}').")
         return f"Function '{function_name}' (replaced with '{new_function_node.name}') in module '{module_path}' updated successfully."
 
-    except FileNotFoundError: # pragma: no cover
-        err_msg = f"Error: File not found for module path '{module_path}' (expected at '{file_path}')."
-        logger.error(err_msg)
-        return err_msg
-    except SyntaxError as e_syn: # pragma: no cover
-        err_msg = f"SyntaxError during AST parsing. File: '{e_syn.filename}', Line: {e_syn.lineno}, Offset: {e_syn.offset}, Message: {e_syn.msg}"
-        logger.error(err_msg, exc_info=True)
-        return f"SyntaxError: {err_msg}"
-    except Exception as e: # pragma: no cover
-        err_msg = f"An unexpected error occurred in edit_function_source_code: {type(e).__name__}: {e}"
-        logger.error(err_msg, exc_info=True)
-        return err_msg
+    except FileNotFoundError:
+        err_msg = f"Error: File not found for module path '{module_path}' (expected at '{file_path}')." # pragma: no cover
+        logger.error(err_msg) # pragma: no cover
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="File not found for modification") # pragma: no cover
+        return err_msg # pragma: no cover
+    except SyntaxError as e_syn:
+        err_msg = f"SyntaxError during AST parsing. File: '{e_syn.filename}', Line: {e_syn.lineno}, Offset: {e_syn.offset}, Message: {e_syn.msg}" # pragma: no cover
+        logger.error(err_msg, exc_info=True) # pragma: no cover
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST parsing error of original file") # pragma: no cover
+        return f"SyntaxError: {err_msg}" # pragma: no cover
+    except Exception as e:
+        err_msg = f"An unexpected error occurred in edit_function_source_code: {type(e).__name__}: {e}" # pragma: no cover
+        logger.error(err_msg, exc_info=True) # pragma: no cover
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=err_msg, step_desc="Unexpected error during edit") # pragma: no cover
+        return err_msg # pragma: no cover
 
 def get_backup_function_source_code(module_path: str, function_name: str) -> Optional[str]:
     """
@@ -329,11 +366,13 @@ if __name__ == '__main__': # pragma: no cover
                new_callable=AsyncMock,
                return_value=(True, mock_reviews_main_test)) as mock_review_call_main:
         result_e1 = edit_function_source_code(
-            module_path_core,
-            "core_function_one",
-            new_code_core_one,
+            module_path=module_path_core,
+            function_name="core_function_one",
+            new_code_string=new_code_core_one,
             project_root_path=os.path.abspath(TEST_DIR),
-            change_description="Main test E1: Modifying core_function_one"
+            change_description="Main test E1: Modifying core_function_one",
+            task_manager=None, # No TaskManager for this simple __main__ test
+            parent_task_id=None
         )
         print(f"Test E1 Result: {result_e1}")
         assert "success" in result_e1.lower()
