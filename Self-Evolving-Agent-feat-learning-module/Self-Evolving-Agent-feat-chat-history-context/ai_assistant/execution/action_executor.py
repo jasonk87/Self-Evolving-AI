@@ -11,7 +11,8 @@ from ai_assistant.config import is_debug_mode
 from ai_assistant.core import self_modification
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
-# Removed: invoke_ollama_model_async, get_model_for_task, LLM_CODE_FIX_PROMPT_TEMPLATE
+from ai_assistant.core.suggestion_manager import mark_suggestion_implemented # Added import
+import json # Added for parsing LLM response in _is_fact_valuable
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
@@ -20,6 +21,37 @@ if TYPE_CHECKING:
     from ai_assistant.learning.learning import LearningAgent # For type hinting only
 
 logger = logging.getLogger(__name__)
+
+LLM_FACT_VALUE_ASSESSMENT_PROMPT_TEMPLATE = """
+You are an AI assistant's knowledge curator. Your task is to assess if a given fact is valuable to learn and store for future reference by a large language model AI assistant.
+A valuable fact is typically:
+1. Non-trivial: Not common sense or easily inferable.
+2. Useful: Likely to aid in future tasks, reasoning, or conversations.
+3. Factual: Represents a piece of information rather than an opinion or instruction (unless it's a user preference).
+4. Concise: Stated clearly and briefly.
+5. Novel: Not something the AI would already implicitly know or that is too generic.
+
+Fact to assess: "{fact_to_assess}"
+
+Based on these criteria, is this fact valuable for the AI assistant to learn and remember?
+Respond with a single JSON object containing two keys:
+- "is_valuable": boolean (true if valuable, false otherwise)
+- "reason": string (a brief explanation for your decision, especially if not valuable)
+
+Example for a valuable fact:
+Fact: "The user's preferred programming language is Python."
+Response: {{"is_valuable": true, "reason": "Stores a specific user preference that can tailor future interactions."}}
+
+Example for a non-valuable fact (trivial):
+Fact: "The sky is blue."
+Response: {{"is_valuable": false, "reason": "This is common knowledge and too trivial to store."}}
+
+Example for a non-valuable fact (instruction, not a fact):
+Fact: "Think step by step."
+Response: {{"is_valuable": false, "reason": "This is a general instruction or meta-advice, not a piece of knowledge to store as a fact."}}
+
+JSON Response:
+"""
 
 class ActionExecutor:
     """
@@ -193,6 +225,9 @@ class ActionExecutor:
                     post_modification_test_passed=test_passed_status,
                     post_modification_test_details={"notes": test_run_notes}
                 )
+                if final_overall_success and source_insight_id and source_insight_id != "NO_INSIGHT_ID":
+                    # Assuming source_insight_id is the suggestion_id if this action came from a suggestion
+                    mark_suggestion_implemented(source_insight_id, f"Tool modification '{tool_name}' applied and tested successfully.")
                 return final_overall_success
 
             except Exception as e_main_apply: # pragma: no cover
@@ -227,6 +262,58 @@ class ActionExecutor:
                 post_modification_test_details={"notes": "Test not run due to apply failure."}
             )
             return False
+
+    async def _is_fact_valuable(self, fact_to_assess: str) -> Tuple[bool, str]:
+        """
+        Assesses if a given fact is valuable to learn using an LLM.
+        """
+        prompt = LLM_FACT_VALUE_ASSESSMENT_PROMPT_TEMPLATE.format(fact_to_assess=fact_to_assess)
+
+        if not self.code_service or not self.code_service.llm_provider: # Should be initialized
+            logger.error("LLM Provider for CodeService not available in ActionExecutor for fact assessment.")
+            return False, "LLM provider not available for assessment." # Defaulting to not valuable if assessment fails
+
+        try:
+            # Using a low temperature for more deterministic "yes/no" style assessment
+            # Assuming the llm_provider is the one from CodeService as it's already configured
+            model_name = self.code_service.llm_provider.model # Or get_model_for_task("classification")
+            llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
+                prompt,
+                model_name=model_name, # Use the model configured in CodeService's provider or a specific one
+                temperature=0.2
+            )
+
+            if not llm_response_str or not llm_response_str.strip():
+                logger.warning("Fact assessment LLM returned empty response.")
+                return False, "LLM returned empty response during assessment."
+
+            # Basic cleaning, assuming response is primarily JSON
+            cleaned_response_str = llm_response_str.strip()
+            # Remove potential markdown ```json ... ```
+            if cleaned_response_str.startswith("```json"):
+                cleaned_response_str = cleaned_response_str[len("```json"):].strip()
+                if cleaned_response_str.endswith("```"):
+                    cleaned_response_str = cleaned_response_str[:-len("```")].strip()
+
+            assessment_data = json.loads(cleaned_response_str)
+
+            is_valuable = assessment_data.get("is_valuable", False)
+            reason = assessment_data.get("reason", "No reason provided by LLM.")
+
+            if not isinstance(is_valuable, bool):
+                logger.warning(f"Fact assessment 'is_valuable' is not a boolean: {is_valuable}. Defaulting to False.")
+                is_valuable = False
+                reason += " (Assessment format error: is_valuable was not boolean)"
+
+            return is_valuable, reason
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse fact assessment JSON: {e}. Response: {llm_response_str[:200]}")
+            return False, f"JSON parsing error during assessment: {e}"
+        except Exception as e:
+            logger.error(f"Unexpected error during fact value assessment: {e}", exc_info=True)
+            return False, f"Unexpected error during assessment: {e}"
+
 
     async def execute_action(self, proposed_action: Dict[str, Any]) -> bool:
         action_type = proposed_action.get("action_type")
@@ -323,40 +410,67 @@ class ActionExecutor:
                 )
                 return False
             try:
+            try:
                 current_facts = load_learned_facts()
-                if any(fact.lower() == fact_to_learn.lower() for fact in current_facts):
-                    log_message = f"Fact '{fact_to_learn}' already exists. No action taken."
+                normalized_fact_to_learn = fact_to_learn.strip()
+
+                if any(fact.strip().lower() == normalized_fact_to_learn.lower() for fact in current_facts):
+                    log_message = f"Fact '{normalized_fact_to_learn}' already exists (case/whitespace insensitive). No action taken."
                     print(f"ActionExecutor: {log_message}")
                     global_reflection_log.log_execution(
                         goal_description=f"Add learned fact from insight {source_insight_id}",
                         plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=True, notes=log_notes_prefix + "Fact already present.",
+                        overall_success=True, notes=log_notes_prefix + "Fact already present (normalized).",
                         is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
                         modification_type="ADD_LEARNED_FACT_DUPLICATE_IGNORED"
                     )
-                    return True
-                current_facts.append(fact_to_learn)
-                if save_learned_facts(current_facts):
-                    log_message = f"Successfully added learned fact: '{fact_to_learn}'."
+                    # Even if duplicate, if it came from a suggestion, that suggestion might be considered 'implemented'.
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact already known: {normalized_fact_to_learn}")
+                    return True # Action considered complete as fact is known
+
+                # Value Assessment
+                is_valuable, assessment_reason = await self._is_fact_valuable(normalized_fact_to_learn)
+                if not is_valuable:
+                    log_message = f"Fact '{normalized_fact_to_learn}' assessed as NOT VALUABLE. Reason: {assessment_reason}. Not adding to knowledge base."
                     print(f"ActionExecutor: {log_message}")
                     global_reflection_log.log_execution(
                         goal_description=f"Add learned fact from insight {source_insight_id}",
                         plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=True, notes=log_notes_prefix + f"Added '{fact_to_learn}'.",
+                        overall_success=True, # Action processed, even if fact not added
+                        notes=log_notes_prefix + f"Fact not added: {assessment_reason}",
                         is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_SUCCESS",
-                        modification_details={"fact_added": fact_to_learn}
+                        modification_type="ADD_LEARNED_FACT_NOT_VALUABLE",
+                        modification_details={"fact_assessed": normalized_fact_to_learn, "assessment_reason": assessment_reason}
                     )
+                    # If a suggestion led to this "not valuable" outcome, the suggestion is still "handled".
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {normalized_fact_to_learn}. Reason: {assessment_reason}")
+                    return True # Action considered complete
+
+                logger.info(f"Fact '{normalized_fact_to_learn}' assessed as VALUABLE. Reason: {assessment_reason}. Proceeding to add.")
+                current_facts.append(normalized_fact_to_learn) # Add the normalized fact
+
+                if save_learned_facts(current_facts):
+                    log_message = f"Successfully added valuable learned fact: '{normalized_fact_to_learn}'."
+                    print(f"ActionExecutor: {log_message}")
+                    global_reflection_log.log_execution(
+                        goal_description=f"Add learned fact from insight {source_insight_id}",
+                        plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
+                        overall_success=True, notes=log_notes_prefix + f"Added valuable fact '{normalized_fact_to_learn}'. Assessment: {assessment_reason}",
+                        is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
+                        modification_type="ADD_LEARNED_FACT_SUCCESS_VALUABLE",
+                        modification_details={"fact_added": normalized_fact_to_learn, "assessment_reason": assessment_reason}
+                    )
+                    if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Valuable fact added: {normalized_fact_to_learn}")
                     return True
                 else: # pragma: no cover
-                    log_message = "Failed to save updated learned facts."
+                    log_message = "Failed to save updated learned facts (after value assessment)."
                     print(f"ActionExecutor: {log_message}")
                     global_reflection_log.log_execution(
                         goal_description=f"Add learned fact from insight {source_insight_id}",
                         plan=[{"action_type": action_type, "details": details}], execution_results=[log_message],
-                        overall_success=False, notes=log_notes_prefix + f"Failed to save fact '{fact_to_learn}'.",
+                        overall_success=False, notes=log_notes_prefix + f"Failed to save valuable fact '{normalized_fact_to_learn}'.",
                         is_self_modification_attempt=True, source_suggestion_id=source_insight_id,
-                        modification_type="ADD_LEARNED_FACT_SAVE_FAILED"
+                        modification_type="ADD_LEARNED_FACT_SAVE_FAILED_VALUABLE"
                     )
                     return False
             except Exception as e: # pragma: no cover

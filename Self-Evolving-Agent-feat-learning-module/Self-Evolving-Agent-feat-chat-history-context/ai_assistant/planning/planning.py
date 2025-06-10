@@ -226,6 +226,17 @@ When generating the plan, consider this existing project context. For example, i
         # Refined Prompt Template
         LLM_PLANNING_PROMPT_TEMPLATE = """Given the user's goal: "{goal}"
 {project_context_section}
+
+**Leveraging Provided Information (Context & Facts):**
+- If a "Current Project Context" (e.g., code from existing files) is provided, use it to understand the current state and how the user's goal relates to it.
+- If "Relevant Learned Facts" or "Knowledge Snippets" are provided, review them carefully.
+- These facts represent information the assistant already knows.
+- Use these facts to:
+    - Inform your choice of tools and arguments.
+    - Avoid asking for information already known.
+    - Avoid planning steps to re-acquire or re-learn these facts.
+- If a learned fact directly helps in achieving the user's goal, incorporate this knowledge into your plan.
+
 And the following available tools (tool_name: description):
 {tools_json_string}
 
@@ -234,6 +245,13 @@ Each step dictionary *MUST* contain the following keys:
 - "tool_name": string (must be one of the available tools listed above)
 - "args": list of strings (positional arguments for the tool). If an argument value cannot be inferred from the goal, use an empty string "" or a placeholder like "TODO_infer_arg_value".
 - "kwargs": dictionary (key-value pairs of strings for keyword arguments, e.g., {{"key": "value"}}). If no keyword arguments, use an empty dictionary {{}}.
+
+**Critical First Step: Determine User's Intent for "Creation" Tasks**
+Before planning any "creation" task (e.g., "create a ...", "make a ...", "build a ..."), you *MUST* first determine if the user is requesting:
+A.  The creation of a new **Agent Tool**: A specific capability or function for the AI assistant itself. These are typically single Python scripts/functions. If so, prioritize using tools like 'generate_new_tool_from_description'.
+B.  The creation or scaffolding of a **User Project**: A broader software application or multi-file project that the user wants to develop. If so, prioritize tools like 'initiate_ai_project', 'generate_code_for_project_file', or 'execute_project_coding_plan'.
+
+If the user's intent for a "creation" task is ambiguous between an Agent Tool and a User Project, your *first planned step* should be to use the 'request_user_clarification' tool (if available). The 'clarification_question' argument for this tool should ask the user to specify if they want an agent tool or a user project, e.g., "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?". If 'request_user_clarification' is not available, make your best judgment based on the detail and scope of the request.
 
 **Preferred Project Management Tools:**
 For tasks related to software project creation, code generation for specific files within a project, or building out a project based on a plan, please PREFER the following tools:
@@ -258,6 +276,48 @@ Example for tool creation:
     {{"tool_name": "generate_new_tool_from_description", "args": ["a tool that tells me the current moon phase"], "kwargs": {{}}}}
   ]
 Do NOT attempt to fulfill the *functionality* of a requested new tool using other existing tools if the user explicitly asks to *create* a tool. Your task in such a scenario is to initiate the tool creation process.
+
+**Guidance for Editing Existing Agent Tools:**
+If the user's goal is to "edit an existing agent tool", "modify an agent tool", "change how an agent tool works", or similar, your plan should generally follow these steps:
+1.  **Find the tool's source code**: Use the `find_agent_tool_source` tool. The `tool_name` argument should be the name of the tool to be edited. (Assumes `find_agent_tool_source` is an available tool).
+2.  **Generate code modification**: Use a code modification tool/service (e.g., a tool named `call_code_service_modify_code` that wraps `CodeService.modify_code`).
+    *   The `context` argument for this tool (e.g., `GRANULAR_CODE_REFACTOR` or `SELF_FIX_TOOL`) should be chosen based on the specificity of the user's request.
+    *   The `modification_instruction` argument will be the user's description of desired changes.
+    *   Provide necessary code context using outputs from the previous step: `existing_code` (from `[[step_1_output.source_code]]`), `module_path` (from `[[step_1_output.module_path]]`), and `function_name` (from `[[step_1_output.function_name]]`).
+    *   If using `GRANULAR_CODE_REFACTOR`, also provide a `section_identifier` in `kwargs` if the user specifies a particular part of the code to change.
+3.  **Stage the modification for review and application**: Use a tool like `stage_agent_tool_modification`. This tool gathers all necessary information for the `ActionExecutor` to later process it as a `PROPOSE_TOOL_MODIFICATION` action type.
+    *   `module_path`: from `[[step_1_output.module_path]]`
+    *   `function_name`: from `[[step_1_output.function_name]]`
+    *   `modified_code_string`: from `[[step_2_output.modified_code_string]]` (the output of the code modification step)
+    *   `change_description`: A summary of the user's original request for the change (this will be used for review context).
+    *   `original_reflection_entry_id`: (Optional) If this edit is a result of a reflection or a previous failed attempt, provide the ID of the original reflection log entry. If not applicable, pass an empty string or omit.
+
+Example for editing an agent tool:
+User goal: "Modify the 'my_calculator' tool to handle division by zero by returning an error message string instead of raising an exception."
+Assumed Plan (tool names like `call_code_service_modify_code` and `stage_agent_tool_modification` must be available in `tools_json_string`):
+[
+  {{
+    "tool_name": "find_agent_tool_source",
+    "args": ["my_calculator"],
+    "kwargs": {{}}
+  }},
+  {{
+    "tool_name": "call_code_service_modify_code",
+    "args": ["[[step_1_output.module_path]]", "[[step_1_output.function_name]]", "[[step_1_output.source_code]]", "Handle division by zero by returning an error message string instead of raising an exception.", "GRANULAR_CODE_REFACTOR"],
+    "kwargs": {{"section_identifier": "the division operation"}}
+  }},
+  {{
+    "tool_name": "stage_agent_tool_modification",
+    "args": [
+        "[[step_1_output.module_path]]",
+        "[[step_1_output.function_name]]",
+        "[[step_2_output.modified_code_string]]",
+        "User request: Modify my_calculator to handle division by zero.",
+        "" // original_reflection_entry_id (empty if not applicable)
+    ],
+    "kwargs": {{}}
+  }}
+]
 
 Example of a valid JSON plan (list with one step using a general tool):
 [

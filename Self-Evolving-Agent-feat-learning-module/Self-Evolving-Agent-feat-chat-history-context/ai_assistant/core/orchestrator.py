@@ -12,6 +12,8 @@ from ..learning.learning import LearningAgent
 from ..tools.tool_system import tool_system_instance
 from ..config import is_debug_mode
 from ..utils.display_utils import CLIColors, color_text # Added import
+from ..execution.action_executor import ActionExecutor # Added import
+import uuid # Added import
 
 class DynamicOrchestrator:
     """
@@ -22,10 +24,12 @@ class DynamicOrchestrator:
     def __init__(self, 
                  planner: PlannerAgent,
                  executor: ExecutionAgent,
-                 learning_agent: LearningAgent):
+                 learning_agent: LearningAgent,
+                 action_executor: ActionExecutor): # Added action_executor
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
+        self.action_executor = action_executor # Store ActionExecutor instance
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
@@ -201,40 +205,69 @@ class DynamicOrchestrator:
             # Update self.current_plan to the plan that was actually run for logging/context
             self.current_plan = final_plan_attempted
 
-            # Process results
-            success = True
-            if not results_of_final_attempt and final_plan_attempted : # Plan existed but no results
-                success = False
-            elif not final_plan_attempted and not results_of_final_attempt: # No plan, no results
-                success = False # Or True if prompt was trivial and needed no plan? For now, False.
-            else: # Has results, check them
-                for res_item in results_of_final_attempt:
-                    if isinstance(res_item, Exception):
-                        success = False
-                        break
-                    if isinstance(res_item, dict):
-                        if res_item.get("error") or res_item.get("ran_successfully") is False:
-                            success = False
-                            break
-            # If the plan was non-empty but results are shorter than plan (e.g. critical failure mid-plan)
-            if final_plan_attempted and len(results_of_final_attempt) < len(final_plan_attempted):
-                success = False
+            # Process results, including handling staged self-modifications
+            processed_results = []
+            overall_success_of_plan = True # Assume success initially
 
-            # Update context with results
+            if not results_of_final_attempt and final_plan_attempted :
+                overall_success_of_plan = False
+            elif not final_plan_attempted and not results_of_final_attempt:
+                overall_success_of_plan = False
+
+            for i, res_item in enumerate(results_of_final_attempt):
+                if isinstance(res_item, dict) and res_item.get("action_type_for_executor") == "PROPOSE_TOOL_MODIFICATION":
+                    action_details = res_item.get("action_details_for_executor")
+                    if action_details:
+                        proposed_action_for_ae = {
+                            "action_type": "PROPOSE_TOOL_MODIFICATION", # This is the type ActionExecutor expects
+                            "details": action_details,
+                            "source_insight_id": f"planner_staged_mod_{str(uuid.uuid4())[:8]}"
+                        }
+                        log_event(
+                            event_type="ORCHESTRATOR_DISPATCH_TO_ACTION_EXECUTOR",
+                            description=f"Dispatching staged self-modification to ActionExecutor for tool: {action_details.get('tool_name', 'unknown_tool')}",
+                            source="DynamicOrchestrator.process_prompt",
+                            metadata={"action_details": action_details}
+                        )
+                        # Ensure ActionExecutor is available
+                        if not self.action_executor: # Should have been set in __init__
+                             logger.error("ActionExecutor not initialized in DynamicOrchestrator. Cannot execute staged modification.")
+                             processed_results.append({"error": "ActionExecutor not available.", "ran_successfully": False})
+                             overall_success_of_plan = False
+                             continue
+
+                        ae_success = await self.action_executor.execute_action(proposed_action_for_ae)
+
+                        processed_results.append({
+                            "tool_name_original_staged": action_details.get('tool_name', 'unknown_tool_from_stage'),
+                            "action_executor_result": ae_success,
+                            "summary": f"Self-modification attempt for '{action_details.get('tool_name')}' {'succeeded' if ae_success else 'failed'}"
+                        })
+                        if not ae_success:
+                            overall_success_of_plan = False
+                    else: # pragma: no cover
+                        processed_results.append({"error": "Invalid staged action structure from tool", "ran_successfully": False})
+                        overall_success_of_plan = False
+                else:
+                    processed_results.append(res_item)
+                    if isinstance(res_item, Exception) or \
+                       (isinstance(res_item, dict) and (res_item.get("error") or res_item.get("ran_successfully") is False)):
+                        overall_success_of_plan = False
+
+            # If the plan was non-empty but results are shorter than plan (e.g. critical failure mid-plan before processing all steps)
+            if final_plan_attempted and len(processed_results) < len(final_plan_attempted): # pragma: no cover
+                overall_success_of_plan = False
+
+
+            # Update context with processed results
             self.context.update({
-                'last_results': results_of_final_attempt,
-                'last_success': success,
-                'completed_goal': prompt if success else None
+                'last_results': processed_results,
+                'last_success': overall_success_of_plan,
+                'completed_goal': prompt if overall_success_of_plan else None
             })
 
             # Log completion
-            # self.current_plan is now final_plan_attempted
             num_steps_in_final_plan = len(self.current_plan) if self.current_plan else 0
-            if not self.current_plan and not results_of_final_attempt and not final_plan_attempted:
-                # This case means initial planning likely failed and returned empty plan
-                # and orchestrator didn't return early.
-                # Let's ensure num_steps is 0 if self.current_plan is None.
-                num_steps_in_final_plan = 0
 
             log_event(
                 event_type="ORCHESTRATOR_COMPLETE_PROCESSING",
@@ -242,45 +275,57 @@ class DynamicOrchestrator:
                 source="DynamicOrchestrator.process_prompt",
                 metadata={
                     "goal": prompt,
-                    "success": success,
+                    "success": overall_success_of_plan,
                     "num_steps": num_steps_in_final_plan
                 }
             )
 
-            # Format response message
+            # Format response message using processed_results and overall_success_of_plan
             response = ""
-            if success and self.current_plan and len(self.current_plan) == 1:
-                tool_name_single = self.current_plan[0].get('tool_name', 'the tool')
-                result_single_str = str(results_of_final_attempt[0])[:500] if results_of_final_attempt else "No specific result."
-                response = f"Successfully completed the task by running '{tool_name_single}'. Result: {result_single_str}"
-                # For single successful step, this response is the summary.
+            if overall_success_of_plan and self.current_plan and len(self.current_plan) == 1:
+                # Check if the single step was a staged action that succeeded
+                if isinstance(processed_results[0], dict) and "action_executor_result" in processed_results[0]:
+                    response = f"Successfully completed the task. {processed_results[0]['summary']}"
+                else:
+                    tool_name_single = self.current_plan[0].get('tool_name', 'the tool')
+                    result_single_str = str(processed_results[0])[:500] if processed_results else "No specific result."
+                    response = f"Successfully completed the task by running '{tool_name_single}'. Result: {result_single_str}"
             else:
-                if success:
+                if overall_success_of_plan:
                     response = "Successfully completed the multi-step task. "
-                    if results_of_final_attempt:
-                        result_str = str(results_of_final_attempt[-1])[:200]
+                    if processed_results:
+                        # Summarize final step, which might be from ActionExecutor
+                        final_res_item = processed_results[-1]
+                        if isinstance(final_res_item, dict) and "summary" in final_res_item:
+                             result_str = final_res_item["summary"]
+                        else:
+                             result_str = str(final_res_item)[:200]
                         response += f"The final step's result: {result_str}"
                     else: # Should not happen if success is true and plan was multi-step
-                        response += "No specific result from the final step."
+                        response += "No specific result from the final step." # pragma: no cover
                 else: # Failure
                     response = "Could not complete the task. "
-                    if results_of_final_attempt:
+                    if processed_results:
                         last_error_str = "Details of the steps are in the summary below." # Default
-                        for res_item in results_of_final_attempt: # Find first error
+                        for res_item in processed_results: # Find first error
                             if isinstance(res_item, Exception):
                                 last_error_str = f"An error occurred: {type(res_item).__name__}: {str(res_item)[:200]}"
                                 break
-                            if isinstance(res_item, dict) and (res_item.get("error") or res_item.get("ran_successfully") is False):
-                                err_detail = res_item.get("stderr", res_item.get("error", "Unknown error from tool"))
-                                last_error_str = f"A tool reported an error: {str(err_detail)[:200]}"
-                                break
+                            if isinstance(res_item, dict):
+                                if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
+                                    last_error_str = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
+                                    break
+                                if res_item.get("error") or res_item.get("ran_successfully") is False:
+                                    err_detail = res_item.get("stderr", res_item.get("error", "Unknown error from tool"))
+                                    last_error_str = f"A tool reported an error: {str(err_detail)[:200]}"
+                                    break
                         response += f"{last_error_str}"
                     else: # No results from final attempt, but it failed
-                        response += "No specific results or errors from the last attempt."
-                # Append detailed summary for multi-step tasks or any failure
-                execution_summary = self._generate_execution_summary(self.current_plan, results_of_final_attempt)
+                        response += "No specific results or errors from the last attempt." # pragma: no cover
+
+                execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
                 response += execution_summary
-            return success, response
+            return overall_success_of_plan, response
 
         except Exception as e:
             error_msg = f"Error during orchestration: {str(e)}"

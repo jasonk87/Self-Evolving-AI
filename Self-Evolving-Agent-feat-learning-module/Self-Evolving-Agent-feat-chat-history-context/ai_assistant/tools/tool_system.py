@@ -323,6 +323,23 @@ class ToolSystem:
         """Returns a dictionary of tool names to their descriptions."""
         return {name: tool["description"] for name, tool in self._tool_registry.items()}
 
+    def list_tools_with_sources(self) -> Dict[str, Dict[str, str]]:
+        """
+        Returns a dictionary of all registered tools with their detailed metadata,
+        including module_path, function_name, and description.
+
+        The key of the outer dictionary is the tool_name (registry key).
+        The inner dictionary contains 'module_path', 'function_name', and 'description'.
+        """
+        detailed_tools = {}
+        for tool_name, tool_data in self._tool_registry.items():
+            # Ensure all expected keys are present, providing defaults if necessary for robustness
+            detailed_tools[tool_name] = {
+                "module_path": tool_data.get("module_path", "N/A"),
+                "function_name": tool_data.get("function_name", tool_name), # Default to tool_name if specific function_name missing
+                "description": tool_data.get("description", "No description available.")
+            }
+        return detailed_tools
 
     def save_registered_tools(self) -> bool:
         """Saves the metadata of all registered tools (excluding callables) to a JSON file."""
@@ -533,6 +550,10 @@ def load_persisted_tools(): # For explicit reload if needed, __init__ handles in
 def register_example_tools(): # For explicit re-registration if needed
     tool_system_instance.register_example_tools()
 
+def list_tools_with_sources() -> Dict[str, Dict[str, str]]:
+    """Module-level wrapper for ToolSystem.list_tools_with_sources()."""
+    return tool_system_instance.list_tools_with_sources()
+
 async def main_test(): # pragma: no cover
     print("\n--- ToolSystem Direct Execution Test (using global instance) ---")
     print("Listing tools from the globally initialized instance:")
@@ -568,6 +589,21 @@ async def main_test(): # pragma: no cover
     else:
         print("'manage_auto_approve_list' not found in registered tools for this test run.")
 
+    print("\n--- Testing list_tools_with_sources ---")
+    detailed_tools_list = list_tools_with_sources() # Using the module-level wrapper
+    if detailed_tools_list:
+        print(f"Found {len(detailed_tools_list)} tools with details. First few:")
+        count = 0
+        for tool_name, details in detailed_tools_list.items():
+            print(f"  Tool: {tool_name}")
+            print(f"    Module Path: {details.get('module_path')}")
+            print(f"    Function Name: {details.get('function_name')}")
+            print(f"    Description: {details.get('description', '')[:70]}...")
+            count += 1
+            if count >= 3: # Print details for a few tools
+                break
+    else:
+        print("No detailed tools found by list_tools_with_sources.")
 
     print("\n--- ToolSystem Direct Execution Test Finished ---")
 

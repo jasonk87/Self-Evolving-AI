@@ -98,7 +98,7 @@ For each component (module, class, function, method), include:
 - "name": The Pythonic name.
 - "description": A brief explanation of its purpose.
 - (For functions/methods) "signature": e.g., "(self, arg1: str, arg2: int) -> bool"
-- (For functions/methods) "body_placeholder": A short comment or note indicating what the implementation should achieve.
+- (For functions/methods) "body_placeholder": A specific, actionable comment or concise instruction for the AI that will implement this component's body. For example: "# Implement CSV parsing and extract specified column data." or "# Calculate factorial using recursion, handle n=0."
 - (For classes) "attributes": A list of attribute definitions (name, type, description).
 - (For modules) "imports": A list of necessary Python modules to import.
 
