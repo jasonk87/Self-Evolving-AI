@@ -1,8 +1,9 @@
 # ai_assistant/code_services/service.py
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 import re
 import json # For parsing metadata
+import asyncio
 
 # Assuming these imports are relative to the ai_assistant package root
 from ..config import get_model_for_task, is_debug_mode
@@ -138,6 +139,65 @@ Instructions for Implementation:
 Python code for `{component_name}`:
 """
 
+LLM_GRANULAR_REFACTOR_PROMPT_TEMPLATE = """You are an expert Python refactoring assistant.
+You will be given the full source code of a Python function/method, a specific section within that code to target, and a refactoring instruction.
+Your task is to apply the refactoring instruction *only* to the specified section and then return the *entire modified function/method code*.
+
+Module Path: `{module_path}`
+Function Name: `{function_name}`
+
+Original Function Code:
+```python
+{original_code}
+```
+
+Section to Modify:
+```
+{section_to_modify}
+```
+
+Refactoring Instruction:
+{refactor_instruction}
+
+Constraints:
+- Modify *only* the specified section if possible. If the change necessitates minor adjustments elsewhere in the function (e.g., a new variable), that's acceptable.
+- Return the complete Python code for the *entire function/method*, including the function signature, docstring, and the applied modification.
+- Do NOT include any explanations, markdown formatting (like ```python), or any text other than the complete, modified function/method code itself.
+- If the instruction is unclear, impossible, or the section cannot be reasonably identified/modified as instructed, return only the text: "// REFACTORING_SUGGESTION_IMPOSSIBLE"
+
+Modified full function/method code:
+"""
+
+class CodeService:
+
+Overall Module/Class Context:
+<context_summary>
+{overall_context_summary}
+</context_summary>
+
+Component to Implement:
+- Type: {component_type}
+- Name: {component_name}
+- Signature: `{component_signature}`
+- Description/Purpose: {component_description}
+- Body Placeholder (Initial thought from outline): {component_body_placeholder}
+
+Required Module-Level Imports (available for use, do not redeclare unless shadowing):
+{module_imports}
+
+Instructions for Implementation:
+1.  Implement *only* the Python code for the body of the function/method `{component_name}`.
+2.  Adhere strictly to the provided signature: `{component_signature}`.
+3.  Ensure your code fulfills the component's described purpose: "{component_description}" and expands on the placeholder: "{component_body_placeholder}".
+4.  Use the provided module-level imports if needed. Do not add new module-level imports unless absolutely necessary and clearly justified by a specific library for the task. Local imports within the function are acceptable if scoped appropriately.
+5.  If the component is a class method, you can assume it has access to `self` and any attributes defined in the `Overall Module/Class Context` (if provided for a class).
+6.  Focus on clear, correct, and efficient Python code. Include comments for complex logic.
+7.  For simplicity and consistency, always generate the full component code including signature, i.e., `def function_name(...):\n    body...`. The assembly step can handle placing it correctly.
+8.  If the task is impossible or the description is too ambiguous to implement, return only the comment: `# IMPLEMENTATION_ERROR: Ambiguous instruction or impossible task.`
+
+Python code for `{component_name}`:
+"""
+
 class CodeService:
     def __init__(self, llm_provider: Optional[Any] = None, self_modification_service: Optional[Any] = None):
         self.llm_provider = llm_provider
@@ -238,6 +298,16 @@ class CodeService:
             final_status_new_tool = "SUCCESS_CODE_GENERATED"
             error_new_tool = None
 
+            if cleaned_code: # Only run linter if there's code
+                lint_messages, lint_run_error = await self._run_linter(cleaned_code)
+                if lint_run_error:
+                    logs.append(f"Linter execution error: {lint_run_error}")
+                    # Optionally, you could set error_new_tool here or change status,
+                    # but current requirement is to only log.
+                if lint_messages:
+                    logs.append("Linting issues found:")
+                    logs.extend(lint_messages)
+
             if target_path and cleaned_code:
                 logs.append(f"Attempting to save generated NEW_TOOL code to {target_path}")
                 if write_to_file(target_path, cleaned_code):
@@ -319,125 +389,261 @@ class CodeService:
 
         elif context == "EXPERIMENTAL_HIERARCHICAL_OUTLINE":
             high_level_description = prompt_or_description
-            logs = [f"Using EXPERIMENTAL_HIERARCHICAL_OUTLINE context. Description: {high_level_description[:50]}..."]
+            logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_OUTLINE. Desc: {high_level_description[:50]}..."]
 
-            formatted_prompt = LLM_HIERARCHICAL_OUTLINE_PROMPT_TEMPLATE.format(
-                high_level_description=high_level_description
-            )
+            # Call the new private method
+            outline_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
 
-            raw_llm_output = await self.llm_provider.invoke_ollama_model_async(
-                formatted_prompt, model_name=model_to_use, temperature=temperature, max_tokens=max_tokens_to_use # Uses model_to_use, temp, max_tokens defined earlier in the method
-            )
+            logs.extend(outline_result.get("logs", [])) # Add logs from the private method
 
-            if not raw_llm_output or not raw_llm_output.strip():
-                logger.warning("LLM returned empty response for hierarchical outline generation.")
-                logs.append("LLM returned empty response for outline.")
-                return {"status": "ERROR_LLM_NO_OUTLINE", "outline_str": raw_llm_output, "parsed_outline": None, "code_string": None, "metadata": None, "logs": logs, "error": "LLM provided no outline."}
-
-            logs.append(f"Raw LLM outline output length: {len(raw_llm_output)}")
-
-            parsed_outline: Optional[Dict[str, Any]] = None
-            error_message: Optional[str] = None
-            final_status = "SUCCESS_OUTLINE_GENERATED"
-
-            try:
-                # LLM might wrap JSON in backticks, try to strip them
-                cleaned_json_str = raw_llm_output.strip()
-                if cleaned_json_str.startswith("```json"): # pragma: no cover
-                    cleaned_json_str = cleaned_json_str[len("```json"):].strip()
-                if cleaned_json_str.endswith("```"): # pragma: no cover
-                    cleaned_json_str = cleaned_json_str[:-len("```")].strip()
-
-                parsed_outline = json.loads(cleaned_json_str)
-                logs.append("Successfully parsed JSON outline from LLM response.")
-            except json.JSONDecodeError as e: # pragma: no cover
-                logger.warning(f"Failed to parse JSON outline: {e}. Raw output: {raw_llm_output[:200]}...")
-                logs.append(f"JSONDecodeError parsing outline: {e}")
-                error_message = f"Failed to parse LLM JSON outline: {e}"
-                final_status = "ERROR_OUTLINE_PARSING"
-
-            return {"status": final_status, "outline_str": raw_llm_output, "parsed_outline": parsed_outline, "code_string": None, "metadata": None, "logs": logs, "error": error_message}
+            # Format the dictionary to match the expected return structure of generate_code for this context.
+            return {
+                "status": outline_result["status"],
+                "outline_str": outline_result.get("outline_str"),
+                "parsed_outline": outline_result.get("parsed_outline"),
+                "code_string": None,  # No code string for outline-only context
+                "metadata": None,    # No metadata for outline-only context
+                "logs": logs,
+                "error": outline_result.get("error")
+            }
 
         elif context == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
+            # This context now generates outline and then component details. It does NOT assemble.
             high_level_description = prompt_or_description
-            logs = [f"Using EXPERIMENTAL_HIERARCHICAL_FULL_TOOL context. Description: {high_level_description[:50]}..."]
+            logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_FULL_TOOL. Desc: {high_level_description[:50]}..."]
 
-            # Step 1 & 2: Generate Outline and then Component Details
-            orchestration_result = await self.generate_code(
-                context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL", # Call existing orchestration
-                prompt_or_description=high_level_description,
-                language=language,
-                llm_config=llm_config,
-                additional_context=additional_context
-            )
+            # Step 1: Generate Outline
+            outline_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
+            logs.extend(outline_result.get("logs", []))
 
-            logs.extend(orchestration_result.get("logs", []))
-            parsed_outline = orchestration_result.get("parsed_outline")
-            component_details = orchestration_result.get("component_details", {}) # Ensure Dict[str, Optional[str]] type
-
-            if orchestration_result["status"] not in ["SUCCESS_HIERARCHICAL_DETAILS_GENERATED", "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"]:
-                logs.append("Outline or detail generation failed, cannot proceed to assembly.") # pragma: no cover
-                return { # Propagate error from previous stage
-                    "status": orchestration_result["status"],
-                    "parsed_outline": parsed_outline, "component_details": component_details,
-                    "code_string": None, "metadata": None,
-                    "logs": logs, "error": orchestration_result.get("error", "Outline or detail generation failed.")
-                }
-
-            if not parsed_outline or component_details is None: # Check if None explicitly for component_details
-                logs.append("Missing outline or component details after successful generation steps. Cannot assemble.") # pragma: no cover
+            parsed_outline = outline_result.get("parsed_outline")
+            if outline_result["status"] != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
+                logs.append("Outline generation failed or produced no data, cannot proceed to detail generation.")
                 return {
-                    "status": "ERROR_ASSEMBLY_MISSING_DATA",
-                    "parsed_outline": parsed_outline, "component_details": component_details,
-                    "code_string": None, "metadata": None,
-                    "logs": logs, "error": "Internal error: Missing data for assembly."
+                    "status": outline_result["status"], # Propagate status from outline generation
+                    "parsed_outline": parsed_outline,
+                    "component_details": None, # No details attempted
+                    "code_string": None,
+                    "metadata": None,
+                    "logs": logs,
+                    "error": outline_result.get("error", "Outline generation failed or outline was empty.")
                 }
+
+            # Step 2: Generate Component Details
+            component_details: Dict[str, Optional[str]] = {}
+            all_details_succeeded = True
+            any_detail_succeeded = False
+
+            components_to_generate = []
+            # Extract functions and methods from outline to prepare for detail generation
+            if parsed_outline.get("components"): # pragma: no branch
+                for component_def in parsed_outline["components"]:
+                    if component_def.get("type") == "function":
+                        components_to_generate.append(component_def)
+                    elif component_def.get("type") == "class" and component_def.get("methods"): # pragma: no branch
+                        for method_def in component_def["methods"]:
+                            # Construct a unique key for methods (ClassName.MethodName)
+                            # and pass necessary class context for detail generation.
+                            method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
+                            components_to_generate.append({
+                                **method_def, # Spread the original method definition
+                                "name": method_key, # This name (key) is used in component_details map
+                                "original_name": method_def.get("name"), # Preserve original name if needed by _generate_detail_for_component
+                                "class_context": component_def # Pass class context for better detail generation
+                            })
+
+            logs.append(f"Found {len(components_to_generate)} components (functions/methods) for detail generation.")
+
+            for comp_def_for_detail_gen in components_to_generate:
+                # The 'name' in comp_def_for_detail_gen is now the unique key (e.g. Class.Method or Function)
+                current_comp_key = comp_def_for_detail_gen.get("name")
+
+                logs.append(f"Generating details for component key: {current_comp_key}")
+                detail_code = await self._generate_detail_for_component(
+                    component_definition=comp_def_for_detail_gen, # Pass the (potentially modified) component definition
+                    full_outline=parsed_outline, # Pass the complete outline for context
+                    llm_config=llm_config # Pass any specific llm_config
+                )
+                if detail_code:
+                    component_details[current_comp_key] = detail_code
+                    logs.append(f"Successfully generated details for {current_comp_key}.")
+                    any_detail_succeeded = True
+                else: # pragma: no cover
+                    component_details[current_comp_key] = None # Mark as failed
+                    logs.append(f"Failed to generate details for {current_comp_key}.")
+                    all_details_succeeded = False
+
+            # Determine status and error based on detail generation outcomes
+            current_status_details = "ERROR_DETAIL_GENERATION_FAILED" # Default if no components or all fail
+            current_error_details = outline_result.get("error") # Preserve outline error if any
+
+            if all_details_succeeded and any_detail_succeeded : # pragma: no branch
+                current_status_details = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
+            elif any_detail_succeeded: # pragma: no cover
+                 current_status_details = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                 if not current_error_details: current_error_details = "Some component details failed generation."
+            else: # No detail succeeded (or no components to generate for)
+                 if not components_to_generate: # No components were identified in the outline
+                     current_status_details = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED" # Technically true, no details needed.
+                     logs.append("No components found in outline for detail generation.")
+                 elif not current_error_details: # Details failed, and no prior error from outline
+                     current_error_details = "All component details failed generation." # pragma: no cover
+
+            logs.append(f"Detail generation phase status: {current_status_details}")
+
+            return {
+                "status": current_status_details,
+                "parsed_outline": parsed_outline,
+                "component_details": component_details,
+                "code_string": None, # This context does NOT assemble code
+                "metadata": None,
+                "logs": logs,
+                "error": current_error_details
+            }
+
+        elif context == "HIERARCHICAL_GEN_COMPLETE_TOOL":
+            high_level_description = prompt_or_description
+            logs = [f"Context: HIERARCHICAL_GEN_COMPLETE_TOOL. Desc: {high_level_description[:50]}..."]
+
+            # Step 1: Generate Outline
+            outline_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
+            logs.extend(outline_result.get("logs", []))
+            parsed_outline = outline_result.get("parsed_outline")
+            current_error = outline_result.get("error") # Initialize error from outline generation
+
+            if outline_result["status"] != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
+                logs.append("Outline generation failed or produced no data. Cannot proceed.")
+                return {
+                    "status": outline_result["status"], # Status from outline generation
+                    "parsed_outline": parsed_outline, "component_details": None,
+                    "code_string": None, "metadata": None,
+                    "logs": logs, "error": current_error if current_error else "Outline generation failed or was empty."
+                }
+
+            # Step 2: Generate Component Details (Iteratively)
+            component_details: Dict[str, Optional[str]] = {}
+            all_details_succeeded = True
+            any_detail_succeeded = False
+
+            components_to_generate = []
+            if parsed_outline.get("components"): # pragma: no branch
+                for component_def in parsed_outline["components"]:
+                    if component_def.get("type") == "function":
+                        components_to_generate.append(component_def)
+                    elif component_def.get("type") == "class" and component_def.get("methods"): # pragma: no branch
+                        for method_def in component_def["methods"]:
+                            method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
+                            components_to_generate.append({
+                                **method_def,
+                                "name": method_key,
+                                "original_name": method_def.get("name"),
+                                "class_context": component_def
+                            })
+
+            logs.append(f"Found {len(components_to_generate)} components for detail generation.")
+
+            if components_to_generate: # Only proceed if there are components to generate
+                for comp_def_for_detail in components_to_generate:
+                    comp_name_key = comp_def_for_detail.get("name")
+                    logs.append(f"Generating details for component: {comp_name_key}")
+                    detail_code = await self._generate_detail_for_component(
+                        component_definition=comp_def_for_detail,
+                        full_outline=parsed_outline,
+                        llm_config=llm_config
+                    )
+                    if detail_code:
+                        component_details[comp_name_key] = detail_code
+                        logs.append(f"Successfully generated details for {comp_name_key}.")
+                        any_detail_succeeded = True
+                    else: # pragma: no cover
+                        component_details[comp_name_key] = None
+                        logs.append(f"Failed to generate details for {comp_name_key}.")
+                        all_details_succeeded = False
+            else: # No components to generate details for
+                logs.append("No components listed in outline for detail generation.")
+                all_details_succeeded = True # No details failed because none were attempted
+                any_detail_succeeded = False # No details succeeded because none were attempted
+
+            detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
+            if all_details_succeeded and (any_detail_succeeded or not components_to_generate) : # All succeeded OR no components to generate
+                detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
+            elif any_detail_succeeded: # pragma: no cover
+                detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                if not current_error: current_error = "Some component details failed generation."
+            else: # No detail succeeded and there were components to generate
+                if not current_error: current_error = "All component details failed generation." # pragma: no cover
+
+            logs.append(f"Detail generation phase status: {detail_gen_status}")
 
             # Step 3: Assemble Components
-            logs.append("Attempting to assemble generated components.")
+            assembled_code: Optional[str] = None
+            assembly_status = "ERROR_ASSEMBLY_FAILED" # Default before trying
+
             try:
                 assembled_code = self._assemble_components(parsed_outline, component_details)
-                logs.append(f"Assembly successful. Assembled code length: {len(assembled_code)}")
+                logs.append(f"Assembly attempt complete. Assembled code length: {len(assembled_code or '')}")
 
-                final_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
-                # If some details failed but assembly proceeded with placeholders:
-                if orchestration_result["status"] == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED": # pragma: no cover
-                    final_status = "PARTIAL_HIERARCHICAL_ASSEMBLED"
-
-                saved_to_path_hierarchical: Optional[str] = None
-                current_error_hierarchical = orchestration_result.get("error") # Preserve error from detail gen if any
-
-                if target_path and assembled_code:
-                    logs.append(f"Attempting to save assembled hierarchical code to {target_path}")
-                    if write_to_file(target_path, assembled_code):
-                        saved_to_path_hierarchical = target_path
-                        logs.append(f"Successfully saved assembled code to {target_path}")
-                    else: # pragma: no cover
-                        # If saving fails, it's a more significant error for this context
-                        final_status = "ERROR_SAVING_ASSEMBLED_CODE"
-                        current_error_hierarchical = f"Successfully assembled code, but failed to save to {target_path}."
-                        logs.append(current_error_hierarchical)
-                        logger.error(current_error_hierarchical)
-
-                return {
-                    "status": final_status, # This was set based on assembly and detail gen status
-                    "parsed_outline": parsed_outline,
-                    "component_details": component_details,
-                    "code_string": assembled_code,
-                    "metadata": None,
-                    "saved_to_path": saved_to_path_hierarchical, # New field
-                    "logs": logs,
-                    "error": current_error_hierarchical
-                }
+                if not assembled_code and (parsed_outline.get("components") or parsed_outline.get("main_execution_block")): # pragma: no cover
+                    assembly_status = "ERROR_ASSEMBLY_EMPTY_CODE"
+                    if not current_error: current_error = "Assembly resulted in empty code despite having an outline."
+                    logs.append(current_error if current_error else "Assembly resulted in empty code.")
+                elif assembled_code:
+                    if detail_gen_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
+                        assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
+                    elif detail_gen_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED": # pragma: no cover
+                        assembly_status = "PARTIAL_HIERARCHICAL_ASSEMBLED"
+                    else: # All details failed, but assembly might have produced placeholders
+                        assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED_PLACEHOLDERS"
+                else: # No components, no main block, empty outline essentially
+                    assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED" # Assembled "nothing" successfully
+                    logs.append("Assembly resulted in empty code as outline was effectively empty.")
             except Exception as e_assemble: # pragma: no cover
                 logger.error(f"Error during code assembly: {e_assemble}", exc_info=True)
                 logs.append(f"Exception during assembly: {e_assemble}")
-                return {
-                    "status": "ERROR_ASSEMBLY_FAILED",
-                    "parsed_outline": parsed_outline, "component_details": component_details,
-                    "code_string": None, "metadata": None,
-                    "logs": logs, "error": f"Assembly failed: {e_assemble}"
-                }
+                if not current_error: current_error = f"Assembly failed: {e_assemble}"
+                assembly_status = "ERROR_ASSEMBLY_FAILED"
+
+            logs.append(f"Assembly phase status: {assembly_status}")
+
+            # Step 4: Save to file
+            saved_to_path_val: Optional[str] = None
+            final_status = assembly_status
+
+            if assembled_code: # Only run linter if there's assembled code
+                lint_messages, lint_run_error = await self._run_linter(assembled_code)
+                if lint_run_error:
+                    logs.append(f"Linter execution error for assembled code: {lint_run_error}")
+                    if not current_error: current_error = lint_run_error # Prioritize other errors if they exist
+                if lint_messages:
+                    logs.append("Linting issues found in assembled code:")
+                    logs.extend(lint_messages)
+
+            if assembled_code and target_path:
+                logs.append(f"Attempting to save assembled code to {target_path}")
+                if write_to_file(target_path, assembled_code):
+                    saved_to_path_val = target_path
+                    logs.append(f"Successfully saved assembled code to {target_path}")
+                else: # pragma: no cover
+                    final_status = "ERROR_SAVING_ASSEMBLED_CODE"
+                    if not current_error: current_error = f"Failed to save assembled code to {target_path}."
+                    logs.append(current_error if current_error else "Failed to save.")
+                    logger.error(current_error if current_error else "Failed to save assembled code.")
+            elif not assembled_code and target_path: # pragma: no cover
+                logs.append("No assembled code to save.")
+                if not final_status.startswith("ERROR_ASSEMBLY"): # Avoid overwriting more specific assembly error
+                    final_status = "ERROR_ASSEMBLY_NO_CODE_TO_SAVE"
+                if not current_error: current_error = "No code was assembled to save to target path."
+
+            return {
+                "status": final_status,
+                "parsed_outline": parsed_outline,
+                "component_details": component_details,
+                "code_string": assembled_code,
+                "metadata": None,
+                "saved_to_path": saved_to_path_val,
+                "logs": logs,
+                "error": current_error
+            }
 
         else: # pragma: no cover
             return {
@@ -456,71 +662,108 @@ class CodeService:
         logger.info(f"CodeService.modify_code called for context='{context}', module='{module_path}', function='{function_name}'")
         logs = [f"modify_code invoked with context='{context}', module='{module_path}', function='{function_name}'."]
 
-        if context != "SELF_FIX_TOOL":
-            logs.append(f"Context '{context}' not supported for modify_code.")
-            return {"status": "ERROR_UNSUPPORTED_CONTEXT", "modified_code_string": None, "logs": logs, "error": "Unsupported context"}
-
-        if not module_path or not function_name:
-            logs.append("Missing module_path or function_name for SELF_FIX_TOOL.")
-            return {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing details for self-fix."}
-
-        if language != "python":
-            logs.append(f"Language '{language}' not supported for SELF_FIX_TOOL.")
+        if language != "python": # Common check for all contexts
+            logs.append(f"Language '{language}' not supported for {context}.") # pragma: no cover
             return {"status": "ERROR_UNSUPPORTED_LANGUAGE", "modified_code_string": None, "logs": logs, "error": "Unsupported language."}
 
         actual_existing_code = existing_code
-        if actual_existing_code is None:
+        # Fetch code if not provided, common for SELF_FIX_TOOL and GRANULAR_CODE_REFACTOR
+        if actual_existing_code is None and (context == "SELF_FIX_TOOL" or context == "GRANULAR_CODE_REFACTOR"):
+            if not module_path or not function_name: # Required for fetching
+                logs.append(f"Missing module_path or function_name for {context} when existing_code is not provided.")
+                return {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing module_path or function_name."}
+
             logger.info(f"No existing_code provided for {module_path}.{function_name}, attempting to fetch.")
             logs.append(f"Fetching original code for {module_path}.{function_name}.")
-            if not self.self_modification_service:
+            if not self.self_modification_service: # pragma: no cover
                 logger.error("Self modification service not configured for modify_code.")
                 logs.append("Self modification service not configured.")
                 return {"status": "ERROR_SELF_MOD_SERVICE_MISSING", "modified_code_string": None, "logs": logs, "error": "Self modification service not configured."}
             actual_existing_code = self.self_modification_service.get_function_source_code(module_path, function_name)
 
-        if actual_existing_code is None: # Check again after fetch attempt
-            logger.warning(f"Could not retrieve original code for {module_path}.{function_name}.")
-            logs.append(f"Failed to retrieve original source for {module_path}.{function_name}.")
-            return {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Cannot get original code."}
+            if actual_existing_code is None: # Check again after fetch attempt
+                logger.warning(f"Could not retrieve original code for {module_path}.{function_name}.")
+                logs.append(f"Failed to retrieve original source for {module_path}.{function_name}.")
+                return {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Cannot get original code."}
 
-        prompt = LLM_CODE_FIX_PROMPT_TEMPLATE.format(
-            module_path=module_path, function_name=function_name,
-            problem_description=modification_instruction, original_code=actual_existing_code
-        )
-
+        # LLM Configuration - common for contexts that use LLM
         current_llm_config = llm_config if llm_config else {}
-        code_gen_model = current_llm_config.get("model_name", get_model_for_task("code_generation"))
-        temperature = current_llm_config.get("temperature", 0.3)
-        max_tokens = current_llm_config.get("max_tokens", 1024)
+        code_gen_model = current_llm_config.get("model_name", get_model_for_task("code_modification")) # Potentially different model task
+        temperature = current_llm_config.get("temperature", 0.2) # Refactoring might need lower temp
+        max_tokens = current_llm_config.get("max_tokens", 2048) # Allow for full function replacements
 
-        logger.info(f"CodeService: Sending code fix prompt to LLM (model: {code_gen_model}).")
-        logs.append(f"Sending code fix prompt to LLM (model: {code_gen_model}).")
 
-        if not self.llm_provider:
+        if context == "SELF_FIX_TOOL":
+            if not module_path or not function_name: # Already checked if code was fetched, but good for direct existing_code case
+                logs.append("Missing module_path or function_name for SELF_FIX_TOOL.")
+                return {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing details for self-fix."}
+            if actual_existing_code is None: # Should not happen if fetching logic is correct
+                 logs.append("Original code is missing for SELF_FIX_TOOL.") # pragma: no cover
+                 return {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Original code missing."}
+
+            prompt = LLM_CODE_FIX_PROMPT_TEMPLATE.format(
+                module_path=module_path, function_name=function_name,
+                problem_description=modification_instruction, original_code=actual_existing_code
+            )
+            logs.append(f"Using SELF_FIX_TOOL. Target: {module_path}.{function_name}")
+
+        elif context == "GRANULAR_CODE_REFACTOR":
+            if not module_path or not function_name: # Required for prompt context
+                logs.append("Missing module_path or function_name for GRANULAR_CODE_REFACTOR.")
+                return {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing module_path or function_name for prompt."}
+            if actual_existing_code is None: # Should be fetched by common logic above
+                 logs.append("Original code is missing for GRANULAR_CODE_REFACTOR.") # pragma: no cover
+                 return {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Original code missing."}
+
+            if not additional_context or "section_identifier" not in additional_context:
+                logs.append("Missing 'section_identifier' in additional_context for GRANULAR_CODE_REFACTOR.")
+                return {"status": "ERROR_MISSING_SECTION_IDENTIFIER", "modified_code_string": None, "logs": logs, "error": "Section identifier not provided."}
+
+            section_to_modify = additional_context["section_identifier"]
+            prompt = LLM_GRANULAR_REFACTOR_PROMPT_TEMPLATE.format(
+                module_path=module_path, function_name=function_name,
+                original_code=actual_existing_code,
+                section_to_modify=section_to_modify,
+                refactor_instruction=modification_instruction
+            )
+            logs.append(f"Using GRANULAR_CODE_REFACTOR. Target: {module_path}.{function_name}, Section: '{section_to_modify[:50]}...'")
+
+        else:
+            logs.append(f"Context '{context}' not supported for modify_code.") # pragma: no cover
+            return {"status": "ERROR_UNSUPPORTED_CONTEXT", "modified_code_string": None, "logs": logs, "error": "Unsupported context"}
+
+        # Common LLM invocation and response handling for modification contexts
+        if not self.llm_provider: # pragma: no cover
             logger.error("LLM provider not configured for modify_code.")
             logs.append("LLM provider not configured.")
-            return {
-                "status": "ERROR_LLM_PROVIDER_MISSING", "modified_code_string": None,
-                "logs": logs, "error": "LLM provider not configured."
-            }
+            return {"status": "ERROR_LLM_PROVIDER_MISSING", "modified_code_string": None, "logs": logs, "error": "LLM provider not configured."}
+
+        logger.info(f"Sending code modification prompt to LLM (model: {code_gen_model}, temp: {temperature}).")
+        logs.append(f"Sending prompt to LLM ({code_gen_model}). Instruction: {modification_instruction[:50]}...")
 
         llm_response = await self.llm_provider.invoke_ollama_model_async(
             prompt, model_name=code_gen_model, temperature=temperature, max_tokens=max_tokens
         )
 
-        if not llm_response or "// NO_CODE_SUGGESTION_POSSIBLE" in llm_response or len(llm_response.strip()) < 10:
-            logger.warning(f"LLM did not provide a usable code suggestion. Response: {llm_response}")
-            logs.append(f"LLM failed to provide suggestion. Output: {llm_response[:100] if llm_response else 'None'}")
-            return {"status": "ERROR_LLM_NO_SUGGESTION", "modified_code_string": None, "logs": logs, "error": "LLM provided no usable suggestion."}
+        no_suggestion_marker = "// NO_CODE_SUGGESTION_POSSIBLE"
+        if context == "GRANULAR_CODE_REFACTOR":
+            no_suggestion_marker = "// REFACTORING_SUGGESTION_IMPOSSIBLE"
+
+        if not llm_response or no_suggestion_marker in llm_response or len(llm_response.strip()) < 5: # Basic check for meaningful response
+            logger.warning(f"LLM did not provide a usable code suggestion for {context}. Response: {llm_response}")
+            logs.append(f"LLM failed to provide suggestion or indicated impossibility. Output: {llm_response[:100] if llm_response else 'None'}")
+            return {"status": "ERROR_LLM_NO_SUGGESTION", "modified_code_string": None, "logs": logs, "error": f"LLM provided no usable suggestion or indicated impossibility ({no_suggestion_marker})."}
 
         cleaned_llm_code = llm_response.strip()
         if cleaned_llm_code.startswith("```python"): # pragma: no cover
             cleaned_llm_code = cleaned_llm_code[len("```python"):].strip()
         if cleaned_llm_code.endswith("```"): # pragma: no cover
             cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
+        cleaned_llm_code = cleaned_llm_code.replace("\\n", "\n")
 
-        logs.append(f"LLM successfully generated code suggestion. Length: {len(cleaned_llm_code)}")
-        logger.info(f"LLM generated code suggestion for {function_name}. Length: {len(cleaned_llm_code)}")
+
+        logs.append(f"LLM successfully generated code suggestion for {context}. Length: {len(cleaned_llm_code)}")
+        logger.info(f"LLM generated code suggestion for {context} on {function_name}. Length: {len(cleaned_llm_code)}")
         return {
             "status": "SUCCESS_CODE_GENERATED",
             "modified_code_string": cleaned_llm_code,
@@ -528,29 +771,215 @@ class CodeService:
             "error": None
         }
 
-    # --- Conceptual Placeholders for Hierarchical Generation ---
+    async def _run_linter(self, code_string: str) -> Tuple[List[str], Optional[str]]:
+        lint_messages: List[str] = []
+        error_string: Optional[str] = None
+
+        if not code_string.strip():
+            return [], None
+
+        # Attempt 1: Ruff JSON
+        try:
+            process = await asyncio.create_subprocess_exec(
+                'ruff', 'check', '--output-format=json', '--stdin-filename', '<stdin>', '-',
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate(input=code_string.encode('utf-8'))
+
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+
+            if process.returncode == 0 and stdout_str.strip():
+                try:
+                    ruff_issues = json.loads(stdout_str)
+                    for issue in ruff_issues:
+                        msg = (
+                            f"LINT (Ruff): {issue.get('code')} at "
+                            f"{issue.get('location',{}).get('row',0)}:{issue.get('location',{}).get('column',0)}: "
+                            f"{issue.get('message','')} ({issue.get('filename', '<stdin>')})"
+                        )
+                        lint_messages.append(msg)
+                    return lint_messages, None # Ruff JSON success
+                except json.JSONDecodeError as je:
+                    # Ruff ran, but output wasn't valid JSON. Fall through to Ruff Text.
+                    error_string = f"Ruff JSON output parsing error: {je}. Stdout: {stdout_str[:200]}"
+                    logger.warning(error_string)
+
+
+            elif process.returncode != 0 and stdout_str.strip() : # Ruff found issues, output is JSON
+                 try:
+                    ruff_issues = json.loads(stdout_str)
+                    for issue in ruff_issues:
+                        msg = (
+                            f"LINT (Ruff): {issue.get('code')} at "
+                            f"{issue.get('location',{}).get('row',0)}:{issue.get('location',{}).get('column',0)}: "
+                            f"{issue.get('message','')} ({issue.get('filename', '<stdin>')})"
+                        )
+                        lint_messages.append(msg)
+                    # Even with issues, linter ran successfully.
+                    return lint_messages, None
+                 except json.JSONDecodeError as je:
+                    error_string = f"Ruff JSON output parsing error (with issues): {je}. Stdout: {stdout_str[:200]}"
+                    logger.warning(error_string) # Fall through
+
+            # If Ruff JSON output was empty or some other error, it will fall through.
+            # If stderr has content, it might be a Ruff crash.
+            if stderr_str and not stdout_str: # Likely a ruff crash
+                error_string = f"Ruff execution error (JSON mode): {stderr_str}"
+                logger.warning(error_string) # Log and then try Ruff text mode.
+
+        except FileNotFoundError:
+            logger.info("Ruff not found (JSON attempt). Trying Ruff text.")
+            error_string = "Ruff not found." # Will be updated if pyflakes also not found
+        except Exception as e_ruff_json: # pragma: no cover
+            error_string = f"Unexpected error running Ruff (JSON): {e_ruff_json}"
+            logger.error(error_string, exc_info=True)
+
+
+        # Attempt 2: Ruff Text (if JSON failed or wasn't conclusive)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                'ruff', 'check', '--output-format=text', '--stdin-filename', '<stdin>', '-',
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate(input=code_string.encode('utf-8'))
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+
+            if stdout_str.strip(): # Ruff text output means lint issues found
+                for line in stdout_str.strip().splitlines():
+                    lint_messages.append(f"LINT (Ruff Text): {line}")
+                return lint_messages, None # Ruff Text success (even with issues)
+            elif process.returncode == 0: # No output, no error code = clean by ruff text
+                return [], None
+
+            if stderr_str: # Fallback error if Ruff text also failed
+                # Overwrite previous error_string if it was just "Ruff not found" from JSON attempt
+                if not error_string or error_string == "Ruff not found.":
+                     error_string = f"Ruff execution error (Text mode): {stderr_str}"
+                logger.warning(f"Ruff execution error (Text mode): {stderr_str}")
+
+
+        except FileNotFoundError:
+            logger.info("Ruff not found (Text attempt). Trying Pyflakes.")
+            # If error_string is already "Ruff not found.", this confirms it for both modes.
+            # If it's something else (e.g. JSON parse error), we keep that more specific error for now.
+            if not error_string : error_string = "Ruff not found."
+        except Exception as e_ruff_text: # pragma: no cover
+            new_error = f"Unexpected error running Ruff (Text): {e_ruff_text}"
+            if not error_string or error_string == "Ruff not found.": error_string = new_error
+            logger.error(new_error, exc_info=True)
+
+
+        # Attempt 3: Pyflakes (if Ruff failed)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                'pyflakes', '-', # Pyflakes reads from stdin with '-'
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate(input=code_string.encode('utf-8'))
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+
+            if stdout_str.strip(): # Pyflakes outputs issues to stdout
+                for line in stdout_str.strip().splitlines():
+                    lint_messages.append(f"LINT (Pyflakes): {line}")
+                return lint_messages, None # Pyflakes success (even with issues)
+            elif process.returncode == 0: # No stdout, no error code = clean by pyflakes
+                return [], None
+
+            if stderr_str: # Pyflakes critical error (e.g. invalid syntax it can't parse)
+                # This is a pyflakes execution error, not just lint issues.
+                error_string = f"Pyflakes execution error: {stderr_str}"
+                logger.warning(error_string)
+
+        except FileNotFoundError:
+            logger.info("Pyflakes not found.")
+            if error_string == "Ruff not found.": # Both are missing
+                error_string = "Linter check failed: Ruff and Pyflakes not found."
+            elif not error_string : # Ruff had a different error, Pyflakes not found
+                error_string = "Pyflakes not found; Ruff also failed."
+            # If error_string had a more specific Ruff error, keep it.
+        except Exception as e_pyflakes: # pragma: no cover
+            new_error = f"Unexpected error running Pyflakes: {e_pyflakes}"
+            if not error_string or "not found" in error_string: error_string = new_error
+            logger.error(new_error, exc_info=True)
+
+        return lint_messages, error_string # Return any collected messages and the final error string
+
+    # --- Hierarchical Generation Methods ---
 
     async def _generate_hierarchical_outline(
         self,
         high_level_description: str,
-        context: str, # e.g., HIERARCHICAL_GEN_MODULE
         llm_config: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]: # Returns the parsed outline structure (e.g., dict from JSON)
+    ) -> Dict[str, Any]:
         """
-        (Conceptual) Step 1 of Hierarchical Generation: Generate the code outline.
-        This would use a specific "outline generation" prompt.
+        Generates a structural outline for code based on a high-level description.
+        Returns a dictionary containing status, parsed_outline, outline_str, logs, and error.
         """
-        logger.info(f"Conceptual: _generate_hierarchical_outline for '{high_level_description[:50]}...'")
-        # 1. Select/format outline generation prompt.
-        # 2. Call self.llm_provider.invoke_ollama_model_async(...)
-        # 3. Parse the structured outline (e.g., JSON) from LLM response.
-        #    Handle parsing errors.
-        # Example:
-        # if successful_parse:
-        #     return parsed_outline_dict
-        # else:
-        #     return None
-        return {"status": "conceptual_outline_placeholder"} # Placeholder
+        logs = [f"Initiating hierarchical outline generation for: {high_level_description[:70]}..."]
+
+        if not self.llm_provider: # pragma: no cover
+            logger.error("LLM provider not configured for CodeService.")
+            return {"status": "ERROR_LLM_PROVIDER_MISSING", "parsed_outline": None, "outline_str": None, "logs": logs, "error": "LLM provider missing."}
+
+        # Default LLM parameters for outline generation, potentially overridden by llm_config
+        model_to_use = get_model_for_task("code_outline_generation")
+        temperature = 0.3
+        max_tokens_to_use = 2048
+
+        if llm_config: # pragma: no cover
+            model_to_use = llm_config.get("model_name", model_to_use)
+            temperature = llm_config.get("temperature", temperature)
+            max_tokens_to_use = llm_config.get("max_tokens", max_tokens_to_use)
+
+        logs.append(f"Using LLM model: {model_to_use}, Temp: {temperature}, Max Tokens: {max_tokens_to_use} for outline.")
+
+        formatted_prompt = LLM_HIERARCHICAL_OUTLINE_PROMPT_TEMPLATE.format(
+            high_level_description=high_level_description
+        )
+
+        raw_llm_output = await self.llm_provider.invoke_ollama_model_async(
+            formatted_prompt, model_name=model_to_use, temperature=temperature, max_tokens=max_tokens_to_use
+        )
+
+        if not raw_llm_output or not raw_llm_output.strip(): # pragma: no cover
+            logger.warning("LLM returned empty response for hierarchical outline generation.")
+            logs.append("LLM returned empty response for outline.")
+            return {"status": "ERROR_LLM_NO_OUTLINE", "parsed_outline": None, "outline_str": raw_llm_output, "logs": logs, "error": "LLM provided no outline."}
+
+        logs.append(f"Raw LLM outline output length: {len(raw_llm_output)}")
+
+        parsed_outline: Optional[Dict[str, Any]] = None
+        error_message: Optional[str] = None
+        final_status = "SUCCESS_OUTLINE_GENERATED" # Optimistic default
+
+        try:
+            cleaned_json_str = raw_llm_output.strip()
+            if cleaned_json_str.startswith("```json"): # pragma: no cover
+                cleaned_json_str = cleaned_json_str[len("```json"):].strip()
+            if cleaned_json_str.endswith("```"): # pragma: no cover
+                cleaned_json_str = cleaned_json_str[:-len("```")].strip()
+
+            # Handle common escapes that might be present in LLM JSON output
+            cleaned_json_str = cleaned_json_str.replace('\\n', '\n').replace('\\"', '\"')
+
+            parsed_outline = json.loads(cleaned_json_str)
+            logs.append("Successfully parsed JSON outline from LLM response.")
+        except json.JSONDecodeError as e: # pragma: no cover
+            logger.warning(f"Failed to parse JSON outline: {e}. Raw output snippet: {raw_llm_output[:200]}...")
+            logs.append(f"JSONDecodeError parsing outline: {e}. Raw output snippet: {raw_llm_output[:100]}")
+            error_message = f"Failed to parse LLM JSON outline: {e}"
+            final_status = "ERROR_OUTLINE_PARSING"
+
+        return {"status": final_status, "parsed_outline": parsed_outline, "outline_str": raw_llm_output, "logs": logs, "error": error_message}
 
     async def _generate_detail_for_component(
         self,
@@ -810,7 +1239,7 @@ class CodeService:
         logger.info(f"Code assembly complete. Total length: {len(final_code)}")
         return final_code.strip()
 
-    # --- End Conceptual Placeholders ---
+    # --- End Hierarchical Generation Methods ---
 
 if __name__ == '__main__': # pragma: no cover
     import os
@@ -819,17 +1248,109 @@ if __name__ == '__main__': # pragma: no cover
     import shutil   # For __main__ test outputs
 
     # Mock providers for the illustrative test main()
-    # These would need to be actual objects with the expected methods for the test to fully run.
-    class MockLLMProvider:
-        async def invoke_ollama_model_async(self, prompt, model_name, temperature, max_tokens):
-            logger.info(f"MockLLMProvider.invoke_ollama_model_async called with model: {model_name}")
-            if "generate_code" in prompt: # Simple check for generate_code vs modify_code
-                 return '# METADATA: {"suggested_function_name": "mock_sum_function", "suggested_tool_name": "mockSumTool", "suggested_description": "A mock sum function."}\ndef mock_sum_function(a: int, b: int) -> int:\n    """Adds two integers."""\n    return a + b'
-            elif "function_to_be_fixed_by_main_svc" in prompt :
-                 return "def function_to_be_fixed_by_main_svc(val: int) -> int:\n    return val + 10 # Fixed!\n"
-            return "// NO_CODE_SUGGESTION_POSSIBLE"
+    class MockLLMProvider: # Simplified for brevity, real one in tests is more complex
+        async def invoke_ollama_model_async(self, prompt: str, model_name: str, temperature: float, max_tokens: int) -> str:
+            logger.info(f"MockLLMProvider.invoke_ollama_model_async for model: {model_name}, prompt starts with: {prompt[:60].replace(chr(10), ' ')}...")
 
-    class MockSelfModService:
+            # Check for NEW_TOOL prompt
+            if LLM_NEW_TOOL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
+                 logger.info("MockLLMProvider: Matched NEW_TOOL prompt.")
+                 return '# METADATA: {"suggested_function_name": "mock_sum_function", "suggested_tool_name": "mockSumTool", "suggested_description": "A mock sum function."}\ndef mock_sum_function(a: int, b: int) -> int:\n    """Adds two integers."""\n    return a + b'
+
+            # Check for SELF_FIX_TOOL prompt
+            elif LLM_CODE_FIX_PROMPT_TEMPLATE.splitlines()[1] in prompt: # Using a unique line from the template
+                 logger.info("MockLLMProvider: Matched SELF_FIX_TOOL prompt.")
+                 return "def function_to_be_fixed_by_main_svc(val: int) -> int:\n    return val + 10 # Fixed!\n"
+
+            # Check for HIERARCHICAL_OUTLINE prompt
+            elif LLM_HIERARCHICAL_OUTLINE_PROMPT_TEMPLATE.splitlines()[1] in prompt: # Using a unique line
+                logger.info("MockLLMProvider: Matched HIERARCHICAL_OUTLINE prompt.")
+                # Return a valid JSON outline string
+                return json.dumps({
+                    "module_name": "todo_cli.py",
+                    "description": "A CLI tool for managing a to-do list.",
+                    "imports": ["json", "argparse"],
+                    "components": [
+                        {
+                            "type": "function", "name": "load_todos", "signature": "(filepath: str) -> list",
+                            "description": "Loads to-dos from a JSON file.", "body_placeholder": "Read JSON file, handle errors."
+                        },
+                        {
+                            "type": "function", "name": "save_todos", "signature": "(filepath: str, todos: list) -> None",
+                            "description": "Saves to-dos to a JSON file.", "body_placeholder": "Write JSON file, handle errors."
+                        },
+                        {
+                            "type": "class", "name": "TodoManager", "description": "Manages todo operations.",
+                            "attributes": [{"name": "filepath", "type": "str", "description": "Path to the todo file"}],
+                            "methods": [
+                                {
+                                    "type": "method", "name": "__init__", "signature": "(self, filepath: str)",
+                                    "description": "Initializes TodoManager.", "body_placeholder": "self.filepath = filepath"
+                                },
+                                {
+                                    "type": "method", "name": "add_item", "signature": "(self, item_text: str)", # Original name for prompt matching
+                                    "description": "Adds an item using the manager.", "body_placeholder": "Load, add, save."
+                                }
+                            ]
+                        }
+                    ],
+                    "main_execution_block": "if __name__ == '__main__':\n    # main_cli_logic()\n    print('CLI Tool Ready!')"
+                })
+
+            # Check for COMPONENT_DETAIL prompt
+            elif LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
+                logger.info("MockLLMProvider: Matched COMPONENT_DETAIL prompt.")
+                if "load_todos" in prompt:
+                    return "def load_todos(filepath: str) -> list:\n    \"\"\"Loads to-dos from a JSON file.\"\"\"\n    try:\n        with open(filepath, 'r') as f:\n            return json.load(f)\n    except FileNotFoundError:\n        return []"
+                elif "save_todos" in prompt:
+                    return "def save_todos(filepath: str, todos: list) -> None:\n    \"\"\"Saves to-dos to a JSON file.\"\"\"\n    with open(filepath, 'w') as f:\n        json.dump(todos, f, indent=2)"
+                elif "TodoManager.__init__" in prompt:
+                    return "def __init__(self, filepath: str):\n    \"\"\"Initializes TodoManager.\"\"\"\n    self.filepath = filepath"
+                elif "TodoManager.add_item" in prompt:
+                     return "def add_item(self, item_text: str):\n    \"\"\"Adds an item using the manager.\"\"\"\n    # todos = self.load_todos(self.filepath) # Assuming load_todos would be part of the class or imported\n    # todos.append({'task': item_text, 'done': False})\n    # self.save_todos(self.filepath, todos)\n    print(f\"Added: {item_text} to {{self.filepath}}\") # Simplified for mock"
+
+                logger.warning(f"MockLLMProvider: No specific mock for COMPONENT_DETAIL prompt part: {prompt[:100]}...") # pragma: no cover
+                return f"# Code for component based on prompt: {prompt[:100]}...\npass # Default mock implementation"
+
+            # Check for GRANULAR_REFACTOR prompt
+            elif LLM_GRANULAR_REFACTOR_PROMPT_TEMPLATE.splitlines()[0] in prompt:
+                logger.info("MockLLMProvider: Matched GRANULAR_REFACTOR prompt.")
+                # This mock will be simple and assume the 'original_code' is passed in the prompt,
+                # and the 'refactor_instruction' is to add a comment.
+                # A real LLM would do more complex logic.
+                # We need to extract original_code from the prompt to return it modified.
+                original_code_match = re.search(r"Original Function Code:\n```python\n(.*?)\n```", prompt, re.DOTALL)
+                if original_code_match:
+                    original_code_content = original_code_match.group(1)
+                    # Simulate adding a comment based on refactor_instruction
+                    refactor_instruction_match = re.search(r"Refactoring Instruction:\n(.*?)\n\nConstraints:", prompt, re.DOTALL)
+                    instruction = refactor_instruction_match.group(1).strip() if refactor_instruction_match else "No instruction found"
+
+                    # A simple modification: add instruction as a comment
+                    modified_code = f"# Refactored based on: {instruction}\n{original_code_content}"
+                    return modified_code
+                return "// REFACTORING_SUGGESTION_IMPOSSIBLE (Mock could not parse original code)" # pragma: no cover
+
+            elif LLM_UNIT_TEST_SCAFFOLD_PROMPT_TEMPLATE.splitlines()[0] in prompt:
+                logger.info("MockLLMProvider: Matched UNIT_TEST_SCAFFOLD prompt.")
+                return "import unittest\n\nclass TestGeneratedCode(unittest.TestCase):\n    def test_something(self):\n        self.fail('Not implemented')"
+
+            # Specific prompts for lint testing
+            if "generate bad code for lint test" in prompt:
+                logger.info("MockLLMProvider: Matched 'generate bad code for lint test'")
+                return "BAD_CODE_EXAMPLE_FOR_LINT_TEST"
+            if "generate good code for lint test" in prompt:
+                logger.info("MockLLMProvider: Matched 'generate good code for lint test'")
+                return "GOOD_CODE_EXAMPLE_FOR_LINT_TEST"
+            if "generate code for linter failure test" in prompt:
+                logger.info("MockLLMProvider: Matched 'generate code for linter failure test'")
+                return "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST"
+
+
+            logger.warning(f"MockLLMProvider: No specific mock for prompt starting with: {prompt[:60]}...")
+            return "// NO_CODE_SUGGESTION_POSSIBLE (MockLLMProvider Fallback)"
+
+    class MockSelfModService: # Unchanged from previous version, seems fine
         def get_function_source_code(self, module_path, function_name):
             logger.info(f"MockSelfModService.get_function_source_code called for {module_path}.{function_name}")
             if module_path == "ai_assistant.custom_tools.dummy_tool_main_test_svc" and \
@@ -839,7 +1360,7 @@ if __name__ == '__main__': # pragma: no cover
 
     async def main_illustrative_test():
         # Instantiate with mock objects that have the required methods
-        mock_llm_provider_instance = MockLLMProvider()
+        mock_llm_provider_instance = MockLLMProvider() # Uses the updated MockLLMProvider
         mock_self_mod_service_instance = MockSelfModService()
 
         code_service = CodeService(
@@ -847,142 +1368,179 @@ if __name__ == '__main__': # pragma: no cover
             self_modification_service=mock_self_mod_service_instance
         )
 
+        original_run_linter = code_service._run_linter # Save original
+
+        async def mock_run_linter(code_string: str) -> Tuple[List[str], Optional[str]]:
+            logger.info(f"mock_run_linter called with code_string: '{code_string[:30]}...'")
+            if code_string == "GOOD_CODE_EXAMPLE_FOR_LINT_TEST":
+                return ([], None)
+            elif code_string == "BAD_CODE_EXAMPLE_FOR_LINT_TEST":
+                return (["LINT (Mocked): E999 SyntaxError at 1:1: Example syntax error"], None)
+            elif code_string == "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST":
+                return ([], "Mocked linter execution error: Linters not found.")
+            return (["LINT (Mocked): Unexpected code for lint test"], None) # Default mock response
+
         # Setup test output directory for __main__
-        test_output_dir = tempfile.mkdtemp(prefix="codeservice_test_outputs_")
+        test_output_dir = tempfile.mkdtemp(prefix="codeservice_main_test_")
         print(f"Test outputs will be saved in: {test_output_dir}")
 
+        # --- Test NEW_TOOL (including Linter) ---
+        print("\n--- Testing: generate_code (NEW_TOOL) with Linter ---")
+        code_service._run_linter = mock_run_linter # Monkeypatch
 
-        print("\n--- Testing generate_code (NEW_TOOL context) ---")
-        new_tool_path = os.path.join(test_output_dir, "newly_generated_tool.py")
-        gen_result = await code_service.generate_code(
+        # Test 1: Bad code for linting
+        new_tool_bad_lint_path = os.path.join(test_output_dir, "new_tool_bad_lint.py")
+        gen_result_bad_lint = await code_service.generate_code(
             context="NEW_TOOL",
-            prompt_or_description="A Python function that takes two integers and returns their sum.",
-            # llm_config={"model_name": get_model_for_task("code_generation")} # Using default from class for this test
-            target_path=new_tool_path
+            prompt_or_description="generate bad code for lint test", # MockLLMProvider returns "BAD_CODE_EXAMPLE_FOR_LINT_TEST"
+            target_path=new_tool_bad_lint_path
         )
-        print(f"Generate Code Result: Status: {gen_result.get('status')}, Saved to: {gen_result.get('saved_to_path')}")
-        if gen_result.get('code_string'):
-            print(f"Generated Code (first 150 chars): {gen_result['code_string'][:150]}...")
-        if gen_result.get('metadata'):
-            print(f"Generated Metadata: {gen_result['metadata']}")
-        if gen_result.get('error'): # pragma: no cover
-            print(f"Error: {gen_result['error']}")
-        # print(f"Logs: {gen_result.get('logs')}")
+        print(f"  Bad Lint - Status: {gen_result_bad_lint.get('status')}, Saved: {gen_result_bad_lint.get('saved_to_path')}")
+        assert any("LINT (Mocked): E999 SyntaxError" in log for log in gen_result_bad_lint.get("logs", [])), "Bad lint message not found in logs"
+        print("    Verified: Bad lint message in logs.")
 
+        # Test 2: Good code for linting
+        new_tool_good_lint_path = os.path.join(test_output_dir, "new_tool_good_lint.py")
+        gen_result_good_lint = await code_service.generate_code(
+            context="NEW_TOOL",
+            prompt_or_description="generate good code for lint test", # MockLLMProvider returns "GOOD_CODE_EXAMPLE_FOR_LINT_TEST"
+            target_path=new_tool_good_lint_path
+        )
+        print(f"  Good Lint - Status: {gen_result_good_lint.get('status')}, Saved: {gen_result_good_lint.get('saved_to_path')}")
+        assert not any("LINT (Mocked):" in log for log in gen_result_good_lint.get("logs", [])), "Good lint test should have no lint messages"
+        print("    Verified: No lint messages for good code.")
 
-        # Test modify_code
-        # For this test, we rely on MockSelfModService to provide the "original" code
-        test_module_path_for_main = "ai_assistant.custom_tools.dummy_tool_main_test_svc"
+        # Test 3: Linter execution failure
+        new_tool_linter_fail_path = os.path.join(test_output_dir, "new_tool_linter_fail.py")
+        gen_result_linter_fail = await code_service.generate_code(
+            context="NEW_TOOL",
+            prompt_or_description="generate code for linter failure test", # MockLLMProvider returns "LINTER_FAILURE_EXAMPLE_FOR_LINT_TEST"
+            target_path=new_tool_linter_fail_path
+        )
+        print(f"  Linter Fail - Status: {gen_result_linter_fail.get('status')}, Saved: {gen_result_linter_fail.get('saved_to_path')}")
+        assert any("Linter execution error: Mocked linter execution error" in log for log in gen_result_linter_fail.get("logs", [])), "Linter execution error not found in logs"
+        print("    Verified: Linter execution error in logs.")
 
-        print("\n--- Testing modify_code (SELF_FIX_TOOL context) ---")
-        # We'll simulate that the file doesn't exist locally, so CodeService relies on MockSelfModService
-        mod_result = await code_service.modify_code(
+        code_service._run_linter = original_run_linter # Restore original
+
+        # --- Test SELF_FIX_TOOL (Standard, no linter here by design) ---
+        print("\n--- Testing: modify_code (SELF_FIX_TOOL) ---")
+        mod_result_fix = await code_service.modify_code(
             context="SELF_FIX_TOOL",
-            existing_code=None, # Force fetching via self.self_modification_service
-            modification_instruction="The function should add 10, not multiply by 10.",
-            module_path=test_module_path_for_main, # Used by MockSelfModService
-            function_name="function_to_be_fixed_by_main_svc" # Used by MockSelfModService
+            modification_instruction="Fix multiplication to addition.",
+            module_path="dummy_module.py", function_name="function_to_be_fixed_by_main_svc"
         )
-        print(f"Modify Code Result: {mod_result.get('status')}")
-        if mod_result.get('modified_code_string'):
-            print(f"Modified Code (first 150 chars): {mod_result['modified_code_string'][:150]}...")
-        if mod_result.get('error'):
-            print(f"Error: {mod_result['error']}")
-        print(f"Logs: {mod_result.get('logs')}")
-        # No need to create/delete dummy files as mocks handle the code provision
+        print(f"  Status: {mod_result_fix.get('status')}")
+        if mod_result_fix.get('modified_code_string'): print(f"  Code (first 50): {mod_result_fix['modified_code_string'][:50].replace(chr(10), ' ')}...")
+        if mod_result_fix.get('error'): print(f"  Error: {mod_result_fix['error']}")
 
-        print("\n--- Testing generate_code (GENERATE_UNIT_TEST_SCAFFOLD) ---")
-        sample_code_to_test = "def my_function(x, y):\n    return x + y\n\nclass MyClass:\n    def do_stuff(self):\n        pass"
-        test_scaffold_path = os.path.join(test_output_dir, "test_my_module_scaffold.py")
+        # --- Test GENERATE_UNIT_TEST_SCAFFOLD ---
+        print("\n--- Testing: generate_code (GENERATE_UNIT_TEST_SCAFFOLD) ---")
+        scaffold_path = os.path.join(test_output_dir, "test_scaffold.py")
         scaffold_result = await code_service.generate_code(
             context="GENERATE_UNIT_TEST_SCAFFOLD",
-            prompt_or_description=sample_code_to_test, # This is the code_to_test
-            additional_context={"module_name_hint": "my_module"},
-            target_path=test_scaffold_path
+            prompt_or_description="def example_func():\n  pass",
+            additional_context={"module_name_hint": "example_module"},
+            target_path=scaffold_path
         )
-        print(f"Generate Unit Test Scaffold Result: Status: {scaffold_result.get('status')}, Saved to: {scaffold_result.get('saved_to_path')}")
-        if scaffold_result.get("code_string"):
-            # The mock provider for main() doesn't actually return a scaffold, so this might be empty.
-            # This test is more about plumbing the context through.
-            print(f"Generated Scaffold (first 200 chars):\n{scaffold_result['code_string'][:200]}...")
-        if scaffold_result.get("error"): # pragma: no cover
-            print(f"Error: {scaffold_result.get('error')}")
-        # print(f"Logs: {scaffold_result.get('logs')}")
+        print(f"  Status: {scaffold_result.get('status')}, Saved: {scaffold_result.get('saved_to_path')}")
+        if scaffold_result.get('code_string'): print(f"  Code (first 80): {scaffold_result['code_string'][:80].replace(chr(10), ' ')}...")
+        if scaffold_result.get('error'): print(f"  Error: {scaffold_result['error']}")
 
-
-        print("\n--- Testing generate_code (EXPERIMENTAL_HIERARCHICAL_OUTLINE) ---")
-        outline_desc = "A Python CLI tool to manage a simple to-do list stored in a JSON file. It needs add, remove, and list functions."
-        # Mock the LLM provider for this specific call if you want to control output in __main__
-        # For now, it will make a real call if provider is configured.
-        # To test parsing, you might need to mock self.llm_provider.invoke_ollama_model_async here
-        # for this specific test call if not running in a full unit test environment.
-
-        # Example of how one might mock for main test, if needed for controlled output:
-        # original_invoke = mock_llm_provider_instance.invoke_ollama_model_async
-        # async def mock_invoke_for_outline(*args, **kwargs):
-        #     if "JSON Outline:" in args[0]: # Check if it's the outline prompt
-        #         return json.dumps({"module_name": "todo.py", "imports": ["json"], "components": []})
-        #     return await original_invoke(*args, **kwargs) # Call original for other tests
-        # mock_llm_provider_instance.invoke_ollama_model_async = mock_invoke_for_outline
-
+        # --- Test EXPERIMENTAL_HIERARCHICAL_OUTLINE ---
+        print("\n--- Testing: generate_code (EXPERIMENTAL_HIERARCHICAL_OUTLINE) ---")
+        outline_desc = "CLI tool for to-do list in JSON." # This description will be used by the mock
         outline_result = await code_service.generate_code(
             context="EXPERIMENTAL_HIERARCHICAL_OUTLINE",
             prompt_or_description=outline_desc
         )
-        print(f"Generate Outline Result: Status: {outline_result.get('status')}")
-        if outline_result.get("parsed_outline"):
-            print(f"Parsed Outline (first level keys): {list(outline_result['parsed_outline'].keys())}")
-        elif outline_result.get("outline_str"): # pragma: no cover
-            print(f"Raw Outline Str (first 200 chars): {outline_result['outline_str'][:200]}...")
-        if outline_result.get("error"): # pragma: no cover
-            print(f"Error: {outline_result.get('error')}")
-        # print(f"Logs: {outline_result.get('logs')}")
+        print(f"  Status: {outline_result.get('status')}")
+        if outline_result.get("parsed_outline"): print(f"  Outline Module: {outline_result['parsed_outline'].get('module_name')}, Components: {len(outline_result['parsed_outline'].get('components', []))}")
+        if outline_result.get("error"): print(f"  Error: {outline_result.get('error')}")
 
-        # mock_llm_provider_instance.invoke_ollama_model_async = original_invoke # Restore if mocked
-
-        print("\n--- Testing generate_code (EXPERIMENTAL_HIERARCHICAL_FULL_TOOL) ---")
-        full_tool_desc = "A Python CLI tool to manage a simple to-do list stored in a JSON file. It needs add, remove, and list functions using argparse."
-
-        # To test this without full LLM calls for outline AND details,
-        # we'd need to mock _generate_detail_for_component or have the LLM provider return
-        # very predictable outline and then predictable details.
-        # For __main__ test, this will make actual LLM calls.
-
+        # --- Test EXPERIMENTAL_HIERARCHICAL_FULL_TOOL (Outline + Details, No Assembly) ---
+        print("\n--- Testing: generate_code (EXPERIMENTAL_HIERARCHICAL_FULL_TOOL) ---")
+        full_tool_desc = "Advanced CLI tool for to-do list with features."
         full_tool_result = await code_service.generate_code(
             context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL",
-            prompt_or_description=full_tool_desc
-            # No target_path for this context as it doesn't produce a single final code string directly
+            prompt_or_description=full_tool_desc # This will also use the mock outline due to template matching
         )
-        print(f"Generate Full Tool (Outline+Details) Result: Status: {full_tool_result.get('status')}")
-        if full_tool_result.get("parsed_outline"):
-            print(f"Parsed Outline (keys): {list(full_tool_result['parsed_outline'].keys())}")
+        print(f"  Status: {full_tool_result.get('status')}")
+        if full_tool_result.get("parsed_outline"): print(f"  Outline Module: {full_tool_result['parsed_outline'].get('module_name')}")
         if full_tool_result.get("component_details"):
-            print("Component Details Generated:")
-            for name, code_prev_obj in full_tool_result["component_details"].items():
-                code_prev = str(code_prev_obj)
-                print(f"  Component: {name}, Code (first 30 chars): {code_prev[:30].replace(chr(10), ' ')}...")
-        if full_tool_result.get("error"): # pragma: no cover
-            print(f"Error: {full_tool_result.get('error')}")
-        # print(f"Logs: {full_tool_result.get('logs')}")
+            print(f"  Component Details: {len(full_tool_result['component_details'])} generated/attempted.")
+            # Example: Check one specific component based on the mock outline
+            expected_comp_key = "TodoManager.add_item"
+            if expected_comp_key in full_tool_result["component_details"]:
+                 print(f"    Detail for '{expected_comp_key}': {'Generated' if full_tool_result['component_details'][expected_comp_key] else 'Failed/None'}")
+        if full_tool_result.get("error"): print(f"  Error: {full_tool_result.get('error')}")
 
+        # --- Test HIERARCHICAL_GEN_COMPLETE_TOOL (including Linter) ---
+        print("\n--- Testing: generate_code (HIERARCHICAL_GEN_COMPLETE_TOOL) with Linter ---")
+        code_service._run_linter = mock_run_linter # Monkeypatch
 
-        print("\n--- Testing generate_code (HIERARCHICAL_GEN_COMPLETE_TOOL) ---")
-        complete_tool_desc = "A Python module with a function to add two numbers and a class MyMath with a method to multiply them."
-        complete_tool_path = os.path.join(test_output_dir, "hierarchically_generated_tool.py")
+        # Test 1: Bad code for linting from assembly
+        hier_bad_lint_path = os.path.join(test_output_dir, "hier_bad_lint.py")
+        # MockLLMProvider's HIERARCHICAL_OUTLINE + COMPONENT_DETAIL will result in "BAD_CODE_EXAMPLE_FOR_LINT_TEST"
+        # if _assemble_components simply joins them. We'll adjust the component detail mock for this.
+        # For this test, let's assume the assembly of "load_todos" (good) and a new "buggy_function" (bad)
+        # will result in a string that our mock_run_linter will interpret as "BAD_CODE_EXAMPLE_FOR_LINT_TEST".
+        # This requires MockLLMProvider to yield "BAD_CODE_EXAMPLE_FOR_LINT_TEST" when asked for *assembled* code.
+        # The current mock structure for hierarchical generation is complex. Let's simplify:
+        # We will make the "HIERARCHICAL_GEN_COMPLETE_TOOL" prompt itself trigger a specific assembled code.
 
-        complete_tool_result = await code_service.generate_code(
+        complete_tool_result_bad_lint = await code_service.generate_code(
             context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-            prompt_or_description=complete_tool_desc,
-            target_path=complete_tool_path
+            prompt_or_description="generate bad code for lint test", # This prompt now makes MockLLMProvider return specific assembled code
+            target_path=hier_bad_lint_path
         )
-        print(f"Generate Complete Tool Result: Status: {complete_tool_result.get('status')}, Saved to: {complete_tool_result.get('saved_to_path')}")
-        if complete_tool_result.get("code_string"):
-            print(f"Assembled Code (first 300 chars):\n{complete_tool_result['code_string'][:300]}...")
-        else: # pragma: no cover
-            print(f"No final code string generated. Outline: {complete_tool_result.get('parsed_outline') is not None}, Details: {complete_tool_result.get('component_details') is not None}")
-        if complete_tool_result.get("error"): # pragma: no cover
-            print(f"Error: {complete_tool_result.get('error')}")
-        # print(f"Logs: {complete_tool_result.get('logs')}")
+        print(f"  Bad Lint - Status: {complete_tool_result_bad_lint.get('status')}, Saved: {complete_tool_result_bad_lint.get('saved_to_path')}")
+        assert any("LINT (Mocked): E999 SyntaxError" in log for log in complete_tool_result_bad_lint.get("logs", [])), "Bad lint message not found in hierarchical logs"
+        print("    Verified: Bad lint message in hierarchical logs.")
+
+        # Test 2: Good code for linting from assembly
+        hier_good_lint_path = os.path.join(test_output_dir, "hier_good_lint.py")
+        complete_tool_result_good_lint = await code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="generate good code for lint test",
+            target_path=hier_good_lint_path
+        )
+        print(f"  Good Lint - Status: {complete_tool_result_good_lint.get('status')}, Saved: {complete_tool_result_good_lint.get('saved_to_path')}")
+        assert not any("LINT (Mocked):" in log for log in complete_tool_result_good_lint.get("logs", [])), "Good lint hierarchical test should have no lint messages"
+        print("    Verified: No lint messages for good hierarchical code.")
+
+        # Test 3: Linter execution failure for assembled code
+        hier_linter_fail_path = os.path.join(test_output_dir, "hier_linter_fail.py")
+        complete_tool_result_linter_fail = await code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="generate code for linter failure test",
+            target_path=hier_linter_fail_path
+        )
+        print(f"  Linter Fail - Status: {complete_tool_result_linter_fail.get('status')}, Saved: {complete_tool_result_linter_fail.get('saved_to_path')}")
+        assert any("Linter execution error for assembled code: Mocked linter execution error" in log for log in complete_tool_result_linter_fail.get("logs", [])), "Hierarchical linter execution error not found"
+        print("    Verified: Hierarchical linter execution error in logs.")
+
+        code_service._run_linter = original_run_linter # Restore
+
+        # --- Test GRANULAR_CODE_REFACTOR (Standard, no linter here by design) ---
+        print("\n--- Testing: modify_code (GRANULAR_CODE_REFACTOR) ---")
+        granular_original_code = "def process_data(data_list):\n    for item in data_list:\n        print(item)\n    return len(data_list)"
+        granular_section_id = "for item in data_list:\n        print(item)"
+        granular_instruction = "Add a comment '# Processing item' inside the loop before the print statement."
+
+        granular_refactor_result = await code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction=granular_instruction,
+            existing_code=granular_original_code, # Provide existing code directly
+            module_path="test_module.py", # Still needed for prompt
+            function_name="process_data",   # Still needed for prompt
+            additional_context={"section_identifier": granular_section_id}
+        )
+        print(f"  Status: {granular_refactor_result.get('status')}")
+        if granular_refactor_result.get('modified_code_string'):
+            print(f"  Modified Code:\n{granular_refactor_result['modified_code_string']}")
+        if granular_refactor_result.get('error'): print(f"  Error: {granular_refactor_result['error']}")
+
 
         # Cleanup
         try:

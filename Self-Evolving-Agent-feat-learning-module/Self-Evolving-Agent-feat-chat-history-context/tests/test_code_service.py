@@ -628,22 +628,21 @@ class MyCalc:
         }
 
         detail_for_func_one = "def func_one():\n    pass # func_one_impl"
+        # Key for method must be ClassName.MethodName
         detail_for_method_a = "def method_a(self):\n    pass # method_a_impl"
 
-        async def mock_recursive_generate_code(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_OUTLINE":
-                return outline_gen_success_return
-            return {"status": "ERROR_UNEXPECTED_RECURSIVE_CALL"} # pragma: no cover
-
         async def mock_detail_gen(*args, **kwargs):
-            component_def = args[0]
-            if component_def["name"] == "func_one":
+            component_def = args[0] # component_definition is the first positional argument
+            if component_def["name"] == "func_one": # This is a function
                 return detail_for_func_one
-            elif component_def["name"] == "method_a":
+            # For methods, the 'name' in component_def passed to _generate_detail_for_component
+            # is already ClassName.MethodName due to the refactoring in EXPERIMENTAL_HIERARCHICAL_FULL_TOOL
+            elif component_def["name"] == "MyClass.method_a":
                 return detail_for_method_a
             return None # pragma: no cover
 
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code) as mock_outline_call, \
+        # Mock _generate_hierarchical_outline directly
+        with mock.patch.object(self.code_service, '_generate_hierarchical_outline', return_value=outline_gen_success_return) as mock_outline_call, \
              mock.patch.object(self.code_service, '_generate_detail_for_component', side_effect=mock_detail_gen) as mock_detail_call:
 
             result = await self.code_service.generate_code(
@@ -653,7 +652,7 @@ class MyCalc:
 
             self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_DETAILS_GENERATED")
             self.assertEqual(result["parsed_outline"], mock_outline)
-            self.assertIsNone(result["code_string"])
+            self.assertIsNone(result["code_string"]) # This context does not assemble
 
             expected_component_details = {
                 "func_one": detail_for_func_one,
@@ -661,21 +660,21 @@ class MyCalc:
             }
             self.assertEqual(result["component_details"], expected_component_details)
 
-            mock_outline_call.assert_called_once_with(
-                context="EXPERIMENTAL_HIERARCHICAL_OUTLINE",
-                prompt_or_description="A complex tool.",
-                language="python",
-                llm_config=None,
-                additional_context=None
-            )
+            mock_outline_call.assert_called_once_with("A complex tool.", None) # llm_config is None by default
 
             self.assertEqual(mock_detail_call.call_count, 2)
-            # Ensure component definitions are passed correctly
-            # Note: Direct comparison of dicts passed to mocks can be tricky if order or extra keys differ.
-            # It's often better to assert specific key-value pairs or types if full dict match is problematic.
-            # For this test, we assume the component_def dictionaries are passed as is from mock_outline.
-            mock_detail_call.assert_any_call(mock_outline["components"][0], mock_outline, None) # func_one
-            mock_detail_call.assert_any_call(mock_outline["components"][1]["methods"][0], mock_outline, None) # MyClass.method_a
+
+            # Check calls to _generate_detail_for_component
+            # First call for func_one
+            call_args_func_one = mock_detail_call.call_args_list[0][0] # First positional arg of first call
+            self.assertEqual(call_args_func_one[0]['name'], "func_one")
+            self.assertEqual(call_args_func_one[1], mock_outline) # full_outline
+
+            # Second call for MyClass.method_a
+            call_args_method_a = mock_detail_call.call_args_list[1][0] # First positional arg of second call
+            self.assertEqual(call_args_method_a[0]['name'], "MyClass.method_a") # Name is now Class.Method
+            self.assertEqual(call_args_method_a[0]['original_name'], "method_a") # Original name preserved
+            self.assertEqual(call_args_method_a[1], mock_outline) # full_outline
 
 
     async def test_generate_code_hierarchical_full_tool_outline_fails(self):
@@ -683,48 +682,37 @@ class MyCalc:
             "status": "ERROR_OUTLINE_PARSING", "parsed_outline": None,
             "outline_str": "{bad json", "logs": ["Failed parsing"], "error": "JSON error"
         }
-
-        async def mock_recursive_generate_code_fail_outline(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_OUTLINE":
-                return outline_gen_failure_return
-            return {"status": "ERROR_UNEXPECTED_RECURSIVE_CALL"} # pragma: no cover
-
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code_fail_outline) as mock_outline_call:
+        # Mock _generate_hierarchical_outline directly
+        with mock.patch.object(self.code_service, '_generate_hierarchical_outline', return_value=outline_gen_failure_return) as mock_outline_call:
             result = await self.code_service.generate_code(
                 context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL",
                 prompt_or_description="A complex tool."
             )
-            self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING")
+            self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING") # Status should propagate
             self.assertIsNone(result["component_details"])
-            mock_outline_call.assert_called_once()
+            mock_outline_call.assert_called_once_with("A complex tool.", None)
 
 
     async def test_generate_code_hierarchical_full_tool_one_detail_fails(self):
-        mock_outline = { # Simplified outline for this test
+        mock_outline = {
             "module_name": "test_tool.py",
             "components": [
                 {"type": "function", "name": "func_one", "signature": "()", "description": "d1", "body_placeholder": "p1"},
                 {"type": "function", "name": "func_two", "signature": "()", "description": "d2", "body_placeholder": "p2"}
             ]
         }
-        outline_gen_success_return = {"status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": []}
-
+        outline_gen_success_return = {"status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None}
         detail_for_func_one = "def func_one(): pass"
-
-        async def mock_recursive_generate_code_for_partial(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_OUTLINE":
-                return outline_gen_success_return
-            return {"status": "ERROR_UNEXPECTED_RECURSIVE_CALL"} # pragma: no cover
 
         async def mock_detail_gen_partial_fail(*args, **kwargs):
             component_def = args[0]
             if component_def["name"] == "func_one":
                 return detail_for_func_one
             elif component_def["name"] == "func_two":
-                return None
+                return None # Simulate failure for func_two
             return None # pragma: no cover
 
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code_for_partial), \
+        with mock.patch.object(self.code_service, '_generate_hierarchical_outline', return_value=outline_gen_success_return), \
              mock.patch.object(self.code_service, '_generate_detail_for_component', side_effect=mock_detail_gen_partial_fail) as mock_detail_call:
 
             result = await self.code_service.generate_code(
@@ -739,160 +727,168 @@ class MyCalc:
                 "func_two": None
             }
             self.assertEqual(result["component_details"], expected_component_details)
-            self.assertIsNotNone(result["error"])
+            self.assertIsNotNone(result["error"]) # Error should be set for partial failure
             self.assertEqual(mock_detail_call.call_count, 2)
 
+    # --- Tests for _generate_hierarchical_outline (private method) ---
+    async def test_private_generate_hierarchical_outline_success(self):
+        expected_outline_dict = {"module_name": "test_module.py", "components": [{"type": "function", "name": "main"}]}
+        llm_json_output = json.dumps(expected_outline_dict)
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_json_output
+
+        result = await self.code_service._generate_hierarchical_outline(
+            high_level_description="A simple test module.",
+            llm_config=None
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_OUTLINE_GENERATED")
+        self.assertEqual(result["parsed_outline"], expected_outline_dict)
+        self.assertEqual(result["outline_str"], llm_json_output)
+        self.assertIsNone(result["error"])
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+
+    async def test_private_generate_hierarchical_outline_llm_fails(self):
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty response
+
+        result = await self.code_service._generate_hierarchical_outline(
+            high_level_description="A module that will cause LLM to fail.",
+            llm_config=None
+        )
+        self.assertEqual(result["status"], "ERROR_LLM_NO_OUTLINE")
+        self.assertIsNone(result["parsed_outline"])
+        self.assertEqual(result["outline_str"], "")
+        self.assertIsNotNone(result["error"])
+
+    async def test_private_generate_hierarchical_outline_json_error(self):
+        malformed_json_output = "{'this_is_bad_json': true" # Missing closing brace
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = malformed_json_output
+
+        result = await self.code_service._generate_hierarchical_outline(
+            high_level_description="A module that returns bad JSON.",
+            llm_config=None
+        )
+        self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING")
+        self.assertIsNone(result["parsed_outline"])
+        self.assertEqual(result["outline_str"], malformed_json_output)
+        self.assertIsNotNone(result["error"])
+        self.assertIn("Failed to parse LLM JSON outline", result["error"])
+
     # --- Tests for generate_code (HIERARCHICAL_GEN_COMPLETE_TOOL context) ---
-    async def test_generate_code_hierarchical_complete_tool_success_no_save(self): # RENAMED
+    async def test_generate_code_hierarchical_complete_tool_success_no_save(self):
         mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
-        mock_component_details = {"my_func": "def my_func():\n    print('done')"}
-        # This expected code should be what _assemble_components produces based on the mocks above
-        expected_assembled_code = self.code_service._assemble_components(mock_outline, mock_component_details)
+        detail_for_my_func = "def my_func():\n    print('done')"
 
+        expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
 
-        orchestration_success_return = {
-            "status": "SUCCESS_HIERARCHICAL_DETAILS_GENERATED",
-            "parsed_outline": mock_outline,
-            "component_details": mock_component_details,
-            "logs": [], "error": None
-        }
+        # Mock _generate_hierarchical_outline
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+        # Mock _generate_detail_for_component
+        self.code_service._generate_detail_for_component = AsyncMock(return_value=detail_for_my_func)
 
-        async def mock_recursive_generate_code(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
-                return orchestration_success_return
-            raise AssertionError(f"Unexpected recursive call to generate_code with context: {kwargs.get('context')}") # pragma: no cover
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="A complex tool requiring assembly.",
+            target_path=None # Explicitly no save
+        )
 
-        # For this test, we let _assemble_components run, so no need to mock it.
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code) as mock_inner_gen_code_call:
-            result = await self.code_service.generate_code(
-                context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-                prompt_or_description="A complex tool requiring assembly.",
-                target_path=None # Explicitly no save
-            )
+        self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED")
+        self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
+        self.assertEqual(result["parsed_outline"], mock_outline)
+        self.assertEqual(result["component_details"], {"my_func": detail_for_my_func})
+        self.assertIsNone(result.get("saved_to_path"))
 
-            self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED")
-            self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip()) # Compare stripped
-            self.assertEqual(result["parsed_outline"], mock_outline)
-            self.assertEqual(result["component_details"], mock_component_details)
-            self.assertIsNone(result.get("saved_to_path"))
+        self.code_service._generate_hierarchical_outline.assert_called_once_with(
+            "A complex tool requiring assembly.", None
+        )
+        self.code_service._generate_detail_for_component.assert_called_once_with(
+            component_definition=mock_outline["components"][0],
+            full_outline=mock_outline,
+            llm_config=None
+        )
 
-            mock_inner_gen_code_call.assert_called_once_with(
-                context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL",
-                prompt_or_description="A complex tool requiring assembly.",
-                language="python",
-                llm_config=None,
-                additional_context=None
-            )
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_hierarchical_complete_tool_success_and_save(self, mock_write_to_file):
         mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
-        mock_component_details = {"my_func": "def my_func():\n    print('done')"}
-        # Let _assemble_components run to get the code that would be saved
-        expected_assembled_code = self.code_service._assemble_components(mock_outline, mock_component_details)
+        detail_for_my_func = "def my_func():\n    print('done')"
+        expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
         mock_write_to_file.return_value = True
 
-        orchestration_success_return = {
-            "status": "SUCCESS_HIERARCHICAL_DETAILS_GENERATED",
-            "parsed_outline": mock_outline,
-            "component_details": mock_component_details,
-            "logs": [], "error": None
-        }
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+        self.code_service._generate_detail_for_component = AsyncMock(return_value=detail_for_my_func)
 
-        async def mock_recursive_generate_code(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
-                return orchestration_success_return
-            raise AssertionError(f"Unexpected recursive call to generate_code with context: {kwargs.get('context')}") # pragma: no cover
+        test_target_path = "output/hierarchical_tool.py"
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="A complex tool requiring assembly.",
+            target_path=test_target_path
+        )
 
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code) as mock_inner_gen_code_call:
-            test_target_path = "output/hierarchical_tool.py"
-            result = await self.code_service.generate_code(
-                context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-                prompt_or_description="A complex tool requiring assembly.",
-                target_path=test_target_path
-            )
-
-            self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED")
-            self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
-            self.assertEqual(result["saved_to_path"], test_target_path)
-            mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
+        self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED")
+        self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
+        self.assertEqual(result["saved_to_path"], test_target_path)
+        mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_hierarchical_complete_tool_save_fails(self, mock_write_to_file):
         mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
-        mock_component_details = {"my_func": "def my_func():\n    print('done')"}
-        expected_assembled_code = self.code_service._assemble_components(mock_outline, mock_component_details) # Let it run
-        mock_write_to_file.return_value = False # Simulate save failure
+        detail_for_my_func = "def my_func():\n    print('done')"
+        expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
+        mock_write_to_file.return_value = False
 
-        orchestration_success_return = {
-            "status": "SUCCESS_HIERARCHICAL_DETAILS_GENERATED",
-            "parsed_outline": mock_outline,
-            "component_details": mock_component_details,
-            "logs": [], "error": None
-        }
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+        self.code_service._generate_detail_for_component = AsyncMock(return_value=detail_for_my_func)
 
-        async def mock_recursive_generate_code(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
-                return orchestration_success_return
-            raise AssertionError(f"Unexpected recursive call to generate_code with context: {kwargs.get('context')}") # pragma: no cover
+        test_target_path = "output/hierarchical_tool_fail_save.py"
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="A complex tool, save fails.",
+            target_path=test_target_path
+        )
 
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code) as mock_inner_gen_code_call:
-            test_target_path = "output/hierarchical_tool_fail_save.py"
-            result = await self.code_service.generate_code(
-                context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-                prompt_or_description="A complex tool, save fails.",
-                target_path=test_target_path
-            )
-
-            self.assertEqual(result["status"], "ERROR_SAVING_ASSEMBLED_CODE")
-            self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip()) # Code still generated
-            self.assertIsNone(result["saved_to_path"])
-            self.assertIsNotNone(result["error"])
-            self.assertIn("failed to save", result["error"])
-            mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
+        self.assertEqual(result["status"], "ERROR_SAVING_ASSEMBLED_CODE")
+        self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
+        self.assertIsNone(result["saved_to_path"])
+        self.assertIsNotNone(result["error"])
+        self.assertIn("failed to save", result["error"])
+        mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
 
     async def test_generate_code_hierarchical_complete_tool_orchestration_fails(self):
-        orchestration_failure_return = {
-            "status": "ERROR_OUTLINE_PARSING", "parsed_outline": None,
-            "component_details": None, "logs": ["Failed parsing"], "error": "JSON error"
-        }
+        # Test when _generate_hierarchical_outline fails
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "ERROR_OUTLINE_PARSING", "parsed_outline": None, "logs": ["Failed parsing"], "error": "JSON error"
+        })
+        self.code_service._generate_detail_for_component = AsyncMock() # Should not be called
+        self.code_service._assemble_components = mock.Mock() # Should not be called
 
-        async def mock_recursive_generate_code_fail(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
-                return orchestration_failure_return
-            raise AssertionError("Unexpected recursive call") # pragma: no cover
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="A complex tool."
+        )
 
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code_fail) as mock_inner_gen_code_call, \
-             mock.patch.object(self.code_service, '_assemble_components') as mock_assemble:
+        self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING")
+        self.assertIsNone(result["code_string"])
+        self.code_service._generate_hierarchical_outline.assert_called_once()
+        self.code_service._generate_detail_for_component.assert_not_called()
+        self.code_service._assemble_components.assert_not_called()
 
-            result = await self.code_service.generate_code(
-                context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-                prompt_or_description="A complex tool."
-            )
-
-            self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING")
-            self.assertIsNone(result["code_string"])
-            mock_inner_gen_code_call.assert_called_once()
-            mock_assemble.assert_not_called()
 
     async def test_generate_code_hierarchical_complete_tool_assembly_fails(self):
-        mock_outline = {"components": []}
-        mock_component_details = {}
-        orchestration_success_return = {
-            "status": "SUCCESS_HIERARCHICAL_DETAILS_GENERATED",
-            "parsed_outline": mock_outline,
-            "component_details": mock_component_details,
-            "logs": [], "error": None # Ensure error is None for this path
-        }
+        mock_outline = {"components": []} # Minimal valid outline
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+        # Assume detail generation succeeds (or no components to generate for)
+        self.code_service._generate_detail_for_component = AsyncMock(return_value="def some_func(): pass")
 
-        async def mock_recursive_generate_code_for_assembly_fail(*args, **kwargs):
-            if kwargs.get('context') == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
-                return orchestration_success_return
-            raise AssertionError("Unexpected recursive call") # pragma: no cover
-
-        with mock.patch.object(self.code_service, 'generate_code', side_effect=mock_recursive_generate_code_for_assembly_fail), \
-             mock.patch.object(self.code_service, '_assemble_components', side_effect=Exception("Assembly crashed!")) as mock_assemble:
-
+        # Mock _assemble_components to raise an exception
+        with mock.patch.object(self.code_service, '_assemble_components', side_effect=Exception("Assembly crashed!")) as mock_assemble:
             result = await self.code_service.generate_code(
                 context="HIERARCHICAL_GEN_COMPLETE_TOOL",
                 prompt_or_description="A complex tool."
@@ -902,6 +898,151 @@ class MyCalc:
             self.assertIsNone(result["code_string"])
             self.assertIn("Assembly crashed!", result.get("error", ""))
             mock_assemble.assert_called_once()
+
+    # --- Tests for modify_code (GRANULAR_CODE_REFACTOR context) ---
+    async def test_modify_code_granular_refactor_success_with_existing_code(self):
+        original_code = "def my_func(a):\n    print('old line')\n    return a * 2"
+        section_id = "print('old line')"
+        instruction = "Replace the print statement with print('new line')"
+        expected_modified_code = "def my_func(a):\n    print('new line') # Modified by LLM\n    return a * 2"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_modified_code
+
+        result = await self.code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction=instruction,
+            existing_code=original_code,
+            module_path="test.py", # Required for prompt
+            function_name="my_func",   # Required for prompt
+            additional_context={"section_identifier": section_id}
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.assertEqual(result["modified_code_string"], expected_modified_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_arg = self.mock_llm_provider.invoke_ollama_model_async.call_args[0][0]
+        self.assertIn(original_code, prompt_arg)
+        self.assertIn(section_id, prompt_arg)
+        self.assertIn(instruction, prompt_arg)
+        self.mock_self_mod_service.get_function_source_code.assert_not_called()
+
+    async def test_modify_code_granular_refactor_success_fetch_code(self):
+        original_code = "def fetched_func(b):\n    return b - 1"
+        section_id = "return b - 1"
+        instruction = "Change to return b - 2"
+        expected_modified_code = "def fetched_func(b):\n    return b - 2 # Modified by LLM"
+
+        self.mock_self_mod_service.get_function_source_code.return_value = original_code
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_modified_code
+
+        result = await self.code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction=instruction,
+            existing_code=None, # Trigger fetch
+            module_path="fetch_test.py",
+            function_name="fetched_func",
+            additional_context={"section_identifier": section_id}
+        )
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.assertEqual(result["modified_code_string"], expected_modified_code)
+        self.mock_self_mod_service.get_function_source_code.assert_called_once_with("fetch_test.py", "fetched_func")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+
+    async def test_modify_code_granular_refactor_missing_section_identifier(self):
+        result = await self.code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction="Refactor something.",
+            existing_code="def test_func(): pass",
+            module_path="test.py",
+            function_name="test_func",
+            additional_context={} # Missing section_identifier
+        )
+        self.assertEqual(result["status"], "ERROR_MISSING_SECTION_IDENTIFIER")
+        self.assertIsNone(result["modified_code_string"])
+        self.assertIn("Section identifier not provided", result["error"])
+
+    async def test_modify_code_granular_refactor_llm_no_suggestion(self):
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "// REFACTORING_SUGGESTION_IMPOSSIBLE"
+        result = await self.code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction="An impossible task.",
+            existing_code="def test_func(): pass",
+            module_path="test.py",
+            function_name="test_func",
+            additional_context={"section_identifier": "pass"}
+        )
+        self.assertEqual(result["status"], "ERROR_LLM_NO_SUGGESTION")
+        self.assertIsNone(result["modified_code_string"])
+        self.assertIn("REFACTORING_SUGGESTION_IMPOSSIBLE", result["error"])
+
+    # --- Tests for Linter Integration ---
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_generate_code_new_tool_with_linter_no_issues(self, mock_run_linter_method):
+        mock_run_linter_method.return_value = ([], None) # No lint issues, no linter error
+        expected_code = "def perfectly_fine_tool():\n    return True"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = f'# METADATA: {json.dumps({"suggested_function_name": "fine_tool"})}\n{expected_code}'
+
+        result = await self.code_service.generate_code(context="NEW_TOOL", prompt_or_description="good code")
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.assertEqual(result["code_string"], expected_code)
+        mock_run_linter_method.assert_called_once_with(expected_code)
+        self.assertTrue(all("LINT" not in log for log in result.get("logs", [])))
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_generate_code_new_tool_with_linter_issues_found(self, mock_run_linter_method):
+        lint_issue_msg = "LINT (Ruff): E999 SyntaxError at 1:1: Bad syntax here"
+        mock_run_linter_method.return_value = ([lint_issue_msg], None)
+        buggy_code = "def buggy_tool(:\n    pass" # Syntax error
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = f'# METADATA: {json.dumps({"suggested_function_name": "buggy_tool"})}\n{buggy_code}'
+
+        result = await self.code_service.generate_code(context="NEW_TOOL", prompt_or_description="buggy code")
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED") # Status not affected by lint
+        self.assertEqual(result["code_string"], buggy_code)
+        mock_run_linter_method.assert_called_once_with(buggy_code)
+        self.assertIn("Linting issues found:", result.get("logs", []))
+        self.assertIn(lint_issue_msg, result.get("logs", []))
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_generate_code_new_tool_with_linter_execution_error(self, mock_run_linter_method):
+        linter_crash_error = "Ruff crashed unexpectedly"
+        mock_run_linter_method.return_value = ([], linter_crash_error)
+        some_code = "def some_code_tool():\n    return 42"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = f'# METADATA: {json.dumps({"suggested_function_name": "some_code_tool"})}\n{some_code}'
+
+        result = await self.code_service.generate_code(context="NEW_TOOL", prompt_or_description="code for linter crash")
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED") # Status not affected
+        mock_run_linter_method.assert_called_once_with(some_code)
+        self.assertIn(f"Linter execution error: {linter_crash_error}", result.get("logs", []))
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_generate_code_hierarchical_complete_tool_with_linter_issues(self, mock_run_linter_method):
+        mock_outline = {"module_name": "complex_tool.py", "components": [{"type": "function", "name": "main_func"}]}
+        assembled_code_with_issues = "import os\n\ndef main_func( ):\n    print('issue here') # Example issue for linter"
+        lint_issue_msg = "LINT (Pyflakes): main_func has trailing whitespace on params line"
+        mock_run_linter_method.return_value = ([lint_issue_msg], None)
+
+        # Mock the hierarchical generation part
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+        self.code_service._generate_detail_for_component = AsyncMock(return_value="def main_func( ):\n    print('issue here')")
+        # Ensure _assemble_components returns the exact string we want to test linting on
+        self.code_service._assemble_components = mock.Mock(return_value=assembled_code_with_issues)
+
+
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="Generate a hierarchical tool with lint issues."
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED") # Linting doesn't change status
+        self.assertEqual(result["code_string"], assembled_code_with_issues)
+        mock_run_linter_method.assert_called_once_with(assembled_code_with_issues)
+        self.assertIn("Linting issues found in assembled code:", result.get("logs", []))
+        self.assertIn(lint_issue_msg, result.get("logs", []))
 
 
 if __name__ == '__main__': # pragma: no cover
