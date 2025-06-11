@@ -12,7 +12,8 @@ try:
     from ai_assistant.tools.tool_system import ToolSystem # Assuming ToolSystem is used by ExecutionAgent
     from ai_assistant.llm_interface.ollama_client import OllamaProvider # For type mocking
     from ai_assistant.code_services.service import CodeService # For mocking path to llm_provider
-    # summarize_tool_result_conversationally will be patched, so direct import not strictly needed here for tests
+    from ai_assistant.core.task_manager import TaskManager # Added for spec
+    # summarize_tool_result_conversationally and rephrase_error_message_conversationally will be patched
 except ImportError: # pragma: no cover
     import sys
     import os
@@ -59,10 +60,14 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.tool_system_patcher = patch('ai_assistant.core.orchestrator.tool_system_instance', MagicMock(spec=ToolSystem))
         self.mock_tool_system = self.tool_system_patcher.start()
         self.mock_tool_system.list_tools_with_sources.return_value = {"mock_tool": {"description": "A mock tool"}}
+        # Patch load_learned_facts used in orchestrator
+        self.load_facts_patcher = patch('ai_assistant.core.orchestrator.load_learned_facts', MagicMock(return_value=[]))
+        self.mock_load_facts = self.load_facts_patcher.start()
 
 
     def tearDown(self):
         self.tool_system_patcher.stop()
+        self.load_facts_patcher.stop()
 
     @patch('ai_assistant.core.orchestrator.summarize_tool_result_conversationally', new_callable=AsyncMock)
     async def test_process_prompt_summarizer_succeeds(self, mock_summarizer):
@@ -119,6 +124,153 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(success)
         self.assertIn("Could not create a plan", response)
         mock_summarizer.assert_not_called() # Summarizer should not be called if no plan
+        # Test the rephrasing part is not called here as it's handled by specific rephrasing tests
+        # For the basic "no plan" case, we are now testing rephrasing separately.
+        # This test ensures the old basic "Could not create a plan" still works if rephraser is NOT explicitly mocked to change it.
+        # To test rephrasing, we'll add specific tests below.
+
+    # --- Tests for Conversational Error Rephrasing ---
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')
+    async def test_process_prompt_no_plan_created_error_rephrased_succeeds(
+            self, mock_generate_exec_summary, mock_rephraser):
+        user_prompt = "Goal leading to no plan"
+        technical_error_msg = "Could not create a plan for the given prompt."
+        rephrased_error = "I couldn't figure out a plan for that, sorry!"
+        technical_summary = "::Technical Summary No Plan::"
+
+        self.mock_planner_agent.create_plan_with_llm.return_value = []  # No plan
+        mock_rephraser.return_value = rephrased_error
+        mock_generate_exec_summary.return_value = technical_summary
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        self.assertEqual(response, rephrased_error + technical_summary)
+        mock_rephraser.assert_called_once_with(
+            technical_error_message=technical_error_msg,
+            original_user_query=user_prompt,
+            llm_provider=self.mock_llm_provider
+        )
+        mock_generate_exec_summary.assert_called_once_with([], []) # Called with (None, []) or ([], [])
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')
+    async def test_process_prompt_no_plan_created_error_rephraser_fails(
+            self, mock_generate_exec_summary, mock_rephraser):
+        user_prompt = "Goal leading to no plan"
+        technical_error_msg = "Could not create a plan for the given prompt."
+        technical_summary = "::Technical Summary No Plan Fallback::"
+
+        self.mock_planner_agent.create_plan_with_llm.return_value = []
+        mock_rephraser.return_value = None # Rephraser fails
+        mock_generate_exec_summary.return_value = technical_summary
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        self.assertEqual(response, technical_error_msg + technical_summary) # Falls back to technical
+        mock_rephraser.assert_called_once()
+        mock_generate_exec_summary.assert_called_once()
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.summarize_tool_result_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')
+    async def test_process_prompt_plan_execution_fails_error_rephrased_succeeds(
+            self, mock_generate_exec_summary, mock_summarizer, mock_rephraser):
+        user_prompt = "Prompt for execution failure"
+        mock_plan = [{"tool_name": "failing_tool", "args": (), "kwargs": {}}]
+        technical_error_detail = "Tool failed with specific details"
+        mock_results = [Exception(technical_error_detail)]
+        rephrased_error = "It seems a step in the plan didn't go as expected!"
+        technical_summary = "::Technical Execution Summary::"
+
+        self.mock_planner_agent.create_plan_with_llm.return_value = mock_plan
+        self.mock_execution_agent.execute_plan.return_value = (mock_plan, mock_results)
+        mock_rephraser.return_value = rephrased_error
+        mock_summarizer.return_value = None # Simulate summarizer also failing or not providing primary content for failure
+        mock_generate_exec_summary.return_value = technical_summary
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        # The rephrased error should be primary, followed by the technical summary because summarize_tool_result_conversationally returned None
+        self.assertEqual(response, rephrased_error + technical_summary)
+        mock_rephraser.assert_called_once_with(
+            technical_error_message=f"An error occurred: Exception: {technical_error_detail}",
+            original_user_query=user_prompt,
+            llm_provider=self.mock_llm_provider
+        )
+        mock_summarizer.assert_called_once() # Summarizer is still called for failures
+        mock_generate_exec_summary.assert_called_once_with(mock_plan, mock_results)
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.summarize_tool_result_conversationally', new_callable=AsyncMock)
+    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')
+    async def test_process_prompt_plan_execution_fails_rephraser_fails(
+            self, mock_generate_exec_summary, mock_summarizer, mock_rephraser):
+        user_prompt = "Prompt for execution failure, rephraser fails"
+        mock_plan = [{"tool_name": "failing_tool", "args": (), "kwargs": {}}]
+        technical_error_detail = "Tool failed badly"
+        mock_results = [Exception(technical_error_detail)]
+        # expected_fallback_error_message = f"Could not complete the task fully. An error occurred: Exception: {technical_error_detail}"
+        # The above is what the orchestrator's internal fallback logic would generate if rephraser fails.
+        # The rephraser is mocked to return None, so its internal "I encountered an issue" is used by orchestrator's rephrasing block.
+        expected_initial_message_from_rephrase_block = "I encountered an issue."
+
+
+        technical_summary = "::Technical Execution Summary Fallback::"
+
+        self.mock_planner_agent.create_plan_with_llm.return_value = mock_plan
+        self.mock_execution_agent.execute_plan.return_value = (mock_plan, mock_results)
+        mock_rephraser.return_value = None # Rephraser fails
+        mock_summarizer.return_value = None # Summarizer also fails
+        mock_generate_exec_summary.return_value = technical_summary
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        self.assertEqual(response, expected_initial_message_from_rephrase_block + technical_summary)
+        mock_rephraser.assert_called_once()
+        mock_summarizer.assert_called_once()
+        mock_generate_exec_summary.assert_called_once()
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    async def test_process_prompt_orchestrator_exception_rephrased_succeeds(self, mock_rephraser):
+        user_prompt = "Prompt causing orchestrator error"
+        orchestrator_error_msg = "Orchestrator boom"
+        rephrased_error = "Something unexpected happened while I was trying to process that."
+
+        self.mock_planner_agent.create_plan_with_llm.side_effect = Exception(orchestrator_error_msg)
+        mock_rephraser.return_value = rephrased_error
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        self.assertEqual(response, rephrased_error)
+        mock_rephraser.assert_called_once_with(
+            technical_error_message=orchestrator_error_msg,
+            original_user_query=user_prompt,
+            llm_provider=self.mock_llm_provider
+        )
+
+    @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
+    async def test_process_prompt_orchestrator_exception_rephraser_fails(self, mock_rephraser):
+        user_prompt = "Prompt causing orchestrator error, rephraser fails"
+        orchestrator_error_msg = "Orchestrator critical failure"
+        expected_technical_response = f"Error during orchestration: {orchestrator_error_msg}"
+
+        self.mock_planner_agent.create_plan_with_llm.side_effect = Exception(orchestrator_error_msg)
+        mock_rephraser.return_value = None # Rephraser fails
+
+        success, response = await self.orchestrator.process_prompt(user_prompt)
+
+        self.assertFalse(success)
+        self.assertEqual(response, expected_technical_response) # Falls back to technical
+        mock_rephraser.assert_called_once()
+
+    # --- End of Tests for Conversational Error Rephrasing ---
 
     @patch('ai_assistant.core.orchestrator.summarize_tool_result_conversationally', new_callable=AsyncMock)
     @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')

@@ -5,17 +5,16 @@ from typing import List, Dict, Any, Optional
 import asyncio # Required for running async tests if not using IsolatedAsyncioTestCase in some environments
 
 try:
-    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE
-    # Use the actual OllamaProvider for type hinting if possible, or a generic mock type
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
-    from ai_assistant.config import get_model_for_task # To ensure it's mockable if needed
+    from ai_assistant.config import get_model_for_task
 except ImportError: # pragma: no cover
     import sys
     import os
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
     from ai_assistant.config import get_model_for_task
 
@@ -24,19 +23,29 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
-        # Reset any captured prompts from previous tests if this mock were shared (it's not here)
         self.captured_prompt = None
         self.captured_model_name = None
         self.captured_temperature = None
 
-        async def mock_invoke_side_effect(prompt, model_name, temperature):
+        # Default side effect for invoke_ollama_model_async
+        async def default_mock_invoke_side_effect(prompt, model_name, temperature):
             self.captured_prompt = prompt
             self.captured_model_name = model_name
             self.captured_temperature = temperature
-            # Default mock response, can be overridden in each test
+            if "User-friendly explanation:" in prompt: # Heuristic for rephrase error prompt
+                 return "Default rephrased error from mock LLM."
             return "Default conversational summary from mock LLM."
 
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = mock_invoke_side_effect
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = default_mock_invoke_side_effect
+
+        # Patch get_model_for_task
+        self.get_model_patcher = patch('ai_assistant.utils.conversational_helpers.get_model_for_task')
+        self.mock_get_model_for_task = self.get_model_patcher.start()
+        # Default behavior for get_model_for_task, can be overridden per test
+        self.mock_get_model_for_task.side_effect = lambda task_type: f"mock_model_for_{task_type}"
+
+    def tearDown(self):
+        self.get_model_patcher.stop()
 
     async def test_summarize_success_simple_result(self):
         plan = [{"tool_name": "get_weather", "args": ("London",), "kwargs": {}}]
@@ -149,6 +158,93 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary, "It seems no actions were taken for your request.")
         self.assertIn("Actions and Results:\nNo actions were taken.", self.captured_prompt)
         self.assertIn("Overall outcome of the attempt: Failed", self.captured_prompt)
+
+    # --- Tests for rephrase_error_message_conversationally ---
+
+    async def test_rephrase_error_success(self):
+        technical_error = "Tool 'example_tool' raised ValueError: Invalid input."
+        original_query = "Run example tool with test data."
+        expected_rephrased_message = "It seems there was an issue with the 'example_tool'; it received invalid input."
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased_message
+        self.mock_get_model_for_task.return_value = "rephrase_model" # Specific model for this test
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        self.assertEqual(rephrased_message, expected_rephrased_message)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.assertIn(technical_error, self.captured_prompt)
+        self.assertIn(original_query, self.captured_prompt)
+        self.assertEqual(self.captured_model_name, "rephrase_model")
+        self.assertEqual(self.captured_temperature, 0.5)
+
+    async def test_rephrase_error_llm_returns_empty_uses_fallback(self):
+        technical_error = "Database connection timeout."
+        original_query = "Fetch user data."
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # LLM returns empty
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        expected_fallback = f"I encountered an issue processing your request for '{original_query}'. The technical details are: {technical_error}"
+        self.assertEqual(rephrased_message, expected_fallback)
+
+    async def test_rephrase_error_llm_raises_exception_uses_fallback(self):
+        technical_error = "NetworkError: Unreachable host."
+        original_query = "Get external resource."
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM service unavailable")
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        expected_fallback = f"I ran into a problem with your request for '{original_query}'. The specific technical error was: {technical_error}"
+        self.assertEqual(rephrased_message, expected_fallback)
+
+    async def test_rephrase_error_no_technical_message_returns_generic_error(self):
+        rephrased_message = await rephrase_error_message_conversationally(
+            "", "Any query", self.mock_llm_provider
+        )
+        self.assertEqual(rephrased_message, "An unexpected issue occurred, but no specific error message was available.")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called() # LLM should not be called
+
+    async def test_rephrase_error_no_original_query_still_works(self):
+        technical_error = "Some error"
+        expected_rephrased = "Rephrased: Some error"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, None, self.mock_llm_provider
+        )
+        self.assertEqual(rephrased_message, expected_rephrased)
+        self.assertIn("User's original request: an unspecified task", self.captured_prompt)
+
+    async def test_rephrase_error_model_fallback_logic(self):
+        technical_error = "Test model fallback"
+        original_query = "Testing model selection"
+        expected_response = "Model fallback test successful."
+
+        # Simulate get_model_for_task returning None for "error_rephrasing" then for "conversational_response"
+        self.mock_get_model_for_task.side_effect = ["error_rephrasing_model", None, "conversational_model", None, "final_fallback_model"]
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_response
+
+        # First call, should use "error_rephrasing_model"
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "error_rephrasing_model")
+
+        # Second call, "error_rephrasing" model not found, should use "conversational_model"
+        self.mock_get_model_for_task.side_effect = [None, "conversational_model"] # Reset side_effect for this call
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "conversational_model")
+
+        # Third call, "error_rephrasing" & "conversational_response" not found, should use hardcoded "mistral"
+        self.mock_get_model_for_task.side_effect = [None, None] # Reset side_effect
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "mistral") # Default hardcoded in the function
 
 
 if __name__ == '__main__': # pragma: no cover

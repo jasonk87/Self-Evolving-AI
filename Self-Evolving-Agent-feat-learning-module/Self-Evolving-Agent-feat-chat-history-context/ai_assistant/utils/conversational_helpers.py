@@ -9,9 +9,6 @@ try:
     from ai_assistant.config import get_model_for_task
 except ImportError: # pragma: no cover
     # Fallback for potential local execution or different project structure
-    # This might occur if the utils directory is not correctly recognized as part of the package
-    # when running this file directly in some environments.
-    # For the agent's runtime, the primary import path should work.
     print("Warning: Could not import OllamaProvider or get_model_for_task from standard paths. Using placeholder for direct script execution if applicable.")
     OllamaProvider = type('OllamaProvider', (object,), {}) # Placeholder
     def get_model_for_task(task_type: str) -> str: return "mock_model" # Placeholder
@@ -60,6 +57,39 @@ Now, provide your conversational summary for the input above.
 Conversational Summary:
 """
 
+LLM_REPHRASE_ERROR_PROMPT_TEMPLATE = """
+You are an AI assistant translating a technical error message into a user-friendly, conversational explanation.
+The user was trying to achieve the following:
+User's original request: "{original_user_query}"
+
+The system encountered the following technical error:
+Technical error: "{technical_error_message}"
+
+Please rephrase this error in a clear, concise, and helpful way for the user.
+- Avoid overly technical jargon unless essential and explained.
+- If possible, offer a very brief, general suggestion on what the user might check or try next, or assure them the issue has been logged if it seems like an internal problem.
+- Do not start with phrases like "Based on the error..." or "It seems there was an error...". Directly provide the helpful explanation.
+- Aim for a supportive and understanding tone.
+
+Example 1 (User Input Error):
+User's original request: "Add my notes file."
+Technical error: "Tool 'add_numbers' failed. Error: ValueError: 'a' and 'b' must be integers. Got 'my_notes.txt'."
+User-friendly explanation: "It looks like there was a small mix-up. I tried to use 'my_notes.txt' as a number for the 'add_numbers' tool, which didn't quite work as it expects numbers. If you were trying to do something with a file, perhaps a different command or specifying the file operation more clearly might help?"
+
+Example 2 (System/Tool Error):
+User's original request: "Calculate the trajectory for the lunar launch."
+Technical error: "Tool 'lunar_trajectory_calculator' failed. Error: NullPointerException at com.space.Calculator.getGravity(Calculator.java:123). Associated task task_launch_001."
+User-friendly explanation: "I encountered an unexpected issue while trying to calculate the lunar trajectory (task task_launch_001). I've logged the technical details, and the team will look into it. Sorry about that! Perhaps we could try a different approach or simplify the request for now?"
+
+Example 3 (Generic Error):
+User's original request: "Update my profile."
+Technical error: "Connection timed out to database server."
+User-friendly explanation: "I'm having trouble connecting to the database right now to update your profile. Please try again in a few moments. If the problem persists, I'll make sure to log it."
+
+User-friendly explanation:
+"""
+
+
 async def summarize_tool_result_conversationally(
     original_user_query: str,
     executed_plan_steps: List[Dict[str, Any]],
@@ -94,13 +124,11 @@ async def summarize_tool_result_conversationally(
             if isinstance(res, Exception):
                 result_summary = f"Error: {type(res).__name__}: {str(res)}"
             elif isinstance(res, dict):
-                # If the tool provides its own summary string, use that.
                 if "summary_str" in res and isinstance(res["summary_str"], str):
                     result_summary = res["summary_str"]
                 elif "status" in res and res["status"] == "error" and "message" in res:
                     result_summary = f"Tool Error: {res['message']}"
                 else:
-                    # Basic summary for dicts to avoid excessive length
                     result_summary = f"Output data (dict with {len(res)} keys: {list(res.keys())[:3]}{'...' if len(res.keys()) > 3 else ''})"
             elif isinstance(res, list):
                 result_summary = f"Output data (list with {len(res)} items: {str(res[:3])[:100]}{'...' if len(res) > 3 or len(str(res[:3])) > 100 else ''})"
@@ -109,7 +137,7 @@ async def summarize_tool_result_conversationally(
             else:
                 result_summary = f"Output of type {type(res).__name__}."
 
-            if len(result_summary) > 150: # Truncate very long simple results
+            if len(result_summary) > 150:
                 result_summary = result_summary[:147] + "..."
 
         actions_summary_parts.append(
@@ -120,7 +148,6 @@ async def summarize_tool_result_conversationally(
 
     if overall_success:
         overall_success_str = "Succeeded"
-    # TODO: Add "Partially Succeeded" if possible to determine
     else:
         overall_success_str = "Failed"
 
@@ -132,7 +159,6 @@ async def summarize_tool_result_conversationally(
 
     try:
         target_model = model_name or get_model_for_task("conversational_response")
-        # Temperature might be slightly higher for more natural language
         summary_response = await llm_provider.invoke_ollama_model_async(
             prompt,
             model_name=target_model,
@@ -143,31 +169,98 @@ async def summarize_tool_result_conversationally(
         logger.error(f"Error invoking LLM for conversational summary: {e}", exc_info=True)
         return "I have processed your request. The detailed technical summary is available if needed."
 
+async def rephrase_error_message_conversationally(
+    technical_error_message: str,
+    original_user_query: Optional[str],
+    llm_provider: OllamaProvider,
+    model_name: Optional[str] = None
+) -> str:
+    """
+    Rephrases a technical error message into a user-friendly, conversational explanation using an LLM.
+    """
+    if not technical_error_message:
+        return "An unexpected issue occurred, but no specific error message was available."
+
+    query_for_prompt = original_user_query if original_user_query else "an unspecified task"
+
+    prompt = LLM_REPHRASE_ERROR_PROMPT_TEMPLATE.format(
+        original_user_query=query_for_prompt,
+        technical_error_message=technical_error_message
+    )
+
+    try:
+        target_model = model_name
+        if not target_model:
+            target_model = get_model_for_task("error_rephrasing")
+        if not target_model: # Fallback if "error_rephrasing" is not in config
+            target_model = get_model_for_task("conversational_response")
+        if not target_model: # Further fallback
+            target_model = "mistral" # A common default, replace if your default is different
+            logger.warning(f"No specific model for 'error_rephrasing' or 'conversational_response'. Using hardcoded default: {target_model}")
+
+        logger.info(f"Rephrasing error with model {target_model}. Original error: {technical_error_message[:100]}...")
+
+        llm_response = await llm_provider.invoke_ollama_model_async(
+            prompt,
+            model_name=target_model,
+            temperature=0.5
+        )
+
+        if llm_response and llm_response.strip():
+            return llm_response.strip()
+        else:
+            logger.warning(f"LLM returned empty response for error rephrasing. Technical error: {technical_error_message}")
+            return f"I encountered an issue processing your request for '{query_for_prompt}'. The technical details are: {technical_error_message}"
+
+    except Exception as e: # pragma: no cover
+        logger.error(f"Error during LLM call for error rephrasing: {e}. Technical error: {technical_error_message}", exc_info=True)
+        return f"I ran into a problem with your request for '{query_for_prompt}'. The specific technical error was: {technical_error_message}"
+
 
 if __name__ == '__main__': # pragma: no cover
     import asyncio
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, AsyncMock
+
+    # Temporary global variable for mock_invoke_side_effect in test_conversational_summary
+    _mock_captured_code_gen_prompt = None
+
 
     # Mock OllamaProvider for testing
     class MockOllamaProvider:
-        async def invoke_ollama_model_async(self, prompt: str, model_name: str, temperature: float) -> str:
-            print(f"\n--- LLM Prompt for Conversational Summary ---")
+        async def invoke_ollama_model_async(self, prompt: str, model_name: str, temperature: float) -> Optional[str]:
+            global _mock_captured_code_gen_prompt # Allow modification for test_conversational_summary
+
+            print(f"\n--- LLM Prompt (Model: {model_name}, Temp: {temperature}) ---")
             print(prompt)
-            print(f"--- End LLM Prompt (Model: {model_name}, Temp: {temperature}) ---")
-            if "list_files" in prompt and "found 3 files" in prompt:
-                return "Okay, I looked in the main directory and found 3 files for you: file1.txt, file2.py, and notes.md."
-            elif "failed" in prompt.lower() and ("calculate_sum" in prompt or "ValueError" in prompt) :
-                return "I tried to do that, but unfortunately, I ran into an issue with the 'calculate_sum' tool. It seems it received invalid input."
-            elif "complex_data" in prompt:
-                return "I've processed the complex data you provided."
-            return "I've completed the steps you asked for."
+            print(f"--- End LLM Prompt ---")
+
+            # Specific mock responses for summarize_tool_result_conversationally
+            if "Actions and Results:" in prompt: # Heuristic for summary prompt
+                _mock_captured_code_gen_prompt = prompt # Capture for test_conversational_summary's assertion
+                if "list_files" in prompt and "found 3 files" in prompt:
+                    return "Okay, I looked in the main directory and found 3 files for you: file1.txt, file2.py, and notes.md."
+                elif "failed" in prompt.lower() and ("calculate_sum" in prompt or "ValueError" in prompt) :
+                    return "I tried to do that, but unfortunately, I ran into an issue with the 'calculate_sum' tool. It seems it received invalid input."
+                elif "complex_data" in prompt:
+                    return "I've processed the complex data you provided."
+                return "I've completed the steps you asked for." # Default for summary
+
+            # Specific mock responses for rephrase_error_message_conversationally
+            elif "User-friendly explanation:" in prompt: # Heuristic for rephrase error prompt
+                if "ValueError" in prompt and "my_notes.txt" in prompt:
+                    return "It looks like there was a small mix-up. I tried to use 'my_notes.txt' as a number, which didn't quite work. If you were trying to work with a file, maybe a different command would help?"
+                return "I'm sorry, something went wrong. I've noted the technical details." # Default for rephrase
+
+            return "Generic mock response."
+
 
     async def test_conversational_summary():
+        global _mock_captured_code_gen_prompt # Access global for assertion
         mock_llm_provider_instance = MockOllamaProvider()
 
+        print("\n--- Testing summarize_tool_result_conversationally ---")
         # Test Case 1: Success with simple list result
         plan1 = [{"tool_name": "list_files", "args": ("/test",), "kwargs": {}}]
-        # Tool result often provides a summary string for complex data
         results1 = [{"files": ["file1.txt", "file2.py", "notes.md"], "count": 3, "summary_str": "found 3 files in /test"}]
         summary1 = await summarize_tool_result_conversationally(
             "What files are in /test?", plan1, results1, True, mock_llm_provider_instance
@@ -192,27 +285,63 @@ if __name__ == '__main__': # pragma: no cover
             "Get details for item123 (complex_data)", plan3, results3, True, mock_llm_provider_instance
         )
         print(f"\nUser Query: Get details for item123 (complex_data)\nAI Summary 3: {summary3}")
-        assert "processed the complex data" in summary3.lower() # Checks if LLM got a summary of the dict
-
-        # Test Case 4: Success with a very long string result
-        plan4 = [{"tool_name": "read_file", "args": ("long_file.txt",), "kwargs": {}}]
-        results4 = ["This is a very long string result that definitely exceeds one hundred and fifty characters in total length, so it should be truncated by the summarizer if it's not handled by a specific tool summary_str field which in this mock case it is not." * 2]
-        summary4 = await summarize_tool_result_conversationally(
-            "Read long_file.txt", plan4, results4, True, mock_llm_provider_instance
-        )
-        print(f"\nUser Query: Read long_file.txt\nAI Summary 4: {summary4}")
-        # The assertion here depends on how the LLM summarizes it.
-        # For this test, we're mostly interested in the prompt sent to the LLM.
-        # The mock LLM just returns "I've completed the steps you asked for." if not specific.
+        assert "processed the complex data" in summary3.lower()
 
         # Test Case 5: No actions taken
+        _mock_captured_code_gen_prompt = None # Reset for this specific assertion
         plan5 = []
         results5 = []
         summary5 = await summarize_tool_result_conversationally(
             "Do nothing specific.", plan5, results5, True, mock_llm_provider_instance
         )
         print(f"\nUser Query: Do nothing specific.\nAI Summary 5: {summary5}")
-        assert "No actions were taken." in _mock_captured_code_gen_prompt # Check the prompt to LLM for this
+        assert _mock_captured_code_gen_prompt is not None, "Prompt should have been captured"
+        if _mock_captured_code_gen_prompt: # Check to satisfy type checker
+          assert "No actions were taken." in _mock_captured_code_gen_prompt
 
-    asyncio.run(test_conversational_summary())
+    async def test_rephrase_error():
+        mock_llm_provider_instance = MockOllamaProvider()
+        print("\n--- Testing rephrase_error_message_conversationally ---")
+
+        # Test 1: User input type error
+        error1 = "Tool 'add_numbers' failed. Error: ValueError: 'a' and 'b' must be integers. Got 'my_notes.txt'."
+        query1 = "Add my notes file."
+        rephrased1 = await rephrase_error_message_conversationally(error1, query1, mock_llm_provider_instance)
+        print(f"Original Error 1: {error1}\nRephrased 1: {rephrased1}\n")
+        assert "mix-up" in rephrased1.lower()
+        assert "my_notes.txt" in rephrased1 # Check if context from error is in rephrased
+        assert "add_numbers" in rephrased1
+
+        # Test 2: LLM fails to rephrase (e.g., returns empty or default from mock)
+        # For this, we need the mock to return its default "I'm sorry..."
+        # We can achieve this by providing an error that doesn't match specific conditions in the mock.
+        error2 = "Some obscure internal error: NullPointerException at Java.Lang.System.InternalError"
+        query2 = "Do complex task"
+        # Temporarily change side effect for this specific test if needed, or rely on default mock behavior
+        original_side_effect = mock_llm_provider_instance.invoke_ollama_model_async
+        mock_llm_provider_instance.invoke_ollama_model_async = AsyncMock(return_value=None) # Simulate LLM returning None
+
+        rephrased2 = await rephrase_error_message_conversationally(error2, query2, mock_llm_provider_instance)
+        print(f"Original Error 2: {error2}\nRephrased 2 (LLM fail/None): {rephrased2}\n")
+        assert error2 in rephrased2 # Fallback should include original error if LLM returns None
+        assert query2 in rephrased2
+
+        # Test 3: LLM call itself raises an exception
+        mock_llm_provider_instance.invoke_ollama_model_async.side_effect = Exception("Network connection to LLM failed")
+        error3 = "Database timeout"
+        query3 = "Fetch all user records"
+        rephrased3 = await rephrase_error_message_conversationally(error3, query3, mock_llm_provider_instance)
+        print(f"Original Error 3: {error3}\nRephrased 3 (LLM exception): {rephrased3}\n")
+        assert error3 in rephrased3 # Fallback should include original error
+        assert query3 in rephrased3
+
+        # Restore general mock behavior if it was changed for a specific test
+        mock_llm_provider_instance.invoke_ollama_model_async = original_side_effect
+
+
+    async def main_tests():
+        await test_conversational_summary()
+        await test_rephrase_error()
+
+    asyncio.run(main_tests())
 ```

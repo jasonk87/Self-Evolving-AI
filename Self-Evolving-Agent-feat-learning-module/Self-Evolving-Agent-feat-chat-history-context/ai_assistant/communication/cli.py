@@ -39,6 +39,8 @@ from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core import project_manager
 from ai_assistant.core import suggestion_manager as suggestion_manager_module
 from ai_assistant.core import status_reporting
+from ai_assistant.utils.conversational_helpers import rephrase_error_message_conversationally # Added
+# from ai_assistant.llm_interface.ollama_client import OllamaProvider # For type hint if needed, but access via orchestrator
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
 
@@ -453,23 +455,48 @@ async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrato
         await queue.put({"type": "command_result", "prompt": prompt, "success": success, "response": response})
 
     except Exception as e:
-        error_msg_text = f"Error processing '{prompt}': {type(e).__name__}"
+        technical_error_for_log = f"Error processing '{prompt}': {type(e).__name__}: {str(e)}"
+        technical_error_msg_for_llm = f"{type(e).__name__}: {str(e)}"
+        user_friendly_error_msg = technical_error_msg_for_llm # Fallback
+
+        # Attempt to rephrase the error
+        # _orchestrator is the global instance used by the CLI
+        if _orchestrator and _orchestrator.action_executor and \
+           _orchestrator.action_executor.code_service and \
+           _orchestrator.action_executor.code_service.llm_provider:
+            try:
+                user_friendly_error_msg = await rephrase_error_message_conversationally(
+                    technical_error_message=technical_error_msg_for_llm,
+                    original_user_query=prompt, # 'prompt' is the original user input to the command
+                    llm_provider=_orchestrator.action_executor.code_service.llm_provider
+                )
+            except Exception as e_rephrase: # pragma: no cover
+                # Log that rephrasing failed, user will see technical error
+                # Use print for CLI debug messages if no logger is set up for CLI specifically
+                print(color_text(f"[CLI DEBUG] Error rephrasing direct wrapper exception: {e_rephrase}", CLIColors.DEBUG_MESSAGE))
+        else: # pragma: no cover
+            print(color_text("[CLI DEBUG] LLM provider not available for direct wrapper exception rephrasing.", CLIColors.DEBUG_MESSAGE))
+
+        # Log the original, full technical error
         log_event(
             event_type="CLI_WRAPPER_ERROR",
-            description=error_msg_text,
+            description=technical_error_for_log, # Log the more detailed technical error
             source="cli._process_command_wrapper",
             metadata={"prompt": prompt, "error": str(e), "traceback": traceback.format_exc()}
         )
+
+        # Queue the (potentially rephrased) error message for display
+        status_update_msg_display = format_message("ERROR", f"Error processing '{prompt}': {user_friendly_error_msg}", CLIColors.ERROR_MESSAGE)
         await queue.put({
             "type": "status_update",
-            "message": format_message("ERROR", error_msg_text, CLIColors.ERROR_MESSAGE),
+            "message": status_update_msg_display,
             "prompt_context": prompt
         })
         await queue.put({
             "type": "command_result",
             "prompt": prompt,
             "success": False,
-            "response": error_msg_text
+            "response": user_friendly_error_msg # This is the message that will be displayed by _handle_cli_results
         })
 
 async def _handle_cli_results(queue: asyncio.Queue):

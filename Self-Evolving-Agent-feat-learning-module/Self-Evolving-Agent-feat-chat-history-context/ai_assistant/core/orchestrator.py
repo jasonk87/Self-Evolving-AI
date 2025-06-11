@@ -16,7 +16,7 @@ from ..execution.action_executor import ActionExecutor # Added import
 from ..memory.persistent_memory import load_learned_facts # Added import
 from .task_manager import TaskManager # Added import
 from .notification_manager import NotificationManager # Added import
-from ..utils.conversational_helpers import summarize_tool_result_conversationally # Added
+from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally # Added
 from ..llm_interface.ollama_client import OllamaProvider # Added for type hint, or use a generic provider type
 import uuid # Added import
 import logging # Added
@@ -305,10 +305,20 @@ class DynamicOrchestrator:
                 project_name_for_context=project_name_for_context
             )
             if not self.current_plan:
-                # If initial plan creation fails, self.current_plan is None or empty
-                # _generate_execution_summary will handle None plan
                 summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
-                return False, f"Could not create a plan for the given prompt.{summary_for_no_plan}"
+                technical_error_msg = "Could not create a plan for the given prompt."
+                user_friendly_response = technical_error_msg # Default
+                if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+                    try:
+                        user_friendly_error = await rephrase_error_message_conversationally(
+                            technical_error_message=technical_error_msg,
+                            original_user_query=prompt,
+                            llm_provider=self.action_executor.code_service.llm_provider
+                        )
+                        user_friendly_response = user_friendly_error
+                    except Exception as e_rephrase: # pragma: no cover
+                        logger.error(f"Error rephrasing plan creation failure: {e_rephrase}", exc_info=True)
+                return False, user_friendly_response + summary_for_no_plan
 
             # Execute plan with potential replanning
             if is_debug_mode():
@@ -426,30 +436,39 @@ class DynamicOrchestrator:
                     else: # Should not happen if success is true and plan was multi-step
                         response += "No specific result from the final step." # pragma: no cover
                 else: # Failure
-                    response = "Could not complete the task. "
+                    technical_error_detail = "An unspecified error occurred during task execution." # Default
                     if processed_results:
-                        last_error_str = "Details of the steps are in the summary below." # Default
                         for res_item in processed_results: # Find first error
                             if isinstance(res_item, Exception):
-                                last_error_str = f"An error occurred: {type(res_item).__name__}: {str(res_item)[:200]}"
+                                technical_error_detail = f"An error occurred: {type(res_item).__name__}: {str(res_item)}" # Full error for rephraser
                                 break
                             if isinstance(res_item, dict):
                                 if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
-                                    last_error_str = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
+                                    technical_error_detail = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
                                     break
                                 if res_item.get("error") or res_item.get("ran_successfully") is False:
                                     err_detail = res_item.get("stderr", res_item.get("error", "Unknown error from tool"))
-                                    last_error_str = f"A tool reported an error: {str(err_detail)[:200]}"
+                                    technical_error_detail = f"A tool reported an error: {str(err_detail)}" # Full error for rephraser
                                     break
-                        response += f"{last_error_str}"
-                    else: # No results from final attempt, but it failed
-                        response += "No specific results or errors from the last attempt." # pragma: no cover
 
-                execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
-                # execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
-                # response += execution_summary
+                    conversational_error = "I encountered an issue." # Default
+                    if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+                        try:
+                            conversational_error = await rephrase_error_message_conversationally(
+                                technical_error_message=technical_error_detail,
+                                original_user_query=prompt,
+                                llm_provider=self.action_executor.code_service.llm_provider
+                            )
+                        except Exception as e_rephrase: # pragma: no cover
+                            logger.error(f"Error rephrasing execution failure: {e_rephrase}", exc_info=True)
+                            # conversational_error remains the default "I encountered an issue."
 
-            # Generate conversational summary
+                    response = conversational_error
+                    # Optionally append technical summary for debugging or power users
+                    # The main conversational summary logic below might handle this better.
+                    # For now, the conversational_error is the primary message.
+
+            # Generate conversational summary (this will run for both success and failure if an LLM provider is available)
             conversational_response = None
             if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                 if self.current_plan or processed_results: # Only summarize if there was something to summarize
@@ -491,40 +510,72 @@ class DynamicOrchestrator:
                         fallback_response_parts.append(f"Final step result: {result_str}")
                 else: # Overall failure
                     fallback_response_parts.append("Could not complete the task fully.")
-                    # Try to find the first error message for a slightly more informative fallback
-                    first_error_message = "Details of the steps are in the execution summary."
-                    if processed_results:
-                        for res_item in processed_results:
-                            if isinstance(res_item, Exception):
-                                first_error_message = f"An error occurred: {type(res_item).__name__}: {str(res_item)[:200]}"
-                                break
-                            if isinstance(res_item, dict):
-                                if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
-                                    first_error_message = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
-                                    break
-                                if res_item.get("error") or res_item.get("ran_successfully") is False:
-                                    err_detail = res_item.get("stderr", res_item.get("error", "Unknown tool error"))
-                                    first_error_message = f"A tool reported an error: {str(err_detail)[:200]}"
-                                    break
-                    fallback_response_parts.append(first_error_message)
+                    # If conversational summary failed, and it was an overall failure,
+                    # the 'response' variable already contains the rephrased error (or its fallback).
+                    # We just need to append the technical summary.
+                    pass # The 'response' is already set from the rephrasing block above.
 
                 response = " ".join(fallback_response_parts)
-                # Append detailed technical summary if conversational one failed AND it's a complex plan or failure
-                if not conversational_response and ((self.current_plan and len(self.current_plan) > 1) or not overall_success_of_plan):
+
+                # Append detailed technical summary if conversational one failed OR if it's a failure case (already rephrased)
+                # The idea is: conversational summary is best. If not, rephrased error + technical summary.
+                # If success and no conversational_response, the fallback_response_parts are good.
+                # If failure and no conversational_response, 'response' is from rephrased error block.
+
+                append_technical_summary = False
+                if not conversational_response: # Conversational summary failed or was not attempted
+                    if not overall_success_of_plan: # It's a failure, so 'response' is rephrased error. Add technical details.
+                        append_technical_summary = True
+                    elif (self.current_plan and len(self.current_plan) > 1): # It's a success, but complex, so technical summary might be useful.
+                        append_technical_summary = True
+                # If conversational_response *was* successful, but it was an overall failure,
+                # we might still want to append the technical summary.
+                # The `summarize_tool_result_conversationally` should ideally indicate if it's a failure summary.
+                # For now, let's assume if conversational_response is present, it's sufficient for success,
+                # but for failure, we append technical details even if conversational_response (which would be a summary of failure) exists.
+
+                if overall_success_of_plan and conversational_response:
+                    response = conversational_response # This is the primary success response
+                elif not overall_success_of_plan:
+                    # 'response' is already the rephrased error (or its fallback if rephrasing failed)
+                    # 'conversational_response' might be a summary of the failure steps.
+                    # Let's prioritize the rephrased specific error, then the conversational summary of failure, then technical.
+                    if conversational_response : # This would be a conversational summary of the failure
+                        response = conversational_response # Use this as it's more comprehensive than just the rephrased single error.
+                    # else: 'response' is already the rephrased single error.
+                    append_technical_summary = True # Always append technical summary on failure for now.
+                elif conversational_response: # Success, and conversational summary exists
+                     response = conversational_response
+                else: # Success, but no conversational_response. 'response' is from fallback_response_parts.
+                     append_technical_summary = (self.current_plan and len(self.current_plan) > 1)
+
+
+                if append_technical_summary:
                     execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
                     response += execution_summary
 
             return overall_success_of_plan, response
 
         except Exception as e:
-            error_msg = f"Error during orchestration: {str(e)}"
+            technical_error_msg = f"Error during orchestration: {str(e)}"
+            user_friendly_response = technical_error_msg # Default
             log_event(
                 event_type="ORCHESTRATOR_ERROR",
-                description=error_msg,
+                description=technical_error_msg,
                 source="DynamicOrchestrator.process_prompt",
                 metadata={"error": str(e), "goal": prompt}
             )
-            return False, error_msg
+            if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+                try:
+                    user_friendly_error = await rephrase_error_message_conversationally(
+                        technical_error_message=str(e), # Pass the exception string
+                        original_user_query=prompt,
+                        llm_provider=self.action_executor.code_service.llm_provider
+                    )
+                    user_friendly_response = user_friendly_error
+                except Exception as e_rephrase: # pragma: no cover
+                    logger.error(f"Error rephrasing top-level orchestrator error: {e_rephrase}", exc_info=True)
+            return False, user_friendly_response
 
     async def get_current_progress(self) -> Dict[str, Any]:
         """Get the current progress and context of task execution."""
