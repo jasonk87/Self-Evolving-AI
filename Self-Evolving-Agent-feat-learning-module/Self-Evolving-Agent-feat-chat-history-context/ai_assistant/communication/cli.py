@@ -546,7 +546,17 @@ async def start_cli():
     _notification_manager_cli_instance = NotificationManager()
 
     # Instantiate TaskManager first as other components might need it.
+    # It will load persisted active tasks.
     _task_manager_cli_instance = TaskManager(notification_manager=_notification_manager_cli_instance)
+
+    # Resume interrupted tasks
+    try:
+        from ai_assistant.core.startup_services import resume_interrupted_tasks # Added import
+        await resume_interrupted_tasks(_task_manager_cli_instance, _notification_manager_cli_instance)
+    except Exception as e_startup_tasks: # pragma: no cover
+        # Using print for critical startup error, assuming logger might not be fully ready or for visibility
+        print(f"CRITICAL STARTUP ERROR: Failed to process resume_interrupted_tasks: {e_startup_tasks}")
+        traceback.print_exc() # Print traceback for critical startup errors
 
 
     print_formatted_text(ANSI("\n"))

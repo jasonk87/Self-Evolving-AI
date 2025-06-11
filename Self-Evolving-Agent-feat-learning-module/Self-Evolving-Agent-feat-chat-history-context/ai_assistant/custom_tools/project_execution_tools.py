@@ -17,6 +17,7 @@ from ai_assistant.custom_tools.project_management_tools import (
     generate_code_for_project_file,
     initiate_ai_project # Added import
 )
+from .code_execution_tools import execute_sandboxed_python_script # Added import
 
 # --- Plan Execution Tool ---
 
@@ -456,5 +457,326 @@ if __name__ == '__main__':
             mock_write_file.assert_not_called() # Timestamp not updated if no files processed
 
     print("Running automated tests for execute_project_coding_plan (v5 - dependency injection)...")
-    unittest.main(argv=['first-arg-is-ignored'], exit=False, verbosity=2)
+    # unittest.main(argv=['first-arg-is-ignored'], exit=False, verbosity=2) # Avoid running unittest directly in __main__ if mixing with simple print tests
+
+    # --- New execute_project_plan function and schema ---
+    def execute_project_plan(
+        project_plan: List[Dict[str, Any]],
+        project_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes a structured project plan, step by step.
+        Currently, this tool simulates the execution of most step types for PoC.
+
+        Args:
+            project_plan: A list of steps, where each step is a dictionary defining
+                          the action to take.
+            project_name: Optional. The name of the project this plan belongs to.
+
+        Returns:
+            A dictionary summarizing the execution, including the status of each step
+            and an overall status for the project plan execution.
+        """
+        if not project_plan:
+            return {
+                "overall_status": "error",
+                "error_message": "No project plan provided.",
+                "step_results": []
+            }
+
+        step_results = []
+        overall_success = True # Assume success, will be set to False on actual failures
+        execution_log = [f"Starting execution of project plan for: {project_name or 'Unnamed Project'}"]
+
+        for i, step in enumerate(project_plan):
+            step_id = step.get("step_id", f"step_{i+1}")
+            description = step.get("description", "No description")
+            step_type = step.get("type", "unknown")
+            details = step.get("details", {})
+
+            current_step_result = {
+                "step_id": step_id,
+                "description": description,
+                "type": step_type,
+                "status": "pending",
+                "output": None
+            }
+            execution_log.append(f"Processing Step ID: {step_id}, Type: {step_type}, Description: {description}")
+
+            if step_type == "python_script":
+                script_content = details.get("script_content")
+                if not script_content:
+                    log_message = f"Error: No script_content provided for python_script step: '{description}'"
+                    print(f"[ProjectExecutor] {log_message}")
+                    execution_log.append(log_message)
+                    current_step_result["status"] = "error_misconfigured"
+                    current_step_result["output"] = "Missing script_content in details."
+                    overall_success = False # This is a configuration error for the step
+                else:
+                    input_files = details.get("input_files")
+                    output_files_to_capture = details.get("output_files_to_capture")
+                    timeout_seconds = details.get("timeout_seconds", 30) # Default timeout increased slightly
+                    python_executable = details.get("python_executable")
+
+                    log_message = f"Executing python_script: '{description}' (Timeout: {timeout_seconds}s)"
+                    print(f"[ProjectExecutor] {log_message}")
+                    execution_log.append(log_message)
+
+                    sandbox_result = execute_sandboxed_python_script(
+                        script_content=script_content,
+                        input_files=input_files,
+                        output_filenames=output_files_to_capture,
+                        timeout_seconds=timeout_seconds,
+                        python_executable=python_executable
+                    )
+
+                    current_step_result["status"] = sandbox_result["status"]
+                    current_step_result["output"] = {
+                        "stdout": sandbox_result["stdout"],
+                        "stderr": sandbox_result["stderr"],
+                        "return_code": sandbox_result["return_code"],
+                        "output_files": sandbox_result["output_files"],
+                        "error_message_from_sandbox": sandbox_result["error_message"]
+                    }
+                    execution_log.append(f"Script execution result: Status: {sandbox_result['status']}, RC: {sandbox_result['return_code']}, Stdout: '{sandbox_result['stdout'][:50]}...', Stderr: '{sandbox_result['stderr'][:50]}...'")
+
+                    if sandbox_result["status"] != "success":
+                        overall_success = False
+                        execution_log.append(f"Step {step_id} ('{description}') script execution failed or timed out. Error: {sandbox_result.get('error_message') or sandbox_result.get('stderr', 'Unknown script error')}")
+
+            elif step_type == "human_review_gate":
+                prompt_to_user = details.get("prompt_to_user", "Generic review prompt: Please review the current state.")
+                log_message = f"Simulating human_review_gate: '{description}'. Prompt: '{prompt_to_user}'"
+                print(f"[ProjectExecutor] {log_message}")
+                execution_log.append(log_message)
+                current_step_result["status"] = "simulated_approved" # Simulate approval
+                current_step_result["output"] = "Human review simulated as approved."
+
+            elif step_type == "informational":
+                info_message = details.get("message", "No informational message provided.")
+                log_message = f"Informational step: '{description}'. Message: '{info_message}'"
+                print(f"[ProjectExecutor] {log_message}")
+                execution_log.append(log_message)
+                current_step_result["status"] = "success"
+                current_step_result["output"] = info_message
+
+            elif step_type == "unknown":
+                log_message = f"Encountered step with unknown type: '{step_type}' for step '{description}'. Marking as failed."
+                print(f"[ProjectExecutor] {log_message}")
+                execution_log.append(log_message)
+                current_step_result["status"] = "failed_unknown_type"
+                current_step_result["output"] = f"Unknown step type: {step_type}."
+                overall_success = False
+
+            else: # Step type is known but not one of the above (e.g. future planned types)
+                log_message = f"Step type '{step_type}' not yet implemented. Skipping step: '{description}'"
+                print(f"[ProjectExecutor] {log_message}")
+                execution_log.append(log_message)
+                current_step_result["status"] = "skipped_unimplemented"
+                current_step_result["output"] = f"Step type '{step_type}' is recognized but not implemented."
+
+            step_results.append(current_step_result)
+
+            if not overall_success: # If any step set overall_success to False
+                # Check if the failure was due to script error/timeout or misconfiguration
+                if step_type == "python_script" and current_step_result["status"] != "success":
+                    execution_log.append(f"Stopping plan execution due to script error/timeout in step {step_id}.")
+                    break
+                elif current_step_result["status"] == "failed_unknown_type":
+                     execution_log.append(f"Stopping plan execution due to unknown step type in step {step_id}.")
+                     break
+                elif current_step_result["status"] == "error_misconfigured":
+                     execution_log.append(f"Stopping plan execution due to misconfigured step {step_id}.")
+                     break
+                # If it's a skipped_unimplemented or other non-critical non-success, plan might continue based on overall_success flag
+                # but if overall_success became false for any reason, we might break.
+                # For now, only break on explicit script failure/timeout or critical config errors.
+
+
+    # Determine final overall status after iterating through all steps or breaking
+    if not project_plan and not step_results:
+        final_overall_status = "error" # Should have been caught by the initial check
+    elif not overall_success:
+        final_overall_status = "failed" # If any step explicitly set overall_success to False
+    # If overall_success is still true, all steps either succeeded, were simulated as approved, or skipped as unimplemented
+    elif all(s["status"] in ["success", "simulated_approved", "skipped_unimplemented"] for s in step_results):
+        if any(s["status"] == "skipped_unimplemented" for s in step_results):
+            final_overall_status = "partial_success" # Contains unimplemented steps
+        else:
+            final_overall_status = "success" # All steps fully successful or approved
+    else: # Mix of statuses, but overall_success flag was not tripped to False by a critical failure.
+          # This could mean some steps are 'success' and others are 'skipped_unimplemented'.
+        is_any_true_success = any(s["status"] in ["success", "simulated_approved"] for s in step_results)
+        if is_any_true_success and any(s["status"] == "skipped_unimplemented" for s in step_results):
+            final_overall_status = "partial_success"
+        elif not is_any_true_success and any(s["status"] == "skipped_unimplemented" for s in step_results):
+             final_overall_status = "no_action_taken" # All were skipped unimplemented
+        else: # Should not be reached if logic is correct
+            final_overall_status = "unknown_state"
+
+
+    execution_log.append(f"Project plan execution finished with overall status: {final_overall_status}")
+        return {
+            "overall_status": final_overall_status,
+            "project_name": project_name,
+            "num_steps_processed": len(step_results),
+            "step_results": step_results,
+            "execution_log_preview": execution_log[-5:]
+        }
+
+    EXECUTE_PROJECT_PLAN_SCHEMA = {
+        "name": "execute_project_plan",
+        "description": "Executes a structured project plan, step by step. Currently simulates execution for most step types.",
+        "parameters": [
+            {
+                "name": "project_plan",
+                "type": "list",
+                "description": "A list of steps, where each step is a dictionary.",
+                "item_type": {
+                    "type": "dict",
+                    "properties": {
+                        "step_id": {"type": "str", "description": "Unique identifier for the step (e.g., '1.1', '2.a')."},
+                        "description": {"type": "str", "description": "Human-readable description of what this step achieves."},
+                        "type": {"type": "str", "description": "Type of the step. Supported: 'python_script', 'human_review_gate', 'informational'."},
+                        "details": {
+                            "type": "dict",
+                            "description": "Dictionary containing type-specific details for the step.",
+                            "properties_conditional": [
+                                {
+                                    "condition_on_field": "type",
+                                    "condition_value": "python_script",
+                                    "properties": {
+                                        "script_content": {"type": "str", "description": "The Python script content as a string."},
+                                        "input_files": {"type": "dict", "description": "Optional. Filename:content map for files to create in the execution dir. Keys are filenames (str), values are file content (str)."},
+                                        "output_files_to_capture": {"type": "list", "description": "Optional. List of filenames (str) expected to be created, whose content will be captured."}
+                                    }
+                                },
+                                {
+                                    "condition_on_field": "type",
+                                    "condition_value": "human_review_gate",
+                                    "properties": {
+                                        "prompt_to_user": {"type": "str", "description": "The question or information to present to the user for review/approval."}
+                                    }
+                                },
+                                {
+                                    "condition_on_field": "type",
+                                    "condition_value": "informational",
+                                    "properties": {
+                                        "message": {"type": "str", "description": "The informational message to log or display."}
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "name": "project_name",
+                "type": "str",
+                "description": "Optional. The name or ID of the project this plan relates to.",
+                "optional": True
+            }
+        ],
+        "returns": {
+            "type": "dict",
+            "description": "A dictionary summarizing the execution, including overall status, number of steps processed, and results for each step, plus a log preview."
+        }
+    }
+    # --- End of New execute_project_plan ---
+
+    # Append new tests to the existing __main__ block
+    print("\n--- Testing execute_project_plan ---")
+
+    sample_plan_1 = [
+        {
+            "step_id": "1",
+            "description": "Generate initial project scaffolding",
+            "type": "python_script",
+            "details": {
+                "script_content": "print('Creating directories...')\nprint('Simulating directory creation for src and tests')\nimport sys\nsys.exit(0)", # Ensure success
+                "output_files_to_capture": []
+            }
+        },
+        {
+            "step_id": "2",
+            "description": "Inform user about scaffolding",
+            "type": "informational",
+            "details": {
+                "message": "Project directories 'src' and 'tests' are planned."
+            }
+        },
+        {
+            "step_id": "3",
+            "description": "Human review of the generated structure",
+            "type": "human_review_gate",
+            "details": {
+                "prompt_to_user": "Does the initial file structure (src, tests) look correct for this project type?"
+            }
+        },
+        {
+            "step_id": "4",
+            "description": "Generate main application file",
+            "type": "python_script",
+            "details": {
+                "script_content": "print('Simulating creation of src/main.py with content: print(\"Hello Project!\")')\nimport sys\nsys.exit(0)", # Ensure success
+                "output_files_to_capture": ["src/main.py"] # This file won't actually be created by the print
+            }
+        },
+        {
+            "step_id": "5",
+            "description": "Unknown step type example",
+            "type": "unknown_type_for_test",
+            "details": {"info": "This should cause the plan to fail"}
+        },
+        {
+            "step_id": "6",
+            "description": "This step should be skipped if previous failed",
+            "type": "informational",
+            "details": {"message": "This message should not appear if plan stopped."}
+        }
+    ]
+
+    result1 = execute_project_plan(project_plan=sample_plan_1, project_name="MyTestProject")
+    print("\n--- Result for sample_plan_1 ---")
+    print(json.dumps(result1, indent=2))
+    assert result1["overall_status"] == "failed"
+    assert result1["num_steps_processed"] == 5
+    assert result1["step_results"][0]["status"] == "success"
+    assert "Simulating directory creation" in result1["step_results"][0]["output"]["stdout"]
+    assert result1["step_results"][1]["status"] == "success"
+    assert result1["step_results"][2]["status"] == "simulated_approved"
+    assert result1["step_results"][3]["status"] == "success"
+    assert "Simulating creation of src/main.py" in result1["step_results"][3]["output"]["stdout"]
+    assert result1["step_results"][4]["status"] == "failed_unknown_type"
+
+    sample_plan_2_empty = []
+    result2 = execute_project_plan(project_plan=sample_plan_2_empty)
+    print("\n--- Result for sample_plan_2_empty ---")
+    print(json.dumps(result2, indent=2))
+    assert result2["overall_status"] == "error"
+    assert "No project plan provided" in result2["error_message"]
+
+    sample_plan_3_unimplemented = [
+        {
+            "step_id": "1",
+            "description": "A step with a future type",
+            "type": "future_ai_magic_step",
+            "details": {}
+        },
+        {
+            "step_id": "2",
+            "description": "An informational step after unimplemented",
+            "type": "informational",
+            "details": {"message": "This should still run."}
+        }
+    ]
+    result3 = execute_project_plan(sample_plan_3_unimplemented, "FutureTech")
+    print("\n--- Result for sample_plan_3_unimplemented ---")
+    print(json.dumps(result3, indent=2))
+    assert result3["overall_status"] == "partial_success"
+    assert result3["step_results"][0]["status"] == "skipped_unimplemented"
+    assert result3["step_results"][1]["status"] == "success"
+
+    print("\n--- execute_project_plan tests finished ---")
+
 ### END FILE: ai_assistant/custom_tools/project_execution_tools.py ###
