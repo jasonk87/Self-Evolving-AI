@@ -1,7 +1,8 @@
 # ai_assistant/custom_tools/awareness_tools.py
 from typing import List, Dict, Any, Optional
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
-from datetime import datetime, timezone, timedelta
+from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification # Added
+from datetime import datetime, timezone, timedelta # datetime was already imported
 from enum import Enum, auto
 from dataclasses import asdict
 
@@ -11,22 +12,33 @@ from ai_assistant.core.suggestion_manager import find_suggestion, list_suggestio
 from ai_assistant.core.project_manager import find_project
 
 
-def get_system_status_summary(task_manager: TaskManager, active_limit: int = 5, archived_limit: int = 3) -> str:
+def get_system_status_summary(
+    task_manager: Optional[TaskManager] = None,
+    notification_manager: Optional[NotificationManager] = None, # New parameter
+    active_limit: int = 5,
+    archived_limit: int = 3,
+    unread_notifications_limit: int = 3 # New parameter
+) -> str:
     """
-    Provides a summary of the system's current and recently completed tasks.
+    Provides a summary of the system's current and recently completed tasks,
+    and a summary of recent unread notifications.
 
     Args:
         task_manager: An instance of the TaskManager.
+        notification_manager: An instance of the NotificationManager.
         active_limit: Max number of active tasks to detail.
         archived_limit: Max number of archived tasks to detail.
+        unread_notifications_limit: Max number of unread notifications to detail.
 
     Returns:
-        A string summarizing the system status.
+        A string summarizing the system status and notifications.
     """
-    if not task_manager:
-        return "Error: TaskManager not available to query system status."
+    summary_lines = ["System Status Summary:"]
 
-    active_tasks = task_manager.list_active_tasks()
+    if not task_manager:
+        summary_lines.append("TaskManager not available.") # Changed to append
+    else:
+        active_tasks = task_manager.list_active_tasks()
     archived_tasks = task_manager.list_archived_tasks(limit=archived_limit)
 
     summary_lines = ["System Status Summary:"]
@@ -65,18 +77,50 @@ def get_system_status_summary(task_manager: TaskManager, active_limit: int = 5, 
         for status_key, count in status_counts.items():
             summary_lines.append(f"  - {status_key.name}: {count}")
 
+    if not notification_manager:
+        summary_lines.append("\nNotificationManager not available.")
+    else:
+        unread_notifications = notification_manager.get_notifications(
+            status_filter=NotificationStatus.UNREAD,
+            limit=unread_notifications_limit
+        )
+        num_unread_actually_shown = len(unread_notifications)
+        # Get total unread count if manager supports it, otherwise rely on what was fetched.
+        # For simplicity, we'll just state how many are shown from the limit.
+        # A more accurate total unread count would require another call or method in NotificationManager.
+        total_unread_count_note = f"({num_unread_actually_shown} shown, up to {unread_notifications_limit} displayed)"
+
+        summary_lines.append(f"\nUnread Notifications {total_unread_count_note}:")
+        if not unread_notifications:
+            summary_lines.append("  No unread notifications.")
+        else:
+            for i, notification in enumerate(unread_notifications):
+                # Basic formatting, can be enhanced
+                ts_str = "Unknown Time"
+                if isinstance(notification.timestamp, datetime):
+                    ts_str = notification.timestamp.strftime('%Y-%m-%d %H:%M')
+
+                summary_msg_display = notification.summary_message
+                if len(summary_msg_display) > 70:
+                    summary_msg_display = summary_msg_display[:67] + "..."
+
+                summary_lines.append(
+                    f"  - [{ts_str}] {notification.event_type.name}: {summary_msg_display} (ID: {notification.notification_id})"
+                )
+
     return "\n".join(summary_lines)
 
 # Conceptual Schema
 GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {
     "name": "get_system_status_summary",
-    "description": "Provides a summary of current system activity, including active and recently completed tasks, and a breakdown of active task statuses.",
+    "description": "Provides a summary of current system activity, including active/archived tasks and recent unread notifications.",
     "parameters": [
-        {"name": "task_manager", "type": "TaskManager", "description": "An instance of the TaskManager. This MUST be provided by the calling system."},
-        {"name": "active_limit", "type": "int", "description": "Optional. Maximum number of active tasks to detail (default 5)."},
-        {"name": "archived_limit", "type": "int", "description": "Optional. Maximum number of archived tasks to detail (default 3)."}
+        # task_manager and notification_manager are runtime-injected dependencies, not direct user/LLM parameters.
+        {"name": "active_limit", "type": "int", "description": "Optional. Max active tasks to detail (default 5)."},
+        {"name": "archived_limit", "type": "int", "description": "Optional. Max archived tasks to detail (default 3)."},
+        {"name": "unread_notifications_limit", "type": "int", "description": "Optional. Max unread notifications to detail (default 3)."}
     ],
-    "returns": {"type": "str", "description": "A multi-line string summarizing the system status."}
+    "returns": {"type": "str", "description": "A multi-line string summarizing system status and notifications."}
 }
 
 
@@ -205,10 +249,26 @@ LIST_FORMATTED_SUGGESTIONS_SCHEMA = {
 if __name__ == '__main__': # pragma: no cover
     from unittest.mock import patch
     import json # Added for pretty printing in test
+    import os # For __main__ test file path handling
+    from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus, Notification # For __main__
+    from ai_assistant.config import get_data_dir # For __main__
 
     print("--- Testing awareness_tools.py ---")
 
-    tm = TaskManager()
+    # Setup TaskManager for tests
+    # For TaskManager, since it also writes a file if notifications are on,
+    # we can pass a None notification_manager for its own tests if not focusing on that part.
+    # Or, ensure its file path is also controlled.
+    # For this test, get_system_status_summary needs a TaskManager.
+    tm_test_notifications_file = os.path.join(get_data_dir(), "test_tm_notifications_for_awareness.json")
+    if os.path.exists(tm_test_notifications_file):
+        os.remove(tm_test_notifications_file) # Clean up before test
+
+    # Create a NotificationManager for the TaskManager if we want to test TM's notifications
+    # For this tool's test, we primarily care about the NM passed to get_system_status_summary directly.
+    # So, TM can have its own or None.
+    tm_notification_manager = NotificationManager(filepath=tm_test_notifications_file)
+    tm = TaskManager(notification_manager=tm_notification_manager) # TaskManager now requires notification_manager
 
     task1_desc = "Creating new calculator tool with advanced trigonometric functions and history."
     task1 = tm.add_task(ActiveTaskType.AGENT_TOOL_CREATION, task1_desc, "calculator_v3")
@@ -253,14 +313,74 @@ if __name__ == '__main__': # pragma: no cover
     archived_task3_obj = archived_test_tm.add_task(ActiveTaskType.MISC_USER_REQUEST, archived_task_desc3)
     archived_test_tm.update_task_status(archived_task3_obj.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY)
     archived_test_tm._active_tasks = {}
-    archived_summary = get_system_status_summary(task_manager=archived_test_tm, active_limit=2, archived_limit=2)
+    archived_summary = get_system_status_summary(task_manager=archived_test_tm, active_limit=2, archived_limit=2, notification_manager=None)
     print(archived_summary)
 
-    print("\n--- Testing get_system_status_summary (no TaskManager) ---")
-    no_tm_summary = get_system_status_summary(task_manager=None) # type: ignore
-    print(no_tm_summary)
-    assert "Error: TaskManager not available" in no_tm_summary
-    print("Test for no TaskManager passed.")
+    print("\n--- Testing get_system_status_summary (no TaskManager, no NotificationManager) ---")
+    no_deps_summary = get_system_status_summary(task_manager=None, notification_manager=None)
+    print(no_deps_summary)
+    assert "TaskManager not available." in no_deps_summary
+    assert "NotificationManager not available." in no_deps_summary
+    print("Test for no TaskManager and no NotificationManager passed.")
+
+
+    print("\n--- Testing get_system_status_summary with Notifications ---")
+    test_notify_file = os.path.join(get_data_dir(), "test_awareness_notifications.json")
+    if os.path.exists(test_notify_file):
+        os.remove(test_notify_file)
+
+    nm = NotificationManager(filepath=test_notify_file)
+    # Add more than the limit to test limit functionality
+    nm.add_notification(NotificationType.TASK_COMPLETED_SUCCESSFULLY, "Tool 'alpha_tool' created by user.", "task_alpha")
+    nm.add_notification(NotificationType.NEW_SUGGESTION_CREATED_AI, "Suggest to refactor module 'beta_module' for improved clarity and performance.", "sugg_beta")
+    nm.add_notification(NotificationType.WARNING, "System disk space is critically low (currently at 95% usage). Please investigate.", "system_warning_disk_space_01")
+    nm.add_notification(NotificationType.GENERAL_INFO, "User preferences for project 'GammaProject' have been updated successfully.", "user_pref_gamma")
+    nm.add_notification(NotificationType.ERROR, "Failed to connect to external API 'OmegaService' after 3 retries.", "api_omega_conn_fail")
+
+    # Mark one as read to test that only unread are shown by default or by unread_notifications_limit
+    # Assuming notifications are added to the start of the list by default by NotificationManager
+    # Let's mark the "User preferences updated" as read. (index 1 if added to start)
+    # To be sure, find its ID.
+    prefs_updated_notif_id = None
+    for notif in nm.notifications: # nm.notifications is loaded sorted by timestamp desc
+        if "User preferences updated" in notif.summary_message:
+            prefs_updated_notif_id = notif.notification_id
+            break
+    if prefs_updated_notif_id:
+        nm.mark_as_read([prefs_updated_notif_id])
+
+
+    summary_with_notifs = get_system_status_summary(
+        task_manager=tm, # Use the TaskManager populated earlier for task part of summary
+        notification_manager=nm,
+        active_limit=2,
+        archived_limit=1,
+        unread_notifications_limit=3 # Test showing 3 unread
+    )
+    print("\nSummary with Notifications (unread limit 3):")
+    print(summary_with_notifs)
+    assert "Unread Notifications (3 shown, up to 3 displayed)" in summary_with_notifs
+    assert "Suggest to refactor module 'beta_module'" in summary_with_notifs
+    assert "System disk space is critically low" in summary_with_notifs
+    assert "Failed to connect to external API 'OmegaService'" in summary_with_notifs
+    assert "User preferences updated" not in summary_with_notifs # This one was marked read
+    assert "Tool 'alpha_tool' created" not in summary_with_notifs # This one should also be unread if not marked
+
+    # Test with a different limit for notifications
+    summary_with_notifs_limit_1 = get_system_status_summary(task_manager=tm, notification_manager=nm, unread_notifications_limit=1)
+    print("\nSummary with Notifications (unread limit 1):")
+    print(summary_with_notifs_limit_1)
+    assert "Unread Notifications (1 shown, up to 1 displayed)" in summary_with_notifs_limit_1
+    # Check that the most recent unread is shown (assuming default sort order in NotificationManager)
+    # The most recent unread would be "Failed to connect to external API"
+    assert "Failed to connect to external API 'OmegaService'" in summary_with_notifs_limit_1
+    assert "System disk space is critically low" not in summary_with_notifs_limit_1 # Should not be shown with limit 1
+
+    if os.path.exists(test_notify_file): # Cleanup test notification file
+        os.remove(test_notify_file)
+    if os.path.exists(tm_test_notifications_file): # Cleanup TM's notification file
+        os.remove(tm_test_notifications_file)
+
 
     print("\n--- Testing get_item_details_by_id ---")
 
@@ -292,7 +412,7 @@ if __name__ == '__main__': # pragma: no cover
 
     with patch('ai_assistant.custom_tools.awareness_tools.find_suggestion', return_value=None) as mock_fs_none, \
          patch('ai_assistant.custom_tools.awareness_tools.find_project', return_value=None) as mock_fp_none:
-        
+
         sugg_not_found = get_item_details_by_id("non_sugg", "suggestion")
         print(f"Details for non_sugg: {sugg_not_found}")
         assert sugg_not_found and sugg_not_found.get("error")
@@ -304,7 +424,7 @@ if __name__ == '__main__': # pragma: no cover
     invalid_type_result = get_item_details_by_id("any_id", "invalid_type", task_manager=tm)
     print(f"Details for invalid_type: {invalid_type_result}")
     assert invalid_type_result and invalid_type_result.get("error")
-    
+
     no_tm_for_task_result = get_item_details_by_id("any_task_id", "task", task_manager=None)
     print(f"Details for task with no TM: {no_tm_for_task_result}")
     assert no_tm_for_task_result and no_tm_for_task_result.get("error")
@@ -335,7 +455,7 @@ if __name__ == '__main__': # pragma: no cover
         denied_suggs = list_formatted_suggestions(status_filter="denied")
         print(f"Denied suggestions (expected 0): {json.dumps(denied_suggs, indent=2)}")
         assert len(denied_suggs) == 0
-    
+
     with patch('ai_assistant.custom_tools.awareness_tools.list_suggestions', return_value=[]) as mock_ls_empty:
         no_suggs = list_formatted_suggestions()
         print(f"No suggestions (empty list from manager): {json.dumps(no_suggs, indent=2)}")

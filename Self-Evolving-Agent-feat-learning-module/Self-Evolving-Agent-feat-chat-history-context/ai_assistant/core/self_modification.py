@@ -300,7 +300,141 @@ def get_backup_function_source_code(module_path: str, function_name: str) -> Opt
         print(f"Unexpected error retrieving function from backup '{backup_file_path}': {e}")
         return None
 
+def edit_project_file(
+    absolute_file_path: str,
+    new_content: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Edits (or creates) an arbitrary project file after a critical review process.
+    Handles backup of existing files before modification.
+
+    Args:
+        absolute_file_path: The absolute path to the file to be modified/created.
+        new_content: The full new content for the file.
+        change_description: A description of the changes being made, for review context.
+        task_manager: Optional TaskManager instance for status updates.
+        parent_task_id: Optional ID of the parent task to update with sub-statuses.
+
+    Returns:
+        A success or error/rejection message string.
+    """
+
+    # Helper for updating parent task status (local to this function)
+    def _update_p_task(status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None):
+        if task_manager and parent_task_id:
+            task_manager.update_task_status(parent_task_id, status, reason=reason, step_desc=step)
+
+    logger.info(f"Initiating edit for project file: {absolute_file_path}")
+    _update_p_task(ActiveTaskStatus.PLANNING, step="Preparing for project file edit/creation")
+
+    original_content = ""
+    file_exists = os.path.exists(absolute_file_path)
+
+    if file_exists:
+        if not os.path.isfile(absolute_file_path):
+            err_msg = f"Error: Path '{absolute_file_path}' exists but is not a file."
+            logger.error(err_msg)
+            _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Path validation")
+            return err_msg
+        try:
+            with open(absolute_file_path, 'r', encoding='utf-8') as f:
+                original_content = f.read()
+            logger.info(f"Read original content from {absolute_file_path}")
+        except Exception as e: # pragma: no cover
+            err_msg = f"Error reading original file {absolute_file_path}: {e}"
+            logger.error(err_msg, exc_info=True)
+            _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Reading original file")
+            return err_msg
+    else:
+        logger.info(f"File '{absolute_file_path}' does not exist. Will be created if approved.")
+        # For a new file, the "original_content" is empty for diff purposes.
+
+    if original_content == new_content and file_exists:
+        msg = f"Proposed content for '{absolute_file_path}' is identical to current. No changes made."
+        logger.info(msg)
+        _update_p_task(ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Content identical, no file change needed.")
+        return msg
+
+    _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step="Generating diff for review")
+    file_diff = generate_diff(original_content, new_content, file_name=os.path.basename(absolute_file_path))
+
+    # --- Critical Review Step ---
+    critic1 = ReviewerAgent()
+    critic2 = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic1, critic2)
+
+    logger.info(f"Requesting critical review for changes to project file: {absolute_file_path}")
+    _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Submitted to critics for file: {os.path.basename(absolute_file_path)}")
+
+    try:
+        unanimous_approval, reviews = asyncio.run(coordinator.request_critical_review(
+            original_code=original_content,
+            new_code_string=new_content,
+            code_diff=file_diff,
+            original_requirements=change_description,
+            related_tests=None
+        ))
+    except Exception as e_review: # pragma: no cover
+        err_msg = f"Error during critical review process for '{absolute_file_path}': {e_review}"
+        logger.error(err_msg, exc_info=True)
+        _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Critical review process error")
+        return err_msg
+
+    if not unanimous_approval:
+        review_summaries = []
+        for i, r in enumerate(reviews):
+            review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
+        err_msg = (f"Change to project file '{absolute_file_path}' rejected by critical review. "
+                    f"No modifications will be applied. Reviews: {' | '.join(review_summaries)}")
+        logger.warning(err_msg)
+        _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected")
+        return err_msg
+    else:
+        logger.info(f"Change to project file '{absolute_file_path}' approved by critical review.")
+        _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc=f"Review approved for file: {os.path.basename(absolute_file_path)}")
+    # --- End Critical Review Step ---
+
+    parent_dir = os.path.dirname(absolute_file_path)
+    if parent_dir and not os.path.exists(parent_dir): # pragma: no branch
+        try:
+            os.makedirs(parent_dir, exist_ok=True)
+            logger.info(f"Created parent directory: {parent_dir}")
+        except Exception as e_mkdir: # pragma: no cover
+            err_msg = f"Error creating parent directory {parent_dir} for file '{absolute_file_path}': {e_mkdir}"
+            logger.error(err_msg, exc_info=True)
+            _update_p_task(ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step="Directory creation failed")
+            return err_msg
+
+    if file_exists:
+        _update_p_task(ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Backing up existing file: {os.path.basename(absolute_file_path)}")
+        backup_file_path = absolute_file_path + ".bak"
+        try:
+            shutil.copy2(absolute_file_path, backup_file_path)
+            logger.info(f"Backup of '{absolute_file_path}' created at '{backup_file_path}'.")
+        except Exception as e_backup: # pragma: no cover
+            err_msg = f"Error creating backup for '{absolute_file_path}': {e_backup}"
+            logger.error(err_msg, exc_info=True)
+            _update_p_task(ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step="Backup creation failed")
+            return err_msg
+
+    _update_p_task(ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Writing content to file: {os.path.basename(absolute_file_path)}")
+    try:
+        with open(absolute_file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        logger.info(f"Successfully wrote content to project file: '{absolute_file_path}'.")
+        _update_p_task(ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Content written to {os.path.basename(absolute_file_path)} successfully.")
+        return f"Project file '{absolute_file_path}' updated successfully after review."
+    except Exception as e_write: # pragma: no cover
+        err_msg = f"Error writing to project file '{absolute_file_path}': {e_write}"
+        logger.error(err_msg, exc_info=True)
+        _update_p_task(ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step="File write operation failed")
+        return err_msg
+
 if __name__ == '__main__': # pragma: no cover
+    import tempfile # Added for edit_project_file tests
     # --- Setup for Tests ---
     TEST_DIR = "test_ai_assistant_ws_self_modification" # Unique name for this test suite
     CORE_DIR_SM = os.path.join(TEST_DIR, "ai_assistant", "core")
@@ -459,6 +593,65 @@ if __name__ == '__main__': # pragma: no cover
     # shutil.rmtree(TEST_DIR) # Comment out for inspection
     # print(f"Cleaned up test directory: {TEST_DIR}")
     print(f"\nNOTE: Test directory '{TEST_DIR}' was NOT automatically cleaned up. Please remove it manually if desired.")
+
+    # --- Test cases for edit_project_file ---
+    print("\n--- Testing edit_project_file ---")
+    with tempfile.TemporaryDirectory() as temp_project_root_dir:
+        test_proj_file_path = os.path.join(temp_project_root_dir, "my_test_project_file.txt")
+
+        # Mock review for these tests
+        mock_reviews_project_file_approve = [{"status": "approved", "comments": "Project file changes look good."}] * 2
+        mock_reviews_project_file_reject = [{"status": "rejected", "comments": "Project file changes rejected by mock."}] * 2
+
+        with patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review', new_callable=AsyncMock) as mock_review_proj:
+            # Test 1: Create new file (approved)
+            print("\nTest EPF.1: Create new file (approved)")
+            mock_review_proj.return_value = (True, mock_reviews_project_file_approve)
+            result_p1 = edit_project_file(test_proj_file_path, "New project content.", "Creating project file for test.", None, None)
+            print(f"Test EPF.1 Result: {result_p1}")
+            assert "success" in result_p1.lower()
+            with open(test_proj_file_path, 'r') as f: assert f.read() == "New project content."
+            mock_review_proj.assert_called_once() # Should be called for new file too
+
+            # Test 2: Edit existing file (approved)
+            print("\nTest EPF.2: Edit existing file (approved)")
+            mock_review_proj.reset_mock() # Reset for next call
+            mock_review_proj.return_value = (True, mock_reviews_project_file_approve)
+            result_p2 = edit_project_file(test_proj_file_path, "Updated project content.", "Updating project file for test.", None, None)
+            print(f"Test EPF.2 Result: {result_p2}")
+            assert "success" in result_p2.lower()
+            with open(test_proj_file_path, 'r') as f: assert f.read() == "Updated project content."
+            assert os.path.exists(test_proj_file_path + ".bak")
+            mock_review_proj.assert_called_once()
+
+
+            # Test 3: Edit existing file (rejected)
+            print("\nTest EPF.3: Edit existing file (rejected)")
+            mock_review_proj.reset_mock()
+            mock_review_proj.return_value = (False, mock_reviews_project_file_reject)
+            result_p3 = edit_project_file(test_proj_file_path, "This content should be rejected.", "Trying a rejected update for test.", None, None)
+            print(f"Test EPF.3 Result: {result_p3}")
+            assert "rejected by critical review" in result_p3.lower()
+            with open(test_proj_file_path, 'r') as f: assert f.read() == "Updated project content." # Content should not have changed
+            mock_review_proj.assert_called_once()
+
+            # Test 4: Content identical
+            print("\nTest EPF.4: Content identical")
+            mock_review_proj.reset_mock()
+            result_p4 = edit_project_file(test_proj_file_path, "Updated project content.", "No real change intended for test.", None, None)
+            print(f"Test EPF.4 Result: {result_p4}")
+            assert "identical to current" in result_p4.lower()
+            mock_review_proj.assert_not_called() # Review should not be called if content is identical
+
+            # Test 5: Path is a directory
+            print("\nTest EPF.5: Path is a directory")
+            result_p5 = edit_project_file(temp_project_root_dir, "Content for a dir?", "Attempting to write to a dir.", None, None)
+            print(f"Test EPF.5 Result: {result_p5}")
+            assert "is not a file" in result_p5.lower()
+
+    print("\n--- Finished edit_project_file Testing ---")
+
+
     sys.path = original_sys_path # Restore original sys.path
 
     print("\n--- End of self_modification.py Testing ---")

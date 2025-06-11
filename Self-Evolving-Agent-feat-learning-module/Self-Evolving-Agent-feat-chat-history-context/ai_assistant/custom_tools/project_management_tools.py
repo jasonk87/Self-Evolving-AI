@@ -625,6 +625,71 @@ async def build_project(project_name: str) -> str:
     except Exception as e:
         return f"Error: An unexpected error occurred while building project '{project_name}': {e}"
 
+# PROPOSE_PROJECT_FILE_UPDATE_SCHEMA = {
+#    "name": "propose_project_file_update",
+#    "description": "Proposes changes to a user's project file. Initiates a backup, diff generation, and a two-critic review process. Changes are only applied if approved.",
+#    "parameters": [
+#        {"name": "absolute_target_filepath", "type": "str", "description": "The full, absolute path to the file to be modified or created."},
+#        {"name": "new_file_content", "type": "str", "description": "The complete new content for the file."},
+#        {"name": "change_description", "type": "str", "description": "A description of why this change is being proposed (e.g., user's request, bug fix details). This is used for the review context."},
+#        {"name": "parent_task_id", "type": "str", "description": "Optional. The ID of an overarching task, if this operation is a sub-step. TaskManager is injected at runtime."}
+#    ],
+#    "returns": {"type": "dict", "description": "{'status': 'success'/'success_no_change'/'error'/'rejected_by_review', 'message': str}"}
+# }
+
+from ..core.self_modification import edit_project_file # Import for the new tool
+from ..core.task_manager import TaskManager # Already imported but ensure it's available for type hint
+
+def propose_project_file_update(
+    absolute_target_filepath: str,
+    new_file_content: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Proposes changes to a user's project file.
+    This initiates a process that includes backing up the original file (if it exists),
+    generating a diff, subjecting the changes to a two-critic review,
+    and only applying the changes if unanimously approved.
+
+    Args:
+        absolute_target_filepath: The full, absolute path to the file to be modified or created.
+        new_file_content: The complete new content for the file.
+        change_description: A description of why this change is being proposed (e.g., user's request).
+                            This is used for the review context.
+        task_manager: Optional. An instance of TaskManager for status updates during the modification process.
+        parent_task_id: Optional. The ID of an overarching task, if this operation is a sub-step.
+
+    Returns:
+        A dictionary with "status" ('success', 'success_no_change', 'error', 'rejected_by_review') and "message".
+    """
+    if not absolute_target_filepath or not change_description: # new_file_content can be empty
+        return {"status": "error", "message": "Missing required arguments: absolute_target_filepath or change_description."}
+
+    try:
+        # edit_project_file itself returns a string message which indicates success, rejection, or error.
+        result_message = edit_project_file(
+            absolute_file_path=absolute_target_filepath,
+            new_content=new_file_content,
+            change_description=change_description,
+            task_manager=task_manager,
+            parent_task_id=parent_task_id
+        )
+
+        if "success" in result_message.lower():
+            if "identical to current" in result_message.lower():
+                    return {"status": "success_no_change", "message": result_message}
+            return {"status": "success", "message": result_message}
+        elif "rejected by critical review" in result_message.lower():
+            return {"status": "rejected_by_review", "message": result_message}
+        else: # Other error messages from edit_project_file
+            return {"status": "error", "message": result_message}
+
+    except Exception as e: # pragma: no cover
+        logger.error(f"Unexpected error in propose_project_file_update for '{absolute_target_filepath}': {str(e)}", exc_info=True)
+        return {"status": "error", "message": f"An unexpected error occurred while proposing project file update for '{absolute_target_filepath}': {str(e)}"}
+
 
 if __name__ == '__main__':
     import asyncio
@@ -1049,91 +1114,54 @@ if __name__ == '__main__':
     # Explicitly restore print to __builtins__.print after asyncio.run completes,
     # to ensure Pylance is satisfied for any subsequent print calls in __main__.
     asyncio.run(run_tests())
-    print = __builtins__.print
+    print = __builtins__.print # type: ignore
 
-    if __name__ == '__main__':
-        # This __main__ block now includes tests for initiate_ai_project, 
-        # generate_code_for_project_file, and execute_project_coding_plan.
+    # --- Tests for propose_project_file_update ---
+    from unittest.mock import patch, MagicMock # Moved imports here for __main__
+    import tempfile # Moved import here for __main__
 
-        # Define mock_invoke_ollama_good_plan and other LLM mocks if they are not already defined at this scope
-        # For simplicity, we assume they are defined as in the previous version of the __main__ block.
-        # If not, they would need to be defined here or imported if refactored into a test utility module.
+    print("\n--- Testing propose_project_file_update ---")
+    mock_tm_instance_for_propose = MagicMock(spec=TaskManager)
+
+    with tempfile.TemporaryDirectory() as temp_dir_for_propose:
+        test_file_path_for_propose = os.path.join(temp_dir_for_propose, "sample_project_file_for_propose.txt")
+
+        # Test 1: Successful update
+        with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', return_value=f"Project file '{test_file_path_for_propose}' updated successfully after review.") as mock_epf_success:
+            result_prop1 = propose_project_file_update(test_file_path_for_propose, "new content for propose", "User requested update for propose", task_manager=mock_tm_instance_for_propose, parent_task_id="task_prop_123")
+            print(f"Result Prop1 (Success): {result_prop1}")
+            mock_epf_success.assert_called_once_with(absolute_file_path=test_file_path_for_propose, new_content="new content for propose", change_description="User requested update for propose", task_manager=mock_tm_instance_for_propose, parent_task_id="task_prop_123")
+            assert result_prop1["status"] == "success"
+
+        # Test 2: Rejected by review
+        with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', return_value=f"Change to project file '{test_file_path_for_propose}' rejected by critical review.") as mock_epf_rejected:
+            result_prop2 = propose_project_file_update(test_file_path_for_propose, "other content for propose", "Another update for propose", task_manager=None)
+            print(f"Result Prop2 (Rejected): {result_prop2}")
+            assert result_prop2["status"] == "rejected_by_review"
+
+        # Test 3: Error from edit_project_file
+        with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', return_value="Error: Some internal failure in edit_project_file.") as mock_epf_error:
+            result_prop3 = propose_project_file_update(test_file_path_for_propose, "error content for propose", "Error test for propose", task_manager=None)
+            print(f"Result Prop3 (Error): {result_prop3}")
+            assert result_prop3["status"] == "error"
+            assert "Some internal failure" in result_prop3["message"]
         
-        # Example mock LLM responses (ensure these are defined before run_tests if not already)
-        async def mock_invoke_ollama_good_plan(prompt: str, model_name: str):
-            # print(f"MOCK LLM call for: {model_name} (Good Plan - Detailed)")
-            return json.dumps({
-                "project_plan": [
-                    {
-                        "filename": "main.py", 
-                        "description": "Main application script.",
-                        "key_components": ["app_setup", "routes", "main_logic"],
-                        "dependencies": ["utils.py", "models.py"]
-                    },
-                    {
-                        "filename": "utils.py", 
-                        "description": "Utility functions.",
-                        "key_components": ["helper_function_1", "data_parser"],
-                        "dependencies": []
-                    },
-                    {
-                        "filename": "models.py", 
-                        "description": "Data models/schemas.",
-                        "key_components": ["UserSchema", "ProductSchema"],
-                        "dependencies": []
-                    }
-                ]
-            })
-
-        async def mock_invoke_ollama_good_plan_missing_fields(prompt: str, model_name: str):
-            # Test lenient validation: key_components and dependencies missing
-            return json.dumps({
-                "project_plan": [
-                    {
-                        "filename": "core_logic.py", 
-                        "description": "Core business logic without explicit components/deps listed."
-                        # key_components and dependencies are missing
-                    }
-                ]
-            })
-
-        async def mock_invoke_ollama_good_plan_wrong_types(prompt: str, model_name: str):
-            # Test lenient validation: key_components and dependencies are not lists
-            return json.dumps({
-                "project_plan": [
-                    {
-                        "filename": "service.py", 
-                        "description": "Service layer.",
-                        "key_components": "should_be_list", # Incorrect type
-                        "dependencies": "should_also_be_list" # Incorrect type
-                    }
-                ]
-            })
+        # Test 4: Identical content
+        with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', return_value=f"Proposed content for '{test_file_path_for_propose}' is identical to current. No changes made.") as mock_epf_identical:
+            result_prop4 = propose_project_file_update(test_file_path_for_propose, "identical content for propose", "Identical test for propose", task_manager=None)
+            print(f"Result Prop4 (Identical): {result_prop4}")
+            assert result_prop4["status"] == "success_no_change"
         
-        async def mock_invoke_ollama_empty_plan(prompt: str, model_name: str): 
-            # print(f"MOCK LLM call for: {model_name} (Empty Plan)")
-            return json.dumps({"project_plan": []})
-        
-        async def mock_invoke_ollama_malformed_json(prompt: str, model_name: str): 
-            # print(f"MOCK LLM call for: {model_name} (Malformed JSON)")
-            return "This is not JSON { definitely not json"
-            
-        async def mock_invoke_ollama_invalid_plan_structure1(prompt: str, model_name: str):
-            # print(f"MOCK LLM call for: {model_name} (Invalid Plan Structure 1)")
-            return json.dumps({"project_files": []}) # Missing "project_plan" key
+        # Test 5: Missing arguments
+        result_prop5 = propose_project_file_update(test_file_path_for_propose, "some content", "") # Missing change_description
+        print(f"Result Prop5 (Missing Args): {result_prop5}")
+        assert result_prop5["status"] == "error"
+        assert "Missing required arguments" in result_prop5["message"]
 
-        async def mock_invoke_ollama_invalid_plan_structure2(prompt: str, model_name: str):
-            # print(f"MOCK LLM call for: {model_name} (Invalid Plan Structure 2)")
-            return json.dumps({"project_plan": {"filename": "main.py"}}) # "project_plan" is not a list
-            
-        async def mock_invoke_ollama_no_response(prompt: str, model_name: str): 
-            # print(f"MOCK LLM call for: {model_name} (No Response)")
-            return None
+    print("--- Project Management Tools Tests (propose_project_file_update part) Finished ---")
 
-        TEST_BASE_PROJECTS_DIR = "temp_test_ai_projects" 
-
-        asyncio.run(run_tests())
-
+# Removed redundant if __name__ == '__main__' block that was inside run_tests()
+# The main test execution is now solely handled by asyncio.run(run_tests()) at the end of the original __main__
 
 # --- Code Review Tool ---
 # Ensure this import is at the top level (column 1)

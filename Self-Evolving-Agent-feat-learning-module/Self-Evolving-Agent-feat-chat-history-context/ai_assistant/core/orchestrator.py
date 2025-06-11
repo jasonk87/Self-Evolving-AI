@@ -16,7 +16,12 @@ from ..execution.action_executor import ActionExecutor # Added import
 from ..memory.persistent_memory import load_learned_facts # Added import
 from .task_manager import TaskManager # Added import
 from .notification_manager import NotificationManager # Added import
+from ..utils.conversational_helpers import summarize_tool_result_conversationally # Added
+from ..llm_interface.ollama_client import OllamaProvider # Added for type hint, or use a generic provider type
 import uuid # Added import
+import logging # Added
+
+logger = logging.getLogger(__name__) # Added
 
 class DynamicOrchestrator:
     """
@@ -441,7 +446,74 @@ class DynamicOrchestrator:
                         response += "No specific results or errors from the last attempt." # pragma: no cover
 
                 execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
-                response += execution_summary
+                # execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
+                # response += execution_summary
+
+            # Generate conversational summary
+            conversational_response = None
+            if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+                if self.current_plan or processed_results: # Only summarize if there was something to summarize
+                    try:
+                        logger.info(f"Attempting to generate conversational summary for goal: {prompt}")
+                        conversational_response = await summarize_tool_result_conversationally(
+                            original_user_query=prompt,
+                            executed_plan_steps=self.current_plan if self.current_plan else [],
+                            tool_results=processed_results,
+                            overall_success=overall_success_of_plan,
+                            llm_provider=self.action_executor.code_service.llm_provider
+                        )
+                        logger.info(f"Conversational summary generated for goal '{prompt}'.")
+                    except Exception as e_summary: # pragma: no cover
+                        logger.error(f"Error generating conversational summary: {e_summary}", exc_info=True)
+                        conversational_response = None
+            else: # pragma: no cover
+                logger.warning("LLM provider not available via ActionExecutor/CodeService for conversational summary.")
+
+            if conversational_response:
+                response = conversational_response
+            else:
+                # Fallback to simpler/more direct response formatting if conversational summary fails or is not available
+                fallback_response_parts = []
+                if overall_success_of_plan:
+                    fallback_response_parts.append("Successfully completed the task.")
+                    if self.current_plan and len(self.current_plan) == 1 and processed_results:
+                        if isinstance(processed_results[0], dict) and "action_executor_result" in processed_results[0]:
+                            fallback_response_parts.append(processed_results[0]['summary'])
+                        else:
+                            result_single_str = str(processed_results[0])[:200] if processed_results else "No specific result."
+                            fallback_response_parts.append(f"Result: {result_single_str}")
+                    elif processed_results: # Multi-step success, summarize final step if possible
+                        final_res_item = processed_results[-1]
+                        if isinstance(final_res_item, dict) and "summary" in final_res_item:
+                            result_str = final_res_item["summary"]
+                        else:
+                            result_str = str(final_res_item)[:100]
+                        fallback_response_parts.append(f"Final step result: {result_str}")
+                else: # Overall failure
+                    fallback_response_parts.append("Could not complete the task fully.")
+                    # Try to find the first error message for a slightly more informative fallback
+                    first_error_message = "Details of the steps are in the execution summary."
+                    if processed_results:
+                        for res_item in processed_results:
+                            if isinstance(res_item, Exception):
+                                first_error_message = f"An error occurred: {type(res_item).__name__}: {str(res_item)[:200]}"
+                                break
+                            if isinstance(res_item, dict):
+                                if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
+                                    first_error_message = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
+                                    break
+                                if res_item.get("error") or res_item.get("ran_successfully") is False:
+                                    err_detail = res_item.get("stderr", res_item.get("error", "Unknown tool error"))
+                                    first_error_message = f"A tool reported an error: {str(err_detail)[:200]}"
+                                    break
+                    fallback_response_parts.append(first_error_message)
+
+                response = " ".join(fallback_response_parts)
+                # Append detailed technical summary if conversational one failed AND it's a complex plan or failure
+                if not conversational_response and ((self.current_plan and len(self.current_plan) > 1) or not overall_success_of_plan):
+                    execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
+                    response += execution_summary
+
             return overall_success_of_plan, response
 
         except Exception as e:
