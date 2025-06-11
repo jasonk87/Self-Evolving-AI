@@ -35,6 +35,15 @@ class ExecutionAgent:
         Executes each step in the provided plan with retries and logs the execution.
         Includes logic for re-planning if critical failures occur.
         """
+        if initial_plan is None:
+            print("ExecutionAgent: Initial plan is None. Nothing to execute.")
+            # Log this situation if appropriate
+            global_reflection_log.log_execution(
+                goal_description=goal_description, plan=[], execution_results=[],
+                overall_success=False, notes="Initial plan provided was None."
+            )
+            return [], [] # Return empty plan and results
+
         current_plan = list(initial_plan) # Make a mutable copy
         replan_attempts = 0
 

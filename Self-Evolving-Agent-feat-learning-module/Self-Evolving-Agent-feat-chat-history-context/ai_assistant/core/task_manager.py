@@ -24,6 +24,8 @@ class ActiveTaskStatus(Enum):
     # For Hierarchical Project Execution
     EXECUTING_PROJECT_PLAN = auto()
     PROJECT_PLAN_FAILED_STEP = auto()
+    # Added from later inspection
+    FAILED_CODE_GENERATION = auto()
 
 
 class ActiveTaskType(Enum):
@@ -44,9 +46,9 @@ class ActiveTask:
     Represents an active task being managed by the TaskManager.
 
     Attributes:
-        task_id: Unique identifier for the task.
-        task_type: The type of task (ActiveTaskType).
         description: High-level description of the task.
+        task_type: The type of task (ActiveTaskType).
+        task_id: Unique identifier for the task.
         status: Current status of the task (ActiveTaskStatus).
         status_reason: Optional brief reason for the current status, especially for failures.
         created_at: Timestamp of when the task was created.
@@ -69,9 +71,9 @@ class ActiveTask:
         output_preview: Short preview of the last significant output.
         data_for_resume: Optional dictionary for storing state needed for task resumption.
     """
-    task_id: str = field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
-    task_type: ActiveTaskType
     description: str # High-level description of what the agent is trying to achieve
+    task_type: ActiveTaskType
+    task_id: str = field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
     status: ActiveTaskStatus = ActiveTaskStatus.INITIALIZING
     status_reason: Optional[str] = None # Brief reason for current status, esp. for failures
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -79,7 +81,6 @@ class ActiveTask:
     related_item_id: Optional[str] = None # e.g., suggestion_id, reflection_id, project_id
     details: Dict[str, Any] = field(default_factory=dict) # Task-specific details, e.g., file paths, code snippets
     current_step_description: Optional[str] = None # e.g., "Generating code for function X", "Awaiting review from Critic 1"
-    # New fields for persistence and richer status
     current_sub_step_name: Optional[str] = None
     progress_percentage: Optional[int] = None
     error_count: int = 0
@@ -99,15 +100,13 @@ class ActiveTask:
         self.status = new_status
 
         if reason is not None: self.status_reason = reason
-        elif new_status != self.status: self.status_reason = None # Clear reason if status changed and no new reason given
+        elif new_status != self.status: self.status_reason = None
 
         if step_desc is not None: self.current_step_description = step_desc
-        # Optional: Clear step_desc if status changes and no new one is provided
-        # elif new_status != self.status: self.current_step_description = None
 
         if sub_step_name is not None: self.current_sub_step_name = sub_step_name
         if progress is not None: self.progress_percentage = progress
-        if out_preview is not None: self.output_preview = out_preview[:250] # Truncate preview
+        if out_preview is not None: self.output_preview = out_preview[:250]
         if resume_data is not None: self.data_for_resume = resume_data
 
         if is_error_increment:
@@ -137,9 +136,9 @@ class ActiveTask:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ActiveTask':
         return cls(
+            description=data["description"], # Corrected order
+            task_type=ActiveTaskType[data["task_type"]], # Corrected order
             task_id=data["task_id"],
-            task_type=ActiveTaskType[data["task_type"]],
-            description=data["description"],
             status=ActiveTaskStatus[data["status"]],
             status_reason=data.get("status_reason"),
             created_at=datetime.fromisoformat(data["created_at"]),
@@ -155,18 +154,16 @@ class ActiveTask:
         )
 
 ACTIVE_TASKS_FILE_NAME = "active_tasks.json"
-# Ensure get_data_dir and _ensure_data_dir_exists are available
-# Assuming they are in a .utils or .fs_utils module. For now, placeholder.
-# from .fs_utils import get_data_dir, _ensure_data_dir_exists
-# For this exercise, let's define simple versions if not available for import
 import os
 import json
+from .notification_manager import NotificationManager, NotificationType
 
-def get_data_dir(): # Placeholder
+
+def get_data_dir():
     """Gets the application's data directory."""
     return os.path.join(os.path.expanduser("~"), ".ai_assistant_data")
 
-def _ensure_data_dir_exists(): # Placeholder
+def _ensure_data_dir_exists():
     """Ensures the application's data directory exists."""
     data_dir = get_data_dir()
     os.makedirs(data_dir, exist_ok=True)
@@ -174,7 +171,7 @@ def _ensure_data_dir_exists(): # Placeholder
 
 
 class TaskManager:
-    def __init__(self, notification_manager: Optional['NotificationManager'] = None, filepath: Optional[str] = None): # Direct type hint
+    def __init__(self, notification_manager: Optional['NotificationManager'] = None, filepath: Optional[str] = None):
         self._active_tasks: Dict[str, ActiveTask] = {}
         self._completed_tasks_archive: List[ActiveTask] = []
         self._archive_limit = 100
@@ -197,13 +194,13 @@ class TaskManager:
                         except (KeyError, ValueError) as e: # pragma: no cover
                              print(f"TaskManager: Error deserializing task from dict {task_dict.get('task_id', 'UnknownID')}: {e}")
             else: # pragma: no cover
-                self._active_tasks = {} # Initialize empty if file doesn't exist or is empty
+                self._active_tasks = {}
         except FileNotFoundError: # pragma: no cover
-            self._active_tasks = {} # Initialize empty if file not found
+            self._active_tasks = {}
             print(f"TaskManager: Active tasks file '{self.active_tasks_filepath}' not found. Initializing empty task list.")
         except (json.JSONDecodeError, ValueError) as e: # pragma: no cover
             print(f"TaskManager: Error loading active tasks from '{self.active_tasks_filepath}': {e}. Initializing empty task list.")
-            self._active_tasks = {} # Initialize empty on error
+            self._active_tasks = {}
 
     def _save_active_tasks(self):
         try:
@@ -217,46 +214,43 @@ class TaskManager:
             print(f"TaskManager: An unexpected error occurred during _save_active_tasks: {e_gen}")
 
 
-    def add_task(self, task_type: ActiveTaskType, description: str, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ActiveTask:
+    def add_task(self, description: str, task_type: ActiveTaskType, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ActiveTask:
+        # Ensure description and task_type are first, as per dataclass definition
         initialized_details = details or {}
 
         if task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION:
-            # Validate essential keys for this task type
             if not all(k in initialized_details for k in ['project_plan', 'user_goal']):
                 print(f"TaskManager Error: HIERARCHICAL_PROJECT_EXECUTION task created for '{description}' without 'project_plan' or 'user_goal' in details. Details provided: {initialized_details}")
-                # Consider raising ValueError or setting a default error state if strictness is required.
-                # For now, proceed but the task might be dysfunctional.
-                plan = [] # Default to empty plan to avoid crashes below
+                plan = []
             else:
                 plan = initialized_details.get('project_plan', [])
-                if not isinstance(plan, list): # Ensure project_plan is a list
+                if not isinstance(plan, list):
                     print(f"TaskManager Error: 'project_plan' for HIERARCHICAL_PROJECT_EXECUTION task '{description}' must be a list. Got: {type(plan)}. Details: {initialized_details}")
-                    plan = [] # Default to empty plan
+                    plan = []
 
             initial_step_statuses = []
             for step in plan:
-                if isinstance(step, dict): # Ensure each step is a dictionary
+                if isinstance(step, dict):
                     initial_step_statuses.append({
                         "step_id": step.get("step_id", f"unknown_id_{uuid.uuid4().hex[:4]}"),
                         "description": step.get("description", "No step description provided."),
-                        "status": "pending", # All steps start as pending
+                        "status": "pending",
                         "error_message": None,
                         "output_preview": None
                     })
                 else: # pragma: no cover
                     print(f"TaskManager Warning: Invalid step found in project_plan for task '{description}'. Step: {step}. Skipping this step status initialization.")
 
-            # Augment details for HIERARCHICAL_PROJECT_EXECUTION
             initialized_details.update({
                 "current_plan_step_index": 0,
                 "plan_step_statuses": initial_step_statuses,
             })
 
         new_task = ActiveTask(
-            task_type=task_type,
             description=description,
+            task_type=task_type,
             related_item_id=related_item_id,
-            details=initialized_details # Use the processed details
+            details=initialized_details
         )
         self._active_tasks[new_task.task_id] = new_task
         self._save_active_tasks()
@@ -281,12 +275,11 @@ class TaskManager:
         if task:
             old_status = task.status
 
-            # --- Handling for HIERARCHICAL_PROJECT_EXECUTION task type ---
             if task.task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION and resume_data:
                 plan_step_update_data = resume_data.get("plan_step_update")
                 if plan_step_update_data and isinstance(plan_step_update_data, dict):
                     step_id_to_update = plan_step_update_data.get("step_id")
-                    new_step_status = plan_step_update_data.get("status") # "success" or "failed"
+                    new_step_status = plan_step_update_data.get("status")
                     step_error_message = plan_step_update_data.get("error_message")
                     step_output_preview = plan_step_update_data.get("output_preview")
 
@@ -304,34 +297,30 @@ class TaskManager:
                             print(f"TaskManager Warning: Plan step ID '{step_id_to_update}' not found in task '{task_id}' details.")
 
                     if found_step:
-                        # Recalculate progress_percentage
                         completed_steps = sum(1 for s in task.details.get('plan_step_statuses', []) if s.get("status") == "success")
                         total_steps = len(task.details.get('project_plan', []))
                         if total_steps > 0:
                             progress = int((completed_steps / total_steps) * 100)
                         else: # pragma: no cover
-                            progress = 0 # Avoid division by zero if plan is empty (should not happen if validated at add_task)
+                            progress = 0
 
-                        # Update current_plan_step_index only if the step was successful and it's the current one
                         current_idx = task.details.get("current_plan_step_index", 0)
                         current_step_in_plan = task.details.get('project_plan', [])[current_idx] if current_idx < total_steps else None
 
                         if new_step_status == "success" and current_step_in_plan and current_step_in_plan.get("step_id") == step_id_to_update:
                              task.details["current_plan_step_index"] = current_idx + 1
 
-                        # Determine overall task current_step_description based on plan execution
                         new_current_idx = task.details.get("current_plan_step_index", 0)
                         if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
                             step_desc = "Project plan executed successfully."
                         elif new_status == ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP:
-                            failed_step_desc = plan_step_update_data.get("description", step_id_to_update) # Use description if available
+                            failed_step_desc = plan_step_update_data.get("description", step_id_to_update)
                             step_desc = f"Project plan failed at step: '{failed_step_desc}'. Reason: {step_error_message or 'Unknown error'}"
                         elif new_current_idx < total_steps:
                             next_step_in_plan = task.details.get('project_plan', [])[new_current_idx]
                             step_desc = f"Executing plan: {next_step_in_plan.get('description', 'Next step')}"
-                        else: # All steps processed, and not explicitly COMPLETED_SUCCESSFULLY (e.g. if last step failed but overall considered EXECUTING)
+                        else:
                             step_desc = "All plan steps processed."
-            # --- End HIERARCHICAL_PROJECT_EXECUTION specific logic ---
 
             task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data)
             self._save_active_tasks()
@@ -345,13 +334,13 @@ class TaskManager:
                 ActiveTaskStatus.USER_CANCELLED,
                 ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
                 ActiveTaskStatus.POST_MOD_TEST_FAILED,
-                ActiveTaskStatus.FAILED_CODE_GENERATION, # Added to terminal statuses for notifications
+                ActiveTaskStatus.FAILED_CODE_GENERATION,
                 ActiveTaskStatus.FAILED_INTERRUPTED
             ]
             if new_status in terminal_statuses:
                 print(f"TaskManager: Task {task_id} reached terminal status: {new_status.name}. Archiving.")
                 if self.notification_manager:
-                    notif_type = NotificationType.GENERAL_INFO # Default
+                    notif_type = NotificationType.GENERAL_INFO
                     if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
                         notif_type = NotificationType.TASK_COMPLETED_SUCCESSFULLY
                     elif new_status == ActiveTaskStatus.CRITIC_REVIEW_REJECTED:
@@ -363,9 +352,6 @@ class TaskManager:
                     elif new_status == ActiveTaskStatus.FAILED_CODE_GENERATION:
                         notif_type = NotificationType.TASK_FAILED_CODE_GENERATION
                     elif new_status == ActiveTaskStatus.FAILED_INTERRUPTED:
-                        # Assuming a NotificationType.TASK_INTERRUPTED will be added
-                        # For now, map to TASK_FAILED_UNKNOWN or a specific one if available
-                        # Let's assume TASK_INTERRUPTED will be added to NotificationType
                         notif_type = getattr(NotificationType, "TASK_INTERRUPTED", NotificationType.TASK_FAILED_UNKNOWN)
                     elif new_status in [ActiveTaskStatus.FAILED_PRE_REVIEW, ActiveTaskStatus.FAILED_UNKNOWN]:
                         notif_type = NotificationType.TASK_FAILED_UNKNOWN
@@ -383,7 +369,7 @@ class TaskManager:
                         related_item_type="task",
                         details_payload={"task_type": task.task_type.name, "description": task.description}
                     )
-                self._archive_task(task_id) # This will call _save_active_tasks
+                self._archive_task(task_id)
         else:
             print(f"TaskManager: Error - Task {task_id} not found for status update.")
         return task
@@ -394,7 +380,7 @@ class TaskManager:
             self._completed_tasks_archive.append(task_to_archive)
             if len(self._completed_tasks_archive) > self._archive_limit: # pragma: no cover
                 self._completed_tasks_archive.pop(0)
-            self._save_active_tasks() # Save after removing from active list
+            self._save_active_tasks()
 
     def list_active_tasks(self, task_type_filter: Optional[ActiveTaskType] = None, status_filter: Optional[ActiveTaskStatus] = None) -> List[ActiveTask]:
         tasks = list(self._active_tasks.values())
@@ -406,7 +392,6 @@ class TaskManager:
         return tasks
 
     def list_archived_tasks(self, limit: int = 20) -> List[ActiveTask]:
-        # Return most recent archived tasks
         return sorted(self._completed_tasks_archive, key=lambda t: t.last_updated_at, reverse=True)[:limit]
 
 
@@ -415,44 +400,35 @@ class TaskManager:
         self._active_tasks.clear()
         if clear_archive:
             self._completed_tasks_archive.clear()
-        self._save_active_tasks() # Save after clearing active tasks
-        # Optionally save/clear archive file if it's also persisted
+        self._save_active_tasks()
         print(f"TaskManager: All active tasks cleared. Archive cleared: {clear_archive}")
 
-# Global instance (optional, consider dependency injection for better testability and flexibility)
-# task_manager_instance = TaskManager()
-# Commented out to prefer dependency injection where possible.
-# If a global instance is needed for direct CLI or simple integrations, it can be uncommented.
-
-from .notification_manager import NotificationManager, NotificationType # Moved import to top
 
 if __name__ == '__main__': # pragma: no cover
     print("--- TaskManager Persistence Test ---")
 
-    # Define a test file path
     test_file_dir = os.path.join(os.path.dirname(__file__), ".test_data")
     os.makedirs(test_file_dir, exist_ok=True)
     test_active_tasks_file = os.path.join(test_file_dir, "test_active_tasks.json")
 
-    # Ensure the test file is clean before starting
     if os.path.exists(test_active_tasks_file):
         os.remove(test_active_tasks_file)
 
-    notif_mgr_for_test = NotificationManager() # Assuming it can run without file for this test or uses its own test file
+    notif_mgr_for_test = NotificationManager()
 
-    # Instance 1: Add tasks
     print("\n--- Instance 1 Operations ---")
     tm1 = TaskManager(notification_manager=notif_mgr_for_test, filepath=test_active_tasks_file)
 
     task1_desc = "Develop a new tool for calculating planetary orbits."
-    task1 = tm1.add_task(ActiveTaskType.AGENT_TOOL_CREATION, task1_desc, related_item_id="sugg_planet_orbit_tool")
+    # Corrected add_task call
+    task1 = tm1.add_task(description=task1_desc, task_type=ActiveTaskType.AGENT_TOOL_CREATION, related_item_id="sugg_planet_orbit_tool")
     print(f"Added task 1: {task1.task_id}, Status: {task1.status.name}")
 
     task2_desc = "Learn about the user's preference for dark mode."
-    task2 = tm1.add_task(ActiveTaskType.LEARNING_NEW_FACT, task2_desc, details={"fact_candidate": "User likes dark mode"})
+    # Corrected add_task call
+    task2 = tm1.add_task(description=task2_desc, task_type=ActiveTaskType.LEARNING_NEW_FACT, details={"fact_candidate": "User likes dark mode"})
     print(f"Added task 2: {task2.task_id}, Status: {task2.status.name}")
 
-    # Update task1 with new fields
     tm1.update_task_status(
         task1.task_id, ActiveTaskStatus.PLANNING,
         step_desc="PlannerAgent generating initial plan.",
@@ -467,10 +443,9 @@ if __name__ == '__main__': # pragma: no cover
         print(f"  Error Count: {task1_retrieved_tm1.error_count}, Output Preview: '{task1_retrieved_tm1.output_preview}'")
         print(f"  Resume Data: {task1_retrieved_tm1.data_for_resume}")
 
-    tm1.update_task_status(task1.task_id, ActiveTaskStatus.GENERATING_CODE, is_error_increment=True) # Increment error for test
+    tm1.update_task_status(task1.task_id, ActiveTaskStatus.GENERATING_CODE, is_error_increment=True)
 
 
-    # Instance 2: Load tasks from file
     print("\n--- Instance 2 Operations (Loading from file) ---")
     tm2 = TaskManager(notification_manager=notif_mgr_for_test, filepath=test_active_tasks_file)
 
@@ -483,8 +458,8 @@ if __name__ == '__main__': # pragma: no cover
         print(f"  SubStep: {task1_reloaded_tm2.current_sub_step_name}, Progress: {task1_reloaded_tm2.progress_percentage}%, Errors: {task1_reloaded_tm2.error_count}")
         print(f"  Output Preview: '{task1_reloaded_tm2.output_preview}', Resume Data: {task1_reloaded_tm2.data_for_resume}")
         assert task1_reloaded_tm2.error_count == 1
-        assert task1_reloaded_tm2.progress_percentage == 25 # Progress should persist from last explicit update
-        assert task1_reloaded_tm2.status == ActiveTaskStatus.GENERATING_CODE # Last status update
+        assert task1_reloaded_tm2.progress_percentage == 25
+        assert task1_reloaded_tm2.status == ActiveTaskStatus.GENERATING_CODE
     else:
         print(f"Error: Task 1 ({task1.task_id}) not found in TM2 after reload.")
 
@@ -494,10 +469,9 @@ if __name__ == '__main__': # pragma: no cover
         print(f"Error: Task 2 ({task2.task_id}) not found in TM2 after reload.")
 
 
-    # Archive task2 in tm2 and check persistence
     print("\n--- Archiving Task 2 (TM2) ---")
     tm2.update_task_status(task2.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Fact learned and stored.")
-    task2_after_archive_tm2 = tm2.get_task(task2.task_id) # Should be None from active list
+    task2_after_archive_tm2 = tm2.get_task(task2.task_id)
     print(f"Task 2 (TM2) after completion (from active list): {task2_after_archive_tm2}")
     assert task2_after_archive_tm2 is None, "Task 2 should be archived and not in active list of TM2."
 
@@ -507,7 +481,6 @@ if __name__ == '__main__': # pragma: no cover
     print(f"Task 2 found in TM2 archive: {task2_found_in_archive}")
     assert task2_found_in_archive, "Task 2 was not found in TM2's archive."
 
-    # Instance 3: Verify task2 is no longer active after reload
     print("\n--- Instance 3 Operations (Verifying archive persistence) ---")
     tm3 = TaskManager(notification_manager=notif_mgr_for_test, filepath=test_active_tasks_file)
     task1_reloaded_tm3 = tm3.get_task(task1.task_id)
@@ -519,10 +492,9 @@ if __name__ == '__main__': # pragma: no cover
     assert task2_reloaded_tm3 is None, "Task 2 should remain archived (not active) in TM3."
 
 
-    # Clean up the test file
     if os.path.exists(test_active_tasks_file):
         os.remove(test_active_tasks_file)
-    if os.path.exists(test_file_dir): # Remove dir if empty, otherwise rmdir might fail
+    if os.path.exists(test_file_dir):
         try:
             os.rmdir(test_file_dir)
         except OSError: # pragma: no cover

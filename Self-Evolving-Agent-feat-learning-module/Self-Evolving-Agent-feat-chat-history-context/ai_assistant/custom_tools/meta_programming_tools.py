@@ -2,7 +2,10 @@ import os
 import re
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Dict, List, Any # Added Dict, List, Any
+import importlib.util # Ensure this is imported
+import inspect # Ensure this is imported
+import asyncio # For __main__ if any async test code is added
 
 from ai_assistant.config import get_model_for_task # To get the right LLM model
 
@@ -170,6 +173,9 @@ import importlib.util
 import inspect
 from typing import Optional, Dict, List, Any # Ensure Any is imported
 
+# --- New find_agent_tool_source function and related logic ---
+# importlib.util and inspect are imported at the top now
+
 # Assuming get_generated_tools_dir is accessible from tool_creator.
 # Fallback provided here is simplified.
 try:
@@ -311,8 +317,8 @@ FIND_AGENT_TOOL_SOURCE_SCHEMA = {
         {"name": "tool_name", "type": "str", "description": "The name of the agent tool to find (e.g., 'my_calculator')."}
     ],
     "returns": {
-        "type": "dict",
-        "description": "A dictionary with 'module_path', 'function_name', 'file_path', and 'source_code', or null if not found."
+        "type": "string",
+        "description": "A JSON string representing a dictionary with keys 'module_path', 'function_name', 'file_path', 'source_code', or null if not found."
     }
 }
 
@@ -372,8 +378,8 @@ STAGE_AGENT_TOOL_MODIFICATION_SCHEMA = {
         {"name": "tool_name_for_action", "type": "str", "description": "Optional. The 'tool_name' for logging/display in ActionExecutor, defaults to function_name."}
     ],
     "returns": {
-        "type": "dict",
-        "description": "A dictionary containing 'action_type_for_executor': 'PROPOSE_TOOL_MODIFICATION' and 'action_details_for_executor': {details_dict}."
+        "type": "string",
+        "description": "A JSON string representing a dictionary containing 'action_type_for_executor': 'PROPOSE_TOOL_MODIFICATION' and 'action_details_for_executor': {details_dict}."
     }
 }
 

@@ -8,18 +8,18 @@ import sys
 import traceback
 from prompt_toolkit.formatted_text import ANSI
 from ai_assistant.goals import goal_management
-from ai_assistant.tools import tool_system # Direct import for tool_system_instance 
+from ai_assistant.tools import tool_system # Direct import for tool_system_instance
 from ai_assistant.planning.planning import PlannerAgent
 from ..planning.execution import ExecutionAgent
 from ..core.reflection import global_reflection_log, analyze_last_failure, get_learnings_from_reflections
 from ai_assistant.core import self_modification
 from ai_assistant.memory.awareness import get_tool_associations
-    from ai_assistant.core.task_manager import TaskManager, ActiveTaskType # Added ActiveTaskType
+from ai_assistant.core.task_manager import TaskManager, ActiveTaskType # Added ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, NotificationType, Notification # Added NotificationType and Notification
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.execution.action_executor import ActionExecutor
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_model_for_task, is_debug_mode 
+from ai_assistant.config import get_model_for_task, is_debug_mode
 from typing import Tuple, List, Dict, Any, Optional
 from ai_assistant.core.conversation_intelligence import detect_missed_tool_opportunity, formulate_tool_description_from_conversation, generate_conversational_response
 from ai_assistant.memory.event_logger import log_event, get_recent_events
@@ -233,8 +233,8 @@ async def _handle_code_generation_and_registration(
                     review_results = {"status": "review_error", "comments": f"Failed to review refined code: {e}"}
                     break
                 if review_results and (
-                    review_results.get('status') == "approved" or 
-                    review_results.get('status') == "rejected" or 
+                    review_results.get('status') == "approved" or
+                    review_results.get('status') == "rejected" or
                     review_results.get('status') == "review_error"
                 ): break
             cleaned_code = current_code
@@ -358,8 +358,8 @@ async def _handle_code_generation_and_registration(
                     else:
                         base_module_name = module_path_for_registration.split('.')[-1]
                         test_filename = f"test_{base_module_name}.py"
-                        test_target_dir = os.path.join("tests", "custom_tools") 
-                        os.makedirs(test_target_dir, exist_ok=True) 
+                        test_target_dir = os.path.join("tests", "custom_tools")
+                        os.makedirs(test_target_dir, exist_ok=True)
                         test_target_path = os.path.join(test_target_dir, test_filename)
 
                         scaffold_gen_result = await code_service.generate_code(
@@ -393,14 +393,14 @@ async def _handle_code_generation_and_registration(
                                 execution_results=[f"Scaffold generation failed. Status: {status}, Error: {error_msg}"],
                                 overall_success=False, status_override=f"SCAFFOLD_GEN_FAILED_{status or 'UNKNOWN_ERR'}"
                             )
-            elif filepath_to_save and not should_save_and_register: 
+            elif filepath_to_save and not should_save_and_register:
                  global_reflection_log.log_execution(
                     goal_description=f"File saving for generated tool (no registration): {tool_description_for_generation}",
                     plan=[{'action_type': 'TOOL_CODE_SAVE_ONLY_CLI', 'filepath': filepath_to_save}],
                     execution_results=[f"Code saved to {filepath_to_save}, registration skipped by user."],
                     overall_success=True, status_override="TOOL_CODE_SAVE_ONLY_SUCCESS_CLI"
                 )
-        else: 
+        else:
             print_formatted_text(ANSI(color_text(f"Failed to save code to {filepath_to_save} using fs_utils.", CLIColors.ERROR_MESSAGE)))
             global_reflection_log.log_execution(
                 goal_description=f"File saving for generated tool: {tool_description_for_generation}",
@@ -408,7 +408,7 @@ async def _handle_code_generation_and_registration(
                 execution_results=[f"Failed to save code by CLI to {filepath_to_save}."],
                 overall_success=False, status_override="TOOL_CODE_SAVE_FAILED_CLI"
             )
-            return 
+            return
 
 def _perform_tool_registration(module_path: str, function_name: str, tool_name: str, description: str) -> Tuple[bool, str]:
     try:
@@ -421,14 +421,14 @@ def _perform_tool_registration(module_path: str, function_name: str, tool_name: 
             description=description,
             module_path=module_path,
             function_name_in_module=function_name,
-            tool_type="dynamic", 
+            tool_type="dynamic",
             func_callable=function_object
         )
         log_event(event_type="TOOL_REGISTERED_MANUAL",description=f"Tool '{tool_name}' was manually registered via CLI.",source="cli._perform_tool_registration",metadata={"tool_name": tool_name,"module_path": module_path,"function_name": function_name, "description": description})
         return True, f"Tool '{tool_name}' from '{module_path}.{function_name}' registered successfully."
     except ModuleNotFoundError: return False, f"Error: Module '{module_path}' not found."
     except AttributeError: return False, f"Error: Function '{function_name}' not found in module '{module_path}'."
-    except tool_system.ToolAlreadyRegisteredError: return False, f"Error: Tool name '{tool_name}' is already registered." 
+    except tool_system.ToolAlreadyRegisteredError: return False, f"Error: Tool name '{tool_name}' is already registered."
     except Exception as e: return False, f"An unexpected error occurred during tool registration: {e}"
 
 
@@ -585,7 +585,7 @@ async def start_cli():
     print_formatted_text(format_message("INFO", "Type /help to see available commands", CLIColors.SYSTEM_MESSAGE))
     print_formatted_text(draw_separator())
     print_formatted_text(ANSI("\n"))
-    
+
     insights_file_path_actual = os.path.join(os.path.expanduser("~"), ".ai_assistant", "actionable_insights.json")
     os.makedirs(os.path.dirname(insights_file_path_actual), exist_ok=True)
 
@@ -666,7 +666,7 @@ async def start_cli():
                 try:
                     user_command_tasks = [t for t in user_command_tasks if not t.done()]
                     user_input = await session.prompt_async()
-                    
+
                     if user_input.strip():
                         log_event(event_type="USER_INPUT_RECEIVED", description=user_input, source="cli.start_cli", metadata={"length": len(user_input)})
                         print_formatted_text(draw_separator())
@@ -685,17 +685,17 @@ async def start_cli():
                     continue
 
                 if user_input.startswith("/"):
-                    _pending_tool_confirmation_details = None 
+                    _pending_tool_confirmation_details = None
                     parts = user_input.split()
                     command = parts[0].lower()
-                    args_cmd = parts[1:] 
+                    args_cmd = parts[1:]
 
                     if command == "/exit" or command == "/quit":
                         print_formatted_text(ANSI(color_text("Exiting assistant...", CLIColors.SYSTEM_MESSAGE)))
                         break
                     elif command == "/help":
                         print_formatted_text(format_header("Available Commands"))
-                        
+
                         print_formatted_text(format_message("CMD", "/tools <action> [tool_name]", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Manage tools (list, add, remove, update)", CLIColors.SYSTEM_MESSAGE)))
 
@@ -727,13 +727,13 @@ async def start_cli():
 
                         print_formatted_text(format_message("CMD", "/generate_tool_code_with_llm \"<description>\"", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Generate and register a new tool from description", CLIColors.SYSTEM_MESSAGE)))
-                        
+
                         print_formatted_text(format_message("CMD", "/review_insights", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Review insights and propose actions", CLIColors.SYSTEM_MESSAGE)))
 
                         print_formatted_text(format_message("CMD", "/exit or /quit", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Exit the assistant", CLIColors.SYSTEM_MESSAGE)))
-                        
+
                         print_formatted_text(draw_separator())
 
                     elif command == "/notifications":
@@ -878,7 +878,7 @@ async def start_cli():
                         else: print_formatted_text(format_message("ERROR", f"Unknown tools action: {action}", CLIColors.ERROR_MESSAGE))
 
 
-                    elif command == "/projects": # Unchanged for this subtask
+                    elif command == "/projects":
                         if not args_cmd:
                             print_formatted_text(format_message("ERROR", "Usage: /projects <list|new|remove|info|status> [project_name]", CLIColors.ERROR_MESSAGE))
                             continue
@@ -993,7 +993,12 @@ async def start_cli():
                             continue
 
                         if _task_manager_cli_instance:
-                            summary_output = get_system_status_summary(_task_manager_cli_instance, active_limit_val, archived_limit_val)
+                            summary_output = get_system_status_summary(
+                                task_manager=_task_manager_cli_instance,
+                                notification_manager=_notification_manager_cli_instance,
+                                active_limit=active_limit_val,
+                                archived_limit=archived_limit_val
+                            )
                             print_formatted_text(ANSI(summary_output))
                         else: # pragma: no cover
                             print_formatted_text(format_message("ERROR","TaskManager not available.",CLIColors.ERROR_MESSAGE))
@@ -1032,7 +1037,7 @@ async def start_cli():
                         elif component_or_action in ["system", "all"]:
                             print_formatted_text(format_header("Legacy System Status (use /tasks for detailed task summary)"))
                             print_formatted_text(ANSI(color_text(status_reporting.get_system_status(active_tasks_count), CLIColors.SYSTEM_MESSAGE)))
-                        
+
                         if component_or_action == "all":
                             if "tools" not in args_cmd:
                                 print_formatted_text(format_header("Tools Status"))
@@ -1101,37 +1106,58 @@ async def start_cli():
                         else:
                             print_formatted_text(format_message("WARNING", "Detailed plan step statuses not available or invalid for this task.", CLIColors.WARNING_MESSAGE))
                         print_formatted_text(draw_separator(color=CLIColors.HEADER))
+                    elif command == "/review_insights": # pragma: no cover
+                        print_formatted_text(format_header("Reviewing Actionable Insights", color=CLIColors.HEADER))
+                        # This is a simplified trigger, actual review might be more complex
+                        # Load available tools for context
+                        available_tools_for_reflection = tool_system_instance.list_tools()
+                        suggestions = run_self_reflection_cycle(available_tools_for_reflection, notification_manager=_notification_manager_cli_instance)
+                        if suggestions:
+                            print_formatted_text(format_message("INFO", f"Self-reflection generated {len(suggestions)} suggestions. Attempting to select one for autonomous action...", CLIColors.SYSTEM_MESSAGE))
+                            if is_debug_mode(): print_formatted_text(ANSI(color_text(f"CLI: Considering {len(suggestions)} suggestions for autonomous action.", CLIColors.DEBUG_MESSAGE)))
+                            # Pass notification_manager to select_suggestion_for_autonomous_action
+                            selected_suggestion = await select_suggestion_for_autonomous_action(suggestions, notification_manager=_notification_manager_cli_instance)
+
+                            if selected_suggestion:
+                                if is_debug_mode(): print_formatted_text(ANSI(color_text(f"CLI: Autonomous action initiated for suggestion: {selected_suggestion.get('suggestion_id')}", CLIColors.DEBUG_MESSAGE)))
+                                # The select_suggestion_for_autonomous_action function now handles the execution part
+                                # and returns the suggestion that was actioned.
+                                print_formatted_text(format_message("INFO", f"Autonomous action attempted for suggestion ID: {selected_suggestion.get('suggestion_id')}. Check logs for details.", CLIColors.SUCCESS))
+                            else:
+                                print_formatted_text(format_message("INFO", "No suitable suggestion was selected for autonomous action at this time.", CLIColors.INFO_MESSAGE))
+                        else:
+                            print_formatted_text(format_message("INFO", "Self-reflection cycle did not produce any actionable suggestions.", CLIColors.INFO_MESSAGE))
 
 
-                else: 
+                else:
                     if is_debug_mode():
                         print_formatted_text(format_message("DEBUG", f"User input: {user_input}", CLIColors.DEBUG_MESSAGE))
-                        
+
                     processed_as_confirmation = False
                     ai_response_for_learning = None
 
                     if _pending_tool_confirmation_details:
                         if is_debug_mode():
                             print_formatted_text(format_message("DEBUG", f"Pending confirmation: {_pending_tool_confirmation_details}", CLIColors.DEBUG_MESSAGE))
-                            
+
                         pending_tool_name = _pending_tool_confirmation_details.get("tool_name")
-                        if not pending_tool_name: 
+                        if not pending_tool_name:
                             if is_debug_mode():
                                 print_formatted_text(ANSI(color_text(f"[DEBUG CLI] Pending confirmation details are incomplete (missing tool_name). Clearing.", CLIColors.ERROR_MESSAGE)))
                             _pending_tool_confirmation_details = None
                         elif user_input.lower() in ["yes", "y", "ok", "sure", "yeah", "yep"]:
                             if is_debug_mode():
                                 print(color_text(f"[DEBUG CLI] User confirmed pending tool: {pending_tool_name}", CLIColors.DEBUG_MESSAGE))
-                            
+
                             tool_to_run = pending_tool_name
                             inferred_args_list = _pending_tool_confirmation_details.get("inferred_args", [])
                             inferred_args_tuple = tuple(inferred_args_list)
                             inferred_kwargs_dict = _pending_tool_confirmation_details.get("inferred_kwargs", {})
-                            
+
                             try:
                                 tool_result = await tool_system_instance.execute_tool(
-                                    tool_to_run, 
-                                    args=inferred_args_tuple, 
+                                    tool_to_run,
+                                    args=inferred_args_tuple,
                                     kwargs=inferred_kwargs_dict,
                                     task_manager=_task_manager_cli_instance, # Pass TM here
                                     notification_manager=_notification_manager_cli_instance # Pass NM here
@@ -1152,12 +1178,12 @@ async def start_cli():
                             print_formatted_text(ANSI(color_text(f"AI: {ai_response_for_learning}", CLIColors.AI_RESPONSE)))
                             log_event(event_type="AI_TOOL_EXECUTION_DECLINED", description=ai_response_for_learning, source="cli.handle_confirmation", metadata={"tool_name": pending_tool_name})
                             processed_as_confirmation = True
-                        
-                        if processed_as_confirmation: 
-                            _pending_tool_confirmation_details = None 
-                            if is_debug_mode(): 
+
+                        if processed_as_confirmation:
+                            _pending_tool_confirmation_details = None
+                            if is_debug_mode():
                                 print_formatted_text(ANSI(color_text(f"[DEBUG CLI] Cleared _pending_tool_confirmation_details after yes/no.", CLIColors.DEBUG_MESSAGE)))
-                            
+
                             if AUTONOMOUS_LEARNING_ENABLED and ai_response_for_learning:
                                 learned_facts = await learn_facts_from_interaction(user_input, ai_response_for_learning, AUTONOMOUS_LEARNING_ENABLED)
                                 if learned_facts:
@@ -1174,7 +1200,7 @@ async def start_cli():
                                             metadata={"interaction_context": user_input[:50], "trigger": "tool_confirmation_flow"}
                                         )
                             continue
-                    
+
                     print_formatted_text(format_message("AI", f"Working on: '{user_input}'...", CLIColors.THINKING))
                     print_formatted_text(format_thinking())
                     if _orchestrator and _results_queue:
@@ -1208,9 +1234,9 @@ async def start_cli():
                         task.cancel()
                 await asyncio.gather(*user_command_tasks, return_exceptions=True)
                 print_formatted_text(format_status("User commands cleanup attempt complete", True))
-            
+
             await _handle_cli_results(_results_queue)
-            
+
             if global_reflection_log:
                 global_reflection_log.save_log()
                 print_formatted_text(format_status("Reflection log saved", True))

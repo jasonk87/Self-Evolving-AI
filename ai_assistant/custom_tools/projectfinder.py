@@ -1,3 +1,6 @@
+"""Finds the project directory."""
+import os
+
 def find_project_directory(project_name: str) -> str:
     """
     Finds and returns the absolute path of the project directory with the given name.
@@ -11,9 +14,7 @@ def find_project_directory(project_name: str) -> str:
     Raises:
         FileNotFoundError: If the project directory is not found.
     """
-    import os
     project_path = os.path.join(os.getcwd(), project_name)
     if os.path.isdir(project_path):
         return project_path
-    else:
-        raise FileNotFoundError(f"Project directory '{project_name}' not found.")
+    raise FileNotFoundError(f"Project directory '{project_name}' not found.")

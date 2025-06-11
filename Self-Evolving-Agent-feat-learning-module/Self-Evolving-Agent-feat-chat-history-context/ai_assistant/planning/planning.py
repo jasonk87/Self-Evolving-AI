@@ -413,53 +413,6 @@ Assumed Plan (tool names are illustrative; ensure they match available tools):
     "kwargs": {}
   },
   {
-    "tool_name": "write_text_to_file",
-    "args": ["[[step_1_output.file_path]]", "[[step_2_output.modified_code_string]]"],
-    "kwargs": {{"confirm_overwrite": "true"}} // Example: confirm overwrite by default
-  }
-]
-Note: `write_text_to_file` with `confirm_overwrite=true` (the default) will show a diff and ask for user confirmation if the file already exists and content differs. If creating a new file, or if `confirm_overwrite=false`, it will write directly. The `[[step_1_output.file_path]]` from `get_project_file_content` provides the absolute path, which is suitable for `write_text_to_file`.
-
-**Guidance for Iterating on User Projects (Based on Feedback):**
-If the user provides feedback on a project they are working on (e.g., "My 'WebAppX' project has a bug in `main.py`," or "Add a new feature to the 'DataAnalyzer' project to plot charts," or "The 'GameProject' is not working, please fix it."), your plan should generally follow these steps:
-1.  **Identify Project**: Determine the `project_identifier` (name or ID) from the user's feedback. If ambiguous, use `request_user_clarification`.
-2.  **Gather Context (if needed)**:
-    *   Use `list_project_files` (passing `project_identifier` and optionally a `sub_directory`) to understand the project structure if the feedback is general or implies needing to know file organization.
-    *   If specific files are mentioned or relevant (e.g., "bug in `main.py`"), use `get_project_file_content` (passing `project_identifier` and the relative `file_path_in_project`) to read their content. Multiple calls may be needed for multiple files.
-    *   The gathered file content(s) and file list become context for the code generation/modification step.
-3.  **Plan Code Changes using `CodeService` (via wrapper tools)**:
-    *   If **modifying existing project file(s)**: Plan to use a tool that wraps `CodeService.modify_code` (e.g., the conceptual `call_code_service_modify_code`).
-        *   The `modification_instruction` should be derived from the user's feedback.
-        *   Provide the full file content (from `get_project_file_content`) as `existing_code`.
-        *   The `module_path` and `function_name` arguments for `call_code_service_modify_code` might be `null` or omitted if the change is not specific to a single function within the file. Choose a `CodeService` `context` like `SELF_FIX_TOOL` or `GRANULAR_CODE_REFACTOR` (if a specific section is targeted).
-    *   If **adding new files/features** to a project: Plan to use a tool that wraps `CodeService.generate_code` (e.g., `call_code_service_generate_code_for_project` or using `HIERARCHICAL_GEN_COMPLETE_TOOL` with a `target_path` that includes the project's root path and the new file's relative path).
-        *   The `prompt_or_description` for code generation should be derived from the user's requirements for the new feature/file.
-4.  **Apply/Save Changes**:
-    *   The output from the code generation/modification step (new/modified code string) needs to be saved to the correct file path within the project.
-    *   Plan to use the `write_text_to_file` tool. The `full_filepath` argument should be constructed from the project's `root_path` (which you might need to confirm or obtain if not implicitly known) and the relative `file_path_in_project`.
-    *   The `write_text_to_file` tool has a `confirm_overwrite` parameter (defaulting to True). When planning, you can include this in `kwargs`, e.g., `kwargs: {{"confirm_overwrite": "true"}}` or `kwargs: {{"confirm_overwrite": "false"}}` if direct overwrite is desired.
-
-Example for Iterating on a User Project:
-User goal: "In my 'WebAppX' project, the `handle_request` function in `api/routes.py` has a bug when the input is empty. Fix it to return a 400 error."
-Assumed Plan (tool names are illustrative; ensure they match available tools):
-[
-  {
-    "tool_name": "get_project_file_content",
-    "args": ["WebAppX", "api/routes.py"],
-    "kwargs": {}
-  },
-  {
-    "tool_name": "call_code_service_modify_code",
-    "args": [
-        null, // module_path (can be null if full file content is provided as existing_code)
-        "handle_request", // function_name (if applicable, or null)
-        "[[step_1_output.content]]", // existing_code (full content of api/routes.py)
-        "Fix the handle_request function to return a 400 error when input is empty.", // modification_instruction
-        "SELF_FIX_TOOL" // context for CodeService
-    ],
-    "kwargs": {}
-  },
-  {
     "tool_name": "propose_project_file_update",
     "args": [
         "[[step_1_output.file_path]]",
@@ -470,53 +423,6 @@ Assumed Plan (tool names are illustrative; ensure they match available tools):
   }
 ]
 Note: The `propose_project_file_update` tool initiates a process that includes backing up the original file (if it exists), generating a diff of the changes, subjecting the changes to a two-critic review, and only applying the changes if unanimously approved. This ensures safety and quality for modifications to user project files. The `[[step_1_output.file_path]]` from `get_project_file_content` provides the absolute path, suitable for `propose_project_file_update`.
-
-**Guidance for Iterating on User Projects (Based on Feedback):**
-If the user provides feedback on a project they are working on (e.g., "My 'WebAppX' project has a bug in `main.py`," or "Add a new feature to the 'DataAnalyzer' project to plot charts," or "The 'GameProject' is not working, please fix it."), your plan should generally follow these steps:
-1.  **Identify Project**: Determine the `project_identifier` (name or ID) from the user's feedback. If ambiguous, use `request_user_clarification`.
-2.  **Gather Context (if needed)**:
-    *   Use `list_project_files` (passing `project_identifier` and optionally a `sub_directory`) to understand the project structure if the feedback is general or implies needing to know file organization.
-    *   If specific files are mentioned or relevant (e.g., "bug in `main.py`"), use `get_project_file_content` (passing `project_identifier` and the relative `file_path_in_project`) to read their content. Multiple calls may be needed for multiple files.
-    *   The gathered file content(s) and file list become context for the code generation/modification step.
-3.  **Plan Code Changes using `CodeService` (via wrapper tools)**:
-    *   If **modifying existing project file(s)**: Plan to use a tool that wraps `CodeService.modify_code` (e.g., the conceptual `call_code_service_modify_code`).
-        *   The `modification_instruction` should be derived from the user's feedback.
-        *   Provide the full file content (from `get_project_file_content`) as `existing_code`.
-        *   The `module_path` and `function_name` arguments for `call_code_service_modify_code` might be `null` or omitted if the change is not specific to a single function within the file. Choose a `CodeService` `context` like `SELF_FIX_TOOL` or `GRANULAR_CODE_REFACTOR` (if a specific section is targeted).
-    *   If **adding new files/features** to a project: Plan to use a tool that wraps `CodeService.generate_code` (e.g., `call_code_service_generate_code_for_project` or using `HIERARCHICAL_GEN_COMPLETE_TOOL` with a `target_path` that includes the project's root path and the new file's relative path).
-        *   The `prompt_or_description` for code generation should be derived from the user's requirements for the new feature/file.
-4.  **Apply/Save Changes**:
-    *   The output from the code generation/modification step (new/modified code string) needs to be saved to the correct file path within the project.
-    *   Plan to use the `write_text_to_file` tool. The `full_filepath` argument should be constructed from the project's `root_path` (which you might need to confirm or obtain if not implicitly known) and the relative `file_path_in_project`.
-    *   Assume `write_text_to_file` will overwrite if the file exists. If it has an `overwrite` flag, set it to true if overwriting is intended. (e.g. `kwargs: {{"overwrite": "true"}}`)
-
-Example for Iterating on a User Project:
-User goal: "In my 'WebAppX' project, the `handle_request` function in `api/routes.py` has a bug when the input is empty. Fix it to return a 400 error."
-Assumed Plan (tool names are illustrative; ensure they match available tools):
-[
-  {
-    "tool_name": "get_project_file_content",
-    "args": ["WebAppX", "api/routes.py"],
-    "kwargs": {}
-  },
-  {
-    "tool_name": "call_code_service_modify_code",
-    "args": [
-        null,
-        "handle_request",
-        "[[step_1_output.content]]",
-        "Fix the handle_request function to return a 400 error when input is empty.",
-        "SELF_FIX_TOOL"
-    ],
-    "kwargs": {}
-  },
-  {
-    "tool_name": "write_text_to_file",
-    "args": ["[[step_1_output.file_path]]", "[[step_2_output.modified_code_string]]"],
-    "kwargs": {}
-  }
-]
-(Note: The `write_text_to_file` tool in this example assumes `[[step_1_output.file_path]]` provides the full, absolute path to the file that was read. If `get_project_file_content` returns a relative path or if you need to construct it from project root + relative path, adjust accordingly.)
 
 **Guidance for System Status Queries:**
 If the user asks about the system's current activities, overall status, or what you are working on:
@@ -1034,6 +940,7 @@ if __name__ == '__main__':
         print(f"\n--- PlannerAgent Rule-Based Tests Finished. All Passed: {all_tests_passed} ---")
 
         # For async LLM-based tests:
+        import asyncio # Ensure asyncio is imported here for the __main__ block
         asyncio.run(test_llm_planner())
 
-[end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/planning/planning.py]
+# [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/planning/planning.py]

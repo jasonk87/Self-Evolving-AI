@@ -46,18 +46,23 @@ _polling_interval_seconds = 300  # For self-reflection # FACT_CURATION_INTERVAL_
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0 # New state for project execution
 
-def sanitize_project_name(name: str) -> str:  # Changed 'project_name' to 'name'
+def sanitize_project_name(name: str) -> str:
     """
     Sanitizes a project name to create a safe directory name.
-    # ... (rest of docstring) ...
+    - Converts to lowercase.
+    - Replaces spaces and multiple hyphens with a single underscore.
+    - Removes characters that are not alphanumeric, underscores, or hyphens.
+    - Ensures it's not empty (defaults to "unnamed_project").
+    - Limits length to a maximum of 50 characters.
     Args:
-        name: The raw project name string. # Changed 'project_name' to 'name'
-    # ... (rest of function body, ensure 'name' is used instead of 'project_name') ...
+        name: The raw project name string.
+    Returns:
+        A sanitized string suitable for use as a directory name.
     """
-    if not name or not name.strip(): # Use 'name'
+    if not name or not name.strip():
         return "unnamed_project"
 
-    s_name = name.lower() # Use 'name'
+    s_name = name.lower()
     s_name = re.sub(r'\s+', '_', s_name)
     s_name = re.sub(r'-+', '_', s_name)
     s_name = re.sub(r'[^\w-]', '', s_name)
@@ -68,48 +73,54 @@ def sanitize_project_name(name: str) -> str:  # Changed 'project_name' to 'name'
     
     return s_name[:50]
 
-def write_text_to_file(filepath: str, content: str) -> str: # Changed 'full_filepath' to 'filepath'
+def write_text_to_file(filepath: str, content: str) -> str:
     """
     Writes the given text content to the specified file.
-    # ... (rest of docstring) ...
+    Ensures the directory for the file exists before writing.
+
     Args:
-        filepath: The absolute or relative path to the file. # Changed 'full_filepath' to 'filepath'
-    # ... (rest of function body, ensure 'filepath' is used instead of 'full_filepath') ...
+        filepath: The absolute or relative path to the file.
+        content: The string content to write to the file.
+
+    Returns:
+        A string indicating success or an error message.
     """
-    if not filepath or not isinstance(filepath, str): # Use 'filepath'
+    if not filepath or not isinstance(filepath, str):
         return "Error: Filepath must be a non-empty string."
     # ... (ensure all internal uses of 'full_filepath' are changed to 'filepath')
     try:
-        dir_path = os.path.dirname(filepath) # Use 'filepath'
+        dir_path = os.path.dirname(filepath)
         if dir_path: 
             os.makedirs(dir_path, exist_ok=True)
         
-        with open(filepath, 'w', encoding='utf-8') as f: # Use 'filepath'
+        with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f"Success: Content written to '{filepath}'." # Use 'filepath'
+        return f"Success: Content written to '{filepath}'."
     except IOError as e:
-        return f"Error writing to file '{filepath}': {e} (IOError)" # Use 'filepath'
+        return f"Error writing to file '{filepath}': {e} (IOError)"
     # ... (and so on for other error messages) ...
 
-def read_text_from_file(filepath: str) -> str: # Changed 'full_filepath' to 'filepath'
+def read_text_from_file(filepath: str) -> str:
     """
     Reads and returns the text content from the specified file.
-    # ... (rest of docstring) ...
+
     Args:
-        filepath: The absolute or relative path to the file. # Changed 'full_filepath' to 'filepath'
-    # ... (rest of function body, ensure 'filepath' is used instead of 'full_filepath') ...
+        filepath: The absolute or relative path to the file.
+
+    Returns:
+        The content of the file as a string, or an error message string if reading fails.
     """
-    if not filepath or not isinstance(filepath, str): # Use 'filepath'
+    if not filepath or not isinstance(filepath, str):
         return "Error: Filepath must be a non-empty string."
 
-    if not os.path.exists(filepath): # Use 'filepath'
-         return f"Error: File '{filepath}' not found." # Use 'filepath'
+    if not os.path.exists(filepath):
+         return f"Error: File '{filepath}' not found."
     
-    if not os.path.isfile(filepath): # Use 'filepath'
-        return f"Error: Path '{filepath}' is not a file." # Use 'filepath'
+    if not os.path.isfile(filepath):
+        return f"Error: Path '{filepath}' is not a file."
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as f: # Use 'filepath'
+        with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         return content
     except IOError as e:

@@ -578,5 +578,205 @@
         "metadata": {
             "num_suggestions_produced": 2
         }
+    },
+    {
+        "timestamp": "2025-06-11T16:23:00.140773+00:00",
+        "event_id": "34d74490c09245b49a227fad431c478e",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/help",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:23:00.269507+00:00",
+        "event_id": "34411742fc694d739ff271b752d079bb",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:23:39.722605+00:00",
+        "event_id": "91ac68530fdd48d6ab2acc5cd1d49d9b",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/tools list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 11
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:23:39.815805+00:00",
+        "event_id": "b1ed59b2cfb54371999f01a76ec9025e",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:24:19.717500+00:00",
+        "event_id": "86c7f7de30da4715b788ee68c6e72b69",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/projects list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 14
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:24:19.729533+00:00",
+        "event_id": "8ae81d7aedff4c6f842b18c4b190d58c",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:25:00.731898+00:00",
+        "event_id": "baeeec600ad54ffa903f46279dd68ac9",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/suggestions list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 17
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:25:00.747673+00:00",
+        "event_id": "db7e6fb8332b4efda6bca52522ec56e6",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:25:41.350128+00:00",
+        "event_id": "0abe865228be4bc096646f73d14bb3c5",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/status all",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 11
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:25:41.381516+00:00",
+        "event_id": "fe54d1c758084a119149a1e3c5799f55",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:26:22.530412+00:00",
+        "event_id": "edf08d0ef6034792b0f2deaebc212f0b",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/tasks",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 6
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:28:26.545007+00:00",
+        "event_id": "15f7d29019884c73ad80ecbdb513f9c7",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/tasks",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 6
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:28:26.560011+00:00",
+        "event_id": "f343043a8dae4e7e80e4d9f86a6bd4e3",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:33.885964+00:00",
+        "event_id": "37ef67b5cd884869a61901cb654643bb",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/help",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:33.959899+00:00",
+        "event_id": "378edcc43e0149278f298fa451b7ed8b",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/tools list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 11
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:34.064567+00:00",
+        "event_id": "06ea14f59a1840d588c8cb2e72a3513d",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/projects list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 14
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:34.083674+00:00",
+        "event_id": "410290eed6e043d4905451dbee067c69",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/suggestions list",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 17
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:34.102832+00:00",
+        "event_id": "a6e8a006961b42d8af67e59398b625f2",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/status all",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 11
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:34.133896+00:00",
+        "event_id": "28c222fb6dc246de95f74adeb60f5283",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/tasks",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 6
+        }
+    },
+    {
+        "timestamp": "2025-06-11T16:32:34.147906+00:00",
+        "event_id": "de1c4f168ad24915a51b5c75fe1b1c44",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "/exit",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 5
+        }
     }
 ]

@@ -197,8 +197,8 @@ async def detect_missed_tool_opportunity(
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] Raw LLM response for missed tool detection:\n'{llm_response}'")
 
-    if not llm_response: # pragma: no cover
-        print(f"Warning: Received no response from LLM ({model_to_use}) for missed tool detection.")
+    if not llm_response or not llm_response.strip(): # pragma: no cover
+        print(f"Warning: Received no or empty response from LLM ({model_to_use}) for missed tool detection.")
         return None
 
     llm_response = llm_response.strip()
@@ -292,7 +292,7 @@ async def detect_missed_tool_opportunity(
 
         if tool_name_detected == "generate_code_for_project_file":
             project_name_arg_check = final_args_list[0] if final_args_list else None
-            if project_name_arg_check:
+            if project_name_arg_check: # project_name_arg_check is final_args_list[0]
                 from ai_assistant.custom_tools.file_system_tools import sanitize_project_name, BASE_PROJECTS_DIR
                 s_name = sanitize_project_name(project_name_arg_check)
                 manifest_path_check = os.path.join(BASE_PROJECTS_DIR, s_name, "_ai_project_manifest.json")
@@ -460,8 +460,8 @@ async def formulate_tool_description_from_conversation(user_raw_request: str, ll
     if is_debug_mode(): # pragma: no cover
          print(f"[DEBUG CONV_INTEL] Raw LLM response for tool formulation:\n'{llm_response}'")
 
-    if not llm_response: # pragma: no cover
-        print(f"Warning: Received no response from LLM ({model_to_use}) for tool description formulation.")
+    if not llm_response or not llm_response.strip(): # pragma: no cover
+        print(f"Warning: Received no or empty response from LLM ({model_to_use}) for tool description formulation.")
         return None
     cleaned_response = llm_response.strip()
     if cleaned_response.startswith("Concise Tool Description:"): # pragma: no cover
@@ -548,8 +548,8 @@ async def generate_conversational_response(user_input: str, conversation_history
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] Raw LLM response for conversational response:\n'{llm_response}'")
 
-    if not llm_response: # pragma: no cover
-        print(f"Warning: Received no response from LLM ({model_to_use}) for conversational response generation.")
+    if not llm_response or not llm_response.strip(): # pragma: no cover
+        print(f"Warning: Received no or empty response from LLM ({model_to_use}) for conversational response generation.")
         return "I'm not sure how to respond to that right now. Could you try rephrasing?"
 
     cleaned_response = llm_response.strip()

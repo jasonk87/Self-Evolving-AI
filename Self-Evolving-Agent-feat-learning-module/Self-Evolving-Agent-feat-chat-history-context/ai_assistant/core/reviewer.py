@@ -143,7 +143,8 @@ class ReviewerAgent:
         
         # Optional: Use attempt_number in a print statement for clarity during execution
         # Limiting length of requirements in print for brevity
-        print(f"ReviewerAgent: Reviewing code for '{original_requirements[:70].replace('\n', ' ')}...' (Attempt #{attempt_number})")
+        requirements_preview = original_requirements[:70].replace('\n', ' ')
+        print(f"ReviewerAgent: Reviewing code for '{requirements_preview}...' (Attempt #{attempt_number})")
 
         llm_response_str = "" # Initialize for error reporting
         try:

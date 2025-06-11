@@ -1,3 +1,6 @@
+"""Provides a function to infer argument values."""
+from typing import Any
+
 def infer_argument_value(arg_name: str, context: dict, default: Any = None) -> Any:
     """
     Infers the value of an argument by checking a context dictionary first, then using a default value.
