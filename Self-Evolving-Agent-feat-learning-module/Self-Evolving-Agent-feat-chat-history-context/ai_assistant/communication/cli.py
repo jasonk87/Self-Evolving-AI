@@ -14,7 +14,7 @@ from ..planning.execution import ExecutionAgent
 from ..core.reflection import global_reflection_log, analyze_last_failure, get_learnings_from_reflections
 from ai_assistant.core import self_modification
 from ai_assistant.memory.awareness import get_tool_associations
-from ai_assistant.core.task_manager import TaskManager
+    from ai_assistant.core.task_manager import TaskManager, ActiveTaskType # Added ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, NotificationType, Notification # Added NotificationType and Notification
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.execution.action_executor import ActionExecutor
@@ -40,7 +40,8 @@ from ai_assistant.core import project_manager
 from ai_assistant.core import suggestion_manager as suggestion_manager_module
 from ai_assistant.core import status_reporting
 from ai_assistant.utils.conversational_helpers import rephrase_error_message_conversationally # Added
-# from ai_assistant.llm_interface.ollama_client import OllamaProvider # For type hint if needed, but access via orchestrator
+from ai_assistant.llm_interface.ollama_client import OllamaProvider # Added
+from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner # Added
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
 
@@ -558,6 +559,24 @@ async def start_cli():
         print(f"CRITICAL STARTUP ERROR: Failed to process resume_interrupted_tasks: {e_startup_tasks}")
         traceback.print_exc() # Print traceback for critical startup errors
 
+    # Instantiate LLM Provider and Hierarchical Planner
+    # Note: OllamaProvider default base_url is http://localhost:11434. Ensure it's running.
+    # Consider making base_url configurable if needed.
+    try:
+        llm_provider = OllamaProvider()
+        # Simple check to see if provider is responsive, can be expanded
+        # await llm_provider.list_models_async() # Example check, might be too slow for startup
+    except Exception as e_provider: # pragma: no cover
+        print(f"CRITICAL STARTUP ERROR: Failed to initialize OllamaProvider: {e_provider}. Some features might not work.")
+        print("Ensure Ollama is running and accessible at the configured base URL (default: http://localhost:11434).")
+        llm_provider = None # Set to None so dependent services can check
+
+    hierarchical_planner_instance = None
+    if llm_provider:
+        hierarchical_planner_instance = HierarchicalPlanner(llm_provider=llm_provider)
+    else: # pragma: no cover
+        print("WARNING: LLM Provider not available, HierarchicalPlanner will not be functional.")
+
 
     print_formatted_text(ANSI("\n"))
     print_formatted_text(draw_separator())
@@ -586,7 +605,7 @@ async def start_cli():
     )
 
     execution_agent = ExecutionAgent()
-    planner_agent = PlannerAgent()
+    planner_agent = PlannerAgent() # Simple planner
 
     _orchestrator = DynamicOrchestrator(
         planner=planner_agent,
@@ -594,7 +613,8 @@ async def start_cli():
         learning_agent=learning_agent,
         action_executor=action_executor_for_orchestrator,
         task_manager=_task_manager_cli_instance,
-        notification_manager=_notification_manager_cli_instance
+        notification_manager=_notification_manager_cli_instance,
+        hierarchical_planner=hierarchical_planner_instance # Inject HierarchicalPlanner
     )
     _results_queue = asyncio.Queue()
 
@@ -701,6 +721,9 @@ async def start_cli():
 
                         print_formatted_text(format_message("CMD", "/tasks [list [active_limit] [archived_limit]]", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Show current and recent system tasks summary.", CLIColors.SYSTEM_MESSAGE)))
+
+                        print_formatted_text(format_message("CMD", "/task_plan <task_id>", CLIColors.COMMAND)) # New command
+                        print_formatted_text(ANSI(color_text("      Display detailed plan and step statuses for a hierarchical project task.", CLIColors.SYSTEM_MESSAGE))) # New command
 
                         print_formatted_text(format_message("CMD", "/generate_tool_code_with_llm \"<description>\"", CLIColors.COMMAND))
                         print_formatted_text(ANSI(color_text("      Generate and register a new tool from description", CLIColors.SYSTEM_MESSAGE)))
@@ -1026,6 +1049,60 @@ async def start_cli():
 
                         elif component_or_action not in ["tools", "projects", "suggestions", "system", "all", "item"]:
                             print_formatted_text(format_message("ERROR", f"Unknown status component: {component_or_action}", CLIColors.ERROR_MESSAGE))
+
+                    elif command == "/task_plan":
+                        if not args_cmd or len(args_cmd) != 1:
+                            print_formatted_text(format_message("ERROR", "Usage: /task_plan <task_id>", CLIColors.ERROR_MESSAGE))
+                            continue
+
+                        task_id_to_view = args_cmd[0]
+                        if not _task_manager_cli_instance: # pragma: no cover
+                            print_formatted_text(format_message("ERROR", "TaskManager not available.", CLIColors.ERROR_MESSAGE))
+                            continue
+
+                        task = _task_manager_cli_instance.get_task(task_id_to_view)
+
+                        if not task:
+                            print_formatted_text(format_message("ERROR", f"Task with ID '{task_id_to_view}' not found.", CLIColors.ERROR_MESSAGE))
+                            continue
+
+                        if task.task_type != ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION:
+                            print_formatted_text(format_message("ERROR", f"Task '{task_id_to_view}' is not a hierarchical project execution task (Type: {task.task_type.name}).", CLIColors.ERROR_MESSAGE))
+                            continue
+
+                        print_formatted_text(format_header(f"Project Plan Details for Task: {task.task_id}", color=CLIColors.HEADER))
+                        print_formatted_text(ANSI(color_text(f"Overall Description: {task.description}", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text(f"Overall Status: {task.status.name}", CLIColors.SYSTEM_MESSAGE)))
+
+                        project_name = task.details.get('project_name', 'Unnamed Project')
+                        user_goal_for_plan = task.details.get('user_goal', 'N/A')
+                        current_idx = task.details.get('current_plan_step_index', 0)
+
+                        print_formatted_text(ANSI(color_text(f"Project Name: {project_name}", CLIColors.INFO_MESSAGE)))
+                        print_formatted_text(ANSI(color_text(f"Original User Goal: {user_goal_for_plan}", CLIColors.INFO_MESSAGE)))
+                        print_formatted_text(ANSI(color_text(f"Current Step Index: {current_idx}", CLIColors.INFO_MESSAGE)))
+
+                        plan_step_statuses = task.details.get('plan_step_statuses')
+                        if plan_step_statuses and isinstance(plan_step_statuses, list):
+                            print_formatted_text(format_header("Plan Steps:", level=2, color=CLIColors.SYSTEM_MESSAGE)) # Assuming level 2 for sub-header
+                            for i, step_info in enumerate(plan_step_statuses):
+                                step_prefix = "  "
+                                if i == current_idx and task.status == ActiveTaskStatus.EXECUTING_PROJECT_PLAN : # Mark current step if plan is active
+                                    step_prefix = color_text("=>", CLIColors.AI_RESPONSE) + " "
+                                elif i < current_idx : # Mark completed steps (assuming success if index moved past)
+                                    step_prefix = color_text("✔ ", CLIColors.SUCCESS) + " "
+
+                                print_formatted_text(ANSI(color_text(f"{step_prefix}Step {step_info.get('step_id', 'N/A')}: {step_info.get('description', 'N/A')}", CLIColors.COMMAND)))
+                                print_formatted_text(ANSI(color_text(f"      Status: {step_info.get('status', 'N/A')}", CLIColors.INFO_MESSAGE)))
+                                if step_info.get('status') == 'failed' and step_info.get('error_message'):
+                                    print_formatted_text(ANSI(color_text(f"        Error: {step_info['error_message']}", CLIColors.ERROR_MESSAGE)))
+                                if step_info.get('output_preview'):
+                                    print_formatted_text(ANSI(color_text(f"        Output Preview: {step_info['output_preview']}", CLIColors.SYSTEM_MESSAGE)))
+                        else:
+                            print_formatted_text(format_message("WARNING", "Detailed plan step statuses not available or invalid for this task.", CLIColors.WARNING_MESSAGE))
+                        print_formatted_text(draw_separator(color=CLIColors.HEADER))
+
+
                 else: 
                     if is_debug_mode():
                         print_formatted_text(format_message("DEBUG", f"User input: {user_input}", CLIColors.DEBUG_MESSAGE))

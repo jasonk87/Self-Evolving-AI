@@ -18,6 +18,7 @@ from ai_assistant.custom_tools.project_management_tools import (
     initiate_ai_project # Added import
 )
 from .code_execution_tools import execute_sandboxed_python_script # Added import
+from ..core.task_manager import TaskManager, ActiveTaskStatus # Added
 
 # --- Plan Execution Tool ---
 
@@ -462,20 +463,22 @@ if __name__ == '__main__':
     # --- New execute_project_plan function and schema ---
     def execute_project_plan(
         project_plan: List[Dict[str, Any]],
+        parent_task_id: str, # Added
+        task_manager_instance: TaskManager, # Added
         project_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Executes a structured project plan, step by step.
-        Currently, this tool simulates the execution of most step types for PoC.
+        Executes a structured project plan, step by step, reporting progress
+        to TaskManager.
 
         Args:
-            project_plan: A list of steps, where each step is a dictionary defining
-                          the action to take.
+            project_plan: A list of steps, where each step is a dictionary.
+            parent_task_id: The ID of the HIERARCHICAL_PROJECT_EXECUTION task in TaskManager.
+            task_manager_instance: An instance of TaskManager to report progress.
             project_name: Optional. The name of the project this plan belongs to.
 
         Returns:
-            A dictionary summarizing the execution, including the status of each step
-            and an overall status for the project plan execution.
+            A dictionary summarizing the execution.
         """
         if not project_plan:
             return {
@@ -499,9 +502,14 @@ if __name__ == '__main__':
                 "description": description,
                 "type": step_type,
                 "status": "pending",
-                "output": None
+                "output": None,
+                "error_message": None # For storing step-specific errors
             }
             execution_log.append(f"Processing Step ID: {step_id}, Type: {step_type}, Description: {description}")
+
+            step_status_for_tm = "unknown" # Status to report to TaskManager for this specific step
+            error_message_for_tm = None
+            output_preview_for_tm = None
 
             if step_type == "python_script":
                 script_content = details.get("script_content")
@@ -511,11 +519,13 @@ if __name__ == '__main__':
                     execution_log.append(log_message)
                     current_step_result["status"] = "error_misconfigured"
                     current_step_result["output"] = "Missing script_content in details."
-                    overall_success = False # This is a configuration error for the step
+                    overall_success = False
+                    step_status_for_tm = "failed"
+                    error_message_for_tm = "Misconfigured: Missing script_content."
                 else:
                     input_files = details.get("input_files")
                     output_files_to_capture = details.get("output_files_to_capture")
-                    timeout_seconds = details.get("timeout_seconds", 30) # Default timeout increased slightly
+                    timeout_seconds = details.get("timeout_seconds", 30)
                     python_executable = details.get("python_executable")
 
                     log_message = f"Executing python_script: '{description}' (Timeout: {timeout_seconds}s)"
@@ -531,26 +541,34 @@ if __name__ == '__main__':
                     )
 
                     current_step_result["status"] = sandbox_result["status"]
-                    current_step_result["output"] = {
-                        "stdout": sandbox_result["stdout"],
-                        "stderr": sandbox_result["stderr"],
-                        "return_code": sandbox_result["return_code"],
-                        "output_files": sandbox_result["output_files"],
+                    current_step_result["output"] = { # Store all sandbox output here
+                        "stdout": sandbox_result["stdout"], "stderr": sandbox_result["stderr"],
+                        "return_code": sandbox_result["return_code"], "output_files": sandbox_result["output_files"],
                         "error_message_from_sandbox": sandbox_result["error_message"]
                     }
                     execution_log.append(f"Script execution result: Status: {sandbox_result['status']}, RC: {sandbox_result['return_code']}, Stdout: '{sandbox_result['stdout'][:50]}...', Stderr: '{sandbox_result['stderr'][:50]}...'")
 
-                    if sandbox_result["status"] != "success":
+                    if sandbox_result["status"] == "success":
+                        step_status_for_tm = "success"
+                        output_preview_for_tm = sandbox_result["stdout"][:100] if sandbox_result["stdout"] else "Script executed successfully."
+                        if sandbox_result["output_files"]:
+                            output_preview_for_tm += f" (Output files: {', '.join(sandbox_result['output_files'].keys())})"
+                    else: # error or timeout
                         overall_success = False
-                        execution_log.append(f"Step {step_id} ('{description}') script execution failed or timed out. Error: {sandbox_result.get('error_message') or sandbox_result.get('stderr', 'Unknown script error')}")
+                        step_status_for_tm = "failed"
+                        error_message_for_tm = sandbox_result.get('error_message') or sandbox_result.get('stderr', 'Unknown script error/timeout')
+                        output_preview_for_tm = error_message_for_tm[:100]
+                        execution_log.append(f"Step {step_id} ('{description}') script execution status: {sandbox_result['status']}. Error: {error_message_for_tm}")
 
             elif step_type == "human_review_gate":
                 prompt_to_user = details.get("prompt_to_user", "Generic review prompt: Please review the current state.")
                 log_message = f"Simulating human_review_gate: '{description}'. Prompt: '{prompt_to_user}'"
                 print(f"[ProjectExecutor] {log_message}")
                 execution_log.append(log_message)
-                current_step_result["status"] = "simulated_approved" # Simulate approval
+                current_step_result["status"] = "simulated_approved"
                 current_step_result["output"] = "Human review simulated as approved."
+                step_status_for_tm = "success" # For TM, simulated approval is success for the step
+                output_preview_for_tm = "Human review gate simulated as approved."
 
             elif step_type == "informational":
                 info_message = details.get("message", "No informational message provided.")
@@ -559,6 +577,8 @@ if __name__ == '__main__':
                 execution_log.append(log_message)
                 current_step_result["status"] = "success"
                 current_step_result["output"] = info_message
+                step_status_for_tm = "success"
+                output_preview_for_tm = info_message[:100]
 
             elif step_type == "unknown":
                 log_message = f"Encountered step with unknown type: '{step_type}' for step '{description}'. Marking as failed."
@@ -567,30 +587,42 @@ if __name__ == '__main__':
                 current_step_result["status"] = "failed_unknown_type"
                 current_step_result["output"] = f"Unknown step type: {step_type}."
                 overall_success = False
+                step_status_for_tm = "failed"
+                error_message_for_tm = f"Unknown step type: {step_type}."
 
-            else: # Step type is known but not one of the above (e.g. future planned types)
-                log_message = f"Step type '{step_type}' not yet implemented. Skipping step: '{description}'"
+            else:
+                log_message = f"Step type '{step_type}' not yet implemented or recognized. Skipping step: '{description}'"
                 print(f"[ProjectExecutor] {log_message}")
                 execution_log.append(log_message)
                 current_step_result["status"] = "skipped_unimplemented"
-                current_step_result["output"] = f"Step type '{step_type}' is recognized but not implemented."
+                current_step_result["output"] = f"Step type '{step_type}' is not implemented."
+                step_status_for_tm = "skipped" # Report as skipped to TM
+                output_preview_for_tm = f"Step type '{step_type}' not implemented."
 
             step_results.append(current_step_result)
+            current_step_result["error_message"] = error_message_for_tm # Store error in the tool's own result list
 
-            if not overall_success: # If any step set overall_success to False
-                # Check if the failure was due to script error/timeout or misconfiguration
-                if step_type == "python_script" and current_step_result["status"] != "success":
-                    execution_log.append(f"Stopping plan execution due to script error/timeout in step {step_id}.")
+            # Report step progress to TaskManager
+            if task_manager_instance and parent_task_id:
+                task_manager_instance.update_task_status(
+                    task_id=parent_task_id,
+                    new_status=ActiveTaskStatus.EXECUTING_PROJECT_PLAN, # Overall task is still executing
+                    # step_desc field in TM will be updated by logic within update_task_status based on resume_data
+                    resume_data={
+                        "plan_step_update": {
+                            "step_id": step_id,
+                            "status": step_status_for_tm,
+                            "error_message": error_message_for_tm,
+                            "output_preview": output_preview_for_tm,
+                            "description": description # Pass description for potential use in TM's step_desc
+                        }
+                    }
+                )
+
+            if not overall_success:
+                if current_step_result["status"] not in ["simulated_approved", "success", "skipped_unimplemented"]: # Break on actual failures
+                    execution_log.append(f"Stopping plan execution due to failure in step {step_id} ('{description}'). Status: {current_step_result['status']}")
                     break
-                elif current_step_result["status"] == "failed_unknown_type":
-                     execution_log.append(f"Stopping plan execution due to unknown step type in step {step_id}.")
-                     break
-                elif current_step_result["status"] == "error_misconfigured":
-                     execution_log.append(f"Stopping plan execution due to misconfigured step {step_id}.")
-                     break
-                # If it's a skipped_unimplemented or other non-critical non-success, plan might continue based on overall_success flag
-                # but if overall_success became false for any reason, we might break.
-                # For now, only break on explicit script failure/timeout or critical config errors.
 
 
     # Determine final overall status after iterating through all steps or breaking

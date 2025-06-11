@@ -21,6 +21,10 @@ class ActiveTaskStatus(Enum):
     FAILED_UNKNOWN = auto()
     USER_CANCELLED = auto() # If user interaction allows cancelling tasks
     FAILED_INTERRUPTED = auto() # Task was in a non-terminal state and agent restarted
+    # For Hierarchical Project Execution
+    EXECUTING_PROJECT_PLAN = auto()
+    PROJECT_PLAN_FAILED_STEP = auto()
+
 
 class ActiveTaskType(Enum):
     AGENT_TOOL_CREATION = auto()
@@ -32,9 +36,39 @@ class ActiveTaskType(Enum):
     SUGGESTION_PROCESSING = auto() # For when SuggestionProcessor is working on one
     MISC_CODE_GENERATION = auto() # For tasks like scaffold generation, or detail generation not part of a larger flow
     PLANNING_CODE_STRUCTURE = auto() # For outline generation
+    HIERARCHICAL_PROJECT_EXECUTION = auto() # For executing a plan from HierarchicalPlanner
 
 @dataclass
 class ActiveTask:
+    """
+    Represents an active task being managed by the TaskManager.
+
+    Attributes:
+        task_id: Unique identifier for the task.
+        task_type: The type of task (ActiveTaskType).
+        description: High-level description of the task.
+        status: Current status of the task (ActiveTaskStatus).
+        status_reason: Optional brief reason for the current status, especially for failures.
+        created_at: Timestamp of when the task was created.
+        last_updated_at: Timestamp of the last update to the task.
+        related_item_id: Optional ID of a related item (e.g., suggestion_id, project_id).
+        details: Task-specific details. Structure depends on task_type.
+            For HIERARCHICAL_PROJECT_EXECUTION, `details` is expected to contain:
+            {
+                "project_name": Optional[str],
+                "user_goal": str, // The original user goal for the project
+                "project_plan": List[Dict[str, Any]], // The plan from HierarchicalPlanner
+                "current_plan_step_index": int, // 0-based index of the current/next step
+                "plan_step_statuses": List[Dict[str, str]]
+                    // e.g., [{"step_id": "1.1", "status": "success", "output_preview": "...", "error_message": null}, ...]
+            }
+        current_step_description: User-readable description of the current step.
+        current_sub_step_name: More specific internal name for the current part of the step.
+        progress_percentage: Optional overall progress percentage.
+        error_count: Number of errors encountered.
+        output_preview: Short preview of the last significant output.
+        data_for_resume: Optional dictionary for storing state needed for task resumption.
+    """
     task_id: str = field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
     task_type: ActiveTaskType
     description: str # High-level description of what the agent is trying to achieve
@@ -184,10 +218,48 @@ class TaskManager:
 
 
     def add_task(self, task_type: ActiveTaskType, description: str, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ActiveTask:
-        new_task = ActiveTask(task_type=task_type, description=description, related_item_id=related_item_id, details=details or {})
+        initialized_details = details or {}
+
+        if task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION:
+            # Validate essential keys for this task type
+            if not all(k in initialized_details for k in ['project_plan', 'user_goal']):
+                print(f"TaskManager Error: HIERARCHICAL_PROJECT_EXECUTION task created for '{description}' without 'project_plan' or 'user_goal' in details. Details provided: {initialized_details}")
+                # Consider raising ValueError or setting a default error state if strictness is required.
+                # For now, proceed but the task might be dysfunctional.
+                plan = [] # Default to empty plan to avoid crashes below
+            else:
+                plan = initialized_details.get('project_plan', [])
+                if not isinstance(plan, list): # Ensure project_plan is a list
+                    print(f"TaskManager Error: 'project_plan' for HIERARCHICAL_PROJECT_EXECUTION task '{description}' must be a list. Got: {type(plan)}. Details: {initialized_details}")
+                    plan = [] # Default to empty plan
+
+            initial_step_statuses = []
+            for step in plan:
+                if isinstance(step, dict): # Ensure each step is a dictionary
+                    initial_step_statuses.append({
+                        "step_id": step.get("step_id", f"unknown_id_{uuid.uuid4().hex[:4]}"),
+                        "description": step.get("description", "No step description provided."),
+                        "status": "pending", # All steps start as pending
+                        "error_message": None,
+                        "output_preview": None
+                    })
+                else: # pragma: no cover
+                    print(f"TaskManager Warning: Invalid step found in project_plan for task '{description}'. Step: {step}. Skipping this step status initialization.")
+
+            # Augment details for HIERARCHICAL_PROJECT_EXECUTION
+            initialized_details.update({
+                "current_plan_step_index": 0,
+                "plan_step_statuses": initial_step_statuses,
+            })
+
+        new_task = ActiveTask(
+            task_type=task_type,
+            description=description,
+            related_item_id=related_item_id,
+            details=initialized_details # Use the processed details
+        )
         self._active_tasks[new_task.task_id] = new_task
         self._save_active_tasks()
-        # Basic logging, can be enhanced with a proper logger
         print(f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})")
         return new_task
 
@@ -208,9 +280,62 @@ class TaskManager:
         task = self.get_task(task_id)
         if task:
             old_status = task.status
+
+            # --- Handling for HIERARCHICAL_PROJECT_EXECUTION task type ---
+            if task.task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION and resume_data:
+                plan_step_update_data = resume_data.get("plan_step_update")
+                if plan_step_update_data and isinstance(plan_step_update_data, dict):
+                    step_id_to_update = plan_step_update_data.get("step_id")
+                    new_step_status = plan_step_update_data.get("status") # "success" or "failed"
+                    step_error_message = plan_step_update_data.get("error_message")
+                    step_output_preview = plan_step_update_data.get("output_preview")
+
+                    found_step = False
+                    if 'plan_step_statuses' in task.details and isinstance(task.details['plan_step_statuses'], list):
+                        for step_status_entry in task.details['plan_step_statuses']:
+                            if step_status_entry.get("step_id") == step_id_to_update:
+                                step_status_entry["status"] = new_step_status
+                                step_status_entry["error_message"] = step_error_message
+                                step_status_entry["output_preview"] = step_output_preview
+                                found_step = True
+                                print(f"TaskManager: Updated plan step '{step_id_to_update}' to status '{new_step_status}' for task '{task_id}'.")
+                                break
+                        if not found_step: # pragma: no cover
+                            print(f"TaskManager Warning: Plan step ID '{step_id_to_update}' not found in task '{task_id}' details.")
+
+                    if found_step:
+                        # Recalculate progress_percentage
+                        completed_steps = sum(1 for s in task.details.get('plan_step_statuses', []) if s.get("status") == "success")
+                        total_steps = len(task.details.get('project_plan', []))
+                        if total_steps > 0:
+                            progress = int((completed_steps / total_steps) * 100)
+                        else: # pragma: no cover
+                            progress = 0 # Avoid division by zero if plan is empty (should not happen if validated at add_task)
+
+                        # Update current_plan_step_index only if the step was successful and it's the current one
+                        current_idx = task.details.get("current_plan_step_index", 0)
+                        current_step_in_plan = task.details.get('project_plan', [])[current_idx] if current_idx < total_steps else None
+
+                        if new_step_status == "success" and current_step_in_plan and current_step_in_plan.get("step_id") == step_id_to_update:
+                             task.details["current_plan_step_index"] = current_idx + 1
+
+                        # Determine overall task current_step_description based on plan execution
+                        new_current_idx = task.details.get("current_plan_step_index", 0)
+                        if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
+                            step_desc = "Project plan executed successfully."
+                        elif new_status == ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP:
+                            failed_step_desc = plan_step_update_data.get("description", step_id_to_update) # Use description if available
+                            step_desc = f"Project plan failed at step: '{failed_step_desc}'. Reason: {step_error_message or 'Unknown error'}"
+                        elif new_current_idx < total_steps:
+                            next_step_in_plan = task.details.get('project_plan', [])[new_current_idx]
+                            step_desc = f"Executing plan: {next_step_in_plan.get('description', 'Next step')}"
+                        else: # All steps processed, and not explicitly COMPLETED_SUCCESSFULLY (e.g. if last step failed but overall considered EXECUTING)
+                            step_desc = "All plan steps processed."
+            # --- End HIERARCHICAL_PROJECT_EXECUTION specific logic ---
+
             task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data)
             self._save_active_tasks()
-            print(f"TaskManager: Task {task_id} ({task.description[:30]}...) status updated from {old_status.name} to {new_status.name}. Step: {step_desc or 'N/A'}")
+            print(f"TaskManager: Task {task_id} ({task.description[:30]}...) status updated from {old_status.name} to {new_status.name}. Step: {task.current_step_description or 'N/A'}")
 
             terminal_statuses = [
                 ActiveTaskStatus.COMPLETED_SUCCESSFULLY,

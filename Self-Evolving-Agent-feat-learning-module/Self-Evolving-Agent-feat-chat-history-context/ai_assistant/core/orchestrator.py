@@ -18,6 +18,7 @@ from .task_manager import TaskManager # Added import
 from .notification_manager import NotificationManager # Added import
 from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally # Added
 from ..llm_interface.ollama_client import OllamaProvider # Added for type hint, or use a generic provider type
+from ..planning.hierarchical_planner import HierarchicalPlanner # Added for Hierarchical Planning
 import uuid # Added import
 import logging # Added
 
@@ -35,13 +36,15 @@ class DynamicOrchestrator:
                  learning_agent: LearningAgent,
                  action_executor: ActionExecutor,
                  task_manager: Optional[TaskManager] = None,
-                 notification_manager: Optional[NotificationManager] = None): # New parameter
+                 notification_manager: Optional[NotificationManager] = None,
+                 hierarchical_planner: Optional[HierarchicalPlanner] = None): # New parameter
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
         self.action_executor = action_executor
         self.task_manager = task_manager
-        self.notification_manager = notification_manager # Store NotificationManager instance
+        self.notification_manager = notification_manager
+        self.hierarchical_planner = hierarchical_planner # Store HierarchicalPlanner instance
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
@@ -304,10 +307,82 @@ class DynamicOrchestrator:
                 project_context_summary=final_context_for_planner,
                 project_name_for_context=project_name_for_context
             )
+
+            # --- Hierarchical Planning Check ---
+            use_hierarchical_planner = False
             if not self.current_plan:
-                summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
-                technical_error_msg = "Could not create a plan for the given prompt."
-                user_friendly_response = technical_error_msg # Default
+                complex_keywords = ["project", "develop", "create a game", "build an app", "design a system", "implement a feature", "refactor module"]
+                prompt_lower_for_check = prompt.lower()
+                if any(keyword in prompt_lower_for_check for keyword in complex_keywords):
+                    if self.hierarchical_planner:
+                        use_hierarchical_planner = True
+                        if is_debug_mode(): # pragma: no cover
+                            print("DynamicOrchestrator: Initial plan empty for complex prompt, attempting Hierarchical Planning.")
+                    else: # pragma: no cover
+                        if is_debug_mode():
+                            print("DynamicOrchestrator: HierarchicalPlanner not available, cannot attempt complex planning for empty initial plan.")
+
+            if use_hierarchical_planner and self.hierarchical_planner: # Ensure self.hierarchical_planner is not None
+                log_event(
+                    event_type="ORCHESTRATOR_HIERARCHICAL_PLANNING_TRIGGERED",
+                    description=f"Hierarchical planning triggered for goal: {prompt}",
+                    source="DynamicOrchestrator.process_prompt",
+                    metadata={"original_prompt": prompt}
+                )
+                if is_debug_mode(): # pragma: no cover
+                    print(f"DEBUG: Hierarchical Planner invoked for: {prompt}")
+
+                generated_project_plan = await self.hierarchical_planner.generate_full_project_plan(
+                    user_goal=prompt,
+                    project_context=final_context_for_planner # Use context from earlier in process_prompt
+                )
+
+                if not generated_project_plan:
+                    logger.warning(f"HierarchicalPlanner failed to generate a project plan for goal: {prompt}")
+                    self.current_plan = [] # Signal to use the "Could not create plan" logic
+                    # Set a specific error context if your rephraser or error handling can use it
+                    self.context['last_error_info'] = "Hierarchical planner failed to produce a detailed project plan."
+                else:
+                    if not self.task_manager: # pragma: no cover
+                        logger.critical("TaskManager not available. Cannot create ActiveTask for hierarchical project execution.")
+                        self.current_plan = []
+                        self.context['last_error_info'] = "TaskManager not available, cannot execute complex project."
+                    else:
+                        active_hierarchical_task = self.task_manager.add_task(
+                            task_type=ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION, # Enum from TaskManager
+                            description=f"Executing hierarchical project: {prompt[:100]}...",
+                            details={
+                                "project_plan": generated_project_plan,
+                                "user_goal": prompt,
+                                "project_name": project_name_for_context or "Unnamed Project"
+                            }
+                        )
+                        hierarchical_task_id = active_hierarchical_task.task_id
+
+                        self.current_plan = [{
+                            "tool_name": "execute_project_plan", # Actual tool name
+                            "args": { # Args as a dictionary
+                                "project_plan": generated_project_plan,
+                                "parent_task_id": hierarchical_task_id,
+                                "task_manager_instance": self.task_manager # Pass TaskManager instance
+                                # project_name could also be passed if execute_project_plan uses it directly
+                            },
+                            "description": f"Execute the multi-step project plan for: {prompt[:70]}...",
+                            "reasoning": "Hierarchical planner generated a detailed project breakdown, now executing it."
+                        }]
+                        log_event(
+                            event_type="ORCHESTRATOR_HIERARCHICAL_PLAN_READY",
+                            description=f"Hierarchical plan created for '{prompt}', ready for execution via execute_project_plan tool.",
+                            source="DynamicOrchestrator.process_prompt",
+                            metadata={"num_steps_in_project_plan": len(generated_project_plan), "parent_task_id": hierarchical_task_id}
+                        )
+
+            elif not self.current_plan: # Still no plan after H-plan check (either not triggered or H-planner itself failed/not implemented yet)
+                # Use self.context['last_error_info'] if set by H-planner failure, else default
+                technical_error_msg = self.context.get('last_error_info', "Could not create a plan for the given prompt.")
+                user_friendly_response = technical_error_msg
+                summary_for_no_plan = self._generate_execution_summary(self.current_plan, []) # current_plan is None or []
+
                 if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                     try:
                         user_friendly_error = await rephrase_error_message_conversationally(
@@ -319,6 +394,7 @@ class DynamicOrchestrator:
                     except Exception as e_rephrase: # pragma: no cover
                         logger.error(f"Error rephrasing plan creation failure: {e_rephrase}", exc_info=True)
                 return False, user_friendly_response + summary_for_no_plan
+            # --- End Hierarchical Planning Check ---
 
             # Execute plan with potential replanning
             if is_debug_mode():

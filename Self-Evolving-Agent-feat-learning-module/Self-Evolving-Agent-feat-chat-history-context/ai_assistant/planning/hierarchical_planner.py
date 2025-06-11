@@ -1,9 +1,29 @@
 # ai_assistant/planning/hierarchical_planner.py
 import re
-from typing import List, Any, Optional # Added Optional
+import json # Added for __main__ printing
+from typing import List, Any, Optional, Dict # Added Dict
 # Assuming a generic LLM service interface or a specific one like OllamaProvider
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
 # For __main__ example, we'll mock this.
+
+# TypedDict for ProjectPlanStep can be formally defined if preferred,
+# or use this comment as a structural guide.
+# from typing import TypedDict
+# class ProjectPlanStepDetailsPython(TypedDict, total=False):
+#     script_content_prompt: str
+#     input_files: List[str]
+#     output_files_to_capture: List[str]
+#     timeout_seconds: int
+# class ProjectPlanStepDetailsReview(TypedDict):
+#     prompt_to_user: str
+# class ProjectPlanStepDetailsInfo(TypedDict):
+#     message: str
+# class ProjectPlanStep(TypedDict):
+#     step_id: str
+#     description: str
+#     type: str # "python_script", "human_review_gate", "informational"
+#     details: Dict[str, Any] # Union[ProjectPlanStepDetailsPython, ProjectPlanStepDetailsReview, ProjectPlanStepDetailsInfo]
+#     outline_group: str
 
 LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE = """
 Given the user's goal: '{user_goal}'
@@ -293,6 +313,67 @@ class HierarchicalPlanner:
             print(f"Error during LLM call in HierarchicalPlanner (generate_project_plan_step_for_task) for task '{detailed_task}': {e}")
             return None
 
+    async def generate_full_project_plan(
+        self,
+        user_goal: str,
+        project_context: Optional[str] = None
+    ) -> List[Dict[str, Any]]: # Effectively List[ProjectPlanStep]
+        """
+        Generates a complete, multi-level project plan based on the user's goal.
+        This orchestrates calls to outline, detailed task, and step elaboration methods.
+        """
+        full_plan: List[Dict[str, Any]] = []
+
+        print(f"\n[HP] Generating full project plan for goal: '{user_goal}'")
+
+        # 1. Generate High-Level Outline
+        outline_items = await self.generate_high_level_outline(user_goal, project_context)
+        if not outline_items:
+            print("[HP] Failed to generate a high-level outline. Returning empty plan.")
+            return []
+        print(f"[HP] Generated {len(outline_items)} high-level outline items.")
+
+        outline_idx_counter = 0 # Use 0-based for internal consistency, adjust for display if needed
+        for outline_item in outline_items:
+            outline_idx_counter += 1 # 1-based for step_id
+            print(f"[HP] Processing outline item {outline_idx_counter}: '{outline_item}'")
+
+            # 2. Generate Detailed Tasks for each Outline Item
+            detailed_tasks = await self.generate_detailed_tasks_for_outline_item(
+                outline_item, user_goal, project_context
+            )
+            if not detailed_tasks:
+                print(f"[HP] No detailed tasks generated for outline item '{outline_item}'. Skipping.")
+                continue
+            print(f"[HP] Generated {len(detailed_tasks)} detailed tasks for '{outline_item}'.")
+
+            detailed_task_idx_counter = 0
+            for detailed_task_description in detailed_tasks:
+                detailed_task_idx_counter += 1 # 1-based for sub-step_id
+                print(f"[HP]   Elaborating detailed task {outline_idx_counter}.{detailed_task_idx_counter}: '{detailed_task_description}'")
+
+                # 3. Elaborate each Detailed Task into a Project Plan Step
+                elaborated_step_dict = await self.generate_project_plan_step_for_task(
+                    detailed_task_description, user_goal, project_context
+                )
+
+                if elaborated_step_dict is None:
+                    print(f"[HP]   Failed to elaborate step for detailed task: '{detailed_task_description}'. Skipping this task.")
+                    continue
+
+                project_plan_step: Dict[str, Any] = {
+                    "step_id": f"{outline_idx_counter}.{detailed_task_idx_counter}",
+                    "description": detailed_task_description, # Use the detailed task as the description
+                    "type": elaborated_step_dict["type"],
+                    "details": elaborated_step_dict["details"],
+                    "outline_group": outline_item # Link back to the high-level outline item
+                }
+                full_plan.append(project_plan_step)
+                print(f"[HP]   Successfully elaborated step {project_plan_step['step_id']} of type '{project_plan_step['type']}'.")
+
+        print(f"[HP] Finished generating full project plan. Total steps: {len(full_plan)}")
+        return full_plan
+
 
 if __name__ == '__main__': # pragma: no cover
     import asyncio
@@ -358,6 +439,17 @@ if __name__ == '__main__': # pragma: no cover
                         "prompt_to_user": "Review the proposed API for user registration: POST /users with username, email, password. Does this meet requirements before proceeding with code generation?"
                     }
                 })
+            elif "Implement food generation" in detailed_task_from_prompt(prompt): # Added for snake game
+                 return json.dumps({
+                    "type": "python_script",
+                    "details": {
+                        "script_content_prompt": "Write a Python function that randomly places a food item on the game board, ensuring it does not overlap with the snake's body.",
+                        "input_files": ["game_board.py", "snake_model.py"],
+                        "output_files_to_capture": ["food_logic.py"],
+                        "timeout_seconds": 30
+                    }
+                })
+
 
             return "" # Default empty response
 
@@ -395,66 +487,39 @@ if __name__ == '__main__': # pragma: no cover
 
             planner = HierarchicalPlanner(llm_provider=mock_provider)
 
-            print("\n--- Testing HierarchicalPlanner: 'snake game' goal ---")
+            print("\n--- Testing HierarchicalPlanner FULL PLAN for: 'snake game' goal ---")
             snake_user_goal = "Develop a command-line snake game in Python, including scoring."
 
-            print("\n1. Generating High-Level Outline...")
-            snake_outline = await planner.generate_high_level_outline(user_goal=snake_user_goal)
-            # ... (rest of outline printing) ...
-            if not snake_outline: print("  No outline generated."); return
-            for item in snake_outline: print(f"  - {item}")
+            full_snake_plan = await planner.generate_full_project_plan(user_goal=snake_user_goal)
+
+            print("\nGenerated Full Project Plan for Snake Game:")
+            if full_snake_plan:
+                print(json.dumps(full_snake_plan, indent=2))
+                # Basic assertions for the full plan structure
+                assert len(full_snake_plan) > 1 # Expect multiple steps
+                assert "step_id" in full_snake_plan[0]
+                assert "description" in full_snake_plan[0]
+                assert "type" in full_snake_plan[0]
+                assert "details" in full_snake_plan[0]
+                assert "outline_group" in full_snake_plan[0]
+                # Check if a python_script step has the expected details structure
+                python_script_step = next((step for step in full_snake_plan if step["type"] == "python_script"), None)
+                if python_script_step:
+                    assert "script_content_prompt" in python_script_step["details"]
+            else:
+                print("  No full project plan generated for snake game.")
 
 
-            first_component = snake_outline[0]
-            print(f"\n2. Generating Detailed Tasks for Component: '{first_component}'...")
-            detailed_tasks = await planner.generate_detailed_tasks_for_outline_item(
-                outline_item=first_component, user_goal=snake_user_goal
-            )
-            # ... (rest of detailed tasks printing) ...
-            if not detailed_tasks: print("  No detailed tasks generated."); return
-            for task_desc in detailed_tasks: print(f"  - {task_desc}")
-
-
-            first_detailed_task = detailed_tasks[0]
-            print(f"\n3. Elaborating Project Plan Step for Task: '{first_detailed_task}'...")
-            plan_step_dict = await planner.generate_project_plan_step_for_task(
-                detailed_task=first_detailed_task, user_goal=snake_user_goal
-            )
-            print(f"Generated Plan Step for '{first_detailed_task}':")
-            if plan_step_dict: print(json.dumps(plan_step_dict, indent=2))
-            else: print("  No plan step generated.")
-            assert plan_step_dict is not None and plan_step_dict["type"] == "python_script"
-
-
-            print("\n--- Testing HierarchicalPlanner: 'blog platform' goal ---")
+            print("\n--- Testing HierarchicalPlanner FULL PLAN for: 'blog platform' goal ---")
             blog_user_goal = "Create a simple blog platform with user accounts, posts, and comments."
-            # ... (similar flow for blog: outline -> detailed tasks -> step elaboration for one task)
-            blog_outline = await planner.generate_high_level_outline(user_goal=blog_user_goal)
-            if not blog_outline: print("  No blog outline generated."); return
-            for item in blog_outline: print(f"  - {item}")
+            full_blog_plan = await planner.generate_full_project_plan(user_goal=blog_user_goal)
 
-            first_blog_component = blog_outline[0] # e.g., "User Authentication"
-            detailed_blog_tasks = await planner.generate_detailed_tasks_for_outline_item(
-                outline_item=first_blog_component, user_goal=blog_user_goal
-            )
-            if not detailed_blog_tasks: print(f"  No detailed tasks for {first_blog_component}."); return
-            for task_desc in detailed_blog_tasks: print(f"  - {task_desc}")
-
-            # Test elaboration for both an informational and a human_review_gate type
-            if len(detailed_blog_tasks) > 1:
-                detailed_task_for_info = detailed_blog_tasks[0] # "Design user model"
-                print(f"\n3a. Elaborating (Info) Step for Task: '{detailed_task_for_info}'...")
-                info_step = await planner.generate_project_plan_step_for_task(detailed_task_for_info, blog_user_goal)
-                if info_step: print(json.dumps(info_step, indent=2))
-                else: print("  No info step generated.")
-                assert info_step and info_step["type"] == "informational"
-
-                detailed_task_for_review = detailed_blog_tasks[1] # "Implement user registration endpoint"
-                print(f"\n3b. Elaborating (Review Gate) Step for Task: '{detailed_task_for_review}'...")
-                review_step = await planner.generate_project_plan_step_for_task(detailed_task_for_review, blog_user_goal)
-                if review_step: print(json.dumps(review_step, indent=2))
-                else: print("  No review step generated.")
-                assert review_step and review_step["type"] == "human_review_gate"
+            print("\nGenerated Full Project Plan for Blog Platform:")
+            if full_blog_plan:
+                print(json.dumps(full_blog_plan, indent=2))
+                assert len(full_blog_plan) > 1
+            else:
+                print("  No full project plan generated for blog platform.")
 
 
         finally:
