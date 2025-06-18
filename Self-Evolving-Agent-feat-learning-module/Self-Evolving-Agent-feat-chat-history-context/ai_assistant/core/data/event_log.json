@@ -778,5 +778,2351 @@
         "metadata": {
             "length": 5
         }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.407392+00:00",
+        "event_id": "6ab081e9977c4f40bc9964ffdd651b27",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.414907+00:00",
+        "event_id": "e72a55c148bb418b8a414d498ea20cff",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.417810+00:00",
+        "event_id": "9b5333e206244a85bf81ee9b863014df",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
+        "description": "Suggestion generation complete. Generated 0 suggestion(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions": 0,
+            "suggestions_preview": [],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.419876+00:00",
+        "event_id": "ec89f1d516294b818847c677c029c911",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
+        "description": "Self-reflection cycle finished. Produced 0 suggestions, attempted scoring and review.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions_produced": 0
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.423086+00:00",
+        "event_id": "ef8db7ca06e64a86896d3d37bf5946b5",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.425191+00:00",
+        "event_id": "ccea363cfacf4b91a2684fec0d3c6c7e",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:47:43.427406+00:00",
+        "event_id": "053e51b18b0b445c87b66fe0885b27e2",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
+        "description": "Suggestion generation complete. Generated 2 suggestion(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions": 2,
+            "suggestions_preview": [
+                {
+                    "suggestion_id": "SUG_001",
+                    "suggestion_text": "Suggestion 1",
+                    "action_type": "TYPE_A"
+                },
+                {
+                    "suggestion_id": "SUG_002",
+                    "suggestion_text": "Suggestion 2",
+                    "action_type": "TYPE_B"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:52:12.543193+00:00",
+        "event_id": "276c4d0b1b79487a9674506474ff90a3",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
+        "description": "Self-reflection cycle finished. Produced 2 suggestions, attempted scoring and review.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions_produced": 2
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:52:12.547963+00:00",
+        "event_id": "c825e5f134b04ba69bcf864c551ea43f",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:52:12.550222+00:00",
+        "event_id": "33679d11e0884867ae5c481fed14b69d",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:52:12.552444+00:00",
+        "event_id": "99bb3efab71543b38a1816e9452b1393",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
+        "description": "Suggestion generation complete. Generated 2 suggestion(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions": 2,
+            "suggestions_preview": [
+                {
+                    "suggestion_id": "SUG_001",
+                    "suggestion_text": "Suggestion 1",
+                    "action_type": "TYPE_A"
+                },
+                {
+                    "suggestion_id": "SUG_002",
+                    "suggestion_text": "Suggestion 2",
+                    "action_type": "TYPE_B"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:56:42.879682+00:00",
+        "event_id": "97b6a082252c425c91ad726d3f182579",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
+        "description": "Self-reflection cycle finished. Produced 2 suggestions, attempted scoring and review.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions_produced": 2
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:56:42.895359+00:00",
+        "event_id": "6e6882b5766647ddb44ad6ae1a1311c1",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:56:42.899291+00:00",
+        "event_id": "ce58805aa845402991a075c3feb0d70d",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T20:56:42.907340+00:00",
+        "event_id": "6704e734236842b9a3820730bcc0107d",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTION_GEN_FAILED",
+        "description": "Suggestion generation failed or returned invalid format from LLM.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "llm_model_name": "test_model",
+            "num_patterns_input": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.873553+00:00",
+        "event_id": "68c4a0417de345039b31c8ff9e157cea",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.883808+00:00",
+        "event_id": "b468e18854fb4547a9c35edfe64e308d",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'coroutine' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'coroutine' and 'str'",
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.898539+00:00",
+        "event_id": "48ccacd4230148f79ce87b3d5f3e7b9a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.911143+00:00",
+        "event_id": "fe0c5e9170b54b8bbd7d5e1df233cf71",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.914827+00:00",
+        "event_id": "f58db4d17cfd42e1aaa99ba261729a6a",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.928547+00:00",
+        "event_id": "351c09cce4154fd1a27a11a74da6b70d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.931776+00:00",
+        "event_id": "45465e92e728440da00afe590b67807e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.942621+00:00",
+        "event_id": "77e905dbf5e7439195e9426b58a10465",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.945356+00:00",
+        "event_id": "5fe28fb6ebd64f9dbb1c19c9555cc3e9",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.957711+00:00",
+        "event_id": "f0852ffa4440446fad2ea75e3bb3b299",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.960685+00:00",
+        "event_id": "fa0da2f8e66b48069b43adb5c8ffd2d5",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.975282+00:00",
+        "event_id": "446118d91eaa4aeca8251173ac92e4a4",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.978998+00:00",
+        "event_id": "b99ba16bb5bb45008c79ac5c71acf1c2",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.981952+00:00",
+        "event_id": "92dc93d1510b4ac2848e22e6d62e5150",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +=: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +=: 'NoneType' and 'str'",
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.994247+00:00",
+        "event_id": "1ceed8e1ec8f43afa2d2307974b81bb2",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:53.998217+00:00",
+        "event_id": "d4a60b1bbd32415cb1cebb8f376f731e",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.002564+00:00",
+        "event_id": "175ef0eee1504d80b89b63f53c14b767",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: 'coroutine' object has no attribute 'endswith'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "'coroutine' object has no attribute 'endswith'",
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.017973+00:00",
+        "event_id": "2f3bbdccfe084050bc8fa0aa7e17400e",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.022233+00:00",
+        "event_id": "7536de002c304dd5a7579eb40902b63b",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.067051+00:00",
+        "event_id": "223f07b00f044317a33afc7e75ba05b4",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.070420+00:00",
+        "event_id": "894deec3f0be4e4c94c453785a64f7b8",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.085074+00:00",
+        "event_id": "6514492274224c299e1b3eaaca0c04b2",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:00:54.088403+00:00",
+        "event_id": "b13c36560db4479f91011c9026a5a849",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.714278+00:00",
+        "event_id": "1cedd1c409524018bca37ec63721e446",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.720594+00:00",
+        "event_id": "64f69b032eef4d009b7d9d046dbd8fd3",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'coroutine' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'coroutine' and 'str'",
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.735953+00:00",
+        "event_id": "8dd61e889f3449a097323816562b274d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.750939+00:00",
+        "event_id": "1901fc5b2857430b89d71e5580872416",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.755087+00:00",
+        "event_id": "a8394186b110461d976438ac65c9b30e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.769464+00:00",
+        "event_id": "de3c2e3424904ca297b5684401bb286f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.773297+00:00",
+        "event_id": "00d4225ff0d94763ac0769cd35e901ef",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.784915+00:00",
+        "event_id": "53bce67fb2eb45a392b4579dd41bc4aa",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.788223+00:00",
+        "event_id": "14d07056a925416c8dfa092d35f44659",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.801265+00:00",
+        "event_id": "5e672559ad124f6e91aec554ef5ee3e3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.804521+00:00",
+        "event_id": "fc98328fb9404ffdaa4b8752d9ef6881",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.822301+00:00",
+        "event_id": "b568913aba1947a28c3cc33a8c1b41ca",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.828011+00:00",
+        "event_id": "9043d2e352544d31aa437bbae60d73da",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.831530+00:00",
+        "event_id": "83a21bd9126f457b864f3a9eebafd51c",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +=: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +=: 'NoneType' and 'str'",
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.845261+00:00",
+        "event_id": "c505dcd7d7db47ce84519a483adfa50b",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.850143+00:00",
+        "event_id": "77cc9f389ca14b3d9ec53213822e3139",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.854934+00:00",
+        "event_id": "5fd50117aa2044c9a515c6e919ca2698",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: 'coroutine' object has no attribute 'endswith'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "'coroutine' object has no attribute 'endswith'",
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.870352+00:00",
+        "event_id": "65f9c8bb01ee42dc89dfcc8f92add95b",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.875047+00:00",
+        "event_id": "164eec2d7e9346adb49c1999cc115525",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.926318+00:00",
+        "event_id": "f35a499d96284282a8ddf14af02b95ae",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.930365+00:00",
+        "event_id": "41c430eaca5d481d92e290a937dcdca1",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.943337+00:00",
+        "event_id": "3234897596ef4b64a57343982028cb5d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:07.948532+00:00",
+        "event_id": "726efa9f75ba4460b88ba789687e02d6",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.426190+00:00",
+        "event_id": "88bb2812e48744e4837236112dd59cc3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.441366+00:00",
+        "event_id": "9bef60cd6ee54116b30c0c7874811c9e",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.455252+00:00",
+        "event_id": "8fafc941ff3e4afab4eeb20857ff79b8",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.460297+00:00",
+        "event_id": "59a08a4afe8f42f4a289e2c004ad9c07",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.474428+00:00",
+        "event_id": "ad540fac7f4d48b58c57ec7db72ac0c7",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.478910+00:00",
+        "event_id": "7820a361e397430aa28ea3bd2d75bd84",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.490982+00:00",
+        "event_id": "29fb0383890b421aa4ae465519cd0193",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.494669+00:00",
+        "event_id": "1bbd0c8add184f6bab6f468370b05b55",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.507912+00:00",
+        "event_id": "26c899de0b384e5c87c7c7c05d181848",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.511726+00:00",
+        "event_id": "f62c4c6eef6a417a97b3073be0896feb",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.525365+00:00",
+        "event_id": "293083a09d35421ebe740aa24c8f293a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.530438+00:00",
+        "event_id": "cc12f130e5744afdb71f35b0831a2b47",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.534325+00:00",
+        "event_id": "781a601b95b9454389985977811b6fe1",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +=: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +=: 'NoneType' and 'str'",
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.547659+00:00",
+        "event_id": "e6f565a5fffd474ea5baefb847637177",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.556804+00:00",
+        "event_id": "9206422e16294599b1d350d819c3c51f",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.571044+00:00",
+        "event_id": "a6a580a271d04ffba61e4145459e7ad3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.576582+00:00",
+        "event_id": "cb83ea13535944d5ae8a5901ab881b8f",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.621323+00:00",
+        "event_id": "4237152785e7453194e34062bd22d6fc",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.626019+00:00",
+        "event_id": "a0c96ff564414e14ba96f51e1549e194",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.639518+00:00",
+        "event_id": "16437fdfa3ef410dbf79266c844e95c3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:30.643424+00:00",
+        "event_id": "06baab3999d64dae9f3a6e441bfd5486",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.930131+00:00",
+        "event_id": "4ab579014be14635a305e03be25089cd",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.944226+00:00",
+        "event_id": "6e23747c53bc4d01933dad0cdb907b91",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.958375+00:00",
+        "event_id": "f4e9ebeb753440d6b0169ef3dac153b1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.963786+00:00",
+        "event_id": "f5a64000482b4b0cb6dd7e612063bdec",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.980054+00:00",
+        "event_id": "92e12a5d322545bc890b51c999defe70",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.985018+00:00",
+        "event_id": "6b005a3555ff4285adc2ef1fea58130c",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:02:59.998813+00:00",
+        "event_id": "24c47624e03c4e02b760a222d09aa6ce",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.003356+00:00",
+        "event_id": "170b125b9086493e8c975bc25c47d421",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.018281+00:00",
+        "event_id": "3992fbec018e4b1b9216ff5e0bbd7c6f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.023169+00:00",
+        "event_id": "80b1c808a8c84ff2854edb4ee9c4ef04",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.038855+00:00",
+        "event_id": "19f11bbda1a444ea9bee46629b32761c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.043882+00:00",
+        "event_id": "bef715de922c457daa6e6762212a34ad",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.048657+00:00",
+        "event_id": "af6212ab2ccb44878f761922f7ddc647",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +=: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +=: 'NoneType' and 'str'",
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.064368+00:00",
+        "event_id": "6486b271e0cd49f695a417832a495e30",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.070581+00:00",
+        "event_id": "7058625fe6ba482c948db29f14bab8ef",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.087061+00:00",
+        "event_id": "77b4543dbbfb41df85afe15764705233",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.093568+00:00",
+        "event_id": "b11965217d6146e082bbf77075a1d2e2",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.145665+00:00",
+        "event_id": "76da5d1e50024131ba1978f08c55c8e1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.151481+00:00",
+        "event_id": "963d50ab972b4582a59242ff74e08e84",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.166735+00:00",
+        "event_id": "04fda51fef2b400ca5f1318f984d3d3d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:03:00.171414+00:00",
+        "event_id": "148b052961ad46e6855aaf70fcf1e7ce",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.586622+00:00",
+        "event_id": "c49782521d5142da984b3a3414213574",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.600832+00:00",
+        "event_id": "99c9c1e71684496596f702001c6d5122",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.614463+00:00",
+        "event_id": "4b46281fadf2433d8dac77b610cb4703",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.618909+00:00",
+        "event_id": "6795f9299f19455ab9242d31cfc208c1",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.633859+00:00",
+        "event_id": "483856032e554855b88f298c4db586e0",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.638097+00:00",
+        "event_id": "ea5d7e0fa31c493081cd8ffeb79e32ef",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.650504+00:00",
+        "event_id": "05ec3220904e4af2b4ccbe9aebefed2f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.654660+00:00",
+        "event_id": "e41919f9d49d40a493935ee4187e429f",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.668273+00:00",
+        "event_id": "8b164f44e1dd478a90e6113d4e63f0b1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.672627+00:00",
+        "event_id": "cfa47649afbe4a359d25b5ee7472fe07",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.687106+00:00",
+        "event_id": "57dd6f9ee403454ab9557d5982b312a2",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.691528+00:00",
+        "event_id": "a8494ef459634b169c5a21dbb832bbca",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.704849+00:00",
+        "event_id": "98882cba16e84d3a8915dc86db8c0ca1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.709292+00:00",
+        "event_id": "8f750b4795c24ab3b06af32d8eb11d5d",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.723194+00:00",
+        "event_id": "b9805a93f8bd4f15bf1aed13839024db",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.727841+00:00",
+        "event_id": "05e13a21587e42f3ac2e6cd2a29fd347",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.772112+00:00",
+        "event_id": "67acdd6f57334d48b003d59794946463",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.776916+00:00",
+        "event_id": "f28a760d77df4d069ce89d9046ef7eef",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.790527+00:00",
+        "event_id": "60cf79c9770d4c988e296e48c73319c2",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:17.795011+00:00",
+        "event_id": "91cd53a725d942c7bd436f615aec0978",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.406752+00:00",
+        "event_id": "c67d306fc9b44ea4a2d74c2c13d741ef",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.423329+00:00",
+        "event_id": "0d81d1907b5d495d9d8387e24cce195e",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.438192+00:00",
+        "event_id": "5d87ee1e5f1d4be99fb387714eed9728",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.443992+00:00",
+        "event_id": "2cc58a174cc943799ced3c5004cf25c2",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.462723+00:00",
+        "event_id": "5b37aa2bd0c543bfa6278bd7f40f7364",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.468239+00:00",
+        "event_id": "4e4c430a664041af8f397f3f69fef1c8",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.481626+00:00",
+        "event_id": "3891df45b90b4d42985b0d781489d843",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.486345+00:00",
+        "event_id": "333c6fa715544f2da370d292983af47c",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.500653+00:00",
+        "event_id": "576f1572863440c6bf6e9cfc74d215dc",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.505333+00:00",
+        "event_id": "25f1ba6136c3440ead99e113cecaf9b1",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.520293+00:00",
+        "event_id": "bb9f1f038c36484eb6fb329b66504e42",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.525672+00:00",
+        "event_id": "7a3116ee37d2479e875b241493b8e383",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.539560+00:00",
+        "event_id": "a96b3471844549e48d588fc547bf0302",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.545641+00:00",
+        "event_id": "f33d405045034c71ae2f1af3c8b405a9",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.560349+00:00",
+        "event_id": "2078907cd4964976a8f63ac280712bda",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.566755+00:00",
+        "event_id": "da4f38ef35dd43a2a003a3fe546dbdf7",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.610820+00:00",
+        "event_id": "e1a8e8bbf39d487e8ce480c8bebf2923",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.616525+00:00",
+        "event_id": "c7efe9126cb14b6f854fbe48194c1c12",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.630402+00:00",
+        "event_id": "ab4578346aae4a1c9aecb2d6e51a3d05",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:05:53.635244+00:00",
+        "event_id": "f7705063701f41249f714d8767563562",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.198153+00:00",
+        "event_id": "af2b9172429148baac70a4701d52c698",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.215648+00:00",
+        "event_id": "5d945df38009479e8092c55df15c30c6",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.231124+00:00",
+        "event_id": "becea7753f844237bb851efcbc903f9f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.237927+00:00",
+        "event_id": "7c4e3a12e0ef420a8ec06a7d58295a11",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.253990+00:00",
+        "event_id": "059e75362b254fa1b39f1ee923d5472d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.260068+00:00",
+        "event_id": "5a72ce75ffd24a72ab48bc3923792766",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.274258+00:00",
+        "event_id": "b3bc9fea2ef549b2b4a4c45ecb55a24c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.279380+00:00",
+        "event_id": "8c2d9b4adda5451caa85eb243900105d",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.294211+00:00",
+        "event_id": "4bea1bbbbf7946638c6f2c77229e79e7",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.299476+00:00",
+        "event_id": "e35854ee40b0410d8caf7991bf217338",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.314974+00:00",
+        "event_id": "0ef61cde89f0443ba1a379adca348eb4",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.320763+00:00",
+        "event_id": "a6c4ac25d55a4304982ee24897ac9172",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.335524+00:00",
+        "event_id": "eaccc651b30c451c8a725f91ea7a5478",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.342659+00:00",
+        "event_id": "7d36ba5ae403456195dbd4562d28b081",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.358493+00:00",
+        "event_id": "61eb33b1bd1040f5a7cbed1840ac7864",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.365692+00:00",
+        "event_id": "c82d416ea7554f0e984adde10bb209ac",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.415447+00:00",
+        "event_id": "3cf282e2f96f4f64b33ae709a67d1067",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.421742+00:00",
+        "event_id": "5ccc51542271492dbe16befb51495aba",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.435879+00:00",
+        "event_id": "aabb60d988c14748ae770c2a200f3e81",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:06:25.441052+00:00",
+        "event_id": "7084b905db4e473c95692b1bc939f3df",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.369288+00:00",
+        "event_id": "b100f478c94a45a0b9adfbb4f7b5552c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.384465+00:00",
+        "event_id": "905044f47caf4b609aff0dc38873cc36",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.399172+00:00",
+        "event_id": "82029b773a174a1d833b0cd8ff96ee01",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.406428+00:00",
+        "event_id": "97c13121737442b99a32b881769f8ee3",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.421071+00:00",
+        "event_id": "c40f11ddefcd45578f0c34f69fd5729a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.426624+00:00",
+        "event_id": "5307aa90bf1b487a8d92d057c7a83044",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.440806+00:00",
+        "event_id": "f285f41ded0d48efb891322436da191e",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.446367+00:00",
+        "event_id": "a3e45ddf5715467885b083b121be05cb",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.461933+00:00",
+        "event_id": "a4899947f6c347af93c8e482eb53ae96",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.467686+00:00",
+        "event_id": "0b3f5854a5fc46bda46933f62660f491",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.484143+00:00",
+        "event_id": "cb3e1e13966147e0ab4b44b4bfe20cdf",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.489836+00:00",
+        "event_id": "a57d463589894d0791d8b70783bfbe5e",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.504661+00:00",
+        "event_id": "78ec6ecfa6994a399ecd2aa79702ee08",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.511088+00:00",
+        "event_id": "53eae533d43340a380f8629ce2968454",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.526565+00:00",
+        "event_id": "ebba85152d734ae8ac46363968d2fab8",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.534767+00:00",
+        "event_id": "44e7822230014449b8e2cb330a2034ed",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.540147+00:00",
+        "event_id": "984b120c8d494f0eb143da31e5eaf260",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: cannot access local variable 'execution_summary' where it is not associated with a value",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "cannot access local variable 'execution_summary' where it is not associated with a value",
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.584477+00:00",
+        "event_id": "537adb52a8ff40c58a92ee3ce419219e",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.590545+00:00",
+        "event_id": "d2ddcb8e0983422395431a504c14eeea",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.605259+00:00",
+        "event_id": "e1632e209fa24a0394e0bd1c3eda8cd1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.611220+00:00",
+        "event_id": "0e50bc4fd1d4483dbb337c4fcbf01a95",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:07:00.617381+00:00",
+        "event_id": "66c05b5991d94972ae7077f0a1baa55f",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: cannot access local variable 'execution_summary' where it is not associated with a value",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "cannot access local variable 'execution_summary' where it is not associated with a value",
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.828793+00:00",
+        "event_id": "59e7445f48244f0889c94b9f0a1f0358",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.843988+00:00",
+        "event_id": "2fdf41e5c6d341c99b3bd5c350526b34",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.858610+00:00",
+        "event_id": "ca5c9114e9954d8d920daa15222c15aa",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.866521+00:00",
+        "event_id": "7ce0d78d34aa46c0b6b99099b687121c",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: unsupported operand type(s) for +: 'NoneType' and 'str'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "unsupported operand type(s) for +: 'NoneType' and 'str'",
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.881293+00:00",
+        "event_id": "1a2f73f81f5041d1b77d01ad41e6edfd",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.887012+00:00",
+        "event_id": "e6fb651508f0473087513c96a5c3ce97",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.902029+00:00",
+        "event_id": "c6bddda4bbb14c62bf1ddb3252d2d0d4",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.907961+00:00",
+        "event_id": "afa381755b464741ba7f46bd485c4531",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.923726+00:00",
+        "event_id": "8a02b992e53a4359b327f8562968180c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.929636+00:00",
+        "event_id": "824e0bf674e94aafb9a47f4ed89339ec",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.946000+00:00",
+        "event_id": "715808ff8c0f44b5a13415c92dac7bdf",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.952260+00:00",
+        "event_id": "0895b3e04af44f718759532dbf4b1187",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.967829+00:00",
+        "event_id": "ec3f8a9b81b5453a932fa99508d0a6a5",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.973957+00:00",
+        "event_id": "949b4610e0f44760b486e672ab2b1252",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.990291+00:00",
+        "event_id": "fdb581d7abce4a2db886831d12132523",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:42.997940+00:00",
+        "event_id": "4fd2829b4312496dbe20f28f93718990",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:43.040739+00:00",
+        "event_id": "fa4c245f281042d5948a814d704966e8",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:43.046872+00:00",
+        "event_id": "d5668525d0e54b4b8df66067900f8a6c",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:43.062531+00:00",
+        "event_id": "c77a2b00584044aa930b8dca5152569f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:09:43.068661+00:00",
+        "event_id": "562938c12c9e4cce9de0fc0a630946ac",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:11:04.616862+00:00",
+        "event_id": "84d3f68bbd8046788e7dfa0ddb422957",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:11:57.693848+00:00",
+        "event_id": "9823a00253604d3b80cca78fdeaf2420",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:11:57.702630+00:00",
+        "event_id": "1919bbdbda1446af8c87ad5d4c700d93",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:12:54.604854+00:00",
+        "event_id": "01189ce6646143508c921894fce26e4a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:12:54.611641+00:00",
+        "event_id": "5b0f14aa23ce45099cd5142cad5f0298",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:13:30.160822+00:00",
+        "event_id": "4206e09fb9b44563b92fc2032e48e890",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:13:30.168519+00:00",
+        "event_id": "cb00a4f2cd1d4a5a8f05f9578125e08a",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:14:27.348316+00:00",
+        "event_id": "4d78298a10ec41e48b24dcfea219d63d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-06-18T21:14:27.357594+00:00",
+        "event_id": "7915d994591c418ea3248253443262e1",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
     }
 ]

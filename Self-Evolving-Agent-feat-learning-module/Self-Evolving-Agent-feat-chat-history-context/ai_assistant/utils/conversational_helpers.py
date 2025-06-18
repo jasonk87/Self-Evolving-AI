@@ -145,11 +145,13 @@ async def summarize_tool_result_conversationally(
 
     try:
         target_model = model_name or get_model_for_task("conversational_response")
-        summary_response = await llm_provider.invoke_ollama_model_async(
+        # Ensure the call is awaited
+        summary_response_coro = llm_provider.invoke_ollama_model_async(
             prompt,
             model_name=target_model,
             temperature=0.6
         )
+        summary_response = await summary_response_coro # Await the coroutine
         return summary_response.strip() if summary_response else "I've processed your request."
     except Exception as e:
         logger.error(f"Error invoking LLM for conversational summary: {e}", exc_info=True)
@@ -183,11 +185,12 @@ async def rephrase_error_message_conversationally(
 
         logger.info(f"Rephrasing error with model {target_model}. Original error: {technical_error_message[:100]}...")
 
-        llm_response = await llm_provider.invoke_ollama_model_async(
+        llm_response_coro = llm_provider.invoke_ollama_model_async(
             prompt,
             model_name=target_model,
             temperature=0.5
         )
+        llm_response = await llm_response_coro # Await the coroutine
 
         if llm_response and llm_response.strip():
             return llm_response.strip()

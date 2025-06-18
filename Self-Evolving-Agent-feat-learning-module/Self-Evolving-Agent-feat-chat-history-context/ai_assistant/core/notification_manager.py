@@ -35,6 +35,7 @@ class NotificationType(Enum):
     TASK_FAILED_CODE_GENERATION = auto() # Added
     TASK_FAILED_UNKNOWN = auto()
     TASK_CANCELLED = auto()
+    TASK_INTERRUPTED = auto() # Added to handle interrupted tasks
 
     # Suggestion related
     NEW_SUGGESTION_CREATED_AI = auto()

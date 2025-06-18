@@ -7,7 +7,7 @@ try:
     from ai_assistant.core.orchestrator import DynamicOrchestrator
     from ai_assistant.planning.planning import PlannerAgent
     from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner # Added
-    from ai_assistant.planning.execution import ExecutionAgent, AwaitingUserInputError # If this error is used
+    from ai_assistant.planning.execution import ExecutionAgent # If this error is used
     from ai_assistant.learning.learning import LearningAgent
     from ai_assistant.execution.action_executor import ActionExecutor
     from ai_assistant.tools.tool_system import ToolSystem # Assuming ToolSystem is used by ExecutionAgent
@@ -23,7 +23,7 @@ except ImportError: # pragma: no cover
         sys.path.insert(0, project_root)
     from ai_assistant.core.orchestrator import DynamicOrchestrator
     from ai_assistant.planning.planning import PlannerAgent
-    from ai_assistant.planning.execution import ExecutionAgent, AwaitingUserInputError
+    from ai_assistant.planning.execution import ExecutionAgent
     from ai_assistant.learning.learning import LearningAgent
     from ai_assistant.execution.action_executor import ActionExecutor
     from ai_assistant.tools.tool_system import ToolSystem
@@ -42,6 +42,8 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
         self.mock_code_service = MagicMock(spec=CodeService)
         self.mock_code_service.llm_provider = self.mock_llm_provider
+        # Set a default string return value for the mock LLM provider's async method
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "Default mock LLM response"
         self.mock_action_executor = MagicMock(spec=ActionExecutor)
         self.mock_action_executor.code_service = self.mock_code_service
 
@@ -124,12 +126,12 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         success, response = await self.orchestrator.process_prompt(user_prompt)
 
         self.assertFalse(success)
-        self.assertIn("Could not create a plan", response)
+        # Check if the default mock LLM response (from rephrasing) is in the response,
+        # plus the technical summary for no actions.
+        expected_response_part = self.mock_llm_provider.invoke_ollama_model_async.return_value
+        expected_technical_summary = self.orchestrator._generate_execution_summary([], [])
+        self.assertEqual(response, expected_response_part + expected_technical_summary)
         mock_summarizer.assert_not_called() # Summarizer should not be called if no plan
-        # Test the rephrasing part is not called here as it's handled by specific rephrasing tests
-        # For the basic "no plan" case, we are now testing rephrasing separately.
-        # This test ensures the old basic "Could not create a plan" still works if rephraser is NOT explicitly mocked to change it.
-        # To test rephrasing, we'll add specific tests below.
 
     # --- Tests for Conversational Error Rephrasing ---
 
@@ -198,7 +200,12 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(success)
         # The rephrased error should be primary, followed by the technical summary because summarize_tool_result_conversationally returned None
-        self.assertEqual(response, rephrased_error + technical_summary)
+        # Orchestrator adds a '.' if the rephrased_error doesn't end with punctuation.
+        expected_response = rephrased_error
+        if not rephrased_error.endswith(('.', '\n', '!', '?')):
+            expected_response += "."
+        expected_response += technical_summary
+        self.assertEqual(response, expected_response)
         mock_rephraser.assert_called_once_with(
             technical_error_message=f"An error occurred: Exception: {technical_error_detail}",
             original_user_query=user_prompt,
@@ -315,7 +322,9 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         success, response = await self.orchestrator.process_prompt(user_prompt)
 
         self.assertFalse(success)
-        self.assertTrue(response.startswith("Could not complete the task fully."))
+        # Expect the rephrased response (default from LLM mock) + technical summary
+        expected_start = self.mock_llm_provider.invoke_ollama_model_async.return_value
+        self.assertTrue(response.startswith(expected_start))
         self.assertIn(technical_summary_fallback, response)
         mock_summarizer.assert_called_once()
         mock_generate_exec_summary.assert_called_once()
@@ -523,4 +532,3 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__': # pragma: no cover
     unittest.main()
-```

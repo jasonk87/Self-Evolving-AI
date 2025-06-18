@@ -1,0 +1,38 @@
+[
+    {
+        "goal_description": "Test self-mod logging in ReflectionLog",
+        "plan": [
+            {
+                "tool_name": "self_mod_tool"
+            }
+        ],
+        "execution_results": [
+            {
+                "outcome": "details from apply_code_modification"
+            }
+        ],
+        "status": "SUCCESS",
+        "entry_id": "a79701fa-424a-46e3-97f0-9ee4b7f5b07d",
+        "notes": "Logging a self-modification attempt.(Note: overall_success was False but all plan steps completed without error representations).",
+        "timestamp": "2025-06-18T20:58:58.129118+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": true,
+        "source_suggestion_id": "SUG004",
+        "modification_type": "MODIFY_TOOL_CODE",
+        "modification_details": {
+            "module": "core.py",
+            "change": "refactor"
+        },
+        "post_modification_test_passed": false,
+        "post_modification_test_details": {
+            "passed": false,
+            "notes": "Unit test failed post-mod"
+        },
+        "commit_info": {
+            "message": "Attempted refactor, tests failed",
+            "status": false
+        }
+    }
+]

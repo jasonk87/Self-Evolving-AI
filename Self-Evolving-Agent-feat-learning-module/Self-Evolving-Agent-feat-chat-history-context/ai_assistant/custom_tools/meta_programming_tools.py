@@ -314,12 +314,12 @@ FIND_AGENT_TOOL_SOURCE_SCHEMA = {
     "name": "find_agent_tool_source",
     "description": "Finds an existing agent tool's source code, module path, and file path. Searches in standard agent tool directories.",
     "parameters": [
-        {"name": "tool_name", "type": "str", "description": "The name of the agent tool to find (e.g., 'my_calculator')."}
+        tuple(sorted({"name": "tool_name", "type": "str", "description": "The name of the agent tool to find (e.g., 'my_calculator')."}.items()))
     ],
-    "returns": {
+    "returns": tuple(sorted({
         "type": "string",
         "description": "A JSON string representing a dictionary with keys 'module_path', 'function_name', 'file_path', 'source_code', or null if not found."
-    }
+    }.items()))
 }
 
 def stage_agent_tool_modification(
@@ -370,17 +370,17 @@ STAGE_AGENT_TOOL_MODIFICATION_SCHEMA = {
     "name": "stage_agent_tool_modification",
     "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor.",
     "parameters": [
-        {"name": "module_path", "type": "str", "description": "The module path of the tool (e.g., 'ai_assistant.custom_tools.my_tool')."},
-        {"name": "function_name", "type": "str", "description": "The function name of the tool to modify."},
-        {"name": "modified_code_string", "type": "str", "description": "The complete new source code for the modified function."},
-        {"name": "change_description", "type": "str", "description": "Detailed description of the changes made or the reason for modification."},
-        {"name": "original_reflection_entry_id", "type": "str", "description": "Optional. The ID of the reflection entry that suggested this modification."},
-        {"name": "tool_name_for_action", "type": "str", "description": "Optional. The 'tool_name' for logging/display in ActionExecutor, defaults to function_name."}
+        tuple(sorted({"name": "module_path", "type": "str", "description": "The module path of the tool (e.g., 'ai_assistant.custom_tools.my_tool')."}.items())),
+        tuple(sorted({"name": "function_name", "type": "str", "description": "The function name of the tool to modify."}.items())),
+        tuple(sorted({"name": "modified_code_string", "type": "str", "description": "The complete new source code for the modified function."}.items())),
+        tuple(sorted({"name": "change_description", "type": "str", "description": "Detailed description of the changes made or the reason for modification."}.items())),
+        tuple(sorted({"name": "original_reflection_entry_id", "type": "str", "description": "Optional. The ID of the reflection entry that suggested this modification."}.items())),
+        tuple(sorted({"name": "tool_name_for_action", "type": "str", "description": "Optional. The 'tool_name' for logging/display in ActionExecutor, defaults to function_name."}.items()))
     ],
-    "returns": {
+    "returns": tuple(sorted({
         "type": "string",
         "description": "A JSON string representing a dictionary containing 'action_type_for_executor': 'PROPOSE_TOOL_MODIFICATION' and 'action_details_for_executor': {details_dict}."
-    }
+    }.items()))
 }
 
 
