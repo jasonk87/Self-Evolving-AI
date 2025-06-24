@@ -42,8 +42,8 @@
     "get_self_awareness_info_and_converse": {
         "tool_name": "get_self_awareness_info_and_converse",
         "module_path": "ai_assistant.custom_tools.awareness_tools",
-        "function_name": "get_self_awareness_info_and_converse",
-        "description": "Provides a conversational response about the AI's current status,",
+        "function_name": "get_system_status_summary",
+        "description": "Provides a conversational response about the AI's current status by summarizing system activity.",
         "type": "custom_discovered",
         "schema_details": null
     },

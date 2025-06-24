@@ -64,13 +64,13 @@ class ExecutionAgent:
             # Reset per-plan state for each new plan (or re-plan)
             plan_results: List[Any] = []
             plan_step_notes: List[str] = []
-            # plan_step_errors_details: List[Dict[str, Any]] = [] # Not directly used for re-planning logic, but for logging
             
             first_critical_error_details: Dict[str, Optional[str]] = {
                 "error_type": None, "error_message": None, "traceback_snippet": None
             }
             
-            plan_failed_critically = False
+            plan_failed_critically = False # Tracks if the *current execution of current_plan* fails
+            replan_triggered_and_successful_this_iteration = False # New flag
 
             for i, step in enumerate(current_plan):
                 tool_name = step.get("tool_name")
@@ -187,39 +187,58 @@ class ExecutionAgent:
                     plan_failed_critically = True # Mark that this plan attempt had a critical failure
 
                     if replan_attempts < self.MAX_REPLAN_ATTEMPTS:
-                        print(f"ExecutionAgent: Critical failure in plan attempt {replan_attempts + 1}. Attempting to analyze failure and re-plan...")
-                        tool_registry = tool_system.list_tools()
+                        print(f"ExecutionAgent: Critical failure in current plan execution (overall attempt {replan_attempts + 1}). Attempting to analyze failure and re-plan...")
+                        tool_registry = tool_system.list_tools() # Assuming this returns Dict[str, str] for descriptions
+
+                        # Ensure available_tools for replan_after_failure is the rich format if needed by it
+                        # For now, assuming PlannerAgent.replan_after_failure can handle Dict[str,str] or adapts.
+                        # If it strictly needs the rich format: available_tools_rich = tool_system.list_tools_with_sources()
+
                         failure_analysis = analyze_last_failure(tool_registry, ollama_model_name=ollama_model_name)
+                        new_plan_candidate = None # Initialize before conditional assignment
 
                         if failure_analysis and failure_analysis.strip():
                             print(f"ExecutionAgent: Failure analysis obtained:\n{failure_analysis}")
-                            new_plan = await planner_agent.replan_after_failure(
+                            new_plan_candidate = await planner_agent.replan_after_failure(
                                 original_goal=goal_description,
                                 failure_analysis=failure_analysis,
-                                available_tools=tool_registry,
+                                available_tools=tool_registry, # Pass simple descriptions
                                 ollama_model_name=ollama_model_name
                             )
-                            if new_plan:
-                                print(f"ExecutionAgent: Successfully re-planned. New plan has {len(new_plan)} steps. Resetting and retrying.")
-                                current_plan = new_plan
-                                replan_attempts += 1 # Increment before breaking to restart loop
-                                break # Break from step loop to restart with new plan in the outer while loop
+                            if new_plan_candidate:
+                                print(f"ExecutionAgent: Successfully re-planned. New plan has {len(new_plan_candidate)} steps. Will attempt this new plan.")
+                                current_plan = new_plan_candidate
+                                replan_attempts += 1
+                                replan_triggered_and_successful_this_iteration = True # Set flag
+                                # This break will exit the FOR loop. The flag will ensure WHILE loop continues.
                             else:
-                                print("ExecutionAgent: Re-planning attempt failed to produce a new plan. Proceeding with original failure.")
-                                # Fall through to normal failure handling outside the step loop as plan_failed_critically is True
+                                print("ExecutionAgent: Re-planning attempt failed to produce a new plan.")
+                                # plan_failed_critically remains True. replan_triggered_and_successful_this_iteration remains False.
+                                # The FOR loop will break next, and the outer WHILE loop's epilogue will handle final failure.
                         else:
-                            print("ExecutionAgent: Failure analysis did not yield significant results. Proceeding with original failure.")
-                            # Fall through
-                    else:
-                        print(f"ExecutionAgent: Maximum re-plan attempts ({self.MAX_REPLAN_ATTEMPTS}) reached. Plan execution failed.")
-                        # Fall through
+                            print("ExecutionAgent: Failure analysis did not yield significant results. Cannot re-plan.")
+                            # As above, FOR loop breaks, WHILE epilogue handles final failure.
+                    else: # Max re-plan attempts already reached before this failure.
+                        print(f"ExecutionAgent: Critical failure occurred, and maximum re-plan attempts ({self.MAX_REPLAN_ATTEMPTS}) already used. Plan execution definitively failed.")
+                        # plan_failed_critically is True. replan_triggered_and_successful_this_iteration is False. FOR loop breaks.
                     
-                    break # Break from step loop (current plan execution stops due to critical error)
+                    break # Exit FOR loop due to critical failure in this step.
 
-            # After iterating through all steps of the current_plan or breaking due to critical failure
-            if not plan_failed_critically: # Plan completed all steps without critical error
-                print(f"ExecutionAgent: Plan attempt {replan_attempts + 1} completed successfully.")
-                # Log this successful plan attempt
+            # After iterating through all steps of the current_plan or breaking from the FOR loop
+
+            if replan_triggered_and_successful_this_iteration:
+                continue # Go to the next iteration of the WHILE loop to execute the new current_plan
+
+            # If we reach here, it means:
+            # 1. The current_plan completed all steps successfully (plan_failed_critically is False).
+            # OR
+            # 2. The current_plan failed (plan_failed_critically is True) AND
+            #    a. Re-planning was not attempted (e.g., max attempts already used before this plan started, or failure analysis was empty).
+            #    b. Or, re-planning was attempted but failed to produce a new plan.
+            #    (In short, no successful re-plan happened that would cause a 'continue'.)
+
+            if not plan_failed_critically:
+                print(f"ExecutionAgent: Plan attempt {replan_attempts + 1} (for goal '{goal_description}') completed successfully.")
                 reflection_entry_obj_success = global_reflection_log.log_execution(
                     goal_description=goal_description,
                     plan=current_plan,
@@ -252,30 +271,29 @@ class ExecutionAgent:
                 )
                 return current_plan, plan_results # MODIFIED: Return successful plan and its results
 
-            # If plan_failed_critically is True and we are here, it means either re-planning didn't happen,
-            # or re-planning failed to produce a new plan, or re-plan limit was reached.
-            if replan_attempts >= self.MAX_REPLAN_ATTEMPTS or not new_plan: # Check if we should stop trying
-                if plan_failed_critically : # ensure this is only if the last attempt also failed.
-                    print(f"ExecutionAgent: Plan execution failed for goal '{goal_description}' after {replan_attempts} re-plan attempt(s).")
-                    # The final failure was already logged by global_reflection_log inside the loop.
-                    # Log GOAL_EXECUTION_COMPLETED for overall failure
-                    tools_used_in_last_plan = list(set(step.get("tool_name") for step in current_plan if step.get("tool_name"))) # current_plan is the one that failed last
-                    log_event(
-                        event_type="GOAL_EXECUTION_COMPLETED",
-                        description=f"Goal execution failed for: {goal_description}",
-                        source="ExecutionAgent.execute_plan",
-                        metadata={
-                            "goal_description": goal_description,
-                            "last_attempted_plan_summary": [{"tool": step.get("tool_name"), "args_preview": str(step.get("args",()))[:50]} for step in current_plan],
-                            "overall_success": False,
-                            "num_steps_in_last_plan": len(current_plan),
-                            "tools_used_in_last_plan": tools_used_in_last_plan,
-                            "replan_attempts_made": replan_attempts,
-                            "first_error_type_in_last_plan": first_critical_error_details.get("error_type"),
-                            "first_error_message_in_last_plan": first_critical_error_details.get("error_message")
-                        }
-                    )
-                    return current_plan, plan_results # MODIFIED: Return last attempted plan and its (failed) results
+            else: # current_plan failed critically, and no successful re-plan happened to 'continue' the while loop
+                # This means this 'while' iteration corresponds to the final failed attempt.
+                # The failure (either the original if no re-plan was possible/successful, or a failed re-plan)
+                # would have already been logged by global_reflection_log inside the for loop.
+                print(f"ExecutionAgent: Plan execution failed for goal '{goal_description}' (overall attempt {replan_attempts + 1} of main plan execution). No further re-planning will occur for this failure.")
+                # Log GOAL_EXECUTION_COMPLETED for overall failure
+                tools_used_in_last_plan = list(set(step.get("tool_name") for step in current_plan if step.get("tool_name"))) # current_plan is the one that failed last
+                log_event(
+                    event_type="GOAL_EXECUTION_COMPLETED",
+                    description=f"Goal execution failed for: {goal_description}",
+                    source="ExecutionAgent.execute_plan",
+                    metadata={
+                        "goal_description": goal_description,
+                        "last_attempted_plan_summary": [{"tool": step.get("tool_name"), "args_preview": str(step.get("args",()))[:50]} for step in current_plan],
+                        "overall_success": False,
+                        "num_steps_in_last_plan": len(current_plan),
+                        "tools_used_in_last_plan": tools_used_in_last_plan,
+                        "replan_attempts_made": replan_attempts,
+                        "first_error_type_in_last_plan": first_critical_error_details.get("error_type"),
+                        "first_error_message_in_last_plan": first_critical_error_details.get("error_message")
+                    }
+                )
+                return current_plan, plan_results # MODIFIED: Return last attempted plan and its (failed) results
             # If we are here and plan_failed_critically is true, but replan_attempts < MAX_REPLAN_ATTEMPTS and new_plan was generated,
             # the outer while loop will continue with the new_plan.
         

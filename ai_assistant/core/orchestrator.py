@@ -298,22 +298,70 @@ class DynamicOrchestrator:
                         )
 
             elif not self.current_plan:
-                technical_error_msg = self.context.get('last_error_info', "Could not create a plan for the given prompt.")
-                user_friendly_response_final = technical_error_msg # Default to technical
-                summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
+                # The planner returned an empty plan. This could be a conversational prompt
+                # or a task the planner genuinely couldn't handle.
+                # Let's attempt to generate a direct, conversational response as a primary strategy.
+                if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+                    try:
+                        logger.info(f"Orchestrator: No plan created for '{prompt}'. Attempting to generate a direct conversational response.")
 
+                        # The llm_provider is the ollama_client module itself
+                        llm_module = self.action_executor.code_service.llm_provider
+                        # We need get_model_for_task from config
+                        from ai_assistant.config import get_model_for_task
+                        model = get_model_for_task("conversational_response")
+
+                        conv_prompt = f"""You are a helpful and friendly AI assistant. The user just said: "{prompt}".
+Respond conversationally. If it's a greeting, greet them back. If it's a simple question, answer it if you can. If you don't know the answer, say so politely. Keep the response brief."""
+
+                        conversational_response = await llm_module.invoke_ollama_model_async(
+                            prompt=conv_prompt,
+                            model_name=model
+                        )
+
+                        if conversational_response and conversational_response.strip():
+                            log_event(
+                                event_type="ORCHESTRATOR_CONVERSATIONAL_FALLBACK",
+                                description=f"No plan for '{prompt}', generated direct response.",
+                                source="DynamicOrchestrator.process_prompt",
+                                metadata={"response": conversational_response}
+                            )
+                            # Return True since we successfully handled the prompt conversationally
+                            return True, conversational_response
+                        else:
+                            # Raise an error to be caught by the outer Exception or specific handling
+                            logger.warning(f"Conversational model returned empty/None for '{prompt}'. Falling through.")
+                            # No specific error to raise that would become last_error_info directly,
+                            # so the generic message will be used.
+                            # To make it more specific, we could set self.context['last_error_info'] here.
+                            self.context['last_error_info'] = "Conversational model returned an empty response."
+
+
+                    except Exception as e_conv:
+                        logger.error(f"Failed to generate conversational fallback for '{prompt}': {e_conv}", exc_info=True)
+                        # Fallthrough to the original error handling logic below if conversational response fails
+                        # Store the conversational error to potentially make the error message more informative
+                        self.context['last_error_info'] = f"Conversational fallback attempt failed: {str(e_conv)}"
+
+                # This block now serves as the fallback if the conversational attempt fails or was not possible.
+                technical_error_msg = self.context.get('last_error_info', "I couldn't create a plan for your request, and I was also unable to generate a conversational response.")
+                user_friendly_response_final = technical_error_msg # Default to technical message
+                summary_for_no_plan = self._generate_execution_summary(self.current_plan, []) # current_plan is None here
+
+                # Attempt to rephrase this final error message
                 if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                     try:
                         rephrased_content = await rephrase_error_message_conversationally(
-                            technical_error_message=technical_error_msg,
+                            technical_error_message=technical_error_msg, # Use the potentially updated technical_error_msg
                             original_user_query=prompt,
                             llm_provider=self.action_executor.code_service.llm_provider
                         )
                         if rephrased_content: # Only use if rephrasing returned something non-empty
                             user_friendly_response_final = rephrased_content
                     except Exception as e_rephrase: # pragma: no cover
-                        logger.error(f"Error rephrasing plan creation failure: {e_rephrase}", exc_info=True)
-                        # user_friendly_response_final remains technical_error_msg
+                        logger.error(f"Error rephrasing final plan-creation failure: {e_rephrase}", exc_info=True)
+                        # user_friendly_response_final remains as it was
+
                 return False, user_friendly_response_final + summary_for_no_plan
 
             if is_debug_mode():
@@ -525,28 +573,45 @@ class DynamicOrchestrator:
             return overall_success_of_plan, response
 
         except Exception as e:
+            # Enhanced logging for the mysterious error
+            logger.error(f"DynamicOrchestrator: Top-level exception caught. Type: {type(e).__name__}, Error: {str(e)}", exc_info=True)
+            logger.debug(f"DynamicOrchestrator: Full string representation of error: {repr(str(e))}")
+
             technical_error_msg = f"Error during orchestration: {str(e)}"
-            user_friendly_response = technical_error_msg
+            user_friendly_response = technical_error_msg # Default response
+
+            # Log event before attempting to rephrase
             log_event(
                 event_type="ORCHESTRATOR_ERROR",
-                description=technical_error_msg,
+                description=f"Caught top-level exception: {type(e).__name__} - {str(e)}",
                 source="DynamicOrchestrator.process_prompt",
-                metadata={"error": str(e), "goal": prompt}
+                metadata={"error_type": type(e).__name__, "error_message": str(e), "goal": prompt, "full_error_repr": repr(str(e))}
             )
+
             if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                 try:
-                    user_friendly_error = await rephrase_error_message_conversationally(
-                        technical_error_message=str(e),
+                    # Pass the original str(e) to rephrasing
+                    rephrased_error_message = await rephrase_error_message_conversationally(
+                        technical_error_message=str(e), # Use str(e) directly
                         original_user_query=prompt,
                         llm_provider=self.action_executor.code_service.llm_provider
                     )
-                    user_friendly_response = user_friendly_error
+                    if rephrased_error_message: # Check if rephrasing returned a non-empty string
+                        user_friendly_response = rephrased_error_message
+                    else:
+                        logger.warning(f"Rephrasing returned empty for error: {str(e)}. Using technical message.")
+                        # user_friendly_response remains technical_error_msg
                 except Exception as e_rephrase: # pragma: no cover
                     logger.error(f"Error rephrasing top-level orchestrator error: {e_rephrase}", exc_info=True)
+                    # user_friendly_response remains technical_error_msg in case of rephrasing failure
+            else:
+                logger.warning("LLM provider not available for error rephrasing in top-level exception handler.")
+
             # Defensive check: Ensure a string is always returned for the message
-            if user_friendly_response is None:
-                logger.error(f"Orchestrator's user_friendly_response was None unexpectedly. Defaulting to original technical_error_msg. Original error: {str(e)}")
-                user_friendly_response = technical_error_msg # Fallback to the original technical message
+            if user_friendly_response is None: # Should not happen if technical_error_msg is the default
+                logger.error(f"Orchestrator's user_friendly_response was None unexpectedly. Defaulting. Original error: {str(e)}")
+                user_friendly_response = technical_error_msg
+
             return False, user_friendly_response
 
     async def get_current_progress(self) -> Dict[str, Any]:

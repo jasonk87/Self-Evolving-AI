@@ -54,6 +54,7 @@ TASK_MODELS: Dict[str, Optional[str]] = {
     "fact_extraction": DEFAULT_MODEL,              # For extracting facts for autonomous learning
     "tool_design": DEFAULT_MODEL,                # For designing tool components (name, params, code) from a description
     "tool_creation": DEFAULT_MODEL,              # For the AI to create new tools
+    "conversational_response": os.getenv("CONVERSATIONAL_MODEL", DEFAULT_MODEL), # For direct conversational replies
     # Add other tasks here as needed, e.g.:
     # "translation": "another_model:latest",
 }

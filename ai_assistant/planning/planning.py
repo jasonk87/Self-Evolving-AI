@@ -350,11 +350,11 @@ Example:
 User goal: "That idea about improving the calculator (sugg_calc123) is great, approve it."
 Plan:
 [
-  {
+  {{
     "tool_name": "manage_suggestion_status",
     "args": ["sugg_calc123", "approve", "User stated it's a great idea."],
-    "kwargs": {}
-  }
+    "kwargs": {{}}
+  }}
 ]
 
 **Guidance for Iterating on User Projects (Based on Feedback):**
@@ -381,27 +381,27 @@ If the user provides feedback on a project they are working on (e.g., "My 'WebAp
 
 Conceptual Schema for `propose_project_file_update` (for your understanding when planning):
 ```json
-// "propose_project_file_update": {
+// "propose_project_file_update": {{
 //   "description": "Proposes changes to a user's project file. Initiates a backup, diff generation, and a two-critic review process. Changes are only applied if approved.",
 //   "parameters": [
-//     {"name": "absolute_target_filepath", "type": "str", "description": "The full, absolute path to the file to be modified or created."},
-//     {"name": "new_file_content", "type": "str", "description": "The complete new content for the file."},
-//     {"name": "change_description", "type": "str", "description": "A description of why this change is being proposed (e.g., user's request, bug fix details). This is used for the review context."}
+//     {{"name": "absolute_target_filepath", "type": "str", "description": "The full, absolute path to the file to be modified or created."}},
+//     {{"name": "new_file_content", "type": "str", "description": "The complete new content for the file."}},
+//     {{"name": "change_description", "type": "str", "description": "A description of why this change is being proposed (e.g., user's request, bug fix details). This is used for the review context."}}
 //   ],
-//   "returns": {"type": "dict", "description": "{'status': 'success'/'error'/'rejected', 'message': str}"}
-// }
+//   "returns": {{"type": "dict", "description": "{{'status': 'success'/'error'/'rejected', 'message': str}}"}}
+// }}
 ```
 
 Example for Iterating on a User Project:
 User goal: "In my 'WebAppX' project, the `handle_request` function in `api/routes.py` has a bug when the input is empty. Fix it to return a 400 error."
 Assumed Plan (tool names are illustrative; ensure they match available tools):
 [
-  {
+  {{
     "tool_name": "get_project_file_content",
     "args": ["WebAppX", "api/routes.py"],
-    "kwargs": {}
-  },
-  {
+    "kwargs": {{}}
+  }},
+  {{
     "tool_name": "call_code_service_modify_code",
     "args": [
         null, // module_path (can be null if full file content is provided as existing_code)
@@ -410,17 +410,17 @@ Assumed Plan (tool names are illustrative; ensure they match available tools):
         "Fix the handle_request function to return a 400 error when input is empty.", // modification_instruction
         "SELF_FIX_TOOL" // context for CodeService
     ],
-    "kwargs": {}
-  },
-  {
+    "kwargs": {{}}
+  }},
+  {{
     "tool_name": "propose_project_file_update",
     "args": [
         "[[step_1_output.file_path]]",
         "[[step_2_output.modified_code_string]]",
         "User request: Fix bug in handle_request in api/routes.py for WebAppX project regarding empty input."
     ],
-    "kwargs": {}
-  }
+    "kwargs": {{}}
+  }}
 ]
 Note: The `propose_project_file_update` tool initiates a process that includes backing up the original file (if it exists), generating a diff of the changes, subjecting the changes to a two-critic review, and only applying the changes if unanimously approved. This ensures safety and quality for modifications to user project files. The `[[step_1_output.file_path]]` from `get_project_file_content` provides the absolute path, suitable for `propose_project_file_update`.
 
@@ -444,7 +444,7 @@ Example 2 (Specific Task Status):
 User goal: "Tell me about task task_abc123."
 Plan:
 [
-  {{"tool_name": "get_item_details_by_id", "args": ["task_abc123", "task"], "kwargs": {}}}
+  {{"tool_name": "get_item_details_by_id", "args": ["task_abc123", "task"], "kwargs": {{}}}}
 ]
 
 Example 3 (Specific Project by Name - requires ID lookup first if tool expects ID):
