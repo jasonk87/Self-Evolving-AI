@@ -3,3 +3,4 @@ aiohttp
 duckduckgo_search
 prompt_toolkit
 google-api-python-client
+Flask
