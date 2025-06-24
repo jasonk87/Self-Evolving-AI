@@ -5,6 +5,7 @@ import sys
 import json
 import inspect
 import asyncio
+# traceback removed - no longer needed for this specific issue
 from typing import Callable, Dict, Any, Optional, Tuple, List # TYPE_CHECKING removed
 from ai_assistant.config import is_debug_mode, get_data_dir # Import get_data_dir
 from ai_assistant.core.self_modification import get_function_source_code

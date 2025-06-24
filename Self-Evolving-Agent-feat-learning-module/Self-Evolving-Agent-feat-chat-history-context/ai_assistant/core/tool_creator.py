@@ -145,16 +145,16 @@ if __name__ == '__main__':
         return msg
 
 # Conceptual schema for how the AI would understand this 'create_new_tool' function as a tool:
-CREATE_NEW_TOOL_SCHEMA = {{
+CREATE_NEW_TOOL_SCHEMA = {
     "name": "create_new_tool",
     "description": "Creates a new Python tool file. Provide tool name, description, parameters, Python code for its function body, return type, and required imports. The tool is saved but may need manual activation.",
     "parameters": [
-        {{"name": "tool_name", "type": "str", "description": "Name of the tool (Python identifier, e.g., 'file_reader')."}},
-        {{"name": "tool_description", "type": "str", "description": "What the tool does."}},
-        {{"name": "parameters", "type": "list", "description": "List of dicts for parameters: [{'name': 'param_name', 'type': 'param_type', 'description': 'param_desc'}]."}},
-        {{"name": "function_body_code", "type": "str", "description": "Python code for the function body. E.g., 'return path.exists()'."}},
-        {{"name": "return_type", "type": "str", "description": "Return type hint (e.g., 'bool', 'str'). Defaults to 'Any'."}},
-        {{"name": "required_imports", "type": "list", "description": "Optional list of import strings. E.g., ['import os.path']."}},
-        {{"name": "return_description", "type": "str", "description": "Optional description of the return value for the docstring."}}
+        {"name": "tool_name", "type": "str", "description": "Name of the tool (Python identifier, e.g., 'file_reader')."},
+        {"name": "tool_description", "type": "str", "description": "What the tool does."},
+        {"name": "parameters", "type": "list", "description": "List of dicts for parameters: [{'name': 'param_name', 'type': 'param_type', 'description': 'param_desc'}]."},
+        {"name": "function_body_code", "type": "str", "description": "Python code for the function body. E.g., 'return path.exists()'."},
+        {"name": "return_type", "type": "str", "description": "Return type hint (e.g., 'bool', 'str'). Defaults to 'Any'."},
+        {"name": "required_imports", "type": "list", "description": "Optional list of import strings. E.g., ['import os.path']."},
+        {"name": "return_description", "type": "str", "description": "Optional description of the return value for the docstring."}
     ]
-}}
+}

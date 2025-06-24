@@ -476,7 +476,7 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
     @patch('ai_assistant.core.orchestrator.log_event')
     @patch('ai_assistant.core.orchestrator.summarize_tool_result_conversationally', new_callable=AsyncMock)
     @patch('ai_assistant.core.orchestrator.rephrase_error_message_conversationally', new_callable=AsyncMock)
-    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary')
+    @patch('ai_assistant.core.orchestrator.DynamicOrchestrator._generate_execution_summary') # Reverted to default MagicMock
     async def test_process_prompt_hierarchical_plan_execution_tool_fails(
         self, mock_gen_exec_summary, mock_rephraser, mock_summarizer, mock_log_event, mock_debug_mode
     ):
@@ -501,7 +501,24 @@ class TestDynamicOrchestrator(unittest.IsolatedAsyncioTestCase):
         # Summarizer might still be called, or rephraser if summarizer fails on error
         mock_summarizer.return_value = None # Simulate summarizer not handling this error type directly
         mock_rephraser.return_value = "The project execution step itself encountered a problem: Tool execute_project_plan had an internal error."
-        mock_gen_exec_summary.return_value = "::Technical Summary Tool-Fail::"
+
+        # Configure mock_gen_exec_summary with a side_effect
+        def mock_side_effect_func(*args, **kwargs):
+            print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_CALLED_WITH_ARGS: {args}")
+            print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_CALLED_WITH_KWARGS: {kwargs}")
+            # Ensure that the first argument (self) is handled if it's part of *args
+            # The actual plan is args[1] if self is args[0], or args[0] if self is not included (e.g. unbound method patch)
+            # Based on @patch for an instance method, 'self' of DynamicOrchestrator won't be part of *args here.
+            # So, args[0] is 'plan', args[1] is 'results'.
+            if len(args) > 0:
+                 print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_PLAN_ARG_TYPE: {type(args[0])}")
+                 print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_PLAN_ARG_VALUE: {str(args[0])[:200]}") # Print first 200 chars
+            if len(args) > 1:
+                 print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_RESULTS_ARG_TYPE: {type(args[1])}")
+                 print(f"DEBUG_MOCK_GEN_EXEC_SUMMARY_RESULTS_ARG_VALUE: {str(args[1])[:200]}") # Print first 200 chars
+            return "::Technical Summary Tool-Fail::"
+
+        mock_gen_exec_summary.side_effect = mock_side_effect_func
 
         success, response = await self.orchestrator.process_prompt(user_prompt)
 

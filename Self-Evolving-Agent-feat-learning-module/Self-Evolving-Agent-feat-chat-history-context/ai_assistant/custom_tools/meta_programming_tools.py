@@ -208,7 +208,7 @@ except Exception as e_get_dir: # pragma: no cover
     # this will remain None or use the output of the local get_generated_tools_path().
 
 KNOWN_TOOL_DIRECTORIES = [
-    CUSTOM_TOOLS_DIR_PATH, # For tools directly in custom_tools
+    CUSTOM_TOOLS_DIR_PATH,
     GENERATED_TOOLS_DIR_FOR_FINDER # For tools in the generated directory
 ]
 # Filter out None entries if get_generated_tools_dir failed completely

@@ -374,7 +374,10 @@ class DynamicOrchestrator:
                 else:
                     processed_results.append(res_item)
                     if isinstance(res_item, Exception) or \
-                       (isinstance(res_item, dict) and (res_item.get("error") or res_item.get("ran_successfully") is False)):
+                       (isinstance(res_item, dict) and (
+                           res_item.get("error") or \
+                           res_item.get("ran_successfully") is False or \
+                           res_item.get("overall_status") == "failed" )):
                         overall_success_of_plan = False
 
             if final_plan_attempted and len(processed_results) < len(final_plan_attempted): # pragma: no cover
@@ -404,7 +407,7 @@ class DynamicOrchestrator:
             if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                 if self.current_plan or processed_results:
                     try:
-                        logger.info(f"Attempting to generate conversational summary for goal: {prompt}")
+                        print("ORCHESTRATOR_DEBUG: Attempting to call summarize_tool_result_conversationally")
                         conversational_response = await summarize_tool_result_conversationally(
                             original_user_query=prompt,
                             executed_plan_steps=self.current_plan if self.current_plan else [],
@@ -412,17 +415,34 @@ class DynamicOrchestrator:
                             overall_success=overall_success_of_plan,
                             llm_provider=self.action_executor.code_service.llm_provider
                         )
-                        logger.info(f"Conversational summary generated for goal '{prompt}'.")
-                    except Exception as e_summary: # pragma: no cover
-                        logger.error(f"Error generating conversational summary: {e_summary}", exc_info=True)
-                        conversational_response = None
+                        print(f"ORCHESTRATOR_DEBUG: Call to summarize_tool_result_conversationally SUCCEEDED. conversational_response='{conversational_response}'")
+                    except Exception as sum_ex: # pragma: no cover
+                        logger.error(f"Orchestrator: EXCEPTION during summarize_tool_result_conversationally: {sum_ex}", exc_info=True)
+                        conversational_response = f"DEBUG_SUMMARIZER_CALL_EXCEPTION: Type={type(sum_ex).__name__}, Msg='{str(sum_ex)}'"
             else: # pragma: no cover
                 logger.warning("LLM provider not available via ActionExecutor/CodeService for conversational summary.")
+                print("ORCHESTRATOR_DEBUG: LLM provider for summarizer not available.") # Added for clarity
 
-            if conversational_response:
+            print(f"ORCHESTRATOR_DEBUG_CONV_RESPONSE: Type={type(conversational_response)}, Value='{conversational_response}'")
+
+            if conversational_response and not (isinstance(conversational_response, str) and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION")):
                 response = conversational_response
-            else: # conversational_response is None
-                execution_summary = self._generate_execution_summary(self.current_plan, processed_results)
+            else: # conversational_response is None OR it's our debug exception string
+                if conversational_response and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION"):
+                    print(f"ORCHESTRATOR_DEBUG: Summarizer failed with exception, proceeding with debug string: {conversational_response}")
+                else: # conversational_response was None (e.g. mock returned None, or summarizer feature off)
+                    print("ORCHESTRATOR_DEBUG: conversational_response is None (or empty), proceeding to generate technical fallback.")
+
+                execution_summary_val = "" # Default to empty string
+                try:
+                    # ORCHESTRATOR_DEBUG print kept, but call signature reverted
+                    print("ORCHESTRATOR_DEBUG: Attempting to call _generate_execution_summary with correct ARGS")
+                    execution_summary_val = self._generate_execution_summary(self.current_plan, processed_results) # Reverted call
+                except Exception as es_ex:
+                    logger.error(f"Error generating execution summary: {es_ex}", exc_info=True)
+                    execution_summary_val = "[Execution summary generation failed]" # No leading space for placeholder
+                print(f"ORCHESTRATOR_DEBUG: execution_summary_val after call = '{execution_summary_val}'")
+
                 if overall_success_of_plan:
                     response_parts = ["Successfully completed the task."]
                     if self.current_plan and len(self.current_plan) == 1 and processed_results:
@@ -440,12 +460,9 @@ class DynamicOrchestrator:
                         response_parts.append(f"Final step result: {result_str}")
 
                     response = " ".join(response_parts)
-                    if response and not response.endswith(".") and not response.endswith("\n"): response += "."
-                    response += execution_summary
-                else: # overall_success_of_plan is False, and conversational_summary was None
-                    # 'response' should have been set by the error handling block for rephrasing
-                    # If rephrasing failed, it defaults to "I encountered an issue."
-                    # This ensures technical_error_detail is defined for rephrasing
+                    if response and not response.endswith(('.', '\n', '!', '?')): response += "."
+                    response += execution_summary_val # Use the resilient value
+                else: # overall_success_of_plan is False, and conversational_summary was None or debug string
                     technical_error_detail = "An unspecified error occurred during task execution."
                     if processed_results:
                         for res_item in processed_results: # Find the first error
@@ -461,23 +478,50 @@ class DynamicOrchestrator:
                                     technical_error_detail = f"A tool reported an error: {str(err_detail)}"
                                     break
 
-                    current_error_response = "I encountered an issue." # Default before rephrasing
+                    current_error_response = "Default error before rephrasing logic" # Initialize for debug
                     if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                         try:
-                            rephrased_error = await rephrase_error_message_conversationally(
-                                technical_error_message=technical_error_detail,
+                            print("ORCHESTRATOR_DEBUG: Attempting to call rephrase_error_message_conversationally (was _handle_failed_plan_execution_or_step)")
+                            # If conversational_response was the debug string, use original technical_error_detail for rephrasing
+                            # Otherwise, if it was None, technical_error_detail is already set.
+                            error_to_rephrase = technical_error_detail
+                            if conversational_response and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION"):
+                                # This implies the summarizer itself failed, not the plan. The error to rephrase is in conversational_response.
+                                error_to_rephrase = conversational_response # Pass the debug string itself for rephrasing
+
+                            rephrased_error_val = await rephrase_error_message_conversationally(
+                                technical_error_message=error_to_rephrase,
                                 original_user_query=prompt,
                                 llm_provider=self.action_executor.code_service.llm_provider
                             )
-                            if rephrased_error: # Use rephrased error if available
-                                current_error_response = rephrased_error
-                        except Exception as e_rephrase: # pragma: no cover
-                            logger.error(f"Error rephrasing execution failure: {e_rephrase}", exc_info=True)
-                            # current_error_response remains "I encountered an issue."
-                    response = current_error_response
-                    # Ensure summary is added only if conversational_response was None
-                    if response and not response.endswith(".") and not response.endswith("\n"): response += "."
-                    response += execution_summary
+                            if rephrased_error_val: # Use rephrased error if available
+                                current_error_response = rephrased_error_val
+                            else: # Rephraser returned None or empty
+                                current_error_response = technical_error_detail # Fallback to technical error if rephrasing yields nothing
+                            print(f"ORCHESTRATOR_DEBUG: Call to rephrase_error_message_conversationally SUCCEEDED. current_error_response='{current_error_response}'")
+                        except Exception as hfp_ex: # pragma: no cover
+                            logger.error(f"Orchestrator: EXCEPTION during rephrase_error_message_conversationally: {hfp_ex}", exc_info=True)
+                            current_error_response = f"DEBUG_HANDLE_FAILED_PLAN_CALL_EXCEPTION: Type={type(hfp_ex).__name__}, Msg='{str(hfp_ex)}'"
+                    else:
+                        current_error_response = technical_error_detail # No LLM for rephrasing, use technical detail
+
+                    print(f"ORCHESTRATOR_DEBUG_CURRENT_ERROR_RESPONSE_AFTER_HANDLE: Type={type(current_error_response)}, Value='{current_error_response}'")
+                    response_to_build = current_error_response
+
+                    try:
+                        if response_to_build and isinstance(response_to_build, str) and response_to_build.strip() and \
+                           not response_to_build.endswith(('.', '!', '?', '\n', ':')):
+                            response_to_build += "."
+
+                        if execution_summary_val:
+                            response_to_build += execution_summary_val
+
+                        response = response_to_build
+
+                    except Exception as inner_ex:
+                        logger.error(f"Orchestrator: INNER EXCEPTION during summary append: {inner_ex}", exc_info=True)
+                        response = f"DEBUG_INNER_EXCEPTION_CAUGHT: Type={type(inner_ex).__name__}, Msg='{str(inner_ex)}'. SummaryValWas='{execution_summary_val}'"
+
             return overall_success_of_plan, response
 
         except Exception as e:

@@ -78,11 +78,17 @@ CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP = False # Default to False to preserve data
 DEBUG_MODE = True
 
 # --- Google Custom Search API Configuration ---
-# IMPORTANT: These are sensitive keys.
-# Option 1: Set them as environment variables (GOOGLE_API_KEY, GOOGLE_CSE_ID) - Recommended for production.
-# Option 2: Set them here directly for local development. If you do, ensure this file is appropriately .gitignored or manage secrets carefully.
-GOOGLE_API_KEY: Optional[str] = "AIzaSyCx8GehlHEy21kg156f3PON3mfCRAW60YI"
-GOOGLE_CSE_ID: Optional[str] = "3354e92e98ab54b31"
+# IMPORTANT: For security, it is recommended to set your GOOGLE_API_KEY and
+# GOOGLE_CSE_ID as environment variables in your deployment environment.
+# The application will try to load them from there.
+# Example (in bash):
+# export GOOGLE_API_KEY="your_actual_api_key"
+# export GOOGLE_CSE_ID="your_actual_cse_id"
+#
+# Load Google API Key from environment variable GOOGLE_API_KEY
+GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
+# Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
+GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 
 def is_debug_mode() -> bool:
     """Returns True if debug mode is enabled in config."""
@@ -191,5 +197,10 @@ if __name__ == '__main__':
     print(f"Projects directory: {projects_dir}")
     assert os.path.exists(projects_dir)
     assert os.path.basename(projects_dir) == PROJECTS_SUBDIR
+
+    # Test 9: Check environment variable loading (these will be None if not set in test env)
+    print(f"GOOGLE_API_KEY from env: {GOOGLE_API_KEY}")
+    print(f"GOOGLE_CSE_ID from env: {GOOGLE_CSE_ID}")
+
 
     print("--- Configuration Tests Passed ---")
