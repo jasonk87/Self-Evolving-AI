@@ -282,8 +282,9 @@ class OllamaProvider:
         # Ensure os is imported if you use os.path.join here
         # For now, assuming OLLAMA_API_ENDPOINT is a full URL and we derive base_url
         self.base_url = base_url or OLLAMA_API_ENDPOINT.rsplit('/api/', 1)[0]
-        self.generate_endpoint = os.path.join(self.base_url, "api/generate")
-        self.chat_endpoint = os.path.join(self.base_url, "api/chat")
+        # Ensure forward slashes for URL construction, regardless of OS
+        self.generate_endpoint = f"{self.base_url}/api/generate"
+        self.chat_endpoint = f"{self.base_url}/api/chat"
 
 
     async def invoke_ollama_model_async(
