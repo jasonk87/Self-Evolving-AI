@@ -1270,5 +1270,3 @@ if __name__ == '__main__': # pragma: no cover
     except Exception as e:
         print_formatted_text(ANSI(color_text(f"\nCLI terminated due to unexpected error: {e}", CLIColors.ERROR_MESSAGE)))
         traceback.print_exc()
-
-[end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/communication/cli.py]
