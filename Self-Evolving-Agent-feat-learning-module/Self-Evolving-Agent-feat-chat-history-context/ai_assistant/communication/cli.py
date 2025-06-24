@@ -59,39 +59,34 @@ _notification_manager_cli_instance: Optional[NotificationManager] = None # Added
 
 # Helper function to print notifications
 def _print_notifications_list(notifications: List[Notification], title: str):
-    print_formatted_text(format_header(title)) # Corrected
+    print_formatted_text(format_header(title))
     if not notifications:
-        print_formatted_text(ANSI(color_text("  No notifications to display for this filter.", CLIColors.SYSTEM_MESSAGE))) # Corrected: INFO_MESSAGE to SYSTEM_MESSAGE
+        print_formatted_text(ANSI(color_text("  No notifications to display for this filter.", CLIColors.SYSTEM_MESSAGE)))
         return
     for n in notifications:
-        # Ensure timestamp is timezone-aware before formatting, or handle naive ones
         ts_aware = n.timestamp
-        if ts_aware.tzinfo is None: # If naive, assume local and convert to UTC for display consistency, or just display as is
-            # For simplicity, displaying as is, but be mindful of timezone handling in real apps
+        if ts_aware.tzinfo is None:
              ts_str = ts_aware.strftime('%Y-%m-%d %H:%M:%S')
         else:
-             ts_str = ts_aware.strftime('%Y-%m-%d %H:%M:%S %Z') # More precise timestamp if tz-aware
+             ts_str = ts_aware.strftime('%Y-%m-%d %H:%M:%S %Z')
 
         summary_text = n.summary_message
-        max_len_summary = 120 # Max length for the summary part of the line
+        max_len_summary = 120
 
-        # Construct the core message string first
         core_message = f"[{ts_str}] ({n.status.name}) {n.event_type.name}: {summary_text}"
 
-        # Truncate the core_message if it's too long
         if len(core_message) > max_len_summary:
             core_message = core_message[:max_len_summary - 3] + "..."
 
         rel_item_info = ""
         if n.related_item_id:
             rel_item_info += f" (Related ID: {n.related_item_id}"
-            if n.related_item_type: # related_item_type can be None
+            if n.related_item_type:
                 rel_item_info += f", Type: {n.related_item_type}"
             rel_item_info += ")"
 
-        # Print ID on one line, details on the next, indented.
         print_formatted_text(ANSI(color_text(f"- ID: {n.notification_id}", CLIColors.SYSTEM_MESSAGE)))
-        print_formatted_text(ANSI(color_text(f"  {core_message}{rel_item_info}", CLIColors.SYSTEM_MESSAGE))) # Corrected: INFO_MESSAGE to SYSTEM_MESSAGE
+        print_formatted_text(ANSI(color_text(f"  {core_message}{rel_item_info}", CLIColors.SYSTEM_MESSAGE)))
 
 
 def _is_search_like_query(user_input: str) -> bool: # pragma: no cover
@@ -111,11 +106,8 @@ def _is_search_like_query(user_input: str) -> bool: # pragma: no cover
 async def _handle_code_generation_and_registration(
     tool_description_for_generation: str,
     task_manager: Optional[TaskManager],
-    notification_manager: Optional[NotificationManager] # Added notification_manager
+    notification_manager: Optional[NotificationManager]
 ):
-    """
-    Handles the process of generating code via CodeService, saving it, and registering it as a tool.
-    """
     if not tool_description_for_generation: # pragma: no cover
         print_formatted_text(ANSI(color_text("Error: Tool description for generation is empty.", CLIColors.ERROR_MESSAGE)))
         return
@@ -128,8 +120,8 @@ async def _handle_code_generation_and_registration(
     code_service = CodeService(
         llm_provider=default_llm_provider,
         self_modification_service=default_self_modification_service,
-        task_manager=task_manager, # Use passed task_manager
-        notification_manager=notification_manager # Pass notification_manager
+        task_manager=task_manager,
+        notification_manager=notification_manager
     )
 
     print(color_text(f"Requesting CodeService to generate new tool (context='NEW_TOOL')...", CLIColors.DEBUG_MESSAGE))
@@ -650,7 +642,7 @@ async def start_cli():
                                 message_core = f"[{ts}] {n.event_type.name}: {n.summary_message[:max_summary_len-3]}..."
 
                             full_notification_line = f"- {message_core} (ID: {n.notification_id})"
-                            print_formatted_text(ANSI(color_text(full_notification_line, CLIColors.SYSTEM_MESSAGE))) # Corrected
+                            print_formatted_text(ANSI(color_text(full_notification_line, CLIColors.SYSTEM_MESSAGE)))
                             displayed_ids.append(n.notification_id)
 
                         if displayed_ids:
@@ -1078,9 +1070,9 @@ async def start_cli():
                         user_goal_for_plan = task.details.get('user_goal', 'N/A')
                         current_idx = task.details.get('current_plan_step_index', 0)
 
-                        print_formatted_text(ANSI(color_text(f"Project Name: {project_name}", CLIColors.SYSTEM_MESSAGE))) # Corrected: INFO_MESSAGE to SYSTEM_MESSAGE
-                        print_formatted_text(ANSI(color_text(f"Original User Goal: {user_goal_for_plan}", CLIColors.SYSTEM_MESSAGE))) # Corrected: INFO_MESSAGE to SYSTEM_MESSAGE
-                        print_formatted_text(ANSI(color_text(f"Current Step Index: {current_idx}", CLIColors.SYSTEM_MESSAGE))) # Corrected: INFO_MESSAGE to SYSTEM_MESSAGE
+                        print_formatted_text(ANSI(color_text(f"Project Name: {project_name}", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text(f"Original User Goal: {user_goal_for_plan}", CLIColors.SYSTEM_MESSAGE)))
+                        print_formatted_text(ANSI(color_text(f"Current Step Index: {current_idx}", CLIColors.SYSTEM_MESSAGE)))
 
                         plan_step_statuses = task.details.get('plan_step_statuses')
                         if plan_step_statuses and isinstance(plan_step_statuses, list):
@@ -1093,7 +1085,7 @@ async def start_cli():
                                     step_prefix = color_text("✔ ", CLIColors.SUCCESS) + " "
 
                                 print_formatted_text(ANSI(color_text(f"{step_prefix}Step {step_info.get('step_id', 'N/A')}: {step_info.get('description', 'N/A')}", CLIColors.COMMAND)))
-                                print_formatted_text(ANSI(color_text(f"      Status: {step_info.get('status', 'N/A')}", CLIColors.SYSTEM_MESSAGE))) # Corrected
+                                print_formatted_text(ANSI(color_text(f"      Status: {step_info.get('status', 'N/A')}", CLIColors.SYSTEM_MESSAGE)))
                                 if step_info.get('status') == 'failed' and step_info.get('error_message'):
                                     print_formatted_text(ANSI(color_text(f"        Error: {step_info['error_message']}", CLIColors.ERROR_MESSAGE)))
                                 if step_info.get('output_preview'):
@@ -1116,6 +1108,36 @@ async def start_cli():
                                 if is_debug_mode(): print_formatted_text(ANSI(color_text(f"CLI: Autonomous action initiated for suggestion: {selected_suggestion.get('suggestion_id')}", CLIColors.DEBUG_MESSAGE)))
 
                                 print_formatted_text(format_message("INFO", f"Autonomous action attempted for suggestion ID: {selected_suggestion.get('suggestion_id')}. Check logs for details.", CLIColors.SUCCESS))
+                                # <<< NEW CODE TO ADD STARTS HERE >>>
+                                action_result = selected_suggestion.get('_action_result')
+                                if action_result and isinstance(action_result, dict): # Ensure it's a dictionary
+                                    # Try to get 'overall_message' first, then 'message' as a fallback
+                                    result_message = action_result.get('overall_message',
+                                                                       action_result.get('message', 'No detailed result message available.'))
+
+                                    # Try to get 'overall_status' (bool) first, then 'status' (str) as a fallback
+                                    raw_status = action_result.get('overall_status', action_result.get('status', False))
+
+                                    color = CLIColors.SYSTEM_MESSAGE # Default color
+                                    if isinstance(raw_status, bool):
+                                        if raw_status: # True for overall_status (success)
+                                            color = CLIColors.SUCCESS
+                                        else: # False for overall_status (failure)
+                                            color = CLIColors.ERROR_MESSAGE
+                                    elif isinstance(raw_status, str): # For 'status' string like PENDING_EXECUTION
+                                        if "SUCCESS" in raw_status.upper():
+                                            color = CLIColors.SUCCESS
+                                        elif "PENDING" in raw_status.upper():
+                                            color = CLIColors.SYSTEM_MESSAGE
+                                        elif "FAIL" in raw_status.upper():
+                                            color = CLIColors.ERROR_MESSAGE
+
+                                    print_formatted_text(format_header("Autonomous Action Result"))
+                                    print_formatted_text(format_message("RESULT", result_message, color))
+                                elif action_result: # It exists but is not a dict
+                                    print_formatted_text(format_header("Autonomous Action Result"))
+                                    print_formatted_text(format_message("RESULT", str(action_result), CLIColors.SYSTEM_MESSAGE))
+                                # <<< NEW CODE TO ADD ENDS HERE >>>
                             else:
                                 print_formatted_text(format_message("INFO", "No suitable suggestion was selected for autonomous action at this time.", CLIColors.SYSTEM_MESSAGE))
                         else:
@@ -1248,3 +1270,5 @@ if __name__ == '__main__': # pragma: no cover
     except Exception as e:
         print_formatted_text(ANSI(color_text(f"\nCLI terminated due to unexpected error: {e}", CLIColors.ERROR_MESSAGE)))
         traceback.print_exc()
+
+[end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/communication/cli.py]

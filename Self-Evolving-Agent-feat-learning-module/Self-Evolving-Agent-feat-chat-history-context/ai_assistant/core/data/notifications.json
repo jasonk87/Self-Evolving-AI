@@ -1,5 +1,18 @@
 [
     {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Test task 2, completed....' COMPLETED_SUCCESSFULLY. Reason: All done.",
+        "notification_id": "notify_b0117b5e25",
+        "timestamp": "2025-06-24T15:15:40.659954+00:00",
+        "status": "READ",
+        "related_item_id": "task_b30c1ff0",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Test task 2, completed."
+        }
+    },
+    {
         "event_type": "TASK_FAILED_UNKNOWN",
         "summary_message": "Task 'Generate_code: NEW_TOOL, Target: a tool that takes...' FAILED_UNKNOWN. Reason: LLM provided no code.",
         "notification_id": "notify_efdc5ebdde",
@@ -57,18 +70,5 @@
         "related_item_id": "task_d967d7db",
         "related_item_type": "task",
         "details_payload": {}
-    },
-    {
-        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
-        "summary_message": "Task 'Test task 2, completed....' COMPLETED_SUCCESSFULLY. Reason: All done.",
-        "notification_id": "notify_b0117b5e25",
-        "timestamp": "2025-06-24T13:12:22.488326+00:00",
-        "status": "UNREAD",
-        "related_item_id": "task_b30c1ff0",
-        "related_item_type": "task",
-        "details_payload": {
-            "task_type": "LEARNING_NEW_FACT",
-            "description": "Test task 2, completed."
-        }
     }
 ]

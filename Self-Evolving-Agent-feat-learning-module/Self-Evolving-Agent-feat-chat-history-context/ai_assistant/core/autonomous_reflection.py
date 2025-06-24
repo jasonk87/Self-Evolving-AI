@@ -745,19 +745,31 @@ async def select_suggestion_for_autonomous_action( # Made async
         action_type = suggestion.get("action_type")
         action_details = suggestion.get("action_details")
 
-        priority_score_for_log = suggestion.pop("_priority_score", None)
+        priority_score_for_log = suggestion.pop("_priority_score", None) # Remove temp score
 
         if action_type == "UPDATE_TOOL_DESCRIPTION":
             if isinstance(action_details, dict) and \
                isinstance(action_details.get("tool_name"), str) and action_details.get("tool_name") and \
                action_details.get("new_description") is not None and isinstance(action_details.get("new_description"), str):
                 logger.info(f"Selected suggestion ID {suggestion.get('suggestion_id', 'N/A')} (Update Tool Desc) with priority score {priority_score_for_log}.")
+                # Placeholder for actual execution - for now, just mark as PENDING
+                suggestion['_action_result'] = {
+                    'status': 'PENDING_EXECUTION',
+                    'message': 'Action selected for UPDATE_TOOL_DESCRIPTION, but not executed by select_suggestion_for_autonomous_action. Execution should be handled by caller.',
+                    'details': action_details
+                }
                 return suggestion
         
         elif action_type == "CREATE_NEW_TOOL":
             if isinstance(action_details, dict) and \
                isinstance(action_details.get("tool_description_prompt"), str) and action_details.get("tool_description_prompt"):
                 logger.info(f"Selected suggestion ID {suggestion.get('suggestion_id', 'N/A')} (Create New Tool) with priority score {priority_score_for_log}.")
+                # Placeholder for actual execution
+                suggestion['_action_result'] = {
+                    'status': 'PENDING_EXECUTION',
+                    'message': 'Action selected for CREATE_NEW_TOOL, but not executed by select_suggestion_for_autonomous_action. Execution should be handled by caller.',
+                    'details': action_details
+                }
                 return suggestion
 
         elif action_type == "MODIFY_TOOL_CODE":
@@ -777,6 +789,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                             f"{suggestion.get('suggestion_id', 'N/A')} (Priority: {priority_score_for_log}).")
                 
                 code_mod_result = await apply_code_modification(code_mod_params)
+                suggestion['_action_result'] = code_mod_result # Store the result
                 
                 overall_success_from_apply = code_mod_result['overall_status']
                 detailed_message_from_apply = code_mod_result['overall_message']
@@ -836,7 +849,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                         "priority_score": priority_score_for_log
                     }
                 )
-                return suggestion
+                return suggestion # Return the suggestion with the action_result
             else:
                 logger.warning(f"Skipping MODIFY_TOOL_CODE suggestion {suggestion.get('suggestion_id', 'N/A')} due to missing/invalid action_details: {action_details}")
         
@@ -960,3 +973,4 @@ if __name__ == '__main__':
     asyncio.run(run_select_suggestion_test3())
             
     print("\n--- select_suggestion_for_autonomous_action tests complete ---")
+# Removed duplicated [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/core/autonomous_reflection.py] marker

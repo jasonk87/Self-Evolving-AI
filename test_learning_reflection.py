@@ -20,8 +20,13 @@ try:
     from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle
     from ai_assistant.tools.tool_system import tool_system_instance # Use the global instance
     from ai_assistant.core.notification_manager import NotificationManager
-    # SuggestionManager class is not used directly by run_self_reflection_cycle based on its signature
-    # from ai_assistant.core.suggestion_manager import SuggestionManager
+    # SuggestionManager is not directly passed to run_self_reflection_cycle,
+    # but it is imported and used by the CLI's /review_insights command which calls
+    # run_self_reflection_cycle and then select_suggestion_for_autonomous_action.
+    # For this test, if run_self_reflection_cycle itself doesn't use it, we might not need it.
+    # However, select_suggestion_for_autonomous_action (called in __main__ of autonomous_reflection.py)
+    # might be implicitly tested if run_self_reflection_cycle saves suggestions that __main__ then picks up.
+    # For now, let's assume SuggestionManager is not needed for the direct call to run_self_reflection_cycle.
     print("Successfully imported test components.")
 except Exception as import_e:
     print(f"Error importing components: {type(import_e).__name__} - {import_e}")
@@ -48,25 +53,17 @@ try:
     notification_manager = NotificationManager()
     print("NotificationManager for reflection test initialized.")
 
-    # SuggestionManager instance is not passed to run_self_reflection_cycle
-    # suggestion_manager_instance = SuggestionManager()
-    # print("SuggestionManager for reflection test initialized.")
-
     print("Using global tool_system_instance for available tools.")
-    # ToolSystem is initialized when its module is first imported (due to global instance creation)
-    # Ensure it's ready by listing tools, which also populates its registry from discovery if not already done.
-    available_tools = tool_system_instance.list_tools()
-    if not available_tools:
+    available_tools_data = tool_system_instance.list_tools()
+    if not available_tools_data:
         print("Warning: No tools available from tool_system_instance for reflection cycle.")
 
-    print(f"Number of tools available for reflection: {len(available_tools)}")
+    print(f"Number of tools available for reflection: {len(available_tools_data)}")
 
-    # run_self_reflection_cycle is synchronous but calls async LLM functions internally using asyncio.run()
-    # Corrected keyword argument for available_tools
+    # Corrected keyword argument: available_tools_for_reflection -> available_tools
     suggestions_result = run_self_reflection_cycle(
-        available_tools=available_tools,
+        available_tools=available_tools_data,
         notification_manager=notification_manager
-        # suggestion_manager is not a parameter for run_self_reflection_cycle
     )
     print(f"Reflection suggestions: {suggestions_result!r}")
 except Exception as e_reflect:
