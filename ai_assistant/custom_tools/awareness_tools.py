@@ -33,18 +33,36 @@ def get_system_status_summary(
     Returns:
         A string summarizing the system status and notifications.
     """
+    # Convert limit parameters to integers with defaults if conversion fails
+    try:
+        active_limit = int(active_limit)
+    except (ValueError, TypeError):
+        active_limit = 5 # Default if conversion fails
+    try:
+        archived_limit = int(archived_limit)
+    except (ValueError, TypeError):
+        archived_limit = 3 # Default
+    try:
+        unread_notifications_limit = int(unread_notifications_limit)
+    except (ValueError, TypeError):
+        unread_notifications_limit = 3 # Default
+
     summary_lines = ["System Status Summary:"]
+    active_tasks = []
+    archived_tasks = []
 
     if not task_manager:
-        summary_lines.append("TaskManager not available.") # Changed to append
+        summary_lines.append("\nTaskManager not available.") # Added newline for better formatting
     else:
         active_tasks = task_manager.list_active_tasks()
-    archived_tasks = task_manager.list_archived_tasks(limit=archived_limit)
+        # archived_limit is now guaranteed to be an int
+        archived_tasks = task_manager.list_archived_tasks(limit=archived_limit)
 
-    summary_lines = ["System Status Summary:"]
+    # This was a duplicate, removing: summary_lines = ["System Status Summary:"]
 
-    summary_lines.append(f"\nActive Tasks ({len(active_tasks)} total):")
-    if not active_tasks:
+    num_active_tasks = len(active_tasks) # Store length once
+    summary_lines.append(f"\nActive Tasks ({num_active_tasks} total):")
+    if not active_tasks: # Check if list is empty
         summary_lines.append("  No active tasks currently.")
     else:
         for i, task in enumerate(active_tasks):
