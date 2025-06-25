@@ -32,7 +32,6 @@ class PlannerAgent:
             for i, word in enumerate(words):
                 if word.istitle() and word.lower() not in ["greet", "hello", "hi", "say", "to"]:
                     if i > 0 and words[i-1].lower() in ["greet", "to"]:
-                        # Check for multi-word names like "John Doe"
                         name_parts = [word]
                         for j in range(i + 1, len(words)):
                             if words[j].istitle():
@@ -45,156 +44,65 @@ class PlannerAgent:
         return "User"
 
     def _plan_single_segment(self, segment: str, available_tools: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """
-        Attempts to plan a single tool invocation for a given text segment.
-        This encapsulates the previous single-step planning logic and integrates LLM for arg population.
-        """
+        # This method is part of the older rule-based planner, not directly used by create_plan_with_llm
+        # but kept for potential future use or alternative strategies.
         segment_lower = segment.lower()
-        
         selected_tool_name: Optional[str] = None
         extracted_args: tuple = ()
         extracted_kwargs: Dict[str, Any] = {}
         
-        # 1. Rule-based tool selection
-        if "greet_user" in available_tools and \
-           any(kw in segment_lower for kw in ["greet", "hello", "hi", "say hi", "say hello"]):
+        if "greet_user" in available_tools and any(kw in segment_lower for kw in ["greet", "hello", "hi"]):
             selected_tool_name = "greet_user"
             name_to_greet = self._extract_name_for_greeting(segment)
-            if name_to_greet and name_to_greet != "User": # If a specific name was found
+            if name_to_greet and name_to_greet != "User":
                 extracted_args = (name_to_greet,)
-            # If name_to_greet is "User" (default), regex was weak. LLM might do better.
-        
-        elif "add_numbers" in available_tools and \
-             any(kw in segment_lower for kw in ["add", "sum", "plus", "total of"]):
+        elif "add_numbers" in available_tools and any(kw in segment_lower for kw in ["add", "sum", "plus"]):
             selected_tool_name = "add_numbers"
             numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2:
-                extracted_args = tuple(numbers)
-            # If not 2 numbers, regex was weak. LLM might do better.
-
-        elif "multiply_numbers" in available_tools and \
-             any(kw in segment_lower for kw in ["multiply", "times", "product of"]):
+            if len(numbers) == 2: extracted_args = tuple(numbers)
+        elif "multiply_numbers" in available_tools and any(kw in segment_lower for kw in ["multiply", "times"]):
             selected_tool_name = "multiply_numbers"
             numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2:
-                extracted_args = tuple(numbers)
-            # If not 2 numbers, regex was weak. LLM might do better.
-        
-        # Add other rule-based tool selections here...
+            if len(numbers) == 2: extracted_args = tuple(numbers)
 
         if selected_tool_name:
-            tool_description = available_tools[selected_tool_name]
-            
-            # 2. Decide if LLM should be used for argument population
-            # Strategy: Use LLM if regex extraction was weak (e.g., no args found for tools that expect them)
-            # or for tools where regex is inherently difficult for args.
-            use_llm_for_args = False
-            if selected_tool_name in ["add_numbers", "multiply_numbers"] and not extracted_args:
-                use_llm_for_args = True
-                print(f"PlannerAgent: Rule-based arg extraction for '{selected_tool_name}' yielded no args. Trying LLM.")
-            elif selected_tool_name == "greet_user" and (not extracted_args or extracted_args[0] == "User"):
-                # If regex found default "User" or nothing, LLM might find a specific name.
-                use_llm_for_args = True
-                print(f"PlannerAgent: Rule-based arg extraction for '{selected_tool_name}' was weak. Trying LLM.")
-            # Add other conditions for use_llm_for_args if needed for other tools
-
-            if use_llm_for_args:
-                llm_args_list, llm_kwargs_dict = populate_tool_arguments_with_llm(
-                    goal_description=segment, # Use the current segment as the goal for arg population
-                    tool_name=selected_tool_name,
-                    tool_description=tool_description
-                )
-                
-                # Merge strategy: LLM overrides if it provides something substantial.
-                # For positional args, if LLM provides any, it usually has better context.
-                if llm_args_list: # If LLM found any positional args
-                    extracted_args = tuple(llm_args_list) 
-                # For kwargs, merge or override. Here, simple override if LLM provides them.
-                if llm_kwargs_dict:
-                    extracted_kwargs = llm_kwargs_dict
-            
-            # Fallback for tools where regex failed and LLM also didn't provide args
-            if selected_tool_name == "add_numbers" and not extracted_args:
-                extracted_args = ("0", "0")
-                extracted_kwargs["note"] = f"Could not infer numbers for 'add_numbers' from '{segment}'. Using defaults."
-            elif selected_tool_name == "multiply_numbers" and not extracted_args:
-                extracted_args = ("1", "1")
-                extracted_kwargs["note"] = f"Could not infer numbers for 'multiply_numbers' from '{segment}'. Using defaults."
-            elif selected_tool_name == "greet_user" and not extracted_args:
-                 extracted_args = ("User",) # Default if LLM also fails for greet_user
-
-            return {
-                "tool_name": selected_tool_name,
-                "args": extracted_args,
-                "kwargs": extracted_kwargs
-            }
-
-        return None # No tool matched for this segment by rule-based selection
+            # Argument population logic (including potential LLM call) would go here if this method were primary
+            return {"tool_name": selected_tool_name, "args": extracted_args, "kwargs": extracted_kwargs}
+        return None
 
     def create_plan(self, main_goal_description: str, available_tools: Dict[str, str]) -> List[Dict[str, Any]]:
-        """
-        Creates a multi-step plan to achieve the main_goal_description using available_tools.
-        Splits the goal into segments and processes each.
-        """
+        # This is the older rule-based planner. create_plan_with_llm is the primary one.
+        # Kept for reference or if a hybrid approach is desired later.
         full_plan: List[Dict[str, Any]] = []
-        
-        # Split by "and then" or "then" first, as these are strong indicators of sequence.
-        # Using a regex that captures the delimiters to re-insert them for context or complex parsing later if needed,
-        # but for now, we just split and process.
-        # We use non-capturing groups for the delimiters for simpler splitting.
         segments = re.split(r'\s+(?:and then|then)\s+', main_goal_description, flags=re.IGNORECASE)
-        
         processed_segments = []
         for segment in segments:
-            # Further split by "and" if it seems to connect distinct actions.
-            # This is heuristic. "add 5 and 7" should not be split.
-            # "greet Alice and add 5 and 7" -> "greet Alice", "add 5 and 7" by the outer split.
-            # "multiply 2 by 3 and greet Bob" -> needs "and" splitting.
-            
-            # Avoid splitting "and" if it's likely part of a number phrase like "add 5 and 7"
-            # This check is very basic.
             if ' and ' in segment.lower() and not any(num_kw in segment.lower() for num_kw in ["add", "sum", "plus", "multiply", "times", "product of"]):
-                 # Split only once by "and" to separate into two main actions if "and" is a primary conjunction
                 sub_segments = re.split(r'\s+and\s+', segment, maxsplit=1, flags=re.IGNORECASE)
                 processed_segments.extend(sub_segments)
             else:
                 processed_segments.append(segment)
 
         for seg_idx, segment_text in enumerate(processed_segments):
-            if not segment_text.strip(): # Skip empty segments
-                continue
-            
-            print(f"PlannerAgent: Processing segment {seg_idx+1}/{len(processed_segments)}: '{segment_text}'")
-            step = self._plan_single_segment(segment_text, available_tools)
+            if not segment_text.strip(): continue
+            step = self._plan_single_segment(segment_text, available_tools) # Uses simple available_tools format
             if step:
                 full_plan.append(step)
-            else:
-                print(f"PlannerAgent: No specific tool action planned for segment: '{segment_text}'")
 
-        # If no steps were generated at all from any segment, and no_op_tool is available, use it.
         if not full_plan and "no_op_tool" in available_tools:
-            full_plan.append({
-                "tool_name": "no_op_tool",
-                "args": (),
-                "kwargs": {} # Ensure no_op_tool is called without unexpected keyword arguments
-            })
+            full_plan.append({"tool_name": "no_op_tool", "args": (), "kwargs": {}})
         elif not full_plan:
             print(f"Planner: Could not find any suitable tool or create a plan for the goal: '{main_goal_description}'")
-
-        print(f"PlannerAgent: Generated plan for '{main_goal_description}': {full_plan}")
         return full_plan
 
     async def create_plan_with_llm(
         self, 
         goal_description: str, 
-        available_tools: Dict[str, str], # This will be Dict[str, Dict[str, Any]] from ToolSystem.list_tools_with_sources()
+        available_tools: Dict[str, Any], # Expects Dict[str, Dict[str, Any]] rich format
         project_context_summary: Optional[str] = None,
-        project_name_for_context: Optional[str] = None
+        project_name_for_context: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> List[Dict[str, Any]]:
-        """ (Async)
-        Creates a plan to achieve the goal_description using an LLM to generate the plan steps.
-        Optionally includes project context if provided.
-        """
         import json 
 
         MAX_CORRECTION_ATTEMPTS = 1
@@ -205,15 +113,14 @@ class PlannerAgent:
 
         print(f"\nPlannerAgent (LLM): Attempting to create plan for goal: '{goal_description}'")
 
-        # Prepare tools description for the LLM, including parameters from schema
         tools_for_prompt = {}
-        for tool_name, tool_data in available_tools.items(): # available_tools is now richer
+        for tool_name, tool_data in available_tools.items():
             desc_for_prompt = tool_data.get('description', 'No description.')
             schema = tool_data.get('schema_details')
-            if schema and isinstance(schema.get('parameters'), list): # Check if parameters is a list
+            if schema and isinstance(schema.get('parameters'), list):
                 param_descs = []
                 for p_data in schema['parameters']:
-                    if isinstance(p_data, dict): # Ensure p_data is a dictionary
+                    if isinstance(p_data, dict):
                         p_name = p_data.get('name')
                         p_type = p_data.get('type')
                         p_desc = p_data.get('description')
@@ -222,7 +129,6 @@ class PlannerAgent:
                     desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
             tools_for_prompt[tool_name] = desc_for_prompt
         tools_json_string = json.dumps(tools_for_prompt, indent=2)
-
 
         PROJECT_CONTEXT_SECTION_TEMPLATE = """
 Current Project Context for '{project_name}':
@@ -238,18 +144,33 @@ When generating the plan, consider this existing project context. For example, i
                 project_context_summary=project_context_summary
             )
 
-        LLM_PLANNING_PROMPT_TEMPLATE = """Given the user's goal: "{goal}"
+        conversation_history_section_str = ""
+        if conversation_history:
+            formatted_history_lines = []
+            for msg in conversation_history:
+                formatted_history_lines.append(f"{msg['role'].capitalize()}: {msg['content']}")
+            if formatted_history_lines:
+                conversation_history_section_str = "\n\nRecent Conversation History (Oldest to Newest):\n---\n" + "\n".join(formatted_history_lines) + "\n---\n"
+
+        LLM_PLANNING_PROMPT_TEMPLATE = """Your primary objective is to achieve the user's current goal: "{goal}"
+
+To assist you, here is relevant context. Use it wisely:
+{conversation_history_section}
 {project_context_section}
 
-**Leveraging Provided Information (Context & Facts):**
-- If a "Current Project Context" (e.g., code from existing files) is provided, use it to understand the current state and how the user's goal relates to it.
-- If "Relevant Learned Facts" or "Knowledge Snippets" are provided, review them carefully.
-- These facts represent information the assistant already knows.
-- Use these facts to:
+**Interpreting Context and User's Goal:**
+- **Current Goal Focus:** The user's statement, "{goal}", is the IMMEDIATE task. Your plan MUST directly address this.
+- **Conversation History:** If provided, this shows recent dialogue. Use it to understand pronouns (he, she, it, that, etc.) and the immediate topic. Pay CLOSET attention to the LAST user message and my (assistant's) last response to ensure continuity. Do NOT get sidetracked by older, possibly unrelated topics from further back in the history unless they are clearly relevant to the current goal.
+- **Project Context:** If provided, this contains details about software project files. Use this ONLY if the current goal explicitly relates to modifying, discussing, or using that specific project.
+- **Learned Facts/Knowledge Snippets:** (This section will be dynamically added if facts are present)
+  If "Relevant Learned Facts" are provided below, these are pieces of information I (the assistant) already know.
+  Use these facts to:
     - Inform your choice of tools and arguments.
     - Avoid asking for information already known.
     - Avoid planning steps to re-acquire or re-learn these facts.
-- If a learned fact directly helps in achieving the user's goal, incorporate this knowledge into your plan.
+  If a learned fact directly helps in achieving the user's current goal, incorporate this knowledge into your plan.
+
+**Your Task:** Based *primarily* on the user's current goal ("{goal}") and using the conversation history and other context for clarification and relevance, generate a plan as a JSON list of step dictionaries.
 
 And the following available tools (tool_name: description):
 {tools_json_string}
@@ -470,57 +391,39 @@ Examples using Project Management Tools:
 *   User goal: "build the rest of the MyWebApp project"
     Plan: `[{{"tool_name": "execute_project_coding_plan", "args": ["MyWebApp"], "kwargs": {{}}}}]`
 
-**Important Instructions for Search and Knowledge Retrieval:**
-Use tools like 'search_google_custom_search' (if available and appropriate) primarily when the goal requires CURRENT information (e.g., recent news, rapidly changing facts) or specific external knowledge that your internal knowledge base is unlikely to cover. Do NOT use search for general knowledge, creative tasks, or if the answer is likely static and well-known.
-When a search is needed and both 'search_google_custom_search' and 'search_duckduckgo' are available, generally prefer 'search_google_custom_search' for comprehensive results, unless DuckDuckGo is specifically requested or more appropriate for privacy-sensitive queries.
-
-If you determine 'search_google_custom_search' is necessary:
-1.  Formulate a clear and concise search query as the first argument for the 'search_google_custom_search' tool.
-2.  Optionally, you can specify the number of results by providing a 'num_results' integer (between 1 and 10) in the 'kwargs' dictionary (e.g., `{{"num_results": "5"}}`). If omitted, it defaults to 5.
-3.  You *MUST* add a subsequent step in the plan to call a tool named 'process_search_results'.
+**General Knowledge & Search Tool Usage:**
+- If the user's goal is a question seeking factual information about real-world entities, events, concepts, general knowledge, or current events that are not covered by other specialized tools (like system status or project management tools), you *MUST* prioritize using a web search tool (e.g., 'search_duckduckgo' or 'search_google_custom_search' if available).
+- Formulate a clear, concise, and effective search query as the first argument for the chosen search tool.
+- If specifying the number of results is supported by the search tool (e.g., 'num_results' for 'search_google_custom_search'), you can provide it in 'kwargs'. Default is usually 3-5 results.
+- **Crucially, after any search tool step, you *MUST* add a subsequent step in the plan to call the 'process_search_results' tool.**
 
 The 'process_search_results' tool takes the following arguments:
-    - `search_query` (string): The original search query you provided to the search tool.
-    - `search_results_json` (string): The JSON output from the preceding search tool (e.g., 'search_google_custom_search' or 'search_duckduckgo'). Use "[[step_X_output]]" where X is the 1-based index of the search tool step.
-    - `processing_instruction` (string, optional kwargs): Describes the desired processing. Examples:
-        - `"answer_query"` (default): Generate a direct natural language answer to the original query.
+    - `search_query` (string): The original search query you provided to the search tool. This must be the *exact same query string*.
+    - `search_results_json` (string): The JSON output from the preceding search tool. Use "[[step_X_output]]" where X is the 1-based index of the search tool step.
+    - `processing_instruction` (string, optional in kwargs): Describes how to process the results. Examples:
+        - `"answer_query"` (default): Generate a direct natural language answer to the original user query based on the search results.
         - `"summarize_results"`: Provide a concise summary of the information found.
-        - `"extract_entities"`: List key entities (people, places, organizations, dates) relevant to the query found in the results.
-        - `"custom_instruction:<your specific request>"`: For more specific extraction tasks, e.g., "custom_instruction:Extract the main arguments for and against the proposal."
+        - `"extract_entities"`: List key entities (people, places, organizations, dates) relevant to the query.
+        - `"custom_instruction:<your specific request>"`: For more specific tasks, e.g., "custom_instruction:Extract the main arguments for and against the proposal mentioned in the search results."
       If omitted, the default is "answer_query".
 
-Example of a plan involving search with Google (default processing):
+Example of a plan involving search (e.g., for "who is the greatest NBA player of all time?"):
 ```json
 [
   {{
-    "tool_name": "search_duckduckgo",
-    "args": ["latest developments in AI regulation"],
+    "tool_name": "search_duckduckgo", // or search_google_custom_search
+    "args": ["greatest NBA player of all time opinions"], // Example effective search query
     "kwargs": {{}}
   }},
   {{
     "tool_name": "process_search_results",
-    "args": ["latest developments in AI regulation", "[[step_1_output]]"],
-    "kwargs": {{}} // Defaults to "answer_query"
+    "args": ["greatest NBA player of all time opinions", "[[step_1_output]]"],
+    "kwargs": {{"processing_instruction": "answer_query"}} // Or "summarize_results"
   }}
 ]
 ```
 
-Example of a plan involving search (custom processing - summarization):
-```json
-[
-  {{
-    "tool_name": "search_duckduckgo",
-    "args": ["recent papers on climate change impact on agriculture"],
-    "kwargs": {{}}
-  }},
-  {{
-    "tool_name": "process_search_results",
-    "args": ["recent papers on climate change impact on agriculture", "[[step_1_output]]"],
-    "kwargs": {{"processing_instruction": "summarize_results"}}
-  }}
-]
-```
-If the goal cannot be achieved with the available tools, or if it's unclear, return an empty JSON list [].
+If the goal cannot be achieved with the available tools, or if it's unclear after considering context and search, return an empty JSON list [].
 
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
@@ -531,6 +434,8 @@ JSON Plan:
 Original Goal: "{goal}"
 Available Tools:
 {tools_json_string}
+{conversation_history_section}
+{project_context_section}
 
 Your Previous Incorrect Response:
 ---
@@ -546,9 +451,16 @@ JSON Plan:
 
         current_prompt = LLM_PLANNING_PROMPT_TEMPLATE.format(
             goal=goal_description, 
+            conversation_history_section=conversation_history_section_str,
             project_context_section=project_context_section_str,
             tools_json_string=tools_json_string
         )
+
+        # The invoke_ollama_model_async in ollama_client.py will be updated
+        # to accept messages_history. For planning, we are currently building one large prompt string.
+        # If the LLM for planning is a chat model and we want to use its native chat format,
+        # this is where we'd construct the messages list instead of a single prompt string.
+        # For now, continuing with single prompt string for planning, history is part of it.
 
         while current_attempt <= MAX_CORRECTION_ATTEMPTS:
             model_for_planning = get_model_for_task("planning")
@@ -556,7 +468,13 @@ JSON Plan:
             if current_attempt > 0 :
                  print(f"PlannerAgent (LLM): Correction prompt (first 500 chars):\n{current_prompt[:500]}...\n")
             
-            llm_response_str = await invoke_ollama_model_async(current_prompt, model_name=model_for_planning)
+            # invoke_ollama_model_async will need to handle the conversation_history if its a chat model
+            # For now, the history is embedded in current_prompt for planning.
+            llm_response_str = await invoke_ollama_model_async(
+                prompt=current_prompt, # The full prompt including history
+                model_name=model_for_planning
+                # messages_history=conversation_history # Not passing here if history is in prompt
+            )
 
             if not llm_response_str:
                 last_error_description = f"Received no response or empty response from LLM ({model_for_planning})."
@@ -565,6 +483,8 @@ JSON Plan:
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
+                        conversation_history_section=conversation_history_section_str,
+                        project_context_section=project_context_section_str,
                         tools_json_string=tools_json_string, 
                         previous_llm_response=llm_response_str or "", 
                         error_description=last_error_description
@@ -589,6 +509,8 @@ JSON Plan:
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
+                        conversation_history_section=conversation_history_section_str,
+                        project_context_section=project_context_section_str,
                         tools_json_string=tools_json_string, 
                         previous_llm_response=llm_response_str, 
                         error_description=f"Response was not valid JSON. Error: {e}"
@@ -602,6 +524,8 @@ JSON Plan:
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                      current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
+                        conversation_history_section=conversation_history_section_str,
+                        project_context_section=project_context_section_str,
                         tools_json_string=tools_json_string, 
                         previous_llm_response=llm_response_str, 
                         error_description=last_error_description
@@ -656,6 +580,8 @@ JSON Plan:
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
+                        conversation_history_section=conversation_history_section_str,
+                        project_context_section=project_context_section_str,
                         tools_json_string=tools_json_string, 
                         previous_llm_response=llm_response_str, 
                         error_description=last_error_description
@@ -666,7 +592,14 @@ JSON Plan:
         print(f"PlannerAgent (LLM): All {MAX_CORRECTION_ATTEMPTS + 1} attempts to generate a valid plan failed. Last error: {last_error_description}")
         return []
 
-    async def replan_after_failure(self, original_goal: str, failure_analysis: str, available_tools: Dict[str, str], ollama_model_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def replan_after_failure(
+        self,
+        original_goal: str,
+        failure_analysis: str,
+        available_tools: Dict[str, Any], # Expects Dict[str, Dict[str,Any]] for rich tools
+        conversation_history: Optional[List[Dict[str, str]]] = None, # Added
+        ollama_model_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Attempts to create a new plan after a previous plan execution failed.
         Uses an LLM to generate the new plan based on the failure analysis.
@@ -681,6 +614,7 @@ Analysis of the previous failure:
 ---
 
 Available Tools (tool_name: description):
+{conversation_history_section}
 {tools_json_string}
 
 Based on the original goal and the failure analysis, generate a new plan to achieve the goal.
@@ -721,15 +655,26 @@ JSON Plan:
                         desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
                 tools_for_prompt_replan[tool_name] = desc_for_prompt
         else: # Fallback to old format if not rich
-            tools_for_prompt_replan = available_tools
+            # This case should ideally not be hit if orchestrator always passes rich tools
+            tools_for_prompt_replan = {k: str(v) for k,v in available_tools.items()}
+
 
         tools_json_string = json.dumps(tools_for_prompt_replan, indent=2)
 
         model_for_replan = ollama_model_name or get_model_for_task("planning")
 
+        conversation_history_section_str_replan = ""
+        if conversation_history:
+            formatted_history_lines_replan = []
+            for msg in conversation_history:
+                formatted_history_lines_replan.append(f"{msg['role'].capitalize()}: {msg['content']}")
+            if formatted_history_lines_replan:
+                conversation_history_section_str_replan = "\n\nRecent Conversation History (Oldest to Newest):\n---\n" + "\n".join(formatted_history_lines_replan) + "\n---\n"
+
         current_prompt = LLM_REPLANNING_PROMPT_TEMPLATE.format(
             original_goal=original_goal,
             failure_analysis=failure_analysis,
+            conversation_history_section=conversation_history_section_str_replan,
             tools_json_string=tools_json_string
         )
 
@@ -737,6 +682,7 @@ JSON Plan:
 Original Goal: "{goal}"
 Failure Analysis: {failure_analysis}
 Available Tools: {tools_json_string}
+{conversation_history_section}
 Your Previous Incorrect Response: --- {previous_llm_response} ---
 Error Description: {error_description}
 Please try again. Respond ONLY with the corrected JSON plan.
@@ -758,6 +704,7 @@ JSON Plan:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
+                        conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str or "",
                         error_description=last_error_description
@@ -782,6 +729,7 @@ JSON Plan:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
+                        conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=f"Response was not valid JSON. Error: {e}"
@@ -796,6 +744,7 @@ JSON Plan:
                      current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
+                        conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=last_error_description
@@ -808,7 +757,7 @@ JSON Plan:
             for i, step in enumerate(parsed_plan):
                 if not isinstance(step, dict) or \
                    not step.get("tool_name") or not isinstance(step.get("tool_name"), str) or \
-                   step.get("tool_name") not in available_tools: # Check against keys of available_tools (which is tools_for_prompt_replan)
+                   step.get("tool_name") not in tools_for_prompt_replan: # Check against keys of tools_for_prompt_replan
                     last_error_description = f"Re-plan step {i+1} is invalid (not a dict, missing/invalid tool_name, or tool not available). Content: {step}"
                     print(f"PlannerAgent (Re-plan): {last_error_description}")
                     valid_plan_overall = False; break
@@ -836,6 +785,7 @@ JSON Plan:
                     current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
+                        conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=last_error_description
@@ -897,9 +847,14 @@ if __name__ == '__main__':
         rich_available_tools = mock_ts.list_tools_with_sources()
 
         goal1 = "Say hi to Jane and then tell me the sum of 100 and 200."
+        history1 = [
+            {"role": "user", "content": "What's the weather like?"},
+            {"role": "assistant", "content": "It's sunny today!"},
+            {"role": "user", "content": goal1} # Orchestrator adds current goal to history
+        ]
         print(f"Testing LLM plan for: {goal1}")
         try:
-            plan1 = await planner.create_plan_with_llm(goal1, rich_available_tools)
+            plan1 = await planner.create_plan_with_llm(goal1, rich_available_tools, conversation_history=history1)
             print(f"LLM Plan for '{goal1}': {plan1}")
             # Add assertions here based on expected LLM output structure
             assert isinstance(plan1, list), "Plan should be a list"
@@ -915,9 +870,10 @@ if __name__ == '__main__':
         # Test with project context
         goal2 = "In my 'TestProject', add a new function to 'main.py' that prints hello."
         context2 = "File: main.py\n\nprint('hello old world')"
+        history2 = [{"role": "user", "content": goal2}]
         print(f"Testing LLM plan for: {goal2} with context")
         try:
-            plan2 = await planner.create_plan_with_llm(goal2, rich_available_tools, project_context_summary=context2, project_name_for_context="TestProject")
+            plan2 = await planner.create_plan_with_llm(goal2, rich_available_tools, project_context_summary=context2, project_name_for_context="TestProject", conversation_history=history2)
             print(f"LLM Plan for '{goal2}': {plan2}")
             assert isinstance(plan2, list), "Plan should be a list"
 
@@ -944,3 +900,5 @@ if __name__ == '__main__':
         asyncio.run(test_llm_planner())
 
 # [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/planning/planning.py]
+
+[end of ai_assistant/planning/planning.py]

@@ -96,7 +96,8 @@ async def summarize_tool_result_conversationally(
     tool_results: List[Any],
     overall_success: bool,
     llm_provider: OllamaProvider,
-    model_name: Optional[str] = None
+    model_name: Optional[str] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None # New parameter
 ) -> str:
     actions_summary_parts = []
     for i, step in enumerate(executed_plan_steps):

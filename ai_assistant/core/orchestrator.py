@@ -45,9 +45,10 @@ class DynamicOrchestrator:
         self.task_manager = task_manager
         self.notification_manager = notification_manager
         self.hierarchical_planner = hierarchical_planner
-        self.context: Dict[str, Any] = {}
+        self.context: Dict[str, Any] = {} # For last_results, etc.
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
+        self.conversation_history: List[Dict[str, str]] = [] # New: For chat history
 
     def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
         if not plan:
@@ -99,11 +100,25 @@ class DynamicOrchestrator:
                 f"{outcome_str}")
         return "\n".join(summary_lines)
 
-    async def process_prompt(self, prompt: str) -> Tuple[bool, str]:
+    async def process_prompt(self, prompt: str, user_id: Optional[str] = None) -> Tuple[bool, str]: # Added user_id
         """
         Process a user prompt by creating and executing a dynamic plan.
+        Accepts an optional user_id for context.
         Returns (success, response_message)
         """
+        # Add user's prompt to history
+        self.conversation_history.append({"role": "user", "content": prompt})
+
+        # Truncate history before processing (keeps most recent, plus current prompt)
+        from ai_assistant.config import CONVERSATION_HISTORY_TURNS # Import here or at top
+        max_history_messages = CONVERSATION_HISTORY_TURNS * 2
+        if len(self.conversation_history) > max_history_messages:
+            # Keep the last 'max_history_messages' items.
+            # If current prompt was just added, it's already included in this slice.
+            self.conversation_history = self.conversation_history[-max_history_messages:]
+
+        response_message_for_history: Optional[str] = None # To store the final AI response
+
         try:
             self.current_goal = prompt
             available_tools_rich = tool_system_instance.list_tools_with_sources()
@@ -228,7 +243,8 @@ class DynamicOrchestrator:
                 goal_description=prompt,
                 available_tools=available_tools_rich,
                 project_context_summary=final_context_for_planner,
-                project_name_for_context=project_name_for_context
+                project_name_for_context=project_name_for_context,
+                conversation_history=self.conversation_history # Pass history
             )
 
             use_hierarchical_planner = False
@@ -311,13 +327,24 @@ class DynamicOrchestrator:
                         from ai_assistant.config import get_model_for_task
                         model = get_model_for_task("conversational_response")
 
-                        conv_prompt = f"""You are a helpful and friendly AI assistant. The user just said: "{prompt}".
-Respond conversationally. If it's a greeting, greet them back. If it's a simple question, answer it if you can. If you don't know the answer, say so politely. Keep the response brief."""
+                        # New system message style prompt for conversational fallback
+                        # The actual user's last message is part of self.conversation_history
+                        conv_prompt_system_message = """You are a helpful and friendly AI assistant. The user's message is the last one in the provided conversation history. Please continue the conversation naturally and helpfully. If the user asked a question, try to answer it. If they made a statement, acknowledge it or ask a relevant follow-up. If you cannot help with the specific request, politely say so. Keep your response concise."""
 
-                        conversational_response = await llm_module.invoke_ollama_model_async(
-                            prompt=conv_prompt,
-                            model_name=model
-                        )
+                        if self.conversation_history: # Ensure history is not empty
+                            messages_for_llm = self.conversation_history
+                            conversational_response = await llm_module.invoke_ollama_model_async(
+                                prompt=conv_prompt_system_message, # This will act as system prompt if ollama_client is updated
+                                model_name=model,
+                                messages_history=messages_for_llm
+                            )
+                        else:
+                            # Fallback if history is somehow empty (should not happen if user prompt was added)
+                            logger.warning("Conversational fallback attempted with empty history. This is unexpected.")
+                            conversational_response = await llm_module.invoke_ollama_model_async(
+                                prompt=f"User said: {prompt}. Respond briefly and conversationally.", # Simple prompt
+                                model_name=model
+                            )
 
                         if conversational_response and conversational_response.strip():
                             log_event(
@@ -326,8 +353,9 @@ Respond conversationally. If it's a greeting, greet them back. If it's a simple 
                                 source="DynamicOrchestrator.process_prompt",
                                 metadata={"response": conversational_response}
                             )
+                            response_message_for_history = conversational_response
                             # Return True since we successfully handled the prompt conversationally
-                            return True, conversational_response
+                            return True, response_message_for_history
                         else:
                             # Raise an error to be caught by the outer Exception or specific handling
                             logger.warning(f"Conversational model returned empty/None for '{prompt}'. Falling through.")
@@ -362,7 +390,8 @@ Respond conversationally. If it's a greeting, greet them back. If it's a simple 
                         logger.error(f"Error rephrasing final plan-creation failure: {e_rephrase}", exc_info=True)
                         # user_friendly_response_final remains as it was
 
-                return False, user_friendly_response_final + summary_for_no_plan
+                response_message_for_history = user_friendly_response_final + summary_for_no_plan # Assign before return
+                return False, response_message_for_history
 
             if is_debug_mode():
                 print(f"DynamicOrchestrator: Executing plan with {len(self.current_plan)} steps")

@@ -77,7 +77,10 @@ async function sendMessage() {
         const response = await fetch('/chat_api', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({ message: messageText }),
+            body: JSON.stringify({
+                message: messageText,
+                user_id: "user_static_test_01" // Added static user_id
+            }),
         });
 
         setWeiboState('weibo-talking');

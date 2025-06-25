@@ -77,17 +77,16 @@ async def chat_api():
     if orchestrator is None:
         return jsonify({"error": "AI services are not initialized. Please check server logs."}), 500
 
-    data = request.get_json() # Corrected: Removed await
+    data = request.get_json()
     user_message = data.get('message')
+    user_id = data.get('user_id') # Extract user_id
 
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
     try:
-        # Call the orchestrator's process_prompt method
-        # This is an async method, so we await it.
-        # The Flask route itself must be async for this to work directly.
-        success, response_message = await orchestrator.process_prompt(user_message)
+        # Call the orchestrator's process_prompt method, now passing user_id
+        success, response_message = await orchestrator.process_prompt(user_message, user_id=user_id)
 
         if success:
             return jsonify({"response": response_message})

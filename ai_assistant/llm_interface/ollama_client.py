@@ -129,8 +129,13 @@ def invoke_ollama_model(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens}
     }
-    if use_chat_api: payload["think"] = True
+    if use_chat_api and enable_thinking: payload["think"] = True # Only add think if native thinking is on
     api_endpoint = OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT
+
+    # If using chat API, ensure "prompt" is not in payload, only "messages"
+    if use_chat_api:
+        payload.pop("prompt", None)
+
 
     try:
         if is_debug_mode():
@@ -175,14 +180,17 @@ def invoke_ollama_model(
         return None
 
 async def invoke_ollama_model_async_internal(
-    prompt: str,
+    prompt: str, # This is the current user message if history is also provided
     model_name: str = DEFAULT_OLLAMA_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 1500,
-    api_endpoint_override: Optional[str] = None
+    api_endpoint_override: Optional[str] = None,
+    messages_history: Optional[List[Dict[str, str]]] = None # New parameter
 ) -> Optional[str]:
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
-    enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
+    # Chain of thought should not be used if we have a messages_history, as that's for chat models.
+    # If messages_history is present, we assume it's a chat-style interaction.
+    enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking and not messages_history
     use_chat_api = enable_thinking
 
     current_api_endpoint = api_endpoint_override if api_endpoint_override else OLLAMA_API_ENDPOINT
