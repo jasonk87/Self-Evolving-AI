@@ -161,9 +161,11 @@ function animateIdleWeibo() {
     dTargetX = Math.max(minX, Math.min(dTargetX, maxX));
     dTargetY = Math.max(minY, Math.min(dTargetY, maxY));
 
-    console.log(`Animating Idle: Scale=${randomScale.toFixed(2)}, TargetX=${dTargetX.toFixed(2)} (minX:${minX.toFixed(2)}, maxX:${maxX.toFixed(2)}), TargetY=${dTargetY.toFixed(2)} (minY:${minY.toFixed(2)}, maxY:${maxY.toFixed(2)}) ParentW:${parentRect.width.toFixed(2)}, ParentH:${parentRect.height.toFixed(2)} ScaledW:${currentScaledWidth.toFixed(2)}`);
+    // DEBUG: Forcing scale to 1 during idle to isolate translation issues
+    const fixedScale = 1;
+    console.log(`Animating Idle: Scale=${fixedScale.toFixed(2)} (was ${randomScale.toFixed(2)}), TargetX=${dTargetX.toFixed(2)} (minX:${minX.toFixed(2)}, maxX:${maxX.toFixed(2)}), TargetY=${dTargetY.toFixed(2)} (minY:${minY.toFixed(2)}, maxY:${maxY.toFixed(2)}) ParentW:${parentRect.width.toFixed(2)}, ParentH:${parentRect.height.toFixed(2)} ScaledW:${currentScaledWidth.toFixed(2)}`);
 
-    processingIndicator.style.transform = `translate(${dTargetX}px, ${dTargetY}px) scale(${randomScale})`;
+    processingIndicator.style.transform = `translate(${dTargetX}px, ${dTargetY}px) scale(${fixedScale})`;
 
     const randomDelay = 3000 + Math.random() * 4000;
     idleAnimationTimeoutId = setTimeout(animateIdleWeibo, randomDelay);
