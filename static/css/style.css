@@ -80,7 +80,7 @@ header h1 {
     box-sizing: border-box;
     box-shadow: inset 0 0 15px rgba(0,0,0,0.5), 0 0 10px var(--glow-color);
     transition: box-shadow 0.3s ease-in-out;
-    overflow: hidden; /* Changed from visible to hidden to contain matrix if it fills this */
+    overflow: hidden;
 }
 .ai-core-display p#aiCoreStatusText {
     font-family: var(--font-secondary);
@@ -91,7 +91,7 @@ header h1 {
     left: 50%;
     transform: translateX(-50%);
     z-index: 100;
-    background-color: rgba(10, 15, 24, 0.85); /* Darker, more opaque bg for status */
+    background-color: rgba(10, 15, 24, 0.85);
     padding: 3px 10px;
     border-radius: 4px;
     box-shadow: 0 0 5px rgba(0,0,0,0.5);
@@ -110,7 +110,7 @@ header h1 {
 }
 
 .processing-indicator.idle,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) { /* Apply resting corner only if not in work zone */
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) {
     width: 80px;
     height: 80px;
     top: auto;
@@ -119,7 +119,6 @@ header h1 {
     left: 20px;
     transform: scale(0.8);
 }
-
 
 @keyframes subtle-pulse {
     0%, 100% { transform: scale(1); box-shadow: 0 0 8px var(--glow-color), 0 0 15px var(--accent-color); }
@@ -166,7 +165,7 @@ header h1 {
 .processing-indicator.idle .s4,
 .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s4 { animation: satellite-orbit-idle 6s linear infinite 1.5s; }
 
-.processing-indicator.weibo-working-idle .orb { /* This applies glow to orbs when working, regardless of zone */
+.processing-indicator.weibo-working-idle .orb {
     box-shadow: 0 0 12px rgba(255, 165, 0, 0.7), 0 0 25px rgba(255, 165, 0, 0.5);
 }
 .processing-indicator.weibo-working-idle .main-orb {
@@ -247,20 +246,16 @@ header h1 {
     bottom: auto;
     transform: scale(0.75);
 }
-/* Orbs within work-zone should be smaller if desired */
 .processing-indicator.weibo-in-work-zone .main-orb {
-    width: 20px; /* e.g. 60px * 0.75 * (30/80) */
+    width: 20px;
     height: 20px;
-    /* May need a different, more subtle animation or just the working glow */
-    animation: subtle-pulse 4s infinite ease-in-out; /* Slower pulse in work zone */
+    animation: subtle-pulse 4s infinite ease-in-out;
 }
 .processing-indicator.weibo-in-work-zone .satellite-orb {
-    width: 7px; /* e.g. 60px * 0.75 * (10/80) */
+    width: 7px;
     height: 7px;
-    /* Satellites might be static or have very minimal animation in work zone */
-    animation: none; /* Turn off orbit in work zone by default */
+    animation: none;
 }
-
 
 .processing-indicator.weibo-talking .main-orb {
     background-color: var(--accent-color);
@@ -674,3 +669,5 @@ header h1 {
         line-height: 10px;
     }
 }
+
+[end of static/css/style.css]

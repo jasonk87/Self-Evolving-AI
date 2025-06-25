@@ -35,6 +35,21 @@
             <input type="text" id="userInput" placeholder="Transmit directive..." autofocus>
             <button id="sendButton">Send</button>
         </div>
+
+        <div id="statusPanel" class="status-panel collapsed">
+            <button id="statusPanelToggle" class="status-panel-toggle">&lt;</button>
+            <div class="status-panel-content">
+                <div class="status-section" id="activeTasksSection">
+                    <h4>Active Tasks</h4>
+                    <ul id="activeTasksList"><li>(No tasks currently active)</li></ul>
+                </div>
+                <div class="status-section" id="recentNotificationsSection">
+                    <h4>Recent Notifications</h4>
+                    <ul id="recentNotificationsList"><li>(No new notifications)</li></ul>
+                </div>
+                <!-- Add more sections later: AI Goal, System Load, etc. -->
+            </div>
+        </div>
     </div>
 
     <div id="helpMenuPopup" class="help-menu-popup" style="display:none;">

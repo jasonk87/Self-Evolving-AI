@@ -1,21 +1,27 @@
-const chatLogArea = document.getElementById('chatLogArea');
-const userInput = document.getElementById('userInput');
-const sendButton = document.getElementById('sendButton');
-const aiCoreStatusText = document.getElementById('aiCoreStatusText');
-const processingIndicator = document.getElementById('processingIndicator');
-const aiCoreDisplay = document.getElementById('aiCoreDisplay');
-const matrixScrollEffect = document.getElementById('matrixScrollEffect'); // New element
+// Globally scoped constants for DOM elements
+// These will be assigned once DOMContentLoaded fires.
+let chatLogArea = null;
+let userInput = null;
+let sendButton = null;
+let aiCoreStatusText = null;
+let processingIndicator = null;
+let aiCoreDisplay = null;
+let matrixScrollEffect = null;
+let helpButton = null;
+let helpMenuPopup = null;
+let statusPanel = null;
+let statusPanelToggle = null;
+
 
 let idleAnimationTimeoutId = null;
 let isWeiboWorkingInBackground = false;
-let matrixAnimationId = null; // For requestAnimationFrame
+let matrixAnimationId = null;
 let matrixColumns = [];
 
-// Matrix Configuration
-const MATRIX_CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍｦｲｸｺｿﾁﾄﾉﾌﾔﾖﾙﾚﾛﾝ"; // Katakana + Alphanumeric
-const MATRIX_COLUMN_FONT_SIZE = 10; // Corresponds to CSS .matrix-column font-size if dynamic
-const MATRIX_COLUMN_WIDTH = 15; // Approximate width of a character column
-const MATRIX_SPAWN_INTERVAL = 100; // Milliseconds to spawn a new column
+const MATRIX_CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍｦｲｸｺｿﾁﾄﾉﾌﾔﾖﾙﾚﾛﾝ";
+const MATRIX_COLUMN_FONT_SIZE = 10;
+const MATRIX_COLUMN_WIDTH = 15;
+const MATRIX_SPAWN_INTERVAL = 100;
 let lastMatrixSpawnTime = 0;
 
 
@@ -32,7 +38,6 @@ function setWeiboState(state) {
     processingIndicator.style.bottom = '';
     processingIndicator.style.right = '';
 
-    // Handle Matrix display based on state
     if (matrixScrollEffect) {
         if (state === 'background-processing') {
             matrixScrollEffect.style.display = 'block';
@@ -69,7 +74,6 @@ function setWeiboState(state) {
     }
 }
 
-// ... (appendToChatLog and sendMessage functions remain the same) ...
 function appendToChatLog(text, sender) {
     if (!chatLogArea) return;
     const messageDiv = document.createElement('div');
@@ -79,9 +83,9 @@ function appendToChatLog(text, sender) {
         messageDiv.classList.add('user-message');
         messageDiv.textContent = text;
         chatLogArea.appendChild(messageDiv);
-    } else { // AI message, apply typing effect
+    } else {
         messageDiv.classList.add('ai-message');
-        messageDiv.classList.add('typing'); // Add .typing class to show cursor
+        messageDiv.classList.add('typing');
 
         const contentSpan = document.createElement('span');
         contentSpan.classList.add('ai-message-content');
@@ -98,10 +102,7 @@ function appendToChatLog(text, sender) {
                 chatLogArea.scrollTop = chatLogArea.scrollHeight;
                 setTimeout(typeCharacter, typingSpeed);
             } else {
-                // Typing finished for this message
                 messageDiv.classList.remove('typing');
-                // Now that typing is done, transition Weibo's state
-                // Also update status text here for successful AI response.
                 if (aiCoreStatusText) aiCoreStatusText.textContent = 'Response complete. Standing by.';
                 setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
             }
@@ -132,7 +133,7 @@ async function sendMessage() {
             }),
         });
 
-        setWeiboState('weibo-talking');
+        setWeiboState('weibo-talking'); // Will be quickly followed by appendToChatLog's logic
 
         if (!response.ok) {
             let errorMsg = `Error: ${response.status} ${response.statusText}`;
@@ -143,39 +144,36 @@ async function sendMessage() {
                 } else if (errorData && errorData.response && typeof errorData.response === 'string') {
                     errorMsg = errorData.response;
                 }
-            } catch (e) { /* Ignore if error response is not JSON */ }
-            appendToChatLog(errorMsg, 'ai');
+            } catch (e) { /* Ignore */ }
+            appendToChatLog(errorMsg, 'ai'); // This will call setWeiboState to idle after typing error
             aiCoreStatusText.textContent = 'Error processing directive.';
-            setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 500);
+            // No direct setWeiboState here, appendToChatLog handles it after typing the error.
             return;
         }
 
         const data = await response.json();
         if (data.response) {
             appendToChatLog(data.response, 'ai');
-            aiCoreStatusText.textContent = 'Directive processed. Standing by.';
-            setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 500);
+            // aiCoreStatusText and setWeiboState handled by appendToChatLog after typing
         } else if (data.error) {
             appendToChatLog(`Error: ${data.error}`, 'ai');
-            aiCoreStatusText.textContent = 'Error from AI.';
-            setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 500);
+            aiCoreStatusText.textContent = 'Error from AI.'; // This might be overwritten by appendToChatLog
+            // setWeiboState handled by appendToChatLog
         } else {
             appendToChatLog('Received an empty or unexpected response.', 'ai');
-            aiCoreStatusText.textContent = 'Unexpected response received.';
-            setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 500);
+            aiCoreStatusText.textContent = 'Unexpected response received.'; // Overwritten by appendToChatLog
+            // setWeiboState handled by appendToChatLog
         }
 
     } catch (error) {
         console.error('Failed to send message:', error);
-        appendToChatLog(`Connection error: ${error.message}`, 'ai');
-        aiCoreStatusText.textContent = 'Connection Error. System Offline?';
-        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+        appendToChatLog(`Connection error: ${error.message}`, 'ai'); // This will set state to idle after typing
+        aiCoreStatusText.textContent = 'Connection Error. System Offline?'; // May be overwritten
     }
 }
 
 function animateIdleWeibo() {
     if (!processingIndicator || !aiCoreDisplay) {
-        console.warn("Processing indicator or AI core display not found for animateIdleWeibo.");
         return;
     }
     if (!processingIndicator.classList.contains('idle')) {
@@ -187,7 +185,6 @@ function animateIdleWeibo() {
     const baseIndicatorHeight = 80;
 
     if (!parentRect || parentRect.width === 0 || parentRect.height === 0) {
-         console.warn("aiCoreDisplay has no dimensions or not found, cannot animate idle Weibo.");
          idleAnimationTimeoutId = setTimeout(animateIdleWeibo, 5000);
          return;
     }
@@ -205,7 +202,7 @@ function animateIdleWeibo() {
     targetX = Math.max(0, Math.min(targetX, maxX));
     targetY = Math.max(0, Math.min(targetY, maxY));
 
-    console.log(`Animating Idle (top/left + scale): Scale=${randomScale.toFixed(2)}, TargetX=${targetX.toFixed(2)}, TargetY=${targetY.toFixed(2)} (maxX:${maxX.toFixed(2)}, maxY:${maxY.toFixed(2)}) ScaledW:${currentScaledWidth.toFixed(2)}`);
+    // console.log(`Animating Idle (top/left + scale): Scale=${randomScale.toFixed(2)}, TargetX=${targetX.toFixed(2)}, TargetY=${targetY.toFixed(2)} (maxX:${maxX.toFixed(2)}, maxY:${maxY.toFixed(2)}) ScaledW:${currentScaledWidth.toFixed(2)}`);
 
     processingIndicator.style.left = `${targetX}px`;
     processingIndicator.style.top = `${targetY}px`;
@@ -223,8 +220,6 @@ function startIdleAnimation() {
             if (currentDisplayState === 'idle') {
                 animateIdleWeibo();
             }
-        } else {
-            console.warn("Cannot start idle animation: elements not ready.");
         }
     }, 100);
 }
@@ -263,64 +258,47 @@ function toggleBackgroundWork() {
 // --- Matrix Animation Logic ---
 function createMatrixColumn() {
     if (!matrixScrollEffect || !aiCoreDisplay) return null;
-
     const column = document.createElement('div');
     column.classList.add('matrix-column');
-
     const parentWidth = aiCoreDisplay.clientWidth;
     column.style.left = `${Math.random() * (parentWidth - MATRIX_COLUMN_WIDTH)}px`;
-    column.style.top = `-${Math.random() * 200}px`; // Start off-screen from top
-    column.style.opacity = '0'; // Start faded out
-
-    let stream = "";
-    const streamLength = 10 + Math.floor(Math.random() * 20); // 10-29 chars
+    column.style.top = `-${Math.random() * 200}px`;
+    column.style.opacity = '0';
+    const streamLength = 10 + Math.floor(Math.random() * 20);
     for (let i = 0; i < streamLength; i++) {
         const char = MATRIX_CHARACTERS[Math.floor(Math.random() * MATRIX_CHARACTERS.length)];
         const span = document.createElement('span');
         span.textContent = char;
-        if (i === 0) { // Highlight leading character
-            span.classList.add('matrix-highlight');
-        }
+        if (i === 0) span.classList.add('matrix-highlight');
         column.appendChild(span);
     }
-
     matrixScrollEffect.appendChild(column);
     matrixColumns.push(column);
-
-    // Fade in
-    setTimeout(() => { column.style.opacity = '0.3'; }, 50); // Slight fade-in for effect
+    setTimeout(() => { column.style.opacity = '0.3'; }, 50);
     return column;
 }
 
 function animateMatrix(timestamp) {
     if (!matrixScrollEffect || matrixScrollEffect.style.display === 'none') {
-        matrixAnimationId = null; // Ensure animation stops if effect is hidden
+        matrixAnimationId = null;
         return;
     }
-
-    // Spawn new columns periodically
     if (timestamp - lastMatrixSpawnTime > MATRIX_SPAWN_INTERVAL) {
-        if (matrixColumns.length < 50) { // Limit number of columns
-            createMatrixColumn();
-        }
+        if (matrixColumns.length < 50) createMatrixColumn();
         lastMatrixSpawnTime = timestamp;
     }
-
     const parentHeight = aiCoreDisplay.clientHeight;
-
     for (let i = matrixColumns.length - 1; i >= 0; i--) {
         const column = matrixColumns[i];
         let top = parseFloat(column.style.top || 0);
-        top += 1 + Math.random() * 2; // Random speed
-
+        top += 1 + Math.random() * 2;
         if (top > parentHeight) {
             column.remove();
             matrixColumns.splice(i, 1);
         } else {
             column.style.top = `${top}px`;
-            // Optionally, change characters or fade leading char
             const spans = column.getElementsByTagName('span');
-            if (spans.length > 0 && Math.random() < 0.05) { // Occasionally change a char
+            if (spans.length > 0 && Math.random() < 0.05) {
                  const charIndexToChange = Math.floor(Math.random() * spans.length);
                  spans[charIndexToChange].textContent = MATRIX_CHARACTERS[Math.floor(Math.random() * MATRIX_CHARACTERS.length)];
                  if (charIndexToChange === 0) spans[charIndexToChange].classList.add('matrix-highlight');
@@ -331,66 +309,52 @@ function animateMatrix(timestamp) {
 }
 
 function startMatrixAnimation() {
-    if (matrixAnimationId) return; // Already running
-    if (!matrixScrollEffect) return;
+    if (matrixAnimationId || !matrixScrollEffect) return;
     matrixScrollEffect.style.display = 'block';
     lastMatrixSpawnTime = performance.now();
     matrixAnimationId = requestAnimationFrame(animateMatrix);
 }
 
 function stopMatrixAnimation() {
-    if (matrixAnimationId) {
-        cancelAnimationFrame(matrixAnimationId);
-        matrixAnimationId = null;
-    }
+    if (matrixAnimationId) cancelAnimationFrame(matrixAnimationId);
+    matrixAnimationId = null;
     if (matrixScrollEffect) {
-        matrixScrollEffect.innerHTML = ''; // Clear existing columns
-         matrixScrollEffect.style.display = 'none';
+        matrixScrollEffect.innerHTML = '';
+        matrixScrollEffect.style.display = 'none';
     }
-    matrixColumns = []; // Reset columns array
+    matrixColumns = [];
 }
-
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
-    // Ensure global consts are assigned if not already
-    if (!window.chatLogArea) window.chatLogArea = document.getElementById('chatLogArea');
-    if (!window.userInput) window.userInput = document.getElementById('userInput');
-    if (!window.sendButton) window.sendButton = document.getElementById('sendButton');
-    if (!window.aiCoreStatusText) window.aiCoreStatusText = document.getElementById('aiCoreStatusText');
-    if (!window.processingIndicator) window.processingIndicator = document.getElementById('processingIndicator');
-    if (!window.aiCoreDisplay) window.aiCoreDisplay = document.getElementById('aiCoreDisplay');
-    if (!window.matrixScrollEffect) window.matrixScrollEffect = document.getElementById('matrixScrollEffect'); // Assign new global
+    // Assign global consts
+    chatLogArea = document.getElementById('chatLogArea');
+    userInput = document.getElementById('userInput');
+    sendButton = document.getElementById('sendButton');
+    aiCoreStatusText = document.getElementById('aiCoreStatusText');
+    processingIndicator = document.getElementById('processingIndicator');
+    aiCoreDisplay = document.getElementById('aiCoreDisplay');
+    matrixScrollEffect = document.getElementById('matrixScrollEffect');
+    helpButton = document.getElementById('helpButton');
+    helpMenuPopup = document.getElementById('helpMenuPopup');
+    statusPanel = document.getElementById('statusPanel');
+    statusPanelToggle = document.getElementById('statusPanelToggle');
 
-    const helpButton = document.getElementById('helpButton'); // Keep these local to DOMContentLoaded
-    const helpMenuPopup = document.getElementById('helpMenuPopup');
-
-
+    // Initial Diagnostics
     if (aiCoreDisplay) {
         const rect = aiCoreDisplay.getBoundingClientRect();
         const styles = window.getComputedStyle(aiCoreDisplay);
-        console.log("aiCoreDisplay Info:",
-            "Width:", rect.width, "Height:", rect.height,
-            "Top:", rect.top, "Left:", rect.left,
-            "Computed Position:", styles.position);
-    } else {
-        console.error("aiCoreDisplay element NOT FOUND at DOMContentLoaded!");
-    }
+        console.log("aiCoreDisplay Info:", "Width:", rect.width, "Height:", rect.height, "Top:", rect.top, "Left:", rect.left, "Computed Position:", styles.position);
+    } else { console.error("aiCoreDisplay element NOT FOUND!"); }
 
     if (processingIndicator) {
         const rect = processingIndicator.getBoundingClientRect();
         const styles = window.getComputedStyle(processingIndicator);
-        console.log("Initial processingIndicator Info:",
-            "Width:", rect.width, "Height:", rect.height,
-            "Top:", rect.top, "Left:", rect.left,
-            "Computed Position:", styles.position,
-            "Computed Top:", styles.top, "Computed Left:", styles.left, "Computed Bottom:", styles.bottom, "Computed Right:", styles.right,
-            "OffsetTop:", processingIndicator.offsetTop, "OffsetLeft:", processingIndicator.offsetLeft);
-    } else {
-        console.error("processingIndicator element NOT FOUND at DOMContentLoaded!");
-    }
+        console.log("Initial processingIndicator Info:", "Width:", rect.width, "Height:", rect.height, "Top:", rect.top, "Left:", rect.left, "Computed Position:", styles.position, "OffsetTop:", processingIndicator.offsetTop, "OffsetLeft:", processingIndicator.offsetLeft);
+    } else { console.error("processingIndicator element NOT FOUND!"); }
 
+    // Setup Core Event Listeners
     if (userInput && sendButton) {
         userInput.focus();
         sendButton.addEventListener('click', sendMessage);
@@ -400,10 +364,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendMessage();
             }
         });
-    } else {
-        console.error("userInput or sendButton element NOT FOUND at DOMContentLoaded!");
-    }
+    } else { console.error("userInput or sendButton element NOT FOUND!"); }
 
+    // Help Menu Logic
     if (helpButton && helpMenuPopup && userInput) {
         helpButton.addEventListener('click', function(event) {
             event.stopPropagation();
@@ -412,12 +375,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const buttonRect = helpButton.getBoundingClientRect();
                 helpMenuPopup.style.display = 'block';
                 const menuRect = helpMenuPopup.getBoundingClientRect();
-
                 let leftPosition = buttonRect.left;
                 if (leftPosition + menuRect.width > window.innerWidth - 20) {
                     leftPosition = buttonRect.right - menuRect.width;
                 }
-
                 helpMenuPopup.style.left = `${Math.max(10, leftPosition)}px`;
                 helpMenuPopup.style.bottom = `${window.innerHeight - buttonRect.top + 10}px`;
                 helpMenuPopup.style.top = 'auto';
@@ -425,7 +386,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 helpMenuPopup.style.display = 'none';
             }
         });
-
         helpMenuPopup.addEventListener('click', function(event) {
             event.stopPropagation();
             const target = event.target.closest('li[data-command]');
@@ -433,17 +393,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 let command = target.dataset.command;
                 userInput.value = command;
                 userInput.focus();
-
                 if (command.endsWith(' ')) {
                     userInput.setSelectionRange(command.length, command.length);
                 }
                 helpMenuPopup.style.display = 'none';
             }
         });
-    } else {
-        console.error("Help menu button or popup not found at DOMContentLoaded!");
-    }
+    } else { console.error("Help menu button or popup NOT FOUND!"); }
 
+    // Status Panel Logic
+    if (statusPanel && statusPanelToggle) {
+        statusPanelToggle.addEventListener('click', function() {
+            statusPanel.classList.toggle('collapsed');
+            // Update button text/icon based on new state
+            if (statusPanel.classList.contains('collapsed')) {
+                statusPanelToggle.innerHTML = '&lt;'; // Or some icon for "open"
+                statusPanelToggle.setAttribute('title', 'Open Status Panel');
+            } else {
+                statusPanelToggle.innerHTML = '&gt;'; // Or some icon for "close"
+                statusPanelToggle.setAttribute('title', 'Close Status Panel');
+            }
+        });
+    } else { console.error("Status panel or toggle button NOT FOUND!"); }
+
+    // Initial AI State
     if (processingIndicator && aiCoreDisplay && aiCoreStatusText) {
         setWeiboState('idle');
     } else {
@@ -452,10 +425,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Global listeners moved outside DOMContentLoaded as they target document
 document.addEventListener('click', function(event) {
-    const currentHelpMenuPopup = window.helpMenuPopup || document.getElementById('helpMenuPopup');
-    const currentHelpButton = window.helpButton || document.getElementById('helpButton');
-
+    const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup'); // Ensure resolved
+    const currentHelpButton = helpButton || document.getElementById('helpButton');
     if (currentHelpMenuPopup && currentHelpMenuPopup.style.display === 'block') {
         if (currentHelpButton && !currentHelpButton.contains(event.target) && !currentHelpMenuPopup.contains(event.target)) {
             currentHelpMenuPopup.style.display = 'none';
@@ -464,7 +437,7 @@ document.addEventListener('click', function(event) {
 });
 
 document.addEventListener('keydown', function(event) {
-    const currentHelpMenuPopup = window.helpMenuPopup || document.getElementById('helpMenuPopup');
+    const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup');
     if (event.key === 'Escape' && currentHelpMenuPopup && currentHelpMenuPopup.style.display === 'block') {
         currentHelpMenuPopup.style.display = 'none';
     }
