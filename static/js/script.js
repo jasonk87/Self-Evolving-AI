@@ -4,9 +4,20 @@ const sendButton = document.getElementById('sendButton');
 const aiCoreStatusText = document.getElementById('aiCoreStatusText');
 const processingIndicator = document.getElementById('processingIndicator');
 const aiCoreDisplay = document.getElementById('aiCoreDisplay');
+const matrixScrollEffect = document.getElementById('matrixScrollEffect'); // New element
 
 let idleAnimationTimeoutId = null;
 let isWeiboWorkingInBackground = false;
+let matrixAnimationId = null; // For requestAnimationFrame
+let matrixColumns = [];
+
+// Matrix Configuration
+const MATRIX_CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍｦｲｸｺｿﾁﾄﾉﾌﾔﾖﾙﾚﾛﾝ"; // Katakana + Alphanumeric
+const MATRIX_COLUMN_FONT_SIZE = 10; // Corresponds to CSS .matrix-column font-size if dynamic
+const MATRIX_COLUMN_WIDTH = 15; // Approximate width of a character column
+const MATRIX_SPAWN_INTERVAL = 100; // Milliseconds to spawn a new column
+let lastMatrixSpawnTime = 0;
+
 
 function setWeiboState(state) {
     if (!processingIndicator) {
@@ -20,6 +31,17 @@ function setWeiboState(state) {
     processingIndicator.style.left = '';
     processingIndicator.style.bottom = '';
     processingIndicator.style.right = '';
+
+    // Handle Matrix display based on state
+    if (matrixScrollEffect) {
+        if (state === 'background-processing') {
+            matrixScrollEffect.style.display = 'block';
+            startMatrixAnimation();
+        } else {
+            matrixScrollEffect.style.display = 'none';
+            stopMatrixAnimation();
+        }
+    }
 
     switch (state) {
         case 'idle':
@@ -47,18 +69,45 @@ function setWeiboState(state) {
     }
 }
 
+// ... (appendToChatLog and sendMessage functions remain the same) ...
 function appendToChatLog(text, sender) {
     if (!chatLogArea) return;
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
+
     if (sender === 'user') {
         messageDiv.classList.add('user-message');
         messageDiv.textContent = text;
-    } else {
+        chatLogArea.appendChild(messageDiv);
+    } else { // AI message, apply typing effect
         messageDiv.classList.add('ai-message');
-        messageDiv.textContent = text;
+        messageDiv.classList.add('typing'); // Add .typing class to show cursor
+
+        const contentSpan = document.createElement('span');
+        contentSpan.classList.add('ai-message-content');
+        messageDiv.appendChild(contentSpan);
+        chatLogArea.appendChild(messageDiv);
+
+        let i = 0;
+        const typingSpeed = 30;
+
+        function typeCharacter() {
+            if (i < text.length) {
+                contentSpan.textContent += text.charAt(i);
+                i++;
+                chatLogArea.scrollTop = chatLogArea.scrollHeight;
+                setTimeout(typeCharacter, typingSpeed);
+            } else {
+                // Typing finished for this message
+                messageDiv.classList.remove('typing');
+                // Now that typing is done, transition Weibo's state
+                // Also update status text here for successful AI response.
+                if (aiCoreStatusText) aiCoreStatusText.textContent = 'Response complete. Standing by.';
+                setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+            }
+        }
+        typeCharacter();
     }
-    chatLogArea.appendChild(messageDiv);
     chatLogArea.scrollTop = chatLogArea.scrollHeight;
 }
 
@@ -211,21 +260,111 @@ function toggleBackgroundWork() {
     console.log("Background work toggled:", isWeiboWorkingInBackground);
 }
 
+// --- Matrix Animation Logic ---
+function createMatrixColumn() {
+    if (!matrixScrollEffect || !aiCoreDisplay) return null;
+
+    const column = document.createElement('div');
+    column.classList.add('matrix-column');
+
+    const parentWidth = aiCoreDisplay.clientWidth;
+    column.style.left = `${Math.random() * (parentWidth - MATRIX_COLUMN_WIDTH)}px`;
+    column.style.top = `-${Math.random() * 200}px`; // Start off-screen from top
+    column.style.opacity = '0'; // Start faded out
+
+    let stream = "";
+    const streamLength = 10 + Math.floor(Math.random() * 20); // 10-29 chars
+    for (let i = 0; i < streamLength; i++) {
+        const char = MATRIX_CHARACTERS[Math.floor(Math.random() * MATRIX_CHARACTERS.length)];
+        const span = document.createElement('span');
+        span.textContent = char;
+        if (i === 0) { // Highlight leading character
+            span.classList.add('matrix-highlight');
+        }
+        column.appendChild(span);
+    }
+
+    matrixScrollEffect.appendChild(column);
+    matrixColumns.push(column);
+
+    // Fade in
+    setTimeout(() => { column.style.opacity = '0.3'; }, 50); // Slight fade-in for effect
+    return column;
+}
+
+function animateMatrix(timestamp) {
+    if (!matrixScrollEffect || matrixScrollEffect.style.display === 'none') {
+        matrixAnimationId = null; // Ensure animation stops if effect is hidden
+        return;
+    }
+
+    // Spawn new columns periodically
+    if (timestamp - lastMatrixSpawnTime > MATRIX_SPAWN_INTERVAL) {
+        if (matrixColumns.length < 50) { // Limit number of columns
+            createMatrixColumn();
+        }
+        lastMatrixSpawnTime = timestamp;
+    }
+
+    const parentHeight = aiCoreDisplay.clientHeight;
+
+    for (let i = matrixColumns.length - 1; i >= 0; i--) {
+        const column = matrixColumns[i];
+        let top = parseFloat(column.style.top || 0);
+        top += 1 + Math.random() * 2; // Random speed
+
+        if (top > parentHeight) {
+            column.remove();
+            matrixColumns.splice(i, 1);
+        } else {
+            column.style.top = `${top}px`;
+            // Optionally, change characters or fade leading char
+            const spans = column.getElementsByTagName('span');
+            if (spans.length > 0 && Math.random() < 0.05) { // Occasionally change a char
+                 const charIndexToChange = Math.floor(Math.random() * spans.length);
+                 spans[charIndexToChange].textContent = MATRIX_CHARACTERS[Math.floor(Math.random() * MATRIX_CHARACTERS.length)];
+                 if (charIndexToChange === 0) spans[charIndexToChange].classList.add('matrix-highlight');
+            }
+        }
+    }
+    matrixAnimationId = requestAnimationFrame(animateMatrix);
+}
+
+function startMatrixAnimation() {
+    if (matrixAnimationId) return; // Already running
+    if (!matrixScrollEffect) return;
+    matrixScrollEffect.style.display = 'block';
+    lastMatrixSpawnTime = performance.now();
+    matrixAnimationId = requestAnimationFrame(animateMatrix);
+}
+
+function stopMatrixAnimation() {
+    if (matrixAnimationId) {
+        cancelAnimationFrame(matrixAnimationId);
+        matrixAnimationId = null;
+    }
+    if (matrixScrollEffect) {
+        matrixScrollEffect.innerHTML = ''; // Clear existing columns
+         matrixScrollEffect.style.display = 'none';
+    }
+    matrixColumns = []; // Reset columns array
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
-    // Ensure global consts are assigned if not already (due to script loading order)
-    // This is a fallback; ideally, scope these within DOMContentLoaded or pass as parameters.
+    // Ensure global consts are assigned if not already
     if (!window.chatLogArea) window.chatLogArea = document.getElementById('chatLogArea');
     if (!window.userInput) window.userInput = document.getElementById('userInput');
     if (!window.sendButton) window.sendButton = document.getElementById('sendButton');
     if (!window.aiCoreStatusText) window.aiCoreStatusText = document.getElementById('aiCoreStatusText');
     if (!window.processingIndicator) window.processingIndicator = document.getElementById('processingIndicator');
     if (!window.aiCoreDisplay) window.aiCoreDisplay = document.getElementById('aiCoreDisplay');
+    if (!window.matrixScrollEffect) window.matrixScrollEffect = document.getElementById('matrixScrollEffect'); // Assign new global
 
-    // New Help Menu elements - ensure these are also globally accessible if needed by functions outside this event
-    if (!window.helpButton) window.helpButton = document.getElementById('helpButton');
-    if (!window.helpMenuPopup) window.helpMenuPopup = document.getElementById('helpMenuPopup');
+    const helpButton = document.getElementById('helpButton'); // Keep these local to DOMContentLoaded
+    const helpMenuPopup = document.getElementById('helpMenuPopup');
 
 
     if (aiCoreDisplay) {
@@ -265,7 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("userInput or sendButton element NOT FOUND at DOMContentLoaded!");
     }
 
-    // Help Menu Logic
     if (helpButton && helpMenuPopup && userInput) {
         helpButton.addEventListener('click', function(event) {
             event.stopPropagation();
@@ -290,16 +428,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         helpMenuPopup.addEventListener('click', function(event) {
             event.stopPropagation();
-            const target = event.target.closest('li[data-command]'); // Handle click on li or its children
+            const target = event.target.closest('li[data-command]');
             if (target) {
                 let command = target.dataset.command;
                 userInput.value = command;
                 userInput.focus();
 
                 if (command.endsWith(' ')) {
-                    // If command expects an argument, place cursor at the end
                     userInput.setSelectionRange(command.length, command.length);
-                    // Optionally, you could show the data-placeholder in some way here too
                 }
                 helpMenuPopup.style.display = 'none';
             }
@@ -316,9 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global listeners for closing the help menu - MUST be outside DOMContentLoaded if helpMenuPopup is global
 document.addEventListener('click', function(event) {
-    // Ensure helpMenuPopup and helpButton are resolved before using them
     const currentHelpMenuPopup = window.helpMenuPopup || document.getElementById('helpMenuPopup');
     const currentHelpButton = window.helpButton || document.getElementById('helpButton');
 

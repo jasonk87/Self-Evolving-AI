@@ -11,9 +11,11 @@
     --glow-color: rgba(0, 255, 255, 0.5); /* Glow effect for accent */
     --input-bg-color: #182030;
     --button-hover-bg-color: #00b8d4;
+    --matrix-green: #00ff41; /* Classic Matrix green */
 
     --font-primary: 'Orbitron', sans-serif; /* Sci-fi display font */
     --font-secondary: 'Roboto', sans-serif; /* Readable content font */
+    --font-matrix: 'Courier New', Courier, monospace;
 }
 
 body, html {
@@ -60,7 +62,7 @@ header h1 {
     flex-direction: column;
     overflow: hidden;
     padding: 15px;
-    gap: 15px; /* Space between main content children */
+    gap: 15px;
 }
 
 .ai-core-display {
@@ -68,7 +70,7 @@ header h1 {
     flex-basis: 35%;
     min-height: 150px;
     background: radial-gradient(ellipse at center, rgba(16, 24, 40, 0.8) 0%, rgba(10,15,24,0.9) 100%);
-    border: 1px solid var(--border-color); /* RESTORED BORDER */
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -78,7 +80,7 @@ header h1 {
     box-sizing: border-box;
     box-shadow: inset 0 0 15px rgba(0,0,0,0.5), 0 0 10px var(--glow-color);
     transition: box-shadow 0.3s ease-in-out;
-    overflow: visible;
+    overflow: hidden; /* Changed from visible to hidden to contain matrix if it fills this */
 }
 .ai-core-display p#aiCoreStatusText {
     font-family: var(--font-secondary);
@@ -89,9 +91,10 @@ header h1 {
     left: 50%;
     transform: translateX(-50%);
     z-index: 100;
-    background-color: rgba(16, 24, 40, 0.7);
-    padding: 2px 8px;
-    border-radius: 3px;
+    background-color: rgba(10, 15, 24, 0.85); /* Darker, more opaque bg for status */
+    padding: 3px 10px;
+    border-radius: 4px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
 }
 
 .processing-indicator {
@@ -99,30 +102,27 @@ header h1 {
     width: 80px;
     height: 80px;
     transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out, top 0.5s ease-in-out, left 0.5s ease-in-out, bottom 0.5s ease-in-out, right 0.5s ease-in-out;
-    top: 0px; /* Base position for transform calculations */
-    left: 0px;  /* Base position for transform calculations */
+    top: 0px;
+    left: 0px;
     transform-origin: center center;
     z-index: 50;
-    /* Default idle scale, will be overridden by random animation */
     transform: scale(0.8);
 }
 
-/* Add specific positioning for .idle state */
 .processing-indicator.idle,
-.processing-indicator.weibo-working-idle {
-    width: 80px; /* Ensure idle size is set here too */
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) { /* Apply resting corner only if not in work zone */
+    width: 80px;
     height: 80px;
     top: auto;
     right: auto;
-    bottom: 20px; /* Default resting corner for idle */
+    bottom: 20px;
     left: 20px;
-    transform: scale(0.8); /* Default idle scale */
+    transform: scale(0.8);
 }
 
 
 @keyframes subtle-pulse {
     0%, 100% { transform: scale(1); box-shadow: 0 0 8px var(--glow-color), 0 0 15px var(--accent-color); }
-    /* Note: scale in keyframes is relative to the element's current transform.scale */
     50% { transform: scale(1.05); box-shadow: 0 0 12px var(--glow-color), 0 0 25px var(--accent-color); }
 }
 
@@ -155,14 +155,18 @@ header h1 {
     z-index: 5;
 }
 
-.processing-indicator.idle .s1 {
+.processing-indicator.idle .s1,
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s1 {
     animation: satellite-orbit-idle 6s linear infinite;
 }
-.processing-indicator.idle .s2 { animation: satellite-orbit-idle 6s linear infinite 0.5s; }
-.processing-indicator.idle .s3 { animation: satellite-orbit-idle 6s linear infinite 1s; }
-.processing-indicator.idle .s4 { animation: satellite-orbit-idle 6s linear infinite 1.5s; }
+.processing-indicator.idle .s2,
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s2 { animation: satellite-orbit-idle 6s linear infinite 0.5s; }
+.processing-indicator.idle .s3,
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s3 { animation: satellite-orbit-idle 6s linear infinite 1s; }
+.processing-indicator.idle .s4,
+.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s4 { animation: satellite-orbit-idle 6s linear infinite 1.5s; }
 
-.processing-indicator.weibo-working-idle .orb {
+.processing-indicator.weibo-working-idle .orb { /* This applies glow to orbs when working, regardless of zone */
     box-shadow: 0 0 12px rgba(255, 165, 0, 0.7), 0 0 25px rgba(255, 165, 0, 0.5);
 }
 .processing-indicator.weibo-working-idle .main-orb {
@@ -187,12 +191,11 @@ header h1 {
 .processing-indicator.weibo-thinking {
     width: 180px;
     height: 180px;
-            /* Explicitly override idle positioning properties */
-            top: 45%; /* Shifted up to avoid status text */
-            left: 50%;
-            bottom: auto !important;
-            right: auto !important;
-            transform: translate(-50%, -50%) scale(1) !important; /* translate Y is now relative to 45% top */
+    top: 45%;
+    left: 50%;
+    bottom: auto !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) scale(1) !important;
 }
 
 .processing-indicator.weibo-thinking .main-orb {
@@ -207,7 +210,7 @@ header h1 {
     width: 25px;
     height: 25px;
     background-color: var(--accent-color);
-    transform-origin: center; /* Added for thinking state orbit */
+    transform-origin: center;
 }
 .processing-indicator.weibo-thinking .s1 { animation: thinking-satellites-spin 2s linear infinite; }
 .processing-indicator.weibo-thinking .s2 { animation: thinking-satellites-spin 2s linear infinite 0.2s; }
@@ -228,27 +231,36 @@ header h1 {
 }
 
 .processing-indicator.weibo-talking {
-    /* Position and size are same as 'thinking' state. */
-    /* If JS directly sets transform for thinking, this class just overrides animations. */
-    /* If CSS handles thinking transform, ensure this doesn't conflict or also defines it. */
-    top: 45%; /* Shifted up to avoid status text */
+    top: 45%;
     left: 50%;
     bottom: auto !important;
     right: auto !important;
     transform: translate(-50%, -50%) scale(1) !important;
 }
 
-/* Styles for when Weibo is in a designated "work zone" for background tasks */
 .processing-indicator.weibo-in-work-zone {
-    width: 60px; /* Smaller size for work zone */
+    width: 60px;
     height: 60px;
-    top: 15px;    /* Position to top-right corner */
+    top: 15px;
     right: 15px;
-    left: auto;   /* Override default/idle left */
-    bottom: auto; /* Override default/idle bottom */
-    transform: scale(0.75); /* Apply overall scale for the work zone appearance */
-    /* The .weibo-working-idle class will be added simultaneously by JS for the glow */
+    left: auto;
+    bottom: auto;
+    transform: scale(0.75);
 }
+/* Orbs within work-zone should be smaller if desired */
+.processing-indicator.weibo-in-work-zone .main-orb {
+    width: 20px; /* e.g. 60px * 0.75 * (30/80) */
+    height: 20px;
+    /* May need a different, more subtle animation or just the working glow */
+    animation: subtle-pulse 4s infinite ease-in-out; /* Slower pulse in work zone */
+}
+.processing-indicator.weibo-in-work-zone .satellite-orb {
+    width: 7px; /* e.g. 60px * 0.75 * (10/80) */
+    height: 7px;
+    /* Satellites might be static or have very minimal animation in work zone */
+    animation: none; /* Turn off orbit in work zone by default */
+}
+
 
 .processing-indicator.weibo-talking .main-orb {
     background-color: var(--accent-color);
@@ -300,12 +312,109 @@ header h1 {
 }
 
 .input-area-sci-fi {
+    position: relative;
     display: flex;
     padding: 15px;
     background-color: var(--secondary-bg-color);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
     box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+}
+
+#helpButton {
+    background-color: var(--secondary-bg-color);
+    color: var(--accent-color);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    font-size: 1.2em;
+    font-weight: bold;
+    cursor: pointer;
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    flex-shrink: 0;
+}
+
+#helpButton:hover {
+    background-color: var(--accent-color);
+    color: var(--primary-bg-color);
+    box-shadow: 0 0 8px var(--glow-color);
+}
+
+.help-menu-popup {
+    position: fixed;
+    bottom: 70px;
+    left: 20px;
+    width: 300px;
+    max-height: 400px;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2), 0 0 30px rgba(0,0,0,0.5);
+    z-index: 1000;
+    padding: 10px;
+    overflow-y: auto;
+    color: var(--text-color);
+}
+
+.help-menu-header {
+    font-family: var(--font-primary);
+    font-size: 1.2em;
+    color: var(--accent-color);
+    text-align: center;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.help-menu-category .category-title {
+    display: block;
+    font-weight: bold;
+    margin-top: 10px;
+    margin-bottom: 5px;
+    color: var(--text-secondary-color);
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.help-menu-category .category-title:first-child {
+    margin-top: 0;
+}
+
+.help-menu-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.help-menu-items li {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.95em;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.help-menu-items li:hover {
+    background-color: var(--accent-color);
+    color: var(--primary-bg-color);
+}
+
+.help-menu-items li::after {
+    content: attr(data-placeholder);
+    font-style: italic;
+    font-size: 0.8em;
+    color: var(--text-secondary-color);
+    margin-left: 8px;
+    opacity: 0.7;
+}
+.help-menu-items li:hover::after {
+    color: var(--primary-bg-color);
+    opacity: 0.8;
 }
 
 #userInput {
@@ -369,112 +478,64 @@ header h1 {
     /* Future styles for status panel will go here */
 }
 
-/* Help Button & Menu Styles */
-.input-area-sci-fi {
-    position: relative; /* For positioning help menu relative to this if needed, though fixed is likely better for popup */
+/* Matrix Scroll Effect Styles */
+#matrixScrollEffect {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(10, 20, 30, 0.1); /* Very subtle dark backdrop for matrix */
+    overflow: hidden;
+    z-index: 5; /* Behind processingIndicator (50) and statusText (100) */
+    border-radius: inherit; /* Inherit border-radius from parent .ai-core-display */
+    pointer-events: none; /* Make sure it doesn't interfere with clicks on elements above it */
 }
 
-#helpButton {
-    background-color: var(--secondary-bg-color);
-    color: var(--accent-color);
-    border: 1px solid var(--border-color);
-    border-radius: 50%; /* Circular button */
-    width: 38px; /* Adjust size as needed */
-    height: 38px;
-    font-size: 1.2em;
-    font-weight: bold;
-    cursor: pointer;
-    margin-right: 8px; /* Space between help button and input field */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-    flex-shrink: 0; /* Prevent button from shrinking */
+.matrix-column {
+    position: absolute;
+    font-family: var(--font-matrix);
+    color: var(--matrix-green);
+    font-size: 10px;
+    line-height: 12px; /* Spacing for characters */
+    user-select: none;
+    opacity: 0;
+    /* writing-mode & text-orientation can be problematic for wide compatibility / performance */
+    /* We'll use JS to create vertical streams of characters */
 }
 
-#helpButton:hover {
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-    box-shadow: 0 0 8px var(--glow-color);
-}
-
-.help-menu-popup {
-    position: fixed; /* Fixed position relative to viewport */
-    bottom: 70px; /* Distance from bottom of viewport, adjust as needed */
-    left: 20px;   /* Distance from left of viewport, adjust as needed */
-    width: 300px; /* Adjust width */
-    max-height: 400px; /* Max height before scrolling */
-    background-color: var(--secondary-bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2), 0 0 30px rgba(0,0,0,0.5);
-    z-index: 1000; /* Ensure it's on top */
-    padding: 10px;
-    overflow-y: auto;
-    color: var(--text-color);
-}
-
-.help-menu-header {
-    font-family: var(--font-primary);
-    font-size: 1.2em;
-    color: var(--accent-color);
+.matrix-column span {
+    display: block; /* Each char on a new line to form a column */
     text-align: center;
-    padding-bottom: 8px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
+}
+.matrix-column span.matrix-highlight {
+    color: #c0ffc0; /* Lighter green for highlighted char */
+    text-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14;
 }
 
-.help-menu-category .category-title {
-    display: block;
-    font-weight: bold;
-    margin-top: 10px;
-    margin-bottom: 5px;
-    color: var(--text-secondary-color);
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-.help-menu-category .category-title:first-child {
-    margin-top: 0;
+/* Typing Cursor for AI Messages */
+.ai-message-content {
+    display: inline; /* Or inline-block if it helps with cursor positioning */
 }
 
-.help-menu-items {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+.ai-message.typing .ai-message-content::after {
+    content: '|';
+    display: inline-block;
+    animation: blink-cursor 0.7s infinite;
+    color: var(--accent-color); /* Match theme */
+    margin-left: 2px;
 }
 
-.help-menu-items li {
-    padding: 8px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.95em;
-    transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.help-menu-items li:hover {
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-}
-
-.help-menu-items li::after { /* For placeholder text if we want to display it */
-    content: attr(data-placeholder);
-    font-style: italic;
-    font-size: 0.8em;
-    color: var(--text-secondary-color); /* Adjust color if needed */
-    margin-left: 8px;
-    opacity: 0.7;
-}
-.help-menu-items li:hover::after {
-    color: var(--primary-bg-color); /* Match text color on hover */
-    opacity: 0.8;
+@keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
 }
 
 
 /* Basic Responsiveness */
 @media (max-width: 768px) {
     header h1 {
-        font-size: 1.4em; /* Slightly smaller header text */
+        font-size: 1.4em;
         letter-spacing: 2px;
     }
 
@@ -484,8 +545,8 @@ header h1 {
     }
 
     .ai-core-display {
-        flex-basis: 30%; /* Reduce height proportion */
-        min-height: 120px; /* Adjust min height */
+        flex-basis: 30%;
+        min-height: 120px;
         padding: 10px;
     }
     .ai-core-display p#aiCoreStatusText {
@@ -493,7 +554,6 @@ header h1 {
         bottom: 5px;
     }
 
-    /* Adjust Weibo's active (thinking/talking) size */
     .processing-indicator.weibo-thinking,
     .processing-indicator.weibo-talking {
         width: 120px;
@@ -509,13 +569,12 @@ header h1 {
         width: 18px;
         height: 18px;
     }
-    /* Adjust thinking satellite orbit radius if needed */
-    @keyframes thinking-satellites-spin {
-        0% { transform: rotate(0deg) translateX(45px) scale(1.1) rotate(0deg); } /* Smaller orbit */
+
+    @keyframes thinking-satellites-spin { /* Redefined inside media query */
+        0% { transform: rotate(0deg) translateX(45px) scale(1.1) rotate(0deg); }
         100% { transform: rotate(720deg) translateX(45px) scale(1.1) rotate(-720deg); }
     }
 
-    /* Adjust Weibo's work zone size */
     .processing-indicator.weibo-in-work-zone {
         width: 50px;
         height: 50px;
@@ -524,12 +583,13 @@ header h1 {
         transform: scale(0.7);
     }
     .processing-indicator.weibo-in-work-zone .main-orb {
-        width: 25px; height: 25px; /* Adjust main orb in work zone */
+        width: 25px; height: 25px;
     }
     .processing-indicator.weibo-in-work-zone .satellite-orb {
-        width: 8px; height: 8px; /* Adjust satellite orbs in work zone */
+        width: 8px; height: 8px;
     }
-    @keyframes satellite-orbit-idle { /* Adjust idle orbit for smaller work zone size if they still orbit there */
+
+    @keyframes satellite-orbit-idle { /* Redefined inside media query */
         0% { transform: rotate(0deg) translateX(18px) rotate(0deg); }
         100% { transform: rotate(360deg) translateX(18px) rotate(-360deg); }
     }
@@ -541,22 +601,39 @@ header h1 {
     .chat-log-area .message {
         padding: 8px 12px;
         font-size: 0.9em;
-        max-width: 85%; /* Allow messages to take a bit more width */
+        max-width: 85%;
     }
 
     .input-area-sci-fi {
         padding: 10px;
-        flex-direction: column; /* Stack input and button on small screens */
+        flex-direction: column;
         gap: 8px;
     }
     #userInput {
         font-size: 1em;
         padding: 10px 15px;
-        margin-right: 0; /* Remove margin when stacked */
+        margin-right: 0;
     }
     #sendButton {
         font-size: 0.9em;
         padding: 10px 15px;
+    }
+
+    /* Help Menu adjustments for smaller screens */
+    .help-menu-popup {
+        width: 90%; /* More screen width */
+        max-width: 320px; /* But not too wide */
+        left: 50%;
+        transform: translateX(-50%); /* Center it */
+        bottom: 65px; /* Adjust if input area stacks */
+    }
+    #matrixScrollEffect {
+        /* Ensure matrix effect is subtle on small screens if performance is a concern */
+        /* Or simply less dense via JS logic */
+    }
+     .matrix-column {
+        font-size: 9px;
+        line-height: 11px;
     }
 }
 
@@ -583,8 +660,17 @@ header h1 {
         width: 15px;
         height: 15px;
     }
-    @keyframes thinking-satellites-spin { /* Further reduce orbit for very small screens */
+
+    @keyframes thinking-satellites-spin { /* Further redefined for very small screens */
         0% { transform: rotate(0deg) translateX(35px) scale(1) rotate(0deg); }
         100% { transform: rotate(720deg) translateX(35px) scale(1) rotate(-720deg); }
+    }
+
+    .help-menu-popup {
+        bottom: 60px; /* Further adjust for smaller stacked input area */
+    }
+     .matrix-column {
+        font-size: 8px;
+        line-height: 10px;
     }
 }
