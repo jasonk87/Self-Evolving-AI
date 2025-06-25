@@ -151,7 +151,7 @@ function animateIdleWeibo() {
     const maxY = parentRect.height - (currentScaledHeight / 2);
 
     const targetableWidth = Math.max(0, maxX - minX);
-    const targetableWidth = Math.max(0, maxX - minX);
+    // Removed duplicate const targetableWidth = Math.max(0, maxX - minX);
     const targetableHeight = Math.max(0, maxY - minY);
 
     let dTargetX = minX + (Math.random() * targetableWidth);
