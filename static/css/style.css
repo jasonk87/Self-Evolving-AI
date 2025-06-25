@@ -98,15 +98,31 @@ header h1 {
     position: absolute;
     width: 80px;
     height: 80px;
-    transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out;
+    transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out, top 0.5s ease-in-out, left 0.5s ease-in-out, bottom 0.5s ease-in-out, right 0.5s ease-in-out;
     top: 0px; /* Base position for transform calculations */
     left: 0px;  /* Base position for transform calculations */
     transform-origin: center center;
     z-index: 50;
+    /* Default idle scale, will be overridden by random animation */
+    transform: scale(0.8);
 }
+
+/* Add specific positioning for .idle state */
+.processing-indicator.idle,
+.processing-indicator.weibo-working-idle {
+    width: 80px; /* Ensure idle size is set here too */
+    height: 80px;
+    top: auto;
+    right: auto;
+    bottom: 20px; /* Default resting corner for idle */
+    left: 20px;
+    transform: scale(0.8); /* Default idle scale */
+}
+
 
 @keyframes subtle-pulse {
     0%, 100% { transform: scale(1); box-shadow: 0 0 8px var(--glow-color), 0 0 15px var(--accent-color); }
+    /* Note: scale in keyframes is relative to the element's current transform.scale */
     50% { transform: scale(1.05); box-shadow: 0 0 12px var(--glow-color), 0 0 25px var(--accent-color); }
 }
 
