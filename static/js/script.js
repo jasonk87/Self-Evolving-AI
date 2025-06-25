@@ -21,6 +21,11 @@ function setWeiboState(state) {
         }
     } else {
         stopIdleAnimation();
+                // When stopping idle animation for an active state, clear any inline transform
+                // so CSS class-based transforms for centering can take over.
+                if (processingIndicator) { // Ensure element exists
+                    processingIndicator.style.transform = '';
+                }
     }
 }
 
