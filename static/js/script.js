@@ -11,6 +11,8 @@ let helpButton = null;
 let helpMenuPopup = null;
 let statusPanel = null;
 let statusPanelToggle = null;
+let activeTasksList = null;
+let refreshActiveTasksBtn = null; // New button
 
 
 let idleAnimationTimeoutId = null;
@@ -133,7 +135,7 @@ async function sendMessage() {
             }),
         });
 
-        setWeiboState('weibo-talking'); // Will be quickly followed by appendToChatLog's logic
+        setWeiboState('weibo-talking');
 
         if (!response.ok) {
             let errorMsg = `Error: ${response.status} ${response.statusText}`;
@@ -145,30 +147,26 @@ async function sendMessage() {
                     errorMsg = errorData.response;
                 }
             } catch (e) { /* Ignore */ }
-            appendToChatLog(errorMsg, 'ai'); // This will call setWeiboState to idle after typing error
+            appendToChatLog(errorMsg, 'ai');
             aiCoreStatusText.textContent = 'Error processing directive.';
-            // No direct setWeiboState here, appendToChatLog handles it after typing the error.
             return;
         }
 
         const data = await response.json();
         if (data.response) {
             appendToChatLog(data.response, 'ai');
-            // aiCoreStatusText and setWeiboState handled by appendToChatLog after typing
         } else if (data.error) {
             appendToChatLog(`Error: ${data.error}`, 'ai');
-            aiCoreStatusText.textContent = 'Error from AI.'; // This might be overwritten by appendToChatLog
-            // setWeiboState handled by appendToChatLog
+            aiCoreStatusText.textContent = 'Error from AI.';
         } else {
             appendToChatLog('Received an empty or unexpected response.', 'ai');
-            aiCoreStatusText.textContent = 'Unexpected response received.'; // Overwritten by appendToChatLog
-            // setWeiboState handled by appendToChatLog
+            aiCoreStatusText.textContent = 'Unexpected response received.';
         }
 
     } catch (error) {
         console.error('Failed to send message:', error);
-        appendToChatLog(`Connection error: ${error.message}`, 'ai'); // This will set state to idle after typing
-        aiCoreStatusText.textContent = 'Connection Error. System Offline?'; // May be overwritten
+        appendToChatLog(`Connection error: ${error.message}`, 'ai');
+        aiCoreStatusText.textContent = 'Connection Error. System Offline?';
     }
 }
 
@@ -325,6 +323,43 @@ function stopMatrixAnimation() {
     matrixColumns = [];
 }
 
+// --- Status Panel Logic ---
+async function fetchAndDisplayActiveTasks() {
+    if (!activeTasksList) {
+        console.warn("Active tasks list element not found in status panel.");
+        return;
+    }
+    activeTasksList.innerHTML = '<li>Loading tasks...</li>';
+
+    try {
+        const response = await fetch('/api/status/active_tasks');
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        }
+        const tasks = await response.json();
+
+        activeTasksList.innerHTML = '';
+        if (tasks && tasks.length > 0) {
+            tasks.forEach(task => {
+                const li = document.createElement('li');
+                let taskDesc = task.description || 'No description';
+                if (taskDesc.length > 40) taskDesc = taskDesc.substring(0, 37) + "..."; // Shorter for panel
+                const status = task.status || 'UNKNOWN';
+                const type = task.task_type || 'GENERAL';
+                li.textContent = `[${type.substring(0,10)}] ${taskDesc} - ${status}`;
+                li.title = `ID: ${task.task_id}\nFull Desc: ${task.description}\nStatus: ${status}\nReason: ${task.status_reason || 'N/A'}\nStep: ${task.current_step_description || 'N/A'}`;
+                activeTasksList.appendChild(li);
+            });
+        } else {
+            activeTasksList.innerHTML = '<li>No active tasks.</li>';
+        }
+    } catch (error) {
+        console.error("Failed to fetch active tasks:", error);
+        activeTasksList.innerHTML = `<li>Error loading tasks.</li>`;
+    }
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
@@ -340,6 +375,9 @@ document.addEventListener('DOMContentLoaded', () => {
     helpMenuPopup = document.getElementById('helpMenuPopup');
     statusPanel = document.getElementById('statusPanel');
     statusPanelToggle = document.getElementById('statusPanelToggle');
+    activeTasksList = document.getElementById('activeTasksList');
+    refreshActiveTasksBtn = document.getElementById('refreshActiveTasksBtn');
+
 
     // Initial Diagnostics
     if (aiCoreDisplay) {
@@ -375,13 +413,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const buttonRect = helpButton.getBoundingClientRect();
                 helpMenuPopup.style.display = 'block';
                 const menuRect = helpMenuPopup.getBoundingClientRect();
-                let leftPosition = buttonRect.left;
-                if (leftPosition + menuRect.width > window.innerWidth - 20) {
-                    leftPosition = buttonRect.right - menuRect.width;
+
+                if (window.innerWidth > 768) {
+                    let leftPosition = buttonRect.left;
+                    if (leftPosition + menuRect.width > window.innerWidth - 20) {
+                        leftPosition = buttonRect.right - menuRect.width;
+                    }
+                    helpMenuPopup.style.left = `${Math.max(10, leftPosition)}px`;
+                    helpMenuPopup.style.bottom = `${window.innerHeight - buttonRect.top + 10}px`;
+                    helpMenuPopup.style.top = 'auto';
+                    helpMenuPopup.style.transform = 'none';
+                } else {
+                    helpMenuPopup.style.left = '';
+                    helpMenuPopup.style.bottom = '';
+                    helpMenuPopup.style.top = 'auto';
                 }
-                helpMenuPopup.style.left = `${Math.max(10, leftPosition)}px`;
-                helpMenuPopup.style.bottom = `${window.innerHeight - buttonRect.top + 10}px`;
-                helpMenuPopup.style.top = 'auto';
             } else {
                 helpMenuPopup.style.display = 'none';
             }
@@ -404,17 +450,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Status Panel Logic
     if (statusPanel && statusPanelToggle) {
         statusPanelToggle.addEventListener('click', function() {
-            statusPanel.classList.toggle('collapsed');
-            // Update button text/icon based on new state
-            if (statusPanel.classList.contains('collapsed')) {
-                statusPanelToggle.innerHTML = '&lt;'; // Or some icon for "open"
-                statusPanelToggle.setAttribute('title', 'Open Status Panel');
-            } else {
-                statusPanelToggle.innerHTML = '&gt;'; // Or some icon for "close"
-                statusPanelToggle.setAttribute('title', 'Close Status Panel');
+            const isCollapsed = statusPanel.classList.toggle('collapsed');
+            statusPanelToggle.innerHTML = isCollapsed ? '&lt;' : '&gt;';
+            statusPanelToggle.setAttribute('title', isCollapsed ? 'Open Status Panel' : 'Close Status Panel');
+
+            if (!isCollapsed && activeTasksList) {
+                fetchAndDisplayActiveTasks();
             }
         });
     } else { console.error("Status panel or toggle button NOT FOUND!"); }
+
+    if (refreshActiveTasksBtn) {
+        refreshActiveTasksBtn.addEventListener('click', fetchAndDisplayActiveTasks);
+    } else { console.warn("Refresh active tasks button not found."); }
 
     // Initial AI State
     if (processingIndicator && aiCoreDisplay && aiCoreStatusText) {
@@ -425,9 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global listeners moved outside DOMContentLoaded as they target document
+// Global listeners for closing help menu
 document.addEventListener('click', function(event) {
-    const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup'); // Ensure resolved
+    const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup');
     const currentHelpButton = helpButton || document.getElementById('helpButton');
     if (currentHelpMenuPopup && currentHelpMenuPopup.style.display === 'block') {
         if (currentHelpButton && !currentHelpButton.contains(event.target) && !currentHelpMenuPopup.contains(event.target)) {

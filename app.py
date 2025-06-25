@@ -110,3 +110,68 @@ if __name__ == '__main__':
     # However, since `process_prompt` is async and Flask supports async routes,
     # it should integrate with asyncio's event loop.
     app.run(host='0.0.0.0', debug=True, use_reloader=False)
+
+# --- New API Endpoint for Status Panel Data ---
+from dataclasses import asdict
+from enum import Enum
+from datetime import datetime # Added import
+
+def format_task_for_json(task):
+    """Helper to convert an ActiveTask object (or similar) to a JSON-serializable dict."""
+    if not task:
+        return None
+
+    task_dict = {}
+    if hasattr(task, '__dict__'): # For standard objects
+        task_dict = task.__dict__.copy()
+    elif hasattr(task, '_asdict'): # For namedtuples
+        task_dict = task._asdict()
+    elif hasattr(task, 'task_id'): # Fallback for ActiveTask like objects if not easily dictable
+        task_dict = {
+            "task_id": task.task_id,
+            "description": task.description,
+            "status": task.status,
+            "task_type": task.task_type,
+            "related_item_id": task.related_item_id,
+            "created_at": task.created_at,
+            "last_updated_at": task.last_updated_at,
+            "status_reason": task.status_reason,
+            "current_step_description": task.current_step_description,
+            "progress_percentage": task.progress_percentage,
+            "details": task.details
+        }
+    else: # Should not happen for ActiveTask
+        return str(task)
+
+
+    for key, value in task_dict.items():
+        if isinstance(value, Enum):
+            task_dict[key] = value.name
+        elif isinstance(value, datetime): # Ensure datetime is imported if used here
+            task_dict[key] = value.isoformat()
+        # Add other type conversions if necessary (e.g., complex nested objects)
+    return task_dict
+
+@app.route('/api/status/active_tasks', methods=['GET'])
+def get_active_tasks():
+    global _task_manager_instance
+    if _task_manager_instance is None:
+        return jsonify({"error": "Task manager not initialized"}), 503
+
+    active_tasks = _task_manager_instance.list_active_tasks()
+
+    # Convert tasks to JSON-serializable format
+    formatted_tasks = [format_task_for_json(task) for task in active_tasks]
+
+    return jsonify(formatted_tasks)
+
+# Example for notifications (can be added in a similar way)
+# @app.route('/api/status/notifications', methods=['GET'])
+# def get_notifications():
+#     global _notification_manager_instance
+#     if _notification_manager_instance is None:
+#         return jsonify({"error": "Notification manager not initialized"}), 503
+#
+#     unread_notifications = _notification_manager_instance.get_notifications(status_filter='unread', limit=5) # Or make limit a param
+#     formatted_notifications = [format_task_for_json(notif) for notif in unread_notifications] # Assuming format_task_for_json can handle notification structure or adapt
+#     return jsonify(formatted_notifications)
