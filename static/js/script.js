@@ -13,8 +13,9 @@ let statusPanel = null;
 let statusPanelToggle = null;
 let activeTasksList = null;
 let refreshActiveTasksBtn = null;
-let recentNotificationsList = null; // New for notifications
-let refreshNotificationsBtn = null; // New button
+let recentNotificationsList = null;
+let refreshNotificationsBtn = null;
+let projectDisplayArea = null; // For Project Display Area
 
 
 let idleAnimationTimeoutId = null;
@@ -137,38 +138,50 @@ async function sendMessage() {
             }),
         });
 
-        setWeiboState('weibo-talking');
+        // Data structure from backend: {success: bool, chat_response: str|null, project_area_html: str|null}
+        const data = await response.json();
 
-        if (!response.ok) {
-            let errorMsg = `Error: ${response.status} ${response.statusText}`;
-            try {
-                const errorData = await response.json();
-                if (errorData && errorData.error) {
-                    errorMsg = `Error: ${errorData.error}`;
-                } else if (errorData && errorData.response && typeof errorData.response === 'string') {
-                    errorMsg = errorData.response;
-                }
-            } catch (e) { /* Ignore */ }
-            appendToChatLog(errorMsg, 'ai');
-            aiCoreStatusText.textContent = 'Error processing directive.';
+        setWeiboState('weibo-talking'); // Start "talking" animation
+
+        if (!response.ok) { // HTTP error (e.g., 500 from server, network issue already caught by outer catch)
+            let errorMsg = data.chat_response || `Server error: ${response.status} ${response.statusText}`;
+            appendToChatLog(errorMsg, 'ai'); // This will handle state change after typing
+            if (aiCoreStatusText) aiCoreStatusText.textContent = 'Error processing directive.';
             return;
         }
 
-        const data = await response.json();
-        if (data.response) {
-            appendToChatLog(data.response, 'ai');
-        } else if (data.error) {
-            appendToChatLog(`Error: ${data.error}`, 'ai');
-            // aiCoreStatusText will be updated by appendToChatLog after typing the error
-        } else {
-            appendToChatLog('Received an empty or unexpected response.', 'ai');
-            // aiCoreStatusText will be updated by appendToChatLog
+        // Handle project area HTML first
+        if (data.project_area_html && projectDisplayArea) {
+            projectDisplayArea.innerHTML = data.project_area_html;
+        } else if (data.project_area_html && !projectDisplayArea) {
+            console.error("Project display area HTML received, but #projectDisplayArea element not found!");
         }
 
-    } catch (error) {
-        console.error('Failed to send message:', error);
-        appendToChatLog(`Connection error: ${error.message}`, 'ai');
-        // aiCoreStatusText will be updated by appendToChatLog
+        // Handle chat response
+        if (data.chat_response) {
+            appendToChatLog(data.chat_response, 'ai');
+            // appendToChatLog (for AI) now handles setting aiCoreStatusText and reverting Weibo state
+        } else if (data.success === false) {
+            // Operation failed backend-side, but no specific chat response from AI
+            appendToChatLog('An operation failed, but no specific message was returned.', 'ai');
+        } else if (!data.chat_response && !data.project_area_html && data.success === true) {
+            // Successful operation but no output for chat or project area (e.g., a silent tool success)
+            appendToChatLog('Request processed successfully with no specific output.', 'ai');
+        }
+        // If only project_area_html was provided and no chat_response,
+        // appendToChatLog won't be called for 'ai', so we need to ensure Weibo state resets.
+        if (!data.chat_response && (data.project_area_html || data.success)) {
+             if (aiCoreStatusText) aiCoreStatusText.textContent = 'Directive processed. Standing by.';
+             setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+        }
+
+
+    } catch (error) { // Catches network errors for fetch, or JSON parsing errors
+        console.error('Failed to send message or parse response:', error);
+        // Ensure Weibo talking animation stops and state resets
+        setWeiboState('idle'); // Or background-processing if applicable
+        if (aiCoreStatusText) aiCoreStatusText.textContent = 'Connection Error or Invalid Response.';
+        appendToChatLog(`Error: ${error.message}`, 'ai');
     }
 }
 
@@ -256,6 +269,7 @@ function toggleBackgroundWork() {
 }
 
 // --- Matrix Animation Logic ---
+// ... (Matrix functions remain unchanged) ...
 function createMatrixColumn() {
     if (!matrixScrollEffect || !aiCoreDisplay) return null;
     const column = document.createElement('div');
@@ -328,7 +342,6 @@ function stopMatrixAnimation() {
 // --- Status Panel Logic ---
 async function fetchAndDisplayActiveTasks() {
     if (!activeTasksList) {
-        // console.warn("Active tasks list element not found in status panel."); // Already logged in DOMContentLoaded
         return;
     }
     activeTasksList.innerHTML = '<li>Loading tasks...</li>';
@@ -364,7 +377,6 @@ async function fetchAndDisplayActiveTasks() {
 
 async function fetchAndDisplayRecentNotifications() {
     if (!recentNotificationsList) {
-        // console.warn("Recent notifications list element not found."); // Logged in DOMContentLoaded
         return;
     }
     recentNotificationsList.innerHTML = '<li>Loading notifications...</li>';
@@ -384,7 +396,6 @@ async function fetchAndDisplayRecentNotifications() {
                 let summary = notif.summary_message || 'No summary';
                 if (summary.length > 45) summary = summary.substring(0, 42) + "...";
                 const type = notif.event_type || 'INFO';
-                // Format timestamp: 2023-10-27T10:30:00 -> 10/27 10:30
                 let tsDisplay = 'Unknown time';
                 if (notif.timestamp) {
                     try {
@@ -409,7 +420,6 @@ async function fetchAndDisplayRecentNotifications() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
-    // Assign global consts
     chatLogArea = document.getElementById('chatLogArea');
     userInput = document.getElementById('userInput');
     sendButton = document.getElementById('sendButton');
@@ -423,11 +433,11 @@ document.addEventListener('DOMContentLoaded', () => {
     statusPanelToggle = document.getElementById('statusPanelToggle');
     activeTasksList = document.getElementById('activeTasksList');
     refreshActiveTasksBtn = document.getElementById('refreshActiveTasksBtn');
-    recentNotificationsList = document.getElementById('recentNotificationsList'); // Assign new
-    refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn'); // Assign new
+    recentNotificationsList = document.getElementById('recentNotificationsList');
+    refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn');
+    projectDisplayArea = document.getElementById('projectDisplayArea'); // Assign projectDisplayArea
 
 
-    // Initial Diagnostics
     if (aiCoreDisplay) {
         const rect = aiCoreDisplay.getBoundingClientRect();
         const styles = window.getComputedStyle(aiCoreDisplay);
@@ -440,7 +450,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Initial processingIndicator Info:", "Width:", rect.width, "Height:", rect.height, "Top:", rect.top, "Left:", rect.left, "Computed Position:", styles.position, "OffsetTop:", processingIndicator.offsetTop, "OffsetLeft:", processingIndicator.offsetLeft);
     } else { console.error("processingIndicator element NOT FOUND!"); }
 
-    // Setup Core Event Listeners
     if (userInput && sendButton) {
         userInput.focus();
         sendButton.addEventListener('click', sendMessage);
@@ -452,7 +461,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } else { console.error("userInput or sendButton element NOT FOUND!"); }
 
-    // Help Menu Logic
     if (helpButton && helpMenuPopup && userInput) {
         helpButton.addEventListener('click', function(event) {
             event.stopPropagation();
@@ -495,16 +503,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } else { console.error("Help menu button or popup NOT FOUND!"); }
 
-    // Status Panel Logic
     if (statusPanel && statusPanelToggle) {
         statusPanelToggle.addEventListener('click', function() {
             const isCollapsed = statusPanel.classList.toggle('collapsed');
             statusPanelToggle.innerHTML = isCollapsed ? '&lt;' : '&gt;';
             statusPanelToggle.setAttribute('title', isCollapsed ? 'Open Status Panel' : 'Close Status Panel');
 
-            if (!isCollapsed) { // If panel is opened
+            if (!isCollapsed) {
                 if(activeTasksList) fetchAndDisplayActiveTasks();
-                if(recentNotificationsList) fetchAndDisplayRecentNotifications(); // Fetch notifications too
+                if(recentNotificationsList) fetchAndDisplayRecentNotifications();
             }
         });
     } else { console.error("Status panel or toggle button NOT FOUND!"); }
@@ -513,11 +520,10 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshActiveTasksBtn.addEventListener('click', fetchAndDisplayActiveTasks);
     } else { console.warn("Refresh active tasks button not found."); }
 
-    if (refreshNotificationsBtn) { // Add listener for new button
+    if (refreshNotificationsBtn) {
         refreshNotificationsBtn.addEventListener('click', fetchAndDisplayRecentNotifications);
     } else { console.warn("Refresh notifications button not found."); }
 
-    // Initial AI State
     if (processingIndicator && aiCoreDisplay && aiCoreStatusText) {
         setWeiboState('idle');
     } else {
@@ -526,7 +532,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global listeners for closing help menu
 document.addEventListener('click', function(event) {
     const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup');
     const currentHelpButton = helpButton || document.getElementById('helpButton');

@@ -113,6 +113,14 @@ Each step dictionary *MUST* contain the following keys:
 - Formulate a clear, concise, and effective search query as the first argument for the chosen search tool.
 - **Crucially, after any search tool step, you *MUST* add a subsequent step in the plan to call the 'process_search_results' tool.** (Arguments for process_search_results: search_query, search_results_json from "[[step_X_output]]", and optional kwargs: {{"processing_instruction": "answer_query" | "summarize_results" | ...}})
 
+**Displaying Rich Content in UI (Project Display Area):**
+- If the goal requires displaying formatted text, tables, lists, or other HTML-renderable content as a primary output (not just a simple chat message), and a tool named 'display_html_content_in_project_area' is available, you *SHOULD* use it.
+- The 'display_html_content_in_project_area' tool takes one argument: `html_content` (string).
+- Construct valid, well-formed HTML for the `html_content` argument. This content will be directly rendered in a designated UI panel.
+- This tool is for displaying substantial content. For brief informational messages or confirmations, a standard chat response (implied, no specific tool call needed for just text output) is usually sufficient.
+- If you generate HTML for display, ensure it is self-contained and does not rely on external CSS or JS files not already part of the main UI. Basic inline styles are acceptable if necessary.
+- Example: If the user asks to "show me the project plan as a table", and you have the plan details, you would format it as an HTML table and pass it to 'display_html_content_in_project_area'.
+
 If the goal cannot be achieved with the available tools, or if it's unclear after considering context and search, return an empty JSON list [].
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
@@ -134,6 +142,7 @@ Error Description: {error_description}
 
 Please try again. Generate a plan as a JSON list of step dictionaries.
 Each step *MUST* be a dictionary with "tool_name" (string from available tools), "args" (list of strings, use "" or "TODO_infer_arg_value" for missing values), and "kwargs" (dictionary of string:string, use {{}} if none).
+Remember the instructions about using search tools (followed by 'process_search_results') and the 'display_html_content_in_project_area' tool for rich UI content.
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
 """

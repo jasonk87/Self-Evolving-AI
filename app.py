@@ -85,17 +85,32 @@ async def chat_api():
         return jsonify({"error": "No message provided"}), 400
 
     try:
-        # Call the orchestrator's process_prompt method, now passing user_id
-        success, response_message = await orchestrator.process_prompt(user_message, user_id=user_id)
+        # Orchestrator now returns: success_bool, data_dict
+        # data_dict = {"chat_response": Optional[str], "project_area_html": Optional[str]}
+        success, response_data_dict = await orchestrator.process_prompt(user_message, user_id=user_id)
 
-        if success:
-            return jsonify({"response": response_message})
-        else:
-            # Consider if we want to expose detailed errors or keep them generic
-            return jsonify({"response": response_message, "error_detail": "Processing failed"}), 200 # Still 200, error is in payload
+        # Construct the final JSON response for the frontend
+        json_response_payload = {
+            "success": success,
+            "chat_response": response_data_dict.get("chat_response"),
+            "project_area_html": response_data_dict.get("project_area_html")
+        }
+
+        # Determine HTTP status code.
+        # Even if 'success' from orchestrator is False (e.g. plan failed but error rephrased),
+        # the API call itself might be considered successful (HTTP 200) if a message is returned.
+        # Critical internal server errors would still result in HTTP 500 from the except block.
+        status_code = 200
+
+        return jsonify(json_response_payload), status_code
     except Exception as e:
         print(f"Error in /chat_api: {e}") # Log the error
-        return jsonify({"error": "An internal error occurred processing your message."}), 500
+        # Ensure consistent error structure for critical failures
+        return jsonify({
+            "success": False,
+            "chat_response": "An internal server error occurred while processing your message.",
+            "project_area_html": None
+        }), 500
 
 
 if __name__ == '__main__':

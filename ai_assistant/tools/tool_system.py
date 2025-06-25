@@ -55,7 +55,8 @@ class ToolSystem:
             ("ai_assistant.custom_tools.git_tools", "git_tools.py"),
             ("ai_assistant.custom_tools.knowledge_tools", "knowledge_tools.py"),
             ("ai_assistant.custom_tools.meta_programming_tools", "meta_programming_tools.py"),
-            ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"), # Added
+            ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"),
+            ("ai_assistant.custom_tools.ui_tools", "ui_tools.py"), # Added new ui_tools
             ("ai_assistant.custom_tools.generated", "generated_tools_module"),
         ]
 

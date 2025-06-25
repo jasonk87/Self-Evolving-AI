@@ -100,11 +100,12 @@ class DynamicOrchestrator:
                 f"{outcome_str}")
         return "\n".join(summary_lines)
 
-    async def process_prompt(self, prompt: str, user_id: Optional[str] = None) -> Tuple[bool, str]: # Added user_id
+    async def process_prompt(self, prompt: str, user_id: Optional[str] = None) -> Tuple[bool, Dict[str, Optional[str]]]: # Changed return type
         """
         Process a user prompt by creating and executing a dynamic plan.
         Accepts an optional user_id for context.
-        Returns (success, response_message)
+        Returns (success, response_data_dict)
+        where response_data_dict = {"chat_response": Optional[str], "project_area_html": Optional[str]}
         """
         # Add user's prompt to history
         self.conversation_history.append({"role": "user", "content": prompt})
