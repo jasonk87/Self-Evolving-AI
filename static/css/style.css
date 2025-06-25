@@ -68,7 +68,7 @@ header h1 {
     flex-basis: 35%;
     min-height: 150px;
     background: radial-gradient(ellipse at center, rgba(16, 24, 40, 0.8) 0%, rgba(10,15,24,0.9) 100%);
-    border: 2px dashed red; /* DEBUG: Make it very visible */
+    border: 1px solid var(--border-color); /* RESTORED BORDER */
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -99,8 +99,8 @@ header h1 {
     width: 80px;
     height: 80px;
     transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out;
-    top: 0px; /* DEBUG: Force top-left for initial positioning test */
-    left: 0px;
+    bottom: 10px; /* RESTORED default idle position */
+    left: 10px;   /* RESTORED default idle position */
     transform-origin: center center;
     z-index: 50;
 }
@@ -171,9 +171,13 @@ header h1 {
 .processing-indicator.weibo-thinking {
     width: 180px;
     height: 180px;
-    bottom: 50%;
-    left: 50%;
-    transform: translate(-50%, 50%);
+    /* Centering logic: these are relative to parent if parent is position:relative */
+    /* If using transform for idle movement, this needs to precisely override that. */
+    /* For now, assuming JS will clear previous transforms before applying this class's transform */
+    top: 50%;    /* Target center */
+    left: 50%;   /* Target center */
+    bottom: auto;  /* Override idle positioning */
+    transform: translate(-50%, -50%); /* Precise centering */
 }
 
 .processing-indicator.weibo-thinking .main-orb {
@@ -207,6 +211,15 @@ header h1 {
     100% { transform: translateY(0px) scale(1.2); }
 }
 
+.processing-indicator.weibo-talking {
+    /* Position and size are same as 'thinking' state. */
+    /* If JS directly sets transform for thinking, this class just overrides animations. */
+    /* If CSS handles thinking transform, ensure this doesn't conflict or also defines it. */
+    top: 50%;
+    left: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+}
 .processing-indicator.weibo-talking .main-orb {
     background-color: var(--accent-color);
     animation: talking-main-orb-flare 0.8s infinite ease-in-out;
