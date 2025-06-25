@@ -65,10 +65,31 @@ header h1 {
     gap: 15px;
 }
 
+#projectDisplayArea {
+    flex-basis: 40%; /* Initially take 40% of main content height */
+    min-height: 150px; /* Minimum space for it */
+    background-color: var(--input-bg-color); /* Slightly different from secondary for distinction */
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    box-sizing: border-box;
+    overflow: auto; /* Allow scrolling for project content */
+    color: var(--text-secondary-color);
+    display: flex; /* To center placeholder text */
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+#projectDisplayArea p {
+    margin: 0;
+    font-style: italic;
+}
+
+
 .ai-core-display {
     position: relative;
-    flex-basis: 35%;
-    min-height: 150px;
+    flex-basis: 30%; /* Adjusted to make space for project area */
+    min-height: 120px; /* Adjusted min height */
     background: radial-gradient(ellipse at center, rgba(16, 24, 40, 0.8) 0%, rgba(10,15,24,0.9) 100%);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -271,7 +292,9 @@ header h1 {
 .processing-indicator.weibo-talking .s4 { animation: talking-satellites-dance 1.5s ease-in-out infinite 0.45s; transform-origin: center; }
 
 .chat-log-area {
-    flex-grow: 1;
+    flex-grow: 1; /* Adjusted to take remaining space after project and AI core */
+    /* flex-basis: 30%; */ /* Example if we want to give it a specific portion initially */
+    min-height: 100px; /* Ensure it's always somewhat visible */
     background-color: var(--secondary-bg-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -529,25 +552,25 @@ header h1 {
     position: fixed;
     top: 0;
     right: 0;
-    width: 320px; /* Width of the expanded panel */
+    width: 320px;
     height: 100%;
     background-color: var(--secondary-bg-color);
     border-left: 1px solid var(--border-color);
     box-shadow: -5px 0px 15px rgba(0,0,0,0.3);
-    z-index: 900; /* Below help menu (1000) but above most other things */
-    transform: translateX(100%); /* Initially off-screen to the right */
+    z-index: 900;
+    transform: translateX(100%);
     transition: transform 0.4s ease-in-out;
-    display: flex; /* To position toggle button */
+    display: flex;
     flex-direction: column;
 }
 
 .status-panel:not(.collapsed) {
-    transform: translateX(0%); /* Slide in from the right */
+    transform: translateX(0%);
 }
 
 .status-panel-toggle {
     position: absolute;
-    left: -40px; /* Position button outside the panel when collapsed */
+    left: -40px;
     top: 20px;
     width: 40px;
     height: 40px;
@@ -555,7 +578,7 @@ header h1 {
     color: var(--accent-color);
     border: 1px solid var(--border-color);
     border-right: none;
-    border-radius: 5px 0 0 5px; /* Rounded on the left side */
+    border-radius: 5px 0 0 5px;
     cursor: pointer;
     font-size: 1.5em;
     line-height: 1;
@@ -571,14 +594,13 @@ header h1 {
 }
 
 .status-panel.collapsed .status-panel-toggle {
-    /* Adjust if toggle button needs different styling when panel is collapsed */
 }
 
 
 .status-panel-content {
     padding: 15px;
     overflow-y: auto;
-    flex-grow: 1; /* Allow content to take available space and scroll */
+    flex-grow: 1;
 }
 
 .status-panel .status-section {
@@ -605,7 +627,7 @@ header h1 {
 
 .status-panel .status-section li {
     padding: 3px 0;
-    border-bottom: 1px dotted rgba(0, 140, 158, 0.2); /* Fainter dotted line */
+    border-bottom: 1px dotted rgba(0, 140, 158, 0.2);
 }
 .status-panel .status-section li:last-child {
     border-bottom: none;
@@ -639,11 +661,21 @@ header h1 {
         gap: 10px;
     }
 
-    .ai-core-display {
-        flex-basis: 30%;
+    /* Adjust layout for Project Display Area */
+    #projectDisplayArea {
+        flex-basis: 35%; /* Project area gets a bit less on tablet */
         min-height: 120px;
+    }
+    .ai-core-display {
+        flex-basis: 25%; /* AI core gets less */
+        min-height: 100px;
         padding: 10px;
     }
+    .chat-log-area {
+        flex-basis: 40%; /* Chat gets more */
+        min-height: 100px;
+    }
+
     .ai-core-display p#aiCoreStatusText {
         font-size: 0.9em;
         bottom: 5px;
@@ -690,9 +722,6 @@ header h1 {
     }
 
 
-    .chat-log-area {
-        padding: 10px;
-    }
     .chat-log-area .message {
         padding: 8px 12px;
         font-size: 0.9em;
@@ -728,7 +757,6 @@ header h1 {
         line-height: 11px;
     }
 
-    /* Status Panel Responsive Adjustments */
     .status-panel {
         width: 280px;
     }
@@ -744,10 +772,21 @@ header h1 {
     header h1 {
         font-size: 1.2em;
     }
-    .ai-core-display {
-        flex-basis: 25%;
+
+    /* Adjust layout for Project Display Area on phone */
+    #projectDisplayArea {
+        flex-basis: 30%;
         min-height: 100px;
     }
+    .ai-core-display {
+        flex-basis: 20%; /* Even less for AI core on small phone */
+        min-height: 80px;
+    }
+    .chat-log-area {
+        flex-basis: 50%; /* Chat gets the most */
+        min-height: 100px;
+    }
+
      .processing-indicator.weibo-thinking,
     .processing-indicator.weibo-talking {
         width: 100px;
@@ -764,33 +803,31 @@ header h1 {
         height: 15px;
     }
 
-    /* Ensure this specific keyframe for 480px is used if it's different from 768px */
     @keyframes thinking-satellites-spin {
         0% { transform: rotate(0deg) translateX(35px) scale(1) rotate(0deg); }
         100% { transform: rotate(720deg) translateX(35px) scale(1) rotate(-720deg); }
     }
 
-    /* Adjust Weibo's idle size and satellite orbit for very small screens */
     .processing-indicator.idle,
     .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) {
-        width: 60px; /* Smaller idle size */
+        width: 60px;
         height: 60px;
-        transform: scale(0.7); /* Smaller base scale */
-        bottom: 15px; /* Adjust position */
+        transform: scale(0.7);
+        bottom: 15px;
         left: 15px;
     }
     .processing-indicator.idle .main-orb,
     .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .main-orb {
-        width: 25px; /* Smaller main orb for idle */
+        width: 25px;
         height: 25px;
     }
     .processing-indicator.idle .satellite-orb,
     .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .satellite-orb {
-        width: 8px; /* Smaller satellite orbs for idle */
+        width: 8px;
         height: 8px;
     }
-    @keyframes satellite-orbit-idle { /* Redefined for 480px to match smaller idle indicator */
-        0% { transform: rotate(0deg) translateX(22px) rotate(0deg); } /* Adjusted orbit radius */
+    @keyframes satellite-orbit-idle {
+        0% { transform: rotate(0deg) translateX(22px) rotate(0deg); }
         100% { transform: rotate(360deg) translateX(22px) rotate(-360deg); }
     }
 
@@ -803,11 +840,10 @@ header h1 {
         line-height: 10px;
     }
 
-    /* Status Panel Full Width on very small screens */
     .status-panel {
         width: 100%;
-        height: calc(100% - 50px); /* Example: leave space for header or input */
-        top: 50px; /* Example: below header */
+        height: calc(100% - 50px);
+        top: 50px;
         border-left: none;
         transform: translateX(100%);
     }
@@ -817,23 +853,20 @@ header h1 {
     .status-panel-toggle {
         top: 5px;
         left: auto;
-        right: 5px; /* Position inside on the right */
+        right: 5px;
         border-radius: 5px;
-        border-right: 1px solid var(--border-color); /* Add border back if it looks better */
+        border-right: 1px solid var(--border-color);
         border-left: 1px solid var(--border-color);
         width: 30px;
         height: 30px;
         font-size: 1.1em;
     }
     .status-panel.collapsed .status-panel-toggle {
-        left: auto; /* Ensure it's not stuck off-screen */
+        left: auto;
         right: 5px;
-        transform: translateX(calc(100% + 5px)); /* Hide it with the panel edge */
+        transform: translateX(calc(100% + 5px));
     }
      .status-panel:not(.collapsed) .status-panel-toggle {
         transform: translateX(0);
     }
-
 }
-
-[end of static/css/style.css]
