@@ -480,11 +480,11 @@ header h1 {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(10, 20, 30, 0.1); /* Very subtle dark backdrop for matrix */
+    background-color: rgba(10, 20, 30, 0.1);
     overflow: hidden;
-    z-index: 5; /* Behind processingIndicator (50) and statusText (100) */
-    border-radius: inherit; /* Inherit border-radius from parent .ai-core-display */
-    pointer-events: none; /* Make sure it doesn't interfere with clicks on elements above it */
+    z-index: 5;
+    border-radius: inherit;
+    pointer-events: none;
 }
 
 .matrix-column {
@@ -492,32 +492,30 @@ header h1 {
     font-family: var(--font-matrix);
     color: var(--matrix-green);
     font-size: 10px;
-    line-height: 12px; /* Spacing for characters */
+    line-height: 12px;
     user-select: none;
     opacity: 0;
-    /* writing-mode & text-orientation can be problematic for wide compatibility / performance */
-    /* We'll use JS to create vertical streams of characters */
 }
 
 .matrix-column span {
-    display: block; /* Each char on a new line to form a column */
+    display: block;
     text-align: center;
 }
 .matrix-column span.matrix-highlight {
-    color: #c0ffc0; /* Lighter green for highlighted char */
+    color: #c0ffc0;
     text-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14;
 }
 
 /* Typing Cursor for AI Messages */
 .ai-message-content {
-    display: inline; /* Or inline-block if it helps with cursor positioning */
+    display: inline;
 }
 
 .ai-message.typing .ai-message-content::after {
     content: '|';
     display: inline-block;
     animation: blink-cursor 0.7s infinite;
-    color: var(--accent-color); /* Match theme */
+    color: var(--accent-color);
     margin-left: 2px;
 }
 
@@ -565,7 +563,7 @@ header h1 {
         height: 18px;
     }
 
-    @keyframes thinking-satellites-spin { /* Redefined inside media query */
+    @keyframes thinking-satellites-spin {
         0% { transform: rotate(0deg) translateX(45px) scale(1.1) rotate(0deg); }
         100% { transform: rotate(720deg) translateX(45px) scale(1.1) rotate(-720deg); }
     }
@@ -584,7 +582,7 @@ header h1 {
         width: 8px; height: 8px;
     }
 
-    @keyframes satellite-orbit-idle { /* Redefined inside media query */
+    @keyframes satellite-orbit-idle {
         0% { transform: rotate(0deg) translateX(18px) rotate(0deg); }
         100% { transform: rotate(360deg) translateX(18px) rotate(-360deg); }
     }
@@ -614,21 +612,29 @@ header h1 {
         padding: 10px 15px;
     }
 
-    /* Help Menu adjustments for smaller screens */
     .help-menu-popup {
-        width: 90%; /* More screen width */
-        max-width: 320px; /* But not too wide */
+        width: 90%;
+        max-width: 320px;
         left: 50%;
-        transform: translateX(-50%); /* Center it */
-        bottom: 65px; /* Adjust if input area stacks */
+        transform: translateX(-50%);
+        bottom: 65px;
     }
     #matrixScrollEffect {
-        /* Ensure matrix effect is subtle on small screens if performance is a concern */
-        /* Or simply less dense via JS logic */
     }
      .matrix-column {
         font-size: 9px;
         line-height: 11px;
+    }
+
+    /* Status Panel Responsive Adjustments */
+    .status-panel {
+        width: 280px;
+    }
+    .status-panel-toggle {
+        left: -35px;
+        width: 35px;
+        height: 35px;
+        font-size: 1.3em;
     }
 }
 
@@ -656,18 +662,76 @@ header h1 {
         height: 15px;
     }
 
-    @keyframes thinking-satellites-spin { /* Further redefined for very small screens */
+    /* Ensure this specific keyframe for 480px is used if it's different from 768px */
+    @keyframes thinking-satellites-spin {
         0% { transform: rotate(0deg) translateX(35px) scale(1) rotate(0deg); }
         100% { transform: rotate(720deg) translateX(35px) scale(1) rotate(-720deg); }
     }
 
+    /* Adjust Weibo's idle size and satellite orbit for very small screens */
+    .processing-indicator.idle,
+    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) {
+        width: 60px; /* Smaller idle size */
+        height: 60px;
+        transform: scale(0.7); /* Smaller base scale */
+        bottom: 15px; /* Adjust position */
+        left: 15px;
+    }
+    .processing-indicator.idle .main-orb,
+    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .main-orb {
+        width: 25px; /* Smaller main orb for idle */
+        height: 25px;
+    }
+    .processing-indicator.idle .satellite-orb,
+    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .satellite-orb {
+        width: 8px; /* Smaller satellite orbs for idle */
+        height: 8px;
+    }
+    @keyframes satellite-orbit-idle { /* Redefined for 480px to match smaller idle indicator */
+        0% { transform: rotate(0deg) translateX(22px) rotate(0deg); } /* Adjusted orbit radius */
+        100% { transform: rotate(360deg) translateX(22px) rotate(-360deg); }
+    }
+
+
     .help-menu-popup {
-        bottom: 60px; /* Further adjust for smaller stacked input area */
+        bottom: 60px;
     }
      .matrix-column {
         font-size: 8px;
         line-height: 10px;
     }
+
+    /* Status Panel Full Width on very small screens */
+    .status-panel {
+        width: 100%;
+        height: calc(100% - 50px); /* Example: leave space for header or input */
+        top: 50px; /* Example: below header */
+        border-left: none;
+        transform: translateX(100%);
+    }
+    .status-panel:not(.collapsed) {
+        transform: translateX(0%);
+    }
+    .status-panel-toggle {
+        top: 5px;
+        left: auto;
+        right: 5px; /* Position inside on the right */
+        border-radius: 5px;
+        border-right: 1px solid var(--border-color); /* Add border back if it looks better */
+        border-left: 1px solid var(--border-color);
+        width: 30px;
+        height: 30px;
+        font-size: 1.1em;
+    }
+    .status-panel.collapsed .status-panel-toggle {
+        left: auto; /* Ensure it's not stuck off-screen */
+        right: 5px;
+        transform: translateX(calc(100% + 5px)); /* Hide it with the panel edge */
+    }
+     .status-panel:not(.collapsed) .status-panel-toggle {
+        transform: translateX(0);
+    }
+
 }
 
 [end of static/css/style.css]
