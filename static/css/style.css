@@ -369,6 +369,108 @@ header h1 {
     /* Future styles for status panel will go here */
 }
 
+/* Help Button & Menu Styles */
+.input-area-sci-fi {
+    position: relative; /* For positioning help menu relative to this if needed, though fixed is likely better for popup */
+}
+
+#helpButton {
+    background-color: var(--secondary-bg-color);
+    color: var(--accent-color);
+    border: 1px solid var(--border-color);
+    border-radius: 50%; /* Circular button */
+    width: 38px; /* Adjust size as needed */
+    height: 38px;
+    font-size: 1.2em;
+    font-weight: bold;
+    cursor: pointer;
+    margin-right: 8px; /* Space between help button and input field */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    flex-shrink: 0; /* Prevent button from shrinking */
+}
+
+#helpButton:hover {
+    background-color: var(--accent-color);
+    color: var(--primary-bg-color);
+    box-shadow: 0 0 8px var(--glow-color);
+}
+
+.help-menu-popup {
+    position: fixed; /* Fixed position relative to viewport */
+    bottom: 70px; /* Distance from bottom of viewport, adjust as needed */
+    left: 20px;   /* Distance from left of viewport, adjust as needed */
+    width: 300px; /* Adjust width */
+    max-height: 400px; /* Max height before scrolling */
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2), 0 0 30px rgba(0,0,0,0.5);
+    z-index: 1000; /* Ensure it's on top */
+    padding: 10px;
+    overflow-y: auto;
+    color: var(--text-color);
+}
+
+.help-menu-header {
+    font-family: var(--font-primary);
+    font-size: 1.2em;
+    color: var(--accent-color);
+    text-align: center;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.help-menu-category .category-title {
+    display: block;
+    font-weight: bold;
+    margin-top: 10px;
+    margin-bottom: 5px;
+    color: var(--text-secondary-color);
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.help-menu-category .category-title:first-child {
+    margin-top: 0;
+}
+
+.help-menu-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.help-menu-items li {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.95em;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.help-menu-items li:hover {
+    background-color: var(--accent-color);
+    color: var(--primary-bg-color);
+}
+
+.help-menu-items li::after { /* For placeholder text if we want to display it */
+    content: attr(data-placeholder);
+    font-style: italic;
+    font-size: 0.8em;
+    color: var(--text-secondary-color); /* Adjust color if needed */
+    margin-left: 8px;
+    opacity: 0.7;
+}
+.help-menu-items li:hover::after {
+    color: var(--primary-bg-color); /* Match text color on hover */
+    opacity: 0.8;
+}
+
+
 /* Basic Responsiveness */
 @media (max-width: 768px) {
     header h1 {

@@ -79,7 +79,7 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
                 message: messageText,
-                user_id: "user_static_test_01" // Added static user_id
+                user_id: "user_static_test_01"
             }),
         });
 
@@ -134,8 +134,8 @@ function animateIdleWeibo() {
     }
 
     const parentRect = aiCoreDisplay.getBoundingClientRect();
-    const baseIndicatorWidth = 80; // As defined in .processing-indicator CSS
-    const baseIndicatorHeight = 80; // As defined in .processing-indicator CSS
+    const baseIndicatorWidth = 80;
+    const baseIndicatorHeight = 80;
 
     if (!parentRect || parentRect.width === 0 || parentRect.height === 0) {
          console.warn("aiCoreDisplay has no dimensions or not found, cannot animate idle Weibo.");
@@ -143,18 +143,16 @@ function animateIdleWeibo() {
          return;
     }
 
-    const randomScale = 0.7 + Math.random() * 0.6; // e.g. 0.7 to 1.3
+    const randomScale = 0.7 + Math.random() * 0.6;
     const currentScaledWidth = baseIndicatorWidth * randomScale;
     const currentScaledHeight = baseIndicatorHeight * randomScale;
 
-    // Calculate max X and Y for the TOP-LEFT corner of the SCALED indicator
     const maxX = parentRect.width - currentScaledWidth;
     const maxY = parentRect.height - currentScaledHeight;
 
     let targetX = Math.random() * Math.max(0, maxX);
     let targetY = Math.random() * Math.max(0, maxY);
 
-    // Clamp values for top-left corner
     targetX = Math.max(0, Math.min(targetX, maxX));
     targetY = Math.max(0, Math.min(targetY, maxY));
 
@@ -216,12 +214,18 @@ function toggleBackgroundWork() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
+    // Ensure global consts are assigned if not already (due to script loading order)
+    // This is a fallback; ideally, scope these within DOMContentLoaded or pass as parameters.
     if (!window.chatLogArea) window.chatLogArea = document.getElementById('chatLogArea');
     if (!window.userInput) window.userInput = document.getElementById('userInput');
     if (!window.sendButton) window.sendButton = document.getElementById('sendButton');
     if (!window.aiCoreStatusText) window.aiCoreStatusText = document.getElementById('aiCoreStatusText');
     if (!window.processingIndicator) window.processingIndicator = document.getElementById('processingIndicator');
     if (!window.aiCoreDisplay) window.aiCoreDisplay = document.getElementById('aiCoreDisplay');
+
+    // New Help Menu elements - ensure these are also globally accessible if needed by functions outside this event
+    if (!window.helpButton) window.helpButton = document.getElementById('helpButton');
+    if (!window.helpMenuPopup) window.helpMenuPopup = document.getElementById('helpMenuPopup');
 
 
     if (aiCoreDisplay) {
@@ -261,10 +265,73 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("userInput or sendButton element NOT FOUND at DOMContentLoaded!");
     }
 
+    // Help Menu Logic
+    if (helpButton && helpMenuPopup && userInput) {
+        helpButton.addEventListener('click', function(event) {
+            event.stopPropagation();
+            const isHidden = helpMenuPopup.style.display === 'none' || helpMenuPopup.style.display === '';
+            if (isHidden) {
+                const buttonRect = helpButton.getBoundingClientRect();
+                helpMenuPopup.style.display = 'block';
+                const menuRect = helpMenuPopup.getBoundingClientRect();
+
+                let leftPosition = buttonRect.left;
+                if (leftPosition + menuRect.width > window.innerWidth - 20) {
+                    leftPosition = buttonRect.right - menuRect.width;
+                }
+
+                helpMenuPopup.style.left = `${Math.max(10, leftPosition)}px`;
+                helpMenuPopup.style.bottom = `${window.innerHeight - buttonRect.top + 10}px`;
+                helpMenuPopup.style.top = 'auto';
+            } else {
+                helpMenuPopup.style.display = 'none';
+            }
+        });
+
+        helpMenuPopup.addEventListener('click', function(event) {
+            event.stopPropagation();
+            const target = event.target.closest('li[data-command]'); // Handle click on li or its children
+            if (target) {
+                let command = target.dataset.command;
+                userInput.value = command;
+                userInput.focus();
+
+                if (command.endsWith(' ')) {
+                    // If command expects an argument, place cursor at the end
+                    userInput.setSelectionRange(command.length, command.length);
+                    // Optionally, you could show the data-placeholder in some way here too
+                }
+                helpMenuPopup.style.display = 'none';
+            }
+        });
+    } else {
+        console.error("Help menu button or popup not found at DOMContentLoaded!");
+    }
+
     if (processingIndicator && aiCoreDisplay && aiCoreStatusText) {
         setWeiboState('idle');
     } else {
         console.error("One or more core elements for Weibo state are missing. Cannot set initial state.");
         if(aiCoreStatusText) aiCoreStatusText.textContent = "UI Error: Core elements missing.";
+    }
+});
+
+// Global listeners for closing the help menu - MUST be outside DOMContentLoaded if helpMenuPopup is global
+document.addEventListener('click', function(event) {
+    // Ensure helpMenuPopup and helpButton are resolved before using them
+    const currentHelpMenuPopup = window.helpMenuPopup || document.getElementById('helpMenuPopup');
+    const currentHelpButton = window.helpButton || document.getElementById('helpButton');
+
+    if (currentHelpMenuPopup && currentHelpMenuPopup.style.display === 'block') {
+        if (currentHelpButton && !currentHelpButton.contains(event.target) && !currentHelpMenuPopup.contains(event.target)) {
+            currentHelpMenuPopup.style.display = 'none';
+        }
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    const currentHelpMenuPopup = window.helpMenuPopup || document.getElementById('helpMenuPopup');
+    if (event.key === 'Escape' && currentHelpMenuPopup && currentHelpMenuPopup.style.display === 'block') {
+        currentHelpMenuPopup.style.display = 'none';
     }
 });

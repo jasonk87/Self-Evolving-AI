@@ -30,8 +30,41 @@
         </div>
 
         <div class="input-area-sci-fi">
+            <button id="helpButton" class="help-btn" title="Help & Commands">?</button>
             <input type="text" id="userInput" placeholder="Transmit directive..." autofocus>
             <button id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <div id="helpMenuPopup" class="help-menu-popup" style="display:none;">
+        <div class="help-menu-header">Available Commands</div>
+        <div class="help-menu-content">
+            <div class="help-menu-category">
+                <span class="category-title">Suggestions</span>
+                <ul class="help-menu-items">
+                    <li data-command="/suggestions list pending" title="View pending suggestions">List Pending</li>
+                    <li data-command="/suggestions list all" title="View all suggestions">List All</li>
+                    <li data-command="/suggestions approve " data-placeholder="<ID> [reason]" title="Approve a suggestion: /suggestions approve <ID> [reason]">Approve ID...</li>
+                    <li data-command="/suggestions deny " data-placeholder="<ID> [reason]" title="Deny a suggestion: /suggestions deny <ID> [reason]">Deny ID...</li>
+                    <li data-command="/suggestions status" title="Show summary status of suggestions">Summary Status</li>
+                </ul>
+            </div>
+            <div class="help-menu-category">
+                <span class="category-title">Tasks</span>
+                <ul class="help-menu-items">
+                    <li data-command="/tasks list" title="Show summary of active and archived tasks">Task Summary</li>
+                    <li data-command="/task_plan " data-placeholder="<task_ID>" title="Display plan for a task: /task_plan <task_ID>">View Task Plan...</li>
+                </ul>
+            </div>
+            <div class="help-menu-category">
+                <span class="category-title">System</span>
+                <ul class="help-menu-items">
+                    <li data-command="/status" title="Show overall system status">System Status</li>
+                    <li data-command="/notifications list unread" title="List unread notifications">List Unread Notifications</li>
+                     <li data-command="/help" title="Show all available commands (CLI style)">Full Help (CLI)</li>
+                </ul>
+            </div>
+             <!-- Add /tools, /projects later if needed -->
         </div>
     </div>
 
