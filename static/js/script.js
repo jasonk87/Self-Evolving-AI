@@ -111,23 +111,32 @@ function animateIdleWeibo() {
     }
 
     const parentRect = aiCoreDisplay.getBoundingClientRect();
-    const indicatorStyle = window.getComputedStyle(processingIndicator);
-    const indicatorWidth = parseFloat(indicatorStyle.width);
-    const indicatorHeight = parseFloat(indicatorStyle.height);
+    // Use the base width/height of the indicator as defined in CSS for .processing-indicator
+    // This assumes the CSS for .processing-indicator itself has width: 80px; height: 80px;
+    const baseIndicatorWidth = 80;
+    const baseIndicatorHeight = 80;
 
-    if (parentRect.width === 0 || parentRect.height === 0) {
-         console.warn("aiCoreDisplay has no dimensions, cannot animate idle Weibo.");
+    if (!parentRect || parentRect.width === 0 || parentRect.height === 0) {
+         console.warn("aiCoreDisplay has no dimensions or not found, cannot animate idle Weibo.");
          idleAnimationTimeoutId = setTimeout(animateIdleWeibo, 5000);
          return;
     }
 
-    const maxX = parentRect.width - indicatorWidth;
-    const maxY = parentRect.height - indicatorHeight;
+    // Determine a random scale first
+    const randomScale = 0.7 + Math.random() * 0.6; // e.g., 0.7 to 1.3 (adjust as preferred)
 
-    const targetX = Math.max(0, Math.random() * maxX);
-    const targetY = Math.max(0, Math.random() * maxY);
+    // Calculate the actual dimensions of the indicator AT THIS RANDOM SCALE
+    const currentScaledWidth = baseIndicatorWidth * randomScale;
+    const currentScaledHeight = baseIndicatorHeight * randomScale;
 
-    const randomScale = 0.8 + Math.random() * 0.4;
+    // Calculate max X and Y for the top-left corner of the scaled indicator
+    // to ensure the *entire scaled element* stays within bounds.
+    const maxX = parentRect.width - currentScaledWidth;
+    const maxY = parentRect.height - currentScaledHeight;
+
+    // Ensure targetX/Y are not negative (can happen if parent is smaller than scaled indicator, or if maxX/Y is negative)
+    const targetX = Math.max(0, Math.random() * Math.max(0, maxX)); // Ensure maxX isn't negative
+    const targetY = Math.max(0, Math.random() * Math.max(0, maxY)); // Ensure maxY isn't negative
 
     processingIndicator.style.transform = `translate(${targetX}px, ${targetY}px) scale(${randomScale})`;
 

@@ -99,8 +99,8 @@ header h1 {
     width: 80px;
     height: 80px;
     transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out;
-    bottom: 10px; /* RESTORED default idle position */
-    left: 10px;   /* RESTORED default idle position */
+    top: 0px; /* Base position for transform calculations */
+    left: 0px;  /* Base position for transform calculations */
     transform-origin: center center;
     z-index: 50;
 }
@@ -191,6 +191,7 @@ header h1 {
     width: 25px;
     height: 25px;
     background-color: var(--accent-color);
+    transform-origin: center; /* Added for thinking state orbit */
 }
 .processing-indicator.weibo-thinking .s1 { animation: thinking-satellites-spin 2s linear infinite; }
 .processing-indicator.weibo-thinking .s2 { animation: thinking-satellites-spin 2s linear infinite 0.2s; }
