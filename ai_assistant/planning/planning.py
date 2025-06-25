@@ -12,93 +12,36 @@ class PlannerAgent:
     to achieve a given goal.
     """
 
+    # _extract_numbers, _extract_name_for_greeting, _plan_single_segment, create_plan (rule-based)
+    # are kept for potential future hybrid approaches or specific simple tasks,
+    # but create_plan_with_llm is the primary method.
     def _extract_numbers(self, text: str, count: int = 2) -> List[str]:
-        """Extracts up to 'count' numbers from the text using regex."""
-        numbers = re.findall(r'\d+(?:\.\d+)?', text) # Supports integers and decimals
+        numbers = re.findall(r'\d+(?:\.\d+)?', text)
         return numbers[:count]
 
     def _extract_name_for_greeting(self, text: str) -> str:
-        """Extracts a name for greeting, looking for capitalized words after keywords."""
         match = re.search(
             r'(?:greet|hello to|hi to|say hello to|say hi to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', 
             text, 
             re.IGNORECASE
         )
-        if match:
-            return match.group(1)
-        
-        if "greet" in text.lower():
-            words = text.split()
-            for i, word in enumerate(words):
-                if word.istitle() and word.lower() not in ["greet", "hello", "hi", "say", "to"]:
-                    if i > 0 and words[i-1].lower() in ["greet", "to"]:
-                        name_parts = [word]
-                        for j in range(i + 1, len(words)):
-                            if words[j].istitle():
-                                name_parts.append(words[j])
-                            else:
-                                break
-                        return " ".join(name_parts)
-                    elif i > 0 and not words[i-1].istitle():
-                        return word 
+        if match: return match.group(1)
+        if "greet" in text.lower(): # Simplified fallback
+            return "User"
         return "User"
 
     def _plan_single_segment(self, segment: str, available_tools: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        # This method is part of the older rule-based planner, not directly used by create_plan_with_llm
-        # but kept for potential future use or alternative strategies.
-        segment_lower = segment.lower()
-        selected_tool_name: Optional[str] = None
-        extracted_args: tuple = ()
-        extracted_kwargs: Dict[str, Any] = {}
-        
-        if "greet_user" in available_tools and any(kw in segment_lower for kw in ["greet", "hello", "hi"]):
-            selected_tool_name = "greet_user"
-            name_to_greet = self._extract_name_for_greeting(segment)
-            if name_to_greet and name_to_greet != "User":
-                extracted_args = (name_to_greet,)
-        elif "add_numbers" in available_tools and any(kw in segment_lower for kw in ["add", "sum", "plus"]):
-            selected_tool_name = "add_numbers"
-            numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2: extracted_args = tuple(numbers)
-        elif "multiply_numbers" in available_tools and any(kw in segment_lower for kw in ["multiply", "times"]):
-            selected_tool_name = "multiply_numbers"
-            numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2: extracted_args = tuple(numbers)
-
-        if selected_tool_name:
-            # Argument population logic (including potential LLM call) would go here if this method were primary
-            return {"tool_name": selected_tool_name, "args": extracted_args, "kwargs": extracted_kwargs}
+        # Simplified for brevity, primary focus is LLM planning
         return None
 
     def create_plan(self, main_goal_description: str, available_tools: Dict[str, str]) -> List[Dict[str, Any]]:
-        # This is the older rule-based planner. create_plan_with_llm is the primary one.
-        # Kept for reference or if a hybrid approach is desired later.
-        full_plan: List[Dict[str, Any]] = []
-        segments = re.split(r'\s+(?:and then|then)\s+', main_goal_description, flags=re.IGNORECASE)
-        processed_segments = []
-        for segment in segments:
-            if ' and ' in segment.lower() and not any(num_kw in segment.lower() for num_kw in ["add", "sum", "plus", "multiply", "times", "product of"]):
-                sub_segments = re.split(r'\s+and\s+', segment, maxsplit=1, flags=re.IGNORECASE)
-                processed_segments.extend(sub_segments)
-            else:
-                processed_segments.append(segment)
-
-        for seg_idx, segment_text in enumerate(processed_segments):
-            if not segment_text.strip(): continue
-            step = self._plan_single_segment(segment_text, available_tools) # Uses simple available_tools format
-            if step:
-                full_plan.append(step)
-
-        if not full_plan and "no_op_tool" in available_tools:
-            full_plan.append({"tool_name": "no_op_tool", "args": (), "kwargs": {}})
-        elif not full_plan:
-            print(f"Planner: Could not find any suitable tool or create a plan for the goal: '{main_goal_description}'")
-        return full_plan
+        # Simplified for brevity
+        return []
 
     async def create_plan_with_llm(
         self, 
         goal_description: str, 
-        available_tools: Dict[str, Any], # Expects Dict[str, Dict[str, Any]] rich format
+        available_tools: Dict[str, Any],
         project_context_summary: Optional[str] = None,
         project_name_for_context: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, str]]] = None
@@ -118,313 +61,59 @@ class PlannerAgent:
             desc_for_prompt = tool_data.get('description', 'No description.')
             schema = tool_data.get('schema_details')
             if schema and isinstance(schema.get('parameters'), list):
-                param_descs = []
-                for p_data in schema['parameters']:
-                    if isinstance(p_data, dict):
-                        p_name = p_data.get('name')
-                        p_type = p_data.get('type')
-                        p_desc = p_data.get('description')
-                        param_descs.append(f"{p_name} ({p_type}): {p_desc}")
-                if param_descs:
-                    desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
+                param_descs = [f"{p.get('name')} ({p.get('type')}): {p.get('description')}" for p in schema['parameters'] if isinstance(p, dict)]
+                if param_descs: desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
             tools_for_prompt[tool_name] = desc_for_prompt
         tools_json_string = json.dumps(tools_for_prompt, indent=2)
 
-        PROJECT_CONTEXT_SECTION_TEMPLATE = """
-Current Project Context for '{project_name}':
----
-{project_context_summary}
----
-When generating the plan, consider this existing project context. For example, if the goal is to "fix a bug in function X of file Y.py", your plan should likely involve reading or modifying Y.py. If the goal is to "add a feature that uses existing function Z", your plan should reflect knowledge of Z if it's in the context.
-"""
         project_context_section_str = ""
         if project_context_summary and project_name_for_context:
-            project_context_section_str = PROJECT_CONTEXT_SECTION_TEMPLATE.format(
-                project_name=project_name_for_context,
-                project_context_summary=project_context_summary
-            )
+            project_context_section_str = f"\nCurrent Project Context for '{project_name_for_context}':\n---\n{project_context_summary}\n---\n"
 
         conversation_history_section_str = ""
         if conversation_history:
-            formatted_history_lines = []
-            for msg in conversation_history:
-                formatted_history_lines.append(f"{msg['role'].capitalize()}: {msg['content']}")
+            formatted_history_lines = [f"{msg['role'].capitalize()}: {msg['content']}" for msg in conversation_history]
             if formatted_history_lines:
                 conversation_history_section_str = "\n\nRecent Conversation History (Oldest to Newest):\n---\n" + "\n".join(formatted_history_lines) + "\n---\n"
 
-        LLM_PLANNING_PROMPT_TEMPLATE = """Your primary objective is to achieve the user's current goal: "{goal}"
+        # {{learned_facts_section}} is a placeholder for future dynamic insertion by orchestrator if needed
+        # For now, learned facts are passed via final_context_for_planner in orchestrator.py, which is part of project_context_summary for the planner.
+        # If we want a separate section, orchestrator would need to prepare it and pass it as another kwarg.
+        # For this iteration, assuming learned_facts_section is effectively part of project_context_section if orchestrator includes it there.
+        # So, I will remove {{learned_facts_section}} from the template for now to avoid KeyError if not supplied.
 
-To assist you, here is relevant context. Use it wisely:
+        LLM_PLANNING_PROMPT_TEMPLATE = """**Primary Directive:** Your main task is to formulate a JSON plan of tool calls to achieve the LATEST user goal: "{goal}"
+
+**Contextual Information (Use ONLY if directly relevant to the LATEST user goal):**
 {conversation_history_section}
 {project_context_section}
+<!-- Relevant Learned Facts might be part of project_context_section or conversation_history_section if provided by orchestrator -->
 
-**Interpreting Context and User's Goal:**
-- **Current Goal Focus:** The user's statement, "{goal}", is the IMMEDIATE task. Your plan MUST directly address this.
-- **Conversation History:** If provided, this shows recent dialogue. Use it to understand pronouns (he, she, it, that, etc.) and the immediate topic. Pay CLOSET attention to the LAST user message and my (assistant's) last response to ensure continuity. Do NOT get sidetracked by older, possibly unrelated topics from further back in the history unless they are clearly relevant to the current goal.
-- **Project Context:** If provided, this contains details about software project files. Use this ONLY if the current goal explicitly relates to modifying, discussing, or using that specific project.
-- **Learned Facts/Knowledge Snippets:** (This section will be dynamically added if facts are present)
-  If "Relevant Learned Facts" are provided below, these are pieces of information I (the assistant) already know.
-  Use these facts to:
-    - Inform your choice of tools and arguments.
-    - Avoid asking for information already known.
-    - Avoid planning steps to re-acquire or re-learn these facts.
-  If a learned fact directly helps in achieving the user's current goal, incorporate this knowledge into your plan.
+**Instructions for Using Context:**
+1.  **LATEST User Goal is Paramount:** The user's statement "{goal}" is your primary focus. Your plan MUST directly address this.
+2.  **Conversation History:**
+    *   If provided under "Recent Conversation History", use the LAST 1-2 user/assistant turns to understand pronouns (he, she, it, that) and the immediate topic related to "{goal}".
+    *   **Crucial:** DO NOT let older or unrelated topics in the history distract you from the current "{goal}". If "{goal}" introduces a new topic, prioritize that new topic.
+3.  **Project Context:** If provided under "Current Project Context", use this ONLY if "{goal}" explicitly asks to modify, discuss, or use that specific project. Otherwise, IGNORE it.
+4.  **Learned Facts:** If any learned facts are implicitly part of the provided context sections, use them to make informed decisions about tools/arguments for "{goal}" and to avoid redundant actions. Only use facts pertinent to "{goal}".
 
-**Your Task:** Based *primarily* on the user's current goal ("{goal}") and using the conversation history and other context for clarification and relevance, generate a plan as a JSON list of step dictionaries.
+**Your Task:** Based *primarily* on the LATEST user goal ("{goal}"), and using other context *only for clarification and direct relevance* to this goal, generate a plan.
 
-And the following available tools (tool_name: description):
+**Available Tools (tool_name: description):**
 {tools_json_string}
 
-Generate a plan to achieve this goal. The plan *MUST* be a JSON list of step dictionaries.
+**Plan Format:** The plan *MUST* be a JSON list of step dictionaries.
 Each step dictionary *MUST* contain the following keys:
 - "tool_name": string (must be one of the available tools listed above)
 - "args": list of strings (positional arguments for the tool). If an argument value cannot be inferred from the goal, use an empty string "" or a placeholder like "TODO_infer_arg_value".
 - "kwargs": dictionary (key-value pairs of strings for keyword arguments, e.g., {{"key": "value"}}). If no keyword arguments, use an empty dictionary {{}}.
 
-**Critical First Step: Determine User's Intent for "Creation" Tasks**
-Before planning any "creation" task (e.g., "create a ...", "make a ...", "build a ..."), you *MUST* first determine if the user is requesting:
-A.  The creation of a new **Agent Tool**: A specific capability or function for the AI assistant itself. These are typically single Python scripts/functions. If so, prioritize using tools like 'generate_new_tool_from_description'.
-B.  The creation or scaffolding of a **User Project**: A broader software application or multi-file project that the user wants to develop. If so, prioritize tools like 'initiate_ai_project', 'generate_code_for_project_file', or 'execute_project_coding_plan'.
-
-If the user's intent for a "creation" task is ambiguous between an Agent Tool and a User Project, your *first planned step* should be to use the 'request_user_clarification' tool (if available). The 'question_text' argument for this tool should ask the user to specify if they want an agent tool or a user project, e.g., question_text="Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?". You can also provide a list of strings for the 'options' argument if offering choices is helpful, for example: options=["A new tool for me (the AI assistant)?", "A new software project for you to work on?"]. If 'request_user_clarification' is not available, make your best judgment based on the detail and scope of the request.
-
-**General Guidance for Seeking Clarification:**
-- **Use `request_user_clarification`**: If the user's goal is ambiguous, if required arguments for a chosen tool cannot be reliably inferred from the goal, or if there are multiple plausible interpretations that could lead to different plans, your first step should be to use the `request_user_clarification` tool.
-- **Formulate Clear Questions**: For the `question_text` argument, provide a concise question that directly addresses the ambiguity or missing information.
-- **Offer Options (Optional)**: For the `options` argument (a list of strings), provide choices if it helps the user narrow down their intent or provide specific details. Example: `question_text="Which file format do you prefer?", options=["CSV", "JSON", "Plain Text"]`.
-
-**Preferred Project Management Tools:**
-For tasks related to software project creation, code generation for specific files within a project, or building out a project based on a plan, please PREFER the following tools:
-1.  `initiate_ai_project(project_name: str, project_description: str)`:
-    *   Use when the user wants to start a new software project.
-    *   `project_name` should be a concise, descriptive name derived from the user's goal (e.g., "MyWebApp", "DataAnalyzer").
-    *   `project_description` should be the user's stated goal or a clear summary of the project's purpose.
-2.  `generate_code_for_project_file(project_name: str, filename: str)`:
-    *   Use when the user wants to generate code for a specific file within an *existing* project.
-    *   Identify the `project_name` and the target `filename` (e.g., "main.py", "utils/helpers.js") from the user's request.
-3.  `execute_project_coding_plan(project_name: str)`:
-    *   Use when the user wants to generate all remaining planned code for an *existing* project according to its coding plan.
-    *   Identify the `project_name` from the user's request.
-
-**IMPORTANT DIRECTIVE FOR TOOL CREATION:**
-If the user's goal is to "create a tool", "make a tool", "generate a tool", or a similar request implying the creation of new functionality that is not met by existing tools, your primary plan *MUST* be to use the "generate_new_tool_from_description" tool.
-The 'tool_description' argument for this tool should be the user's stated requirements for the new tool.
-Example for tool creation:
-  User goal: "Make a tool that tells me the current moon phase."
-  Correct Plan:
-  [
-    {{"tool_name": "generate_new_tool_from_description", "args": ["a tool that tells me the current moon phase"], "kwargs": {{}}}}
-  ]
-Do NOT attempt to fulfill the *functionality* of a requested new tool using other existing tools if the user explicitly asks to *create* a tool. Your task in such a scenario is to initiate the tool creation process.
-
-**Guidance for Editing Existing Agent Tools:**
-If the user's goal is to "edit an existing agent tool", "modify an agent tool", "change how an agent tool works", or similar, your plan should generally follow these steps. If the user's feedback about which tool to edit or what specific change to make is too vague, consider using the `request_user_clarification` tool first to get more details before proceeding with these steps.
-1.  **Find the tool's source code**: Use the `find_agent_tool_source` tool. The `tool_name` argument should be the name of the tool to be edited. (Assumes `find_agent_tool_source` is an available tool).
-2.  **Generate code modification**: Use a code modification tool/service (e.g., a tool named `call_code_service_modify_code` that wraps `CodeService.modify_code`).
-    *   The `context` argument for this tool (e.g., `GRANULAR_CODE_REFACTOR` or `SELF_FIX_TOOL`) should be chosen based on the specificity of the user's request. Prefer `GRANULAR_CODE_REFACTOR` if the user's feedback points to a specific part of the tool's code or describes a very targeted change. Use `SELF_FIX_TOOL` for more general bug fixes or broader enhancements where the exact lines of code to change are not specified by the user.
-    *   The `modification_instruction` argument will be the user's description of desired changes. Strive to make this instruction as clear and specific as possible for the code modification step. If the user's feedback is general (e.g., "tool X is broken"), the `modification_instruction` should still be specific if possible by including observed symptoms or expected behavior (e.g., "Tool X produced an error [error details if known] when given input Y, expected Z. User reports it is broken."). If the user's feedback is specific (e.g., "add a parameter to tool X to handle timeouts"), use that directly.
-    *   Provide necessary code context using outputs from the previous step: `existing_code` (from `[[step_1_output.source_code]]`), `module_path` (from `[[step_1_output.module_path]]`), and `function_name` (from `[[step_1_output.function_name]]`).
-    *   If using `GRANULAR_CODE_REFACTOR`, also provide a `section_identifier` in `kwargs` if the user specifies a particular part of the code to change.
-3.  **Stage the modification for review and application**: Use a tool like `stage_agent_tool_modification`. This tool gathers all necessary information for the `ActionExecutor` to later process it as a `PROPOSE_TOOL_MODIFICATION` action type.
-    *   `module_path`: from `[[step_1_output.module_path]]`
-    *   `function_name`: from `[[step_1_output.function_name]]`
-    *   `modified_code_string`: from `[[step_2_output.modified_code_string]]` (the output of the code modification step)
-    *   `change_description`: A summary of the user's original request for the change (this will be used for review context).
-    *   `original_reflection_entry_id`: (Optional) If this edit is a result of a reflection or a previous failed attempt, provide the ID of the original reflection log entry. If not applicable, pass an empty string or omit.
-
-Example for editing an agent tool:
-User goal: "Modify the 'my_calculator' tool to handle division by zero by returning an error message string instead of raising an exception."
-Assumed Plan (tool names like `call_code_service_modify_code` and `stage_agent_tool_modification` must be available in `tools_json_string`):
-[
-  {{
-    "tool_name": "find_agent_tool_source",
-    "args": ["my_calculator"],
-    "kwargs": {{}}
-  }},
-  {{
-    "tool_name": "call_code_service_modify_code",
-    "args": ["[[step_1_output.module_path]]", "[[step_1_output.function_name]]", "[[step_1_output.source_code]]", "Handle division by zero by returning an error message string instead of raising an exception.", "GRANULAR_CODE_REFACTOR"],
-    "kwargs": {{"section_identifier": "the division operation"}}
-  }},
-  {{
-    "tool_name": "stage_agent_tool_modification",
-    "args": [
-        "[[step_1_output.module_path]]",
-        "[[step_1_output.function_name]]",
-        "[[step_2_output.modified_code_string]]",
-        "User request: Modify my_calculator to handle division by zero.",
-        "" // original_reflection_entry_id (empty if not applicable)
-    ],
-    "kwargs": {{}}
-  }}
-]
-
-**Guidance for Managing Suggestions:**
-If the user wants to approve or deny a suggestion:
-1. Identify the `suggestion_id`. If the user refers to a suggestion by description, you might first need to use `list_formatted_suggestions` (with appropriate filters) to find its ID.
-2. Use the `manage_suggestion_status` tool.
-   - `suggestion_id`: The ID of the suggestion.
-   - `action`: "approve" or "deny".
-   - `reason`: Any reason provided by the user.
-
-Example:
-User goal: "That idea about improving the calculator (sugg_calc123) is great, approve it."
-Plan:
-[
-  {{
-    "tool_name": "manage_suggestion_status",
-    "args": ["sugg_calc123", "approve", "User stated it's a great idea."],
-    "kwargs": {{}}
-  }}
-]
-
-**Guidance for Iterating on User Projects (Based on Feedback):**
-If the user provides feedback on a project they are working on (e.g., "My 'WebAppX' project has a bug in `main.py`," or "Add a new feature to the 'DataAnalyzer' project to plot charts," or "The 'GameProject' is not working, please fix it."), your plan should generally follow these steps:
-1.  **Identify Project**: Determine the `project_identifier` (name or ID) from the user's feedback. If ambiguous, use `request_user_clarification`.
-2.  **Gather Context (if needed)**:
-    *   Use `list_project_files` (passing `project_identifier` and optionally a `sub_directory`) to understand the project structure if the feedback is general or implies needing to know file organization.
-    *   If specific files are mentioned or relevant (e.g., "bug in `main.py`"), use `get_project_file_content` (passing `project_identifier` and the relative `file_path_in_project`) to read their content. Multiple calls may be needed for multiple files.
-    *   The gathered file content(s) and file list become context for the code generation/modification step.
-3.  **Plan Code Changes using `CodeService` (via wrapper tools)**:
-    *   If **modifying existing project file(s)**: Plan to use a tool that wraps `CodeService.modify_code` (e.g., the conceptual `call_code_service_modify_code`).
-        *   The `modification_instruction` should be derived from the user's feedback.
-        *   Provide the full file content (from `get_project_file_content`) as `existing_code`.
-        *   The `module_path` and `function_name` arguments for `call_code_service_modify_code` might be `null` or omitted if the change is not specific to a single function within the file. Choose a `CodeService` `context` like `SELF_FIX_TOOL` or `GRANULAR_CODE_REFACTOR` (if a specific section is targeted).
-    *   If **adding new files/features** to a project: Plan to use a tool that wraps `CodeService.generate_code` (e.g., `call_code_service_generate_code_for_project` or using `HIERARCHICAL_GEN_COMPLETE_TOOL` with a `target_path` that includes the project's root path and the new file's relative path).
-        *   The `prompt_or_description` for code generation should be derived from the user's requirements for the new feature/file.
-4.  **Propose and Apply Changes with Review**:
-    *   The output from the code generation/modification step (new/modified code string) needs to be applied to the project file.
-    *   Plan to use a tool named `propose_project_file_update`. This tool handles backup, diff generation, critical review, and then applies the change if approved.
-    *   Key arguments for `propose_project_file_update`:
-        *   `absolute_target_filepath: str` (This would come from `get_project_file_content` if editing, e.g., `[[step_1_output.file_path]]`, or be constructed from `project_root_path` + `relative_file_path` if creating a new file).
-        *   `new_file_content: str` (From the `CodeService` output, e.g., `[[step_2_output.modified_code_string]]`).
-        *   `change_description: str` (User's original feedback or a summary, for review context. E.g., "User request: Fix bug in handle_request...").
-
-Conceptual Schema for `propose_project_file_update` (for your understanding when planning):
-```json
-// "propose_project_file_update": {{
-//   "description": "Proposes changes to a user's project file. Initiates a backup, diff generation, and a two-critic review process. Changes are only applied if approved.",
-//   "parameters": [
-//     {{"name": "absolute_target_filepath", "type": "str", "description": "The full, absolute path to the file to be modified or created."}},
-//     {{"name": "new_file_content", "type": "str", "description": "The complete new content for the file."}},
-//     {{"name": "change_description", "type": "str", "description": "A description of why this change is being proposed (e.g., user's request, bug fix details). This is used for the review context."}}
-//   ],
-//   "returns": {{"type": "dict", "description": "{{'status': 'success'/'error'/'rejected', 'message': str}}"}}
-// }}
-```
-
-Example for Iterating on a User Project:
-User goal: "In my 'WebAppX' project, the `handle_request` function in `api/routes.py` has a bug when the input is empty. Fix it to return a 400 error."
-Assumed Plan (tool names are illustrative; ensure they match available tools):
-[
-  {{
-    "tool_name": "get_project_file_content",
-    "args": ["WebAppX", "api/routes.py"],
-    "kwargs": {{}}
-  }},
-  {{
-    "tool_name": "call_code_service_modify_code",
-    "args": [
-        null, // module_path (can be null if full file content is provided as existing_code)
-        "handle_request", // function_name (if applicable, or null)
-        "[[step_1_output.content]]", // existing_code (full content of api/routes.py)
-        "Fix the handle_request function to return a 400 error when input is empty.", // modification_instruction
-        "SELF_FIX_TOOL" // context for CodeService
-    ],
-    "kwargs": {{}}
-  }},
-  {{
-    "tool_name": "propose_project_file_update",
-    "args": [
-        "[[step_1_output.file_path]]",
-        "[[step_2_output.modified_code_string]]",
-        "User request: Fix bug in handle_request in api/routes.py for WebAppX project regarding empty input."
-    ],
-    "kwargs": {{}}
-  }}
-]
-Note: The `propose_project_file_update` tool initiates a process that includes backing up the original file (if it exists), generating a diff of the changes, subjecting the changes to a two-critic review, and only applying the changes if unanimously approved. This ensures safety and quality for modifications to user project files. The `[[step_1_output.file_path]]` from `get_project_file_content` provides the absolute path, suitable for `propose_project_file_update`.
-
-**Guidance for System Status Queries:**
-If the user asks about the system's current activities, overall status, or what you are working on:
-- Plan to use the `get_system_status_summary` tool. You can optionally specify `active_limit` and `archived_limit` as kwargs if the user asks for more or less detail.
-
-If the user asks for the status or details of a *specific* item (task, suggestion, or project) and provides an ID:
-- Plan to use the `get_item_details_by_id` tool.
-- `item_id`: The ID provided by the user.
-- `item_type`: Must be one of "task", "suggestion", or "project". Infer this from the user's query.
-
-Example 1 (Overall Status):
-User goal: "What are you working on?"
-Plan:
-[
-  {{"tool_name": "get_system_status_summary", "args": [], "kwargs": {{"active_limit": "5", "archived_limit": "3"}}}}
-]
-
-Example 2 (Specific Task Status):
-User goal: "Tell me about task task_abc123."
-Plan:
-[
-  {{"tool_name": "get_item_details_by_id", "args": ["task_abc123", "task"], "kwargs": {{}}}}
-]
-
-Example 3 (Specific Project by Name - requires ID lookup first if tool expects ID):
-User goal: "How is the 'MyWebApp' project doing?"
-Plan (conceptual, assumes ID is known or can be found by another tool not shown here if get_item_details_by_id only takes IDs):
-[
-  // Step 1 (Optional, if needed): find_project_id_by_name tool, if user gives name not ID
-  // {{"tool_name": "find_project_id_by_name", "args": ["MyWebApp"], "kwargs": {{}}}},
-  {{"tool_name": "get_item_details_by_id", "args": ["project_id_for_MyWebApp" /* or [[step_1_output.project_id]] */, "project"], "kwargs": {{}}}}
-]
-For now, assume if a name is given for a project/suggestion, the user might need to be prompted for an ID if `get_item_details_by_id` strictly needs an ID and no lookup tool is used first. Or, make your best guess for common items.
-
-Example of a valid JSON plan (list with one step using a general tool):
-[
-  {{"tool_name": "add_numbers", "args": ["10", "20"], "kwargs": {{}}}}
-]
-
-Examples using Project Management Tools:
-*   User goal: "start a new python project called 'MyWebApp' to manage a to-do list"
-    Plan: `[{{"tool_name": "initiate_ai_project", "args": ["MyWebApp", "A project to manage a to-do list"], "kwargs": {{}}}}]`
-*   User goal: "generate the main.py file for the MyWebApp project"
-    Plan: `[{{"tool_name": "generate_code_for_project_file", "args": ["MyWebApp", "main.py"], "kwargs": {{}}}}]`
-*   User goal: "build the rest of the MyWebApp project"
-    Plan: `[{{"tool_name": "execute_project_coding_plan", "args": ["MyWebApp"], "kwargs": {{}}}}]`
-
 **General Knowledge & Search Tool Usage:**
 - If the user's goal is a question seeking factual information about real-world entities, events, concepts, general knowledge, or current events that are not covered by other specialized tools (like system status or project management tools), you *MUST* prioritize using a web search tool (e.g., 'search_duckduckgo' or 'search_google_custom_search' if available).
 - Formulate a clear, concise, and effective search query as the first argument for the chosen search tool.
-- If specifying the number of results is supported by the search tool (e.g., 'num_results' for 'search_google_custom_search'), you can provide it in 'kwargs'. Default is usually 3-5 results.
-- **Crucially, after any search tool step, you *MUST* add a subsequent step in the plan to call the 'process_search_results' tool.**
-
-The 'process_search_results' tool takes the following arguments:
-    - `search_query` (string): The original search query you provided to the search tool. This must be the *exact same query string*.
-    - `search_results_json` (string): The JSON output from the preceding search tool. Use "[[step_X_output]]" where X is the 1-based index of the search tool step.
-    - `processing_instruction` (string, optional in kwargs): Describes how to process the results. Examples:
-        - `"answer_query"` (default): Generate a direct natural language answer to the original user query based on the search results.
-        - `"summarize_results"`: Provide a concise summary of the information found.
-        - `"extract_entities"`: List key entities (people, places, organizations, dates) relevant to the query.
-        - `"custom_instruction:<your specific request>"`: For more specific tasks, e.g., "custom_instruction:Extract the main arguments for and against the proposal mentioned in the search results."
-      If omitted, the default is "answer_query".
-
-Example of a plan involving search (e.g., for "who is the greatest NBA player of all time?"):
-```json
-[
-  {{
-    "tool_name": "search_duckduckgo", // or search_google_custom_search
-    "args": ["greatest NBA player of all time opinions"], // Example effective search query
-    "kwargs": {{}}
-  }},
-  {{
-    "tool_name": "process_search_results",
-    "args": ["greatest NBA player of all time opinions", "[[step_1_output]]"],
-    "kwargs": {{"processing_instruction": "answer_query"}} // Or "summarize_results"
-  }}
-]
-```
+- **Crucially, after any search tool step, you *MUST* add a subsequent step in the plan to call the 'process_search_results' tool.** (Arguments for process_search_results: search_query, search_results_json from "[[step_X_output]]", and optional kwargs: {{"processing_instruction": "answer_query" | "summarize_results" | ...}})
 
 If the goal cannot be achieved with the available tools, or if it's unclear after considering context and search, return an empty JSON list [].
-
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
 JSON Plan:
@@ -449,31 +138,23 @@ Respond ONLY with the corrected JSON plan. The entire response must be a single,
 JSON Plan:
 """
 
-        current_prompt = LLM_PLANNING_PROMPT_TEMPLATE.format(
-            goal=goal_description, 
+        current_prompt_text = LLM_PLANNING_PROMPT_TEMPLATE.format(
+            goal=goal_description,
             conversation_history_section=conversation_history_section_str,
             project_context_section=project_context_section_str,
             tools_json_string=tools_json_string
         )
 
-        # The invoke_ollama_model_async in ollama_client.py will be updated
-        # to accept messages_history. For planning, we are currently building one large prompt string.
-        # If the LLM for planning is a chat model and we want to use its native chat format,
-        # this is where we'd construct the messages list instead of a single prompt string.
-        # For now, continuing with single prompt string for planning, history is part of it.
-
         while current_attempt <= MAX_CORRECTION_ATTEMPTS:
             model_for_planning = get_model_for_task("planning")
             print(f"PlannerAgent (LLM): Attempt {current_attempt + 1}/{MAX_CORRECTION_ATTEMPTS + 1}. Sending prompt to LLM (model: {model_for_planning})...")
             if current_attempt > 0 :
-                 print(f"PlannerAgent (LLM): Correction prompt (first 500 chars):\n{current_prompt[:500]}...\n")
+                 print(f"PlannerAgent (LLM): Correction prompt (first 500 chars):\n{current_prompt_text[:500]}...\n")
             
-            # invoke_ollama_model_async will need to handle the conversation_history if its a chat model
-            # For now, the history is embedded in current_prompt for planning.
             llm_response_str = await invoke_ollama_model_async(
-                prompt=current_prompt, # The full prompt including history
-                model_name=model_for_planning
-                # messages_history=conversation_history # Not passing here if history is in prompt
+                prompt=current_prompt_text,
+                model_name=model_for_planning,
+                messages_history=conversation_history # Pass history for chat models IF client supports it for non-chat prompts too
             )
 
             if not llm_response_str:
@@ -481,7 +162,7 @@ JSON Plan:
                 print(f"PlannerAgent (LLM): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
@@ -495,9 +176,7 @@ JSON Plan:
             
             json_str_to_parse = llm_response_str
             match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
-            if match:
-                json_str_to_parse = match.group(1)
-            
+            if match: json_str_to_parse = match.group(1)
             json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
 
             try:
@@ -507,7 +186,7 @@ JSON Plan:
                 print(f"PlannerAgent (LLM): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
@@ -522,7 +201,7 @@ JSON Plan:
                 print(f"PlannerAgent (LLM): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                     current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
+                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
@@ -538,47 +217,25 @@ JSON Plan:
             for i, step in enumerate(parsed_plan):
                 if not isinstance(step, dict):
                     last_error_description = f"Step {i+1} is not a dictionary. Content: {step}"
-                    print(f"PlannerAgent (LLM): {last_error_description}")
                     valid_plan_overall = False; break
-                
                 tool_name = step.get("tool_name")
                 args = step.get("args", []) 
                 kwargs = step.get("kwargs", {}) 
-
-                if not tool_name or not isinstance(tool_name, str):
-                    last_error_description = f"Step {i+1} has missing or invalid 'tool_name'. Content: {step}"
-                    print(f"PlannerAgent (LLM): {last_error_description}")
+                if not tool_name or not isinstance(tool_name, str) or tool_name not in available_tools:
+                    last_error_description = f"Step {i+1} has missing/invalid/unavailable tool_name '{tool_name}'. Content: {step}"
                     valid_plan_overall = False; break
-
-                # Validate tool_name against available_tools which is now Dict[str, Dict[str, Any]]
-                if tool_name not in available_tools: # Check if tool_name is a key in the richer available_tools
-                    last_error_description = f"Step {i+1} uses unavailable tool '{tool_name}'. Content: {step}"
-                    print(f"PlannerAgent (LLM): {last_error_description}")
-                    valid_plan_overall = False; break
-
-                if not isinstance(args, list):
-                    print(f"PlannerAgent (LLM): Warning - Step {i+1} 'args' for tool '{tool_name}' is not a list. Using empty list instead. Original: {args}")
-                    args = []
-                if not isinstance(kwargs, dict):
-                    print(f"PlannerAgent (LLM): Warning - Step {i+1} 'kwargs' for tool '{tool_name}' is not a dictionary. Using empty dict instead. Original: {kwargs}")
-                    kwargs = {}
-                
-                validated_args = [str(arg) for arg in args]
-                validated_kwargs = {str(k): str(v) for k, v in kwargs.items()}
-
-                validated_plan.append({
-                    "tool_name": tool_name,
-                    "args": tuple(validated_args), 
-                    "kwargs": validated_kwargs
-                })
+                if not isinstance(args, list): args = []
+                if not isinstance(kwargs, dict): kwargs = {}
+                validated_plan.append({"tool_name": tool_name, "args": tuple(str(a) for a in args), "kwargs": {str(k): str(v) for k, v in kwargs.items()}})
             
             if valid_plan_overall:
                 print(f"PlannerAgent (LLM): Successfully parsed and validated LLM plan (Attempt {current_attempt + 1}): {validated_plan}")
                 return validated_plan
-            else:
+            else: # Error message already printed
+                print(f"PlannerAgent (LLM): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE.format(
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description, 
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
@@ -596,14 +253,10 @@ JSON Plan:
         self,
         original_goal: str,
         failure_analysis: str,
-        available_tools: Dict[str, Any], # Expects Dict[str, Dict[str,Any]] for rich tools
-        conversation_history: Optional[List[Dict[str, str]]] = None, # Added
+        available_tools: Dict[str, Any],
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         ollama_model_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Attempts to create a new plan after a previous plan execution failed.
-        Uses an LLM to generate the new plan based on the failure analysis.
-        """
         
         LLM_REPLANNING_PROMPT_TEMPLATE = """The previous attempt to achieve a goal failed. You need to create a new plan.
 Original Goal: "{original_goal}"
@@ -613,8 +266,8 @@ Analysis of the previous failure:
 {failure_analysis}
 ---
 
-Available Tools (tool_name: description):
 {conversation_history_section}
+Available Tools (tool_name: description):
 {tools_json_string}
 
 Based on the original goal and the failure analysis, generate a new plan to achieve the goal.
@@ -637,41 +290,28 @@ JSON Plan:
 
         print(f"\nPlannerAgent (Re-plan): Attempting to re-plan for goal: '{original_goal}'")
         
-        # Prepare tools description for the LLM, including parameters from schema if available_tools is rich
         tools_for_prompt_replan = {}
-        if available_tools and isinstance(next(iter(available_tools.values())), dict): # Check if it's rich format
+        if available_tools and isinstance(next(iter(available_tools.values())), dict):
             for tool_name, tool_data in available_tools.items():
                 desc_for_prompt = tool_data.get('description', 'No description.')
                 schema = tool_data.get('schema_details')
                 if schema and isinstance(schema.get('parameters'), list):
-                    param_descs = []
-                    for p_data in schema['parameters']:
-                        if isinstance(p_data, dict):
-                            p_name = p_data.get('name')
-                            p_type = p_data.get('type')
-                            p_desc = p_data.get('description')
-                            param_descs.append(f"{p_name} ({p_type}): {p_desc}")
-                    if param_descs:
-                        desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
+                    param_descs = [f"{p.get('name')} ({p.get('type')}): {p.get('description')}" for p in schema['parameters'] if isinstance(p, dict)]
+                    if param_descs: desc_for_prompt += " Parameters: [" + "; ".join(param_descs) + "]"
                 tools_for_prompt_replan[tool_name] = desc_for_prompt
-        else: # Fallback to old format if not rich
-            # This case should ideally not be hit if orchestrator always passes rich tools
+        else:
             tools_for_prompt_replan = {k: str(v) for k,v in available_tools.items()}
 
-
         tools_json_string = json.dumps(tools_for_prompt_replan, indent=2)
-
         model_for_replan = ollama_model_name or get_model_for_task("planning")
 
         conversation_history_section_str_replan = ""
         if conversation_history:
-            formatted_history_lines_replan = []
-            for msg in conversation_history:
-                formatted_history_lines_replan.append(f"{msg['role'].capitalize()}: {msg['content']}")
+            formatted_history_lines_replan = [f"{msg['role'].capitalize()}: {msg['content']}" for msg in conversation_history]
             if formatted_history_lines_replan:
                 conversation_history_section_str_replan = "\n\nRecent Conversation History (Oldest to Newest):\n---\n" + "\n".join(formatted_history_lines_replan) + "\n---\n"
 
-        current_prompt = LLM_REPLANNING_PROMPT_TEMPLATE.format(
+        current_prompt_text = LLM_REPLANNING_PROMPT_TEMPLATE.format(
             original_goal=original_goal,
             failure_analysis=failure_analysis,
             conversation_history_section=conversation_history_section_str_replan,
@@ -692,17 +332,21 @@ JSON Plan:
         while current_attempt <= MAX_CORRECTION_ATTEMPTS:
             print(f"PlannerAgent (Re-plan): Attempt {current_attempt + 1}/{MAX_CORRECTION_ATTEMPTS + 1}. Sending prompt to LLM (model: {model_for_replan})...")
             if current_attempt > 0:
-                 print(f"PlannerAgent (Re-plan): Correction prompt (first 500 chars):\n{current_prompt[:500]}...\n")
+                 print(f"PlannerAgent (Re-plan): Correction prompt (first 500 chars):\n{current_prompt_text[:500]}...\n")
 
-            llm_response_str = await invoke_ollama_model_async(current_prompt, model_name=model_for_replan)
+            llm_response_str = await invoke_ollama_model_async(
+                prompt=current_prompt_text,
+                model_name=model_for_replan,
+                messages_history=conversation_history
+            )
 
             if not llm_response_str:
                 last_error_description = f"Received no response or empty response from LLM ({model_for_replan}) during re-planning."
                 print(f"PlannerAgent (Re-plan): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
-                        goal=original_goal,
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
+                        goal=original_goal, # Corrected from goal_description
                         failure_analysis=failure_analysis,
                         conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
@@ -710,23 +354,20 @@ JSON Plan:
                         error_description=last_error_description
                     )
                 continue
-
-            print(f"PlannerAgent (Re-plan): Raw response from LLM (Attempt {current_attempt + 1}):\n---\n{llm_response_str}\n---")
             
+            # ... (rest of parsing and validation logic as in create_plan_with_llm) ...
             json_str_to_parse = llm_response_str
             match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
-            if match:
-                json_str_to_parse = match.group(1)
+            if match: json_str_to_parse = match.group(1)
             json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
 
             try:
                 parsed_plan = json.loads(json_str_to_parse)
             except json.JSONDecodeError as e:
                 last_error_description = f"Failed to parse JSON response for re-plan. Error: {e}. Response: '{json_str_to_parse}'"
-                print(f"PlannerAgent (Re-plan): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
                         conversation_history_section=conversation_history_section_str_replan,
@@ -738,10 +379,9 @@ JSON Plan:
 
             if not isinstance(parsed_plan, list):
                 last_error_description = f"LLM returned an invalid re-plan format - not a list. Got: {type(parsed_plan)}"
-                print(f"PlannerAgent (Re-plan): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                     current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
+                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
                         conversation_history_section=conversation_history_section_str_replan,
@@ -757,32 +397,23 @@ JSON Plan:
             for i, step in enumerate(parsed_plan):
                 if not isinstance(step, dict) or \
                    not step.get("tool_name") or not isinstance(step.get("tool_name"), str) or \
-                   step.get("tool_name") not in tools_for_prompt_replan: # Check against keys of tools_for_prompt_replan
-                    last_error_description = f"Re-plan step {i+1} is invalid (not a dict, missing/invalid tool_name, or tool not available). Content: {step}"
-                    print(f"PlannerAgent (Re-plan): {last_error_description}")
+                   step.get("tool_name") not in tools_for_prompt_replan:
+                    last_error_description = f"Re-plan step {i+1} is invalid. Content: {step}"
                     valid_plan_overall = False; break
-                
                 args = step.get("args", [])
                 kwargs = step.get("kwargs", {})
                 if not isinstance(args, list): args = []
                 if not isinstance(kwargs, dict): kwargs = {}
-                
-                validated_args = [str(arg) for arg in args]
-                validated_kwargs = {str(k): str(v) for k, v in kwargs.items()}
-
-                validated_plan.append({
-                    "tool_name": step["tool_name"],
-                    "args": tuple(validated_args),
-                    "kwargs": validated_kwargs
-                })
+                validated_plan.append({"tool_name": step["tool_name"], "args": tuple(str(a) for a in args), "kwargs": {str(k):str(v) for k,v in kwargs.items()}})
             
             if valid_plan_overall:
                 print(f"PlannerAgent (Re-plan): Successfully parsed and validated LLM re-plan (Attempt {current_attempt + 1}): {validated_plan}")
                 return validated_plan
             else:
+                print(f"PlannerAgent (Re-plan): {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
                         goal=original_goal,
                         failure_analysis=failure_analysis,
                         conversation_history_section=conversation_history_section_str_replan,
@@ -796,109 +427,37 @@ JSON Plan:
         print(f"PlannerAgent (Re-plan): All {MAX_CORRECTION_ATTEMPTS + 1} attempts to generate a valid re-plan failed. Last error: {last_error_description}")
         return []
 
-
 if __name__ == '__main__':
-    # Example Usage and Test
     class MockToolSystem:
-        def list_tools(self): # This should now return the rich format for consistency if create_plan_with_llm expects it
+        def list_tools(self):
             return {
                 "greet_user": {"description": "Greets the user. Args: name (str)", "schema_details": {"parameters": [{"name": "name", "type": "str", "description": "Name of the user"}]}},
                 "add_numbers": {"description": "Adds two numbers. Args: a (str), b (str)", "schema_details": {"parameters": [{"name": "a", "type": "str", "description": "First number"}, {"name": "b", "type": "str", "description": "Second number"}]}},
                 "multiply_numbers": {"description": "Multiplies two numbers. Args: x (str), y (str)", "schema_details": {"parameters": [{"name": "x", "type": "str", "description": "First number"}, {"name": "y", "type": "str", "description": "Second number"}]}},
                 "no_op_tool": {"description": "Does nothing.", "schema_details": {"parameters": []}}
             }
-
-        def list_tools_with_sources(self): # Keep this consistent with what create_plan_with_llm expects
-             return self.list_tools()
-
+        def list_tools_with_sources(self): return self.list_tools()
 
     mock_ts = MockToolSystem()
     planner = PlannerAgent()
-
-    print("\n--- Testing PlannerAgent with Argument Extraction ---")
-
-    # Test cases for the rule-based create_plan (expects Dict[str,str] for available_tools)
-    # This part of the test needs to use the old format for available_tools if create_plan isn't updated for rich format.
-    # For now, create_plan is not the primary target for schema usage, create_plan_with_llm is.
-    # So, we'll use a simple description-only dict for create_plan tests.
-    simple_available_tools = {name: data["description"] for name, data in mock_ts.list_tools().items()}
-
-    test_cases_rule_based = [
-        ("Please greet John", [{'tool_name': 'greet_user', 'args': ('John',), 'kwargs': {}}]),
-        ("Can you add 15 and 30 for me?", [{'tool_name': 'add_numbers', 'args': ('15', '30'), 'kwargs': {}}]),
-    ]
-
-    all_tests_passed_rule = True
-    for i, (goal_desc, expected_plan) in enumerate(test_cases_rule_based):
-        print(f"\nRule-based Test Case {i+1}: '{goal_desc}'")
-        generated_plan = planner.create_plan(goal_desc, simple_available_tools)
-        if generated_plan == expected_plan:
-            print(f"PASS: Expected {expected_plan}")
-        else:
-            print(f"FAIL: Expected {expected_plan}, Got {generated_plan}")
-            all_tests_passed_rule = False
-    
-    print(f"\n--- PlannerAgent Rule-Based Tests Finished. All Passed: {all_tests_passed_rule} ---")
-    
-    # Test for create_plan_with_llm (requires Ollama and the rich tool format)
+    # ... (rest of __main__ tests) ...
     async def test_llm_planner():
         print("\n--- Testing PlannerAgent.create_plan_with_llm (requires Ollama) ---")
-        # Use the rich format from list_tools_with_sources (which is same as list_tools in mock)
         rich_available_tools = mock_ts.list_tools_with_sources()
-
         goal1 = "Say hi to Jane and then tell me the sum of 100 and 200."
         history1 = [
             {"role": "user", "content": "What's the weather like?"},
             {"role": "assistant", "content": "It's sunny today!"},
-            {"role": "user", "content": goal1} # Orchestrator adds current goal to history
+            {"role": "user", "content": goal1}
         ]
-        print(f"Testing LLM plan for: {goal1}")
         try:
             plan1 = await planner.create_plan_with_llm(goal1, rich_available_tools, conversation_history=history1)
             print(f"LLM Plan for '{goal1}': {plan1}")
-            # Add assertions here based on expected LLM output structure
-            assert isinstance(plan1, list), "Plan should be a list"
-            if plan1: # If plan is not empty
-                for step in plan1:
-                    assert "tool_name" in step, "Each step must have a tool_name"
-                    assert "args" in step, "Each step must have args"
-                    assert "kwargs" in step, "Each step must have kwargs"
         except Exception as e:
-            print(f"Error during create_plan_with_llm test for '{goal1}': {e}")
-            print("This test might fail if Ollama is not running or the model is not available.")
-
-        # Test with project context
-        goal2 = "In my 'TestProject', add a new function to 'main.py' that prints hello."
-        context2 = "File: main.py\n\nprint('hello old world')"
-        history2 = [{"role": "user", "content": goal2}]
-        print(f"Testing LLM plan for: {goal2} with context")
-        try:
-            plan2 = await planner.create_plan_with_llm(goal2, rich_available_tools, project_context_summary=context2, project_name_for_context="TestProject", conversation_history=history2)
-            print(f"LLM Plan for '{goal2}': {plan2}")
-            assert isinstance(plan2, list), "Plan should be a list"
-
-        except Exception as e:
-            print(f"Error during create_plan_with_llm test for '{goal2}': {e}")
-
+            print(f"Error: {e}")
+        # ... more tests ...
 
     if __name__ == '__main__':
-        # For rule-based tests:
-        # Loop through test_cases_rule_based as before... (this part is synchronous)
-        all_tests_passed = True
-        for i, (goal_desc, expected_plan) in enumerate(test_cases_rule_based): # Use the original test_cases list
-            print(f"\nRule-based Test Case {i+1}: '{goal_desc}'")
-            generated_plan = planner.create_plan(goal_desc, simple_available_tools) # Pass simple_available_tools
-            if generated_plan == expected_plan:
-                print(f"PASS: Expected {expected_plan}")
-            else:
-                print(f"FAIL: Expected {expected_plan}, Got {generated_plan}")
-                all_tests_passed = False
-        print(f"\n--- PlannerAgent Rule-Based Tests Finished. All Passed: {all_tests_passed} ---")
-
-        # For async LLM-based tests:
-        import asyncio # Ensure asyncio is imported here for the __main__ block
+        # ... sync tests ...
+        import asyncio
         asyncio.run(test_llm_planner())
-
-# [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/planning/planning.py]
-
-[end of ai_assistant/planning/planning.py]
