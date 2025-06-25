@@ -110,4 +110,4 @@ if __name__ == '__main__':
     # or run Flask with `threaded=True` for some concurrency.
     # However, since `process_prompt` is async and Flask supports async routes,
     # it should integrate with asyncio's event loop.
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=True)

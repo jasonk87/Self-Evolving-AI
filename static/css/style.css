@@ -188,11 +188,11 @@ header h1 {
     width: 180px;
     height: 180px;
             /* Explicitly override idle positioning properties */
-            top: 50%;
+            top: 45%; /* Shifted up to avoid status text */
             left: 50%;
-            bottom: auto !important; /* Use !important to ensure override if needed */
-            right: auto !important;  /* Use !important to ensure override if needed */
-            transform: translate(-50%, -50%) scale(1) !important; /* Reset scale and ensure this transform takes precedence */
+            bottom: auto !important;
+            right: auto !important;
+            transform: translate(-50%, -50%) scale(1) !important; /* translate Y is now relative to 45% top */
 }
 
 .processing-indicator.weibo-thinking .main-orb {
@@ -231,12 +231,25 @@ header h1 {
     /* Position and size are same as 'thinking' state. */
     /* If JS directly sets transform for thinking, this class just overrides animations. */
     /* If CSS handles thinking transform, ensure this doesn't conflict or also defines it. */
-    top: 50%;
+    top: 45%; /* Shifted up to avoid status text */
     left: 50%;
-    bottom: auto !important; /* Ensure override */
-    right: auto !important;  /* Ensure override */
-    transform: translate(-50%, -50%) scale(1) !important; /* Ensure override and reset scale */
+    bottom: auto !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) scale(1) !important;
 }
+
+/* Styles for when Weibo is in a designated "work zone" for background tasks */
+.processing-indicator.weibo-in-work-zone {
+    width: 60px; /* Smaller size for work zone */
+    height: 60px;
+    top: 15px;    /* Position to top-right corner */
+    right: 15px;
+    left: auto;   /* Override default/idle left */
+    bottom: auto; /* Override default/idle bottom */
+    transform: scale(0.75); /* Apply overall scale for the work zone appearance */
+    /* The .weibo-working-idle class will be added simultaneously by JS for the glow */
+}
+
 .processing-indicator.weibo-talking .main-orb {
     background-color: var(--accent-color);
     animation: talking-main-orb-flare 0.8s infinite ease-in-out;
@@ -354,4 +367,122 @@ header h1 {
 
 .status-panel {
     /* Styles for status panel if/when implemented */
+}
+
+/* Basic Responsiveness */
+@media (max-width: 768px) {
+    header h1 {
+        font-size: 1.4em; /* Slightly smaller header text */
+        letter-spacing: 2px;
+    }
+
+    .main-content {
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .ai-core-display {
+        flex-basis: 30%; /* Reduce height proportion */
+        min-height: 120px; /* Adjust min height */
+        padding: 10px;
+    }
+    .ai-core-display p#aiCoreStatusText {
+        font-size: 0.9em;
+        bottom: 5px;
+    }
+
+    /* Adjust Weibo's active (thinking/talking) size */
+    .processing-indicator.weibo-thinking,
+    .processing-indicator.weibo-talking {
+        width: 120px;
+        height: 120px;
+    }
+    .processing-indicator.weibo-thinking .main-orb,
+    .processing-indicator.weibo-talking .main-orb {
+        width: 50px;
+        height: 50px;
+    }
+    .processing-indicator.weibo-thinking .satellite-orb,
+    .processing-indicator.weibo-talking .satellite-orb {
+        width: 18px;
+        height: 18px;
+    }
+    /* Adjust thinking satellite orbit radius if needed */
+    @keyframes thinking-satellites-spin {
+        0% { transform: rotate(0deg) translateX(45px) scale(1.1) rotate(0deg); } /* Smaller orbit */
+        100% { transform: rotate(720deg) translateX(45px) scale(1.1) rotate(-720deg); }
+    }
+
+    /* Adjust Weibo's work zone size */
+    .processing-indicator.weibo-in-work-zone {
+        width: 50px;
+        height: 50px;
+        top: 10px;
+        right: 10px;
+        transform: scale(0.7);
+    }
+    .processing-indicator.weibo-in-work-zone .main-orb {
+        width: 25px; height: 25px; /* Adjust main orb in work zone */
+    }
+    .processing-indicator.weibo-in-work-zone .satellite-orb {
+        width: 8px; height: 8px; /* Adjust satellite orbs in work zone */
+    }
+    @keyframes satellite-orbit-idle { /* Adjust idle orbit for smaller work zone size if they still orbit there */
+        0% { transform: rotate(0deg) translateX(18px) rotate(0deg); }
+        100% { transform: rotate(360deg) translateX(18px) rotate(-360deg); }
+    }
+
+
+    .chat-log-area {
+        padding: 10px;
+    }
+    .chat-log-area .message {
+        padding: 8px 12px;
+        font-size: 0.9em;
+        max-width: 85%; /* Allow messages to take a bit more width */
+    }
+
+    .input-area-sci-fi {
+        padding: 10px;
+        flex-direction: column; /* Stack input and button on small screens */
+        gap: 8px;
+    }
+    #userInput {
+        font-size: 1em;
+        padding: 10px 15px;
+        margin-right: 0; /* Remove margin when stacked */
+    }
+    #sendButton {
+        font-size: 0.9em;
+        padding: 10px 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.2em;
+    }
+    .ai-core-display {
+        flex-basis: 25%;
+        min-height: 100px;
+    }
+     .processing-indicator.weibo-thinking,
+    .processing-indicator.weibo-talking {
+        width: 100px;
+        height: 100px;
+    }
+    .processing-indicator.weibo-thinking .main-orb,
+    .processing-indicator.weibo-talking .main-orb {
+        width: 40px;
+        height: 40px;
+    }
+    .processing-indicator.weibo-thinking .satellite-orb,
+    .processing-indicator.weibo-talking .satellite-orb {
+        width: 15px;
+        height: 15px;
+    }
+    @keyframes thinking-satellites-spin { /* Further reduce orbit for very small screens */
+        0% { transform: rotate(0deg) translateX(35px) scale(1) rotate(0deg); }
+        100% { transform: rotate(720deg) translateX(35px) scale(1) rotate(-720deg); }
+    }
 }
