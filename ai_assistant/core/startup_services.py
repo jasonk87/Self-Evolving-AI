@@ -150,3 +150,113 @@ if __name__ == '__main__': # pragma: no cover
         print("--- resume_interrupted_tasks Test Finished ---")
 
     asyncio.run(main_test())
+
+
+from typing import Tuple # Added for type hinting
+
+# Centralized Service Initialization
+# Moved here from cli.py and app.py to avoid duplication
+# and ensure consistency.
+
+from ..llm_interface.ollama_client import OllamaProvider
+from ..planning.hierarchical_planner import HierarchicalPlanner
+from ..learning.learning import LearningAgent
+from ..execution.action_executor import ActionExecutor
+from ..planning.planning import PlannerAgent
+from ..planning.execution import ExecutionAgent
+from .orchestrator import DynamicOrchestrator
+from ..config import get_data_dir
+import os # For os.path.join and os.makedirs
+
+async def initialize_core_services(
+    existing_task_manager: Optional[TaskManager] = None,
+    existing_notification_manager: Optional[NotificationManager] = None
+) -> Tuple[DynamicOrchestrator, TaskManager, NotificationManager]:
+    """
+    Initializes and returns the core AI services including the DynamicOrchestrator.
+    It can optionally reuse existing TaskManager and NotificationManager instances.
+    """
+    print("CoreServices: Initializing AI services...")
+
+    if existing_notification_manager:
+        notification_manager = existing_notification_manager
+        print("CoreServices: Reusing existing NotificationManager.")
+    else:
+        notification_manager = NotificationManager()
+        print("CoreServices: Initialized new NotificationManager.")
+
+    if existing_task_manager:
+        task_manager = existing_task_manager
+        print("CoreServices: Reusing existing TaskManager.")
+    else:
+        task_manager = TaskManager(notification_manager=notification_manager)
+        print("CoreServices: Initialized new TaskManager.")
+
+    # Resume interrupted tasks - this should happen after TaskManager is ready
+    try:
+        print("CoreServices: Attempting to resume interrupted tasks...")
+        await resume_interrupted_tasks(task_manager, notification_manager)
+        print("CoreServices: Resumed interrupted tasks successfully.")
+    except Exception as e_resume:
+        print(f"CoreServices: CRITICAL ERROR during task resumption: {e_resume}")
+        # Depending on severity, we might want to raise this or handle gracefully
+
+    try:
+        llm_provider = OllamaProvider()
+        print("CoreServices: LLM Provider initialized.")
+    except Exception as e_llm:
+        print(f"CoreServices: CRITICAL ERROR initializing OllamaProvider: {e_llm}. Orchestrator might be non-functional.")
+        # Handle the case where LLM provider might not be available.
+        # For now, we'll let it proceed, but dependent services might fail.
+        llm_provider = None # Or raise, or return a specific error state
+
+    hierarchical_planner = None
+    if llm_provider:
+        try:
+            hierarchical_planner = HierarchicalPlanner(llm_provider=llm_provider)
+            print("CoreServices: Hierarchical Planner initialized.")
+        except Exception as e_hp:
+            print(f"CoreServices: ERROR initializing HierarchicalPlanner: {e_hp}")
+            hierarchical_planner = None # Continue without it if it fails
+    else:
+        print("CoreServices: LLM Provider not available, skipping Hierarchical Planner initialization.")
+
+
+    # Configure LearningAgent to use the centralized data directory
+    insights_file_name = "actionable_insights.json"
+    insights_dir = get_data_dir() # From config.py, e.g., ai_assistant/core/data
+    insights_file_path = os.path.join(insights_dir, insights_file_name)
+    os.makedirs(os.path.dirname(insights_file_path), exist_ok=True) # Ensure directory exists
+
+    print(f"CoreServices: LearningAgent insights path set to: {insights_file_path}")
+
+    learning_agent = LearningAgent(
+        insights_filepath=insights_file_path,
+        task_manager=task_manager,
+        notification_manager=notification_manager
+    )
+    print("CoreServices: Learning Agent initialized.")
+
+    action_executor = ActionExecutor(
+        learning_agent=learning_agent,
+        task_manager=task_manager,
+        notification_manager=notification_manager
+    )
+    print("CoreServices: Action Executor initialized.")
+
+    planner_agent = PlannerAgent() # Simple planner
+    execution_agent = ExecutionAgent()
+    print("CoreServices: Planner and Execution Agents initialized.")
+
+    orchestrator = DynamicOrchestrator(
+        planner=planner_agent,
+        executor=execution_agent,
+        learning_agent=learning_agent,
+        action_executor=action_executor,
+        task_manager=task_manager,
+        notification_manager=notification_manager,
+        hierarchical_planner=hierarchical_planner # Can be None if HP failed
+    )
+    print("CoreServices: Dynamic Orchestrator initialized successfully.")
+
+    return orchestrator, task_manager, notification_manager

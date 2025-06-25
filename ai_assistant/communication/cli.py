@@ -40,10 +40,13 @@ from ai_assistant.core import project_manager
 from ai_assistant.core import suggestion_manager as suggestion_manager_module
 from ai_assistant.core import status_reporting
 from ai_assistant.utils.conversational_helpers import rephrase_error_message_conversationally # Added
-from ai_assistant.llm_interface.ollama_client import OllamaProvider # Added
-from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner # Added
+# OllamaProvider and HierarchicalPlanner are now initialized by initialize_core_services
+# from ai_assistant.llm_interface.ollama_client import OllamaProvider
+# from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
+# Import the new centralized initialization function
+from ai_assistant.core.startup_services import initialize_core_services
 
 # Imports for new CLI commands
 from ai_assistant.custom_tools.awareness_tools import get_system_status_summary, get_item_details_by_id, list_formatted_suggestions
@@ -533,81 +536,26 @@ _task_manager_cli_instance: Optional[TaskManager] = None
 # _notification_manager_cli_instance is already declared at the top of the file
 
 async def start_cli():
-    global _pending_tool_confirmation_details, _orchestrator, _results_queue, _task_manager_cli_instance, _notification_manager_cli_instance
-
-    # Instantiate NotificationManager first
-    _notification_manager_cli_instance = NotificationManager()
-
-    # Instantiate TaskManager first as other components might need it.
-    # It will load persisted active tasks.
-    _task_manager_cli_instance = TaskManager(notification_manager=_notification_manager_cli_instance)
-
-    # Resume interrupted tasks
-    try:
-        from ai_assistant.core.startup_services import resume_interrupted_tasks # Added import
-        await resume_interrupted_tasks(_task_manager_cli_instance, _notification_manager_cli_instance)
-    except Exception as e_startup_tasks: # pragma: no cover
-        # Using print for critical startup error, assuming logger might not be fully ready or for visibility
-        print(f"CRITICAL STARTUP ERROR: Failed to process resume_interrupted_tasks: {e_startup_tasks}")
-        traceback.print_exc() # Print traceback for critical startup errors
-
-    # Instantiate LLM Provider and Hierarchical Planner
-    # Note: OllamaProvider default base_url is http://localhost:11434. Ensure it's running.
-    # Consider making base_url configurable if needed.
-    try:
-        llm_provider = OllamaProvider()
-        # Simple check to see if provider is responsive, can be expanded
-        # await llm_provider.list_models_async() # Example check, might be too slow for startup
-    except Exception as e_provider: # pragma: no cover
-        print(f"CRITICAL STARTUP ERROR: Failed to initialize OllamaProvider: {e_provider}. Some features might not work.")
-        print("Ensure Ollama is running and accessible at the configured base URL (default: http://localhost:11434).")
-        llm_provider = None # Set to None so dependent services can check
-
-    hierarchical_planner_instance = None
-    if llm_provider:
-        hierarchical_planner_instance = HierarchicalPlanner(llm_provider=llm_provider)
-    else: # pragma: no cover
-        print("WARNING: LLM Provider not available, HierarchicalPlanner will not be functional.")
-
+    global _pending_tool_confirmation_details, _orchestrator, _results_queue
+    # Make _task_manager_cli_instance and _notification_manager_cli_instance global
+    # as they are assigned by initialize_core_services and used by other CLI functions.
+    global _task_manager_cli_instance, _notification_manager_cli_instance
 
     print_formatted_text(ANSI("\n"))
     print_formatted_text(draw_separator())
-    print_formatted_text(format_header("AI Assistant CLI"))
-    print_formatted_text(format_message("WELCOME", "Interactive AI Assistant Ready", CLIColors.SUCCESS))
-    print_formatted_text(format_message("INFO", "Type /help to see available commands", CLIColors.SYSTEM_MESSAGE))
-    print_formatted_text(draw_separator())
-    print_formatted_text(ANSI("\n"))
+    print_formatted_text(format_header("AI Assistant CLI - Initializing..."))
 
-    insights_file_path_actual = os.path.join(os.path.expanduser("~"), ".ai_assistant", "actionable_insights.json")
-    os.makedirs(os.path.dirname(insights_file_path_actual), exist_ok=True)
+    try:
+        # Call the centralized initialization function
+        # It returns orchestrator, task_manager, notification_manager
+        _orchestrator, _task_manager_cli_instance, _notification_manager_cli_instance = await initialize_core_services()
+        print_formatted_text(format_message("SYSTEM", "Core services initialized successfully.", CLIColors.SUCCESS))
+    except Exception as e_init:
+        print_formatted_text(format_message("CRITICAL ERROR", f"Failed to initialize core AI services: {e_init}", CLIColors.ERROR_MESSAGE))
+        traceback.print_exc()
+        return # Cannot proceed if core services fail to load
 
-    # Pass _task_manager_cli_instance to components that need it.
-    # LearningAgent needs it for its ActionExecutor.
-    learning_agent = LearningAgent(
-        insights_filepath=insights_file_path_actual,
-        task_manager=_task_manager_cli_instance,
-        notification_manager=_notification_manager_cli_instance
-    )
-
-    # ActionExecutor for DynamicOrchestrator also needs TaskManager and NotificationManager.
-    action_executor_for_orchestrator = ActionExecutor(
-        learning_agent=learning_agent,
-        task_manager=_task_manager_cli_instance,
-        notification_manager=_notification_manager_cli_instance
-    )
-
-    execution_agent = ExecutionAgent()
-    planner_agent = PlannerAgent() # Simple planner
-
-    _orchestrator = DynamicOrchestrator(
-        planner=planner_agent,
-        executor=execution_agent,
-        learning_agent=learning_agent,
-        action_executor=action_executor_for_orchestrator,
-        task_manager=_task_manager_cli_instance,
-        notification_manager=_notification_manager_cli_instance,
-        hierarchical_planner=hierarchical_planner_instance # Inject HierarchicalPlanner
-    )
+    # Initialize the results queue for background processing
     _results_queue = asyncio.Queue()
 
     session = PromptSession(format_input_prompt())

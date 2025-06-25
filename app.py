@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Optional # Added this import
 from flask import Flask, render_template, request, jsonify
 
 # Attempt to set up Python paths similar to main.py
@@ -17,92 +18,54 @@ if project_root not in sys.path:
 
 # AI Assistant Core Imports
 from ai_assistant.core.orchestrator import DynamicOrchestrator
-from ai_assistant.planning.planning import PlannerAgent
-from ai_assistant.planning.execution import ExecutionAgent
-from ai_assistant.learning.learning import LearningAgent
-from ai_assistant.execution.action_executor import ActionExecutor
+# Import the new centralized initialization function
+from ai_assistant.core.startup_services import initialize_core_services
+# TaskManager and NotificationManager might still be needed for type hints or direct use if any
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
-from ai_assistant.llm_interface.ollama_client import OllamaProvider
-from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
-from ai_assistant.core.startup_services import resume_interrupted_tasks # For task resumption
-from ai_assistant.config import get_data_dir # For learning agent insights path
 
 app = Flask(__name__)
 
-# Global variable for the orchestrator
+# Global variables for AI services
 orchestrator: Optional[DynamicOrchestrator] = None
+# Keep references to task_manager and notification_manager if needed by other parts of app.py
+# For now, they are primarily managed within initialize_core_services
+_task_manager_instance: Optional[TaskManager] = None
+_notification_manager_instance: Optional[NotificationManager] = None
 
-def initialize_ai_services():
-    global orchestrator
+
+def startup_event():
+    """Initializes AI services. Designed to be run in an asyncio event loop."""
+    global orchestrator, _task_manager_instance, _notification_manager_instance
     if orchestrator is not None:
+        print("Flask App: AI services already initialized.")
         return
 
-    print("Initializing AI services for Flask app...")
+    print("Flask App: Initializing AI services via centralized function...")
     try:
-        notification_manager = NotificationManager()
-        task_manager = TaskManager(notification_manager=notification_manager)
+        # initialize_core_services is an async function
+        # We need to run it in an event loop.
+        # Flask's app.before_first_request is synchronous.
+        # A common pattern for Flask is to run async setup in a separate thread
+        # or manage an event loop if the web server supports it (e.g., Gunicorn with Uvicorn workers).
+        # For simplicity here, and assuming a dev environment, we'll run it using asyncio.run.
+        # This might block if initialize_core_services is very long-running.
+        # For production, consider a more robust async integration.
 
-        # It's important to run resume_interrupted_tasks in an event loop
-        # For Flask, this initialization happens outside an async route, so we manage a loop.
-        try:
-            asyncio.run(resume_interrupted_tasks(task_manager, notification_manager))
-            print("Resumed interrupted tasks.")
-        except Exception as e_resume:
-            print(f"Error resuming interrupted tasks: {e_resume}")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # We don't need to pass existing managers as app.py creates its own scope
+        orch, tm, nm = loop.run_until_complete(initialize_core_services())
+        loop.close()
 
+        orchestrator = orch
+        _task_manager_instance = tm
+        _notification_manager_instance = nm
+        print("Flask App: AI services initialized successfully.")
 
-        llm_provider = OllamaProvider() # Assuming Ollama is running
-        print("LLM Provider initialized.")
-
-        hierarchical_planner = HierarchicalPlanner(llm_provider=llm_provider)
-        print("Hierarchical Planner initialized.")
-
-        # insights_file_path = os.path.join(get_data_dir(), "actionable_insights.json")
-        # The path for LearningAgent in cli.py is:
-        insights_file_path_actual = os.path.join(os.path.expanduser("~"), ".ai_assistant", "actionable_insights.json")
-        os.makedirs(os.path.dirname(insights_file_path_actual), exist_ok=True)
-
-
-        learning_agent = LearningAgent(
-            insights_filepath=insights_file_path_actual,
-            task_manager=task_manager,
-            notification_manager=notification_manager
-        )
-        print("Learning Agent initialized.")
-
-        action_executor = ActionExecutor(
-            learning_agent=learning_agent,
-            task_manager=task_manager,
-            notification_manager=notification_manager
-        )
-        print("Action Executor initialized.")
-
-        planner_agent = PlannerAgent()
-        execution_agent = ExecutionAgent()
-        print("Planner and Execution Agents initialized.")
-
-        orchestrator = DynamicOrchestrator(
-            planner=planner_agent,
-            executor=execution_agent,
-            learning_agent=learning_agent,
-            action_executor=action_executor,
-            task_manager=task_manager,
-            notification_manager=notification_manager,
-            hierarchical_planner=hierarchical_planner
-        )
-        print("Dynamic Orchestrator initialized successfully.")
     except Exception as e:
-        print(f"CRITICAL ERROR during AI services initialization: {e}")
+        print(f"Flask App: CRITICAL ERROR during AI services initialization: {e}")
         orchestrator = None # Ensure it's None if initialization fails
-
-@app.before_first_request
-def startup():
-    # Ensure AI services are initialized before the first request
-    # This is a Flask specific decorator.
-    # For production, you might initialize earlier or differently.
-    initialize_ai_services()
-
 
 @app.route('/')
 def home():
@@ -114,7 +77,7 @@ async def chat_api():
     if orchestrator is None:
         return jsonify({"error": "AI services are not initialized. Please check server logs."}), 500
 
-    data = await request.get_json()
+    data = request.get_json() # Corrected: Removed await
     user_message = data.get('message')
 
     if not user_message:
@@ -138,7 +101,7 @@ async def chat_api():
 
 if __name__ == '__main__':
     # Initialize AI services once before starting the app if running directly
-    # initialize_ai_services() # Called by @app.before_first_request now
+    startup_event() # Call the startup_event function
 
     # Note: For development only. In production, use a proper WSGI server like Gunicorn.
     # The default Flask dev server is single-threaded by default.
