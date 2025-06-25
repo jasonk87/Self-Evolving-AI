@@ -12,7 +12,9 @@ let helpMenuPopup = null;
 let statusPanel = null;
 let statusPanelToggle = null;
 let activeTasksList = null;
-let refreshActiveTasksBtn = null; // New button
+let refreshActiveTasksBtn = null;
+let recentNotificationsList = null; // New for notifications
+let refreshNotificationsBtn = null; // New button
 
 
 let idleAnimationTimeoutId = null;
@@ -157,16 +159,16 @@ async function sendMessage() {
             appendToChatLog(data.response, 'ai');
         } else if (data.error) {
             appendToChatLog(`Error: ${data.error}`, 'ai');
-            aiCoreStatusText.textContent = 'Error from AI.';
+            // aiCoreStatusText will be updated by appendToChatLog after typing the error
         } else {
             appendToChatLog('Received an empty or unexpected response.', 'ai');
-            aiCoreStatusText.textContent = 'Unexpected response received.';
+            // aiCoreStatusText will be updated by appendToChatLog
         }
 
     } catch (error) {
         console.error('Failed to send message:', error);
         appendToChatLog(`Connection error: ${error.message}`, 'ai');
-        aiCoreStatusText.textContent = 'Connection Error. System Offline?';
+        // aiCoreStatusText will be updated by appendToChatLog
     }
 }
 
@@ -326,7 +328,7 @@ function stopMatrixAnimation() {
 // --- Status Panel Logic ---
 async function fetchAndDisplayActiveTasks() {
     if (!activeTasksList) {
-        console.warn("Active tasks list element not found in status panel.");
+        // console.warn("Active tasks list element not found in status panel."); // Already logged in DOMContentLoaded
         return;
     }
     activeTasksList.innerHTML = '<li>Loading tasks...</li>';
@@ -334,7 +336,8 @@ async function fetchAndDisplayActiveTasks() {
     try {
         const response = await fetch('/api/status/active_tasks');
         if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`HTTP error ${response.status}: ${errorText || response.statusText}`);
         }
         const tasks = await response.json();
 
@@ -343,7 +346,7 @@ async function fetchAndDisplayActiveTasks() {
             tasks.forEach(task => {
                 const li = document.createElement('li');
                 let taskDesc = task.description || 'No description';
-                if (taskDesc.length > 40) taskDesc = taskDesc.substring(0, 37) + "..."; // Shorter for panel
+                if (taskDesc.length > 40) taskDesc = taskDesc.substring(0, 37) + "...";
                 const status = task.status || 'UNKNOWN';
                 const type = task.task_type || 'GENERAL';
                 li.textContent = `[${type.substring(0,10)}] ${taskDesc} - ${status}`;
@@ -356,6 +359,49 @@ async function fetchAndDisplayActiveTasks() {
     } catch (error) {
         console.error("Failed to fetch active tasks:", error);
         activeTasksList.innerHTML = `<li>Error loading tasks.</li>`;
+    }
+}
+
+async function fetchAndDisplayRecentNotifications() {
+    if (!recentNotificationsList) {
+        // console.warn("Recent notifications list element not found."); // Logged in DOMContentLoaded
+        return;
+    }
+    recentNotificationsList.innerHTML = '<li>Loading notifications...</li>';
+
+    try {
+        const response = await fetch('/api/status/notifications');
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error ${response.status}: ${errorText || response.statusText}`);
+        }
+        const notifications = await response.json();
+
+        recentNotificationsList.innerHTML = '';
+        if (notifications && notifications.length > 0) {
+            notifications.forEach(notif => {
+                const li = document.createElement('li');
+                let summary = notif.summary_message || 'No summary';
+                if (summary.length > 45) summary = summary.substring(0, 42) + "...";
+                const type = notif.event_type || 'INFO';
+                // Format timestamp: 2023-10-27T10:30:00 -> 10/27 10:30
+                let tsDisplay = 'Unknown time';
+                if (notif.timestamp) {
+                    try {
+                        const d = new Date(notif.timestamp);
+                        tsDisplay = `${d.toLocaleDateString(undefined, {month:'2-digit', day:'2-digit'})} ${d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'})}`;
+                    } catch (e) { /* ignore date parsing error */ }
+                }
+                li.textContent = `[${tsDisplay} | ${type}] ${summary}`;
+                li.title = `ID: ${notif.notification_id}\nType: ${type}\nFull Summary: ${notif.summary_message}\nStatus: ${notif.status}\nTimestamp: ${notif.timestamp}`;
+                recentNotificationsList.appendChild(li);
+            });
+        } else {
+            recentNotificationsList.innerHTML = '<li>No new notifications.</li>';
+        }
+    } catch (error) {
+        console.error("Failed to fetch recent notifications:", error);
+        recentNotificationsList.innerHTML = '<li>Error loading notifications.</li>';
     }
 }
 
@@ -377,6 +423,8 @@ document.addEventListener('DOMContentLoaded', () => {
     statusPanelToggle = document.getElementById('statusPanelToggle');
     activeTasksList = document.getElementById('activeTasksList');
     refreshActiveTasksBtn = document.getElementById('refreshActiveTasksBtn');
+    recentNotificationsList = document.getElementById('recentNotificationsList'); // Assign new
+    refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn'); // Assign new
 
 
     // Initial Diagnostics
@@ -454,8 +502,9 @@ document.addEventListener('DOMContentLoaded', () => {
             statusPanelToggle.innerHTML = isCollapsed ? '&lt;' : '&gt;';
             statusPanelToggle.setAttribute('title', isCollapsed ? 'Open Status Panel' : 'Close Status Panel');
 
-            if (!isCollapsed && activeTasksList) {
-                fetchAndDisplayActiveTasks();
+            if (!isCollapsed) { // If panel is opened
+                if(activeTasksList) fetchAndDisplayActiveTasks();
+                if(recentNotificationsList) fetchAndDisplayRecentNotifications(); // Fetch notifications too
             }
         });
     } else { console.error("Status panel or toggle button NOT FOUND!"); }
@@ -463,6 +512,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshActiveTasksBtn) {
         refreshActiveTasksBtn.addEventListener('click', fetchAndDisplayActiveTasks);
     } else { console.warn("Refresh active tasks button not found."); }
+
+    if (refreshNotificationsBtn) { // Add listener for new button
+        refreshNotificationsBtn.addEventListener('click', fetchAndDisplayRecentNotifications);
+    } else { console.warn("Refresh notifications button not found."); }
 
     // Initial AI State
     if (processingIndicator && aiCoreDisplay && aiCoreStatusText) {

@@ -165,13 +165,45 @@ def get_active_tasks():
 
     return jsonify(formatted_tasks)
 
-# Example for notifications (can be added in a similar way)
-# @app.route('/api/status/notifications', methods=['GET'])
-# def get_notifications():
-#     global _notification_manager_instance
-#     if _notification_manager_instance is None:
-#         return jsonify({"error": "Notification manager not initialized"}), 503
-#
-#     unread_notifications = _notification_manager_instance.get_notifications(status_filter='unread', limit=5) # Or make limit a param
-#     formatted_notifications = [format_task_for_json(notif) for notif in unread_notifications] # Assuming format_task_for_json can handle notification structure or adapt
-#     return jsonify(formatted_notifications)
+@app.route('/api/status/notifications', methods=['GET'])
+def get_recent_notifications():
+    global _notification_manager_instance
+    if _notification_manager_instance is None:
+        return jsonify({"error": "Notification manager not initialized"}), 503
+
+    # Fetch, for example, the 5 most recent unread notifications
+    # Make sure NotificationStatus is imported or accessible if using Enum directly
+    from ai_assistant.core.notification_manager import NotificationStatus # Import if not already
+
+    try:
+        # Assuming get_notifications can take status_filter as string or Enum
+        # Adjust if your NotificationManager expects Enum type directly for status_filter
+        notifications = _notification_manager_instance.get_notifications(
+            status_filter=NotificationStatus.UNREAD, # Or "unread" if your method handles string
+            limit=5
+        )
+    except Exception as e:
+        print(f"Error fetching notifications: {e}") # Log error
+        return jsonify({"error": "Failed to fetch notifications"}), 500
+
+    # The format_task_for_json helper should be generic enough if Notification objects
+    # have similar attribute access (like .name for enums, .isoformat() for datetime)
+    # or can be converted to dicts. Otherwise, a specific format_notification_for_json is needed.
+    # For now, let's assume format_task_for_json can be adapted or Notification objects are dict-like.
+
+    formatted_notifications = []
+    for notif in notifications:
+        # Create a dictionary for each notification manually to ensure correct fields
+        notif_dict = {
+            "notification_id": notif.notification_id,
+            "event_type": notif.event_type.name if isinstance(notif.event_type, Enum) else str(notif.event_type),
+            "summary_message": notif.summary_message,
+            "timestamp": notif.timestamp.isoformat() if isinstance(notif.timestamp, datetime) else str(notif.timestamp),
+            "status": notif.status.name if isinstance(notif.status, Enum) else str(notif.status),
+            "related_item_id": notif.related_item_id,
+            "related_item_type": notif.related_item_type
+            # Add other relevant fields from Notification object if needed
+        }
+        formatted_notifications.append(notif_dict)
+
+    return jsonify(formatted_notifications)
