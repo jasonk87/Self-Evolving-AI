@@ -15,7 +15,6 @@ function setWeiboState(state) {
     }
 
     processingIndicator.classList.remove('idle', 'weibo-working-idle', 'weibo-thinking', 'weibo-talking', 'weibo-in-work-zone');
-    // Clear any inline styles that might conflict, especially transform from old idle or top/left from this new idle
     processingIndicator.style.transform = '';
     processingIndicator.style.top = '';
     processingIndicator.style.left = '';
@@ -25,8 +24,6 @@ function setWeiboState(state) {
     switch (state) {
         case 'idle':
             processingIndicator.classList.add('idle');
-            // CSS for .idle now sets bottom:20px, left:20px, transform:scale(0.8)
-            // Start JS animation which will override top/left for drifting.
             startIdleAnimation();
             break;
         case 'background-processing':
@@ -134,9 +131,8 @@ function animateIdleWeibo() {
     }
 
     const parentRect = aiCoreDisplay.getBoundingClientRect();
-    const indicatorStyle = window.getComputedStyle(processingIndicator);
-    const indicatorWidth = parseFloat(indicatorStyle.width); // Current width (could be scaled by CSS)
-    const indicatorHeight = parseFloat(indicatorStyle.height); // Current height
+    const baseIndicatorWidth = 80; // As defined in .processing-indicator CSS
+    const baseIndicatorHeight = 80; // As defined in .processing-indicator CSS
 
     if (!parentRect || parentRect.width === 0 || parentRect.height === 0) {
          console.warn("aiCoreDisplay has no dimensions or not found, cannot animate idle Weibo.");
@@ -144,27 +140,26 @@ function animateIdleWeibo() {
          return;
     }
 
-    // Calculate max X and Y for the TOP-LEFT corner of the indicator
-    const maxX = parentRect.width - indicatorWidth;
-    const maxY = parentRect.height - indicatorHeight;
+    const randomScale = 0.7 + Math.random() * 0.6; // e.g. 0.7 to 1.3
+    const currentScaledWidth = baseIndicatorWidth * randomScale;
+    const currentScaledHeight = baseIndicatorHeight * randomScale;
+
+    // Calculate max X and Y for the TOP-LEFT corner of the SCALED indicator
+    const maxX = parentRect.width - currentScaledWidth;
+    const maxY = parentRect.height - currentScaledHeight;
 
     let targetX = Math.random() * Math.max(0, maxX);
     let targetY = Math.random() * Math.max(0, maxY);
 
-    // Clamp values to ensure they are within bounds
+    // Clamp values for top-left corner
     targetX = Math.max(0, Math.min(targetX, maxX));
     targetY = Math.max(0, Math.min(targetY, maxY));
 
-    console.log(`Animating Idle (top/left): TargetX=${targetX.toFixed(2)}, TargetY=${targetY.toFixed(2)} (maxX:${maxX.toFixed(2)}, maxY:${maxY.toFixed(2)}) ParentW:${parentRect.width.toFixed(2)}, ParentH:${parentRect.height.toFixed(2)} IndiW:${indicatorWidth.toFixed(2)}`);
+    console.log(`Animating Idle (top/left + scale): Scale=${randomScale.toFixed(2)}, TargetX=${targetX.toFixed(2)}, TargetY=${targetY.toFixed(2)} (maxX:${maxX.toFixed(2)}, maxY:${maxY.toFixed(2)}) ScaledW:${currentScaledWidth.toFixed(2)}`);
 
-    // Use top/left for positioning, remove translate from transform
     processingIndicator.style.left = `${targetX}px`;
     processingIndicator.style.top = `${targetY}px`;
-    // Keep existing scale from .idle class or apply a new one if we reintroduce random scaling
-    // For now, rely on .idle class's transform: scale(0.8)
-    // To re-enable random scaling with top/left:
-    // const randomScale = 0.7 + Math.random() * 0.6;
-    // processingIndicator.style.transform = `scale(${randomScale})`;
+    processingIndicator.style.transform = `scale(${randomScale})`;
 
     const randomDelay = 3000 + Math.random() * 4000;
     idleAnimationTimeoutId = setTimeout(animateIdleWeibo, randomDelay);
@@ -176,9 +171,6 @@ function startIdleAnimation() {
         if (processingIndicator && aiCoreDisplay) {
             const currentDisplayState = getCurrentWeiboState();
             if (currentDisplayState === 'idle') {
-                // Ensure base CSS for .idle (bottom, left, scale) is applied before first JS animation
-                // by forcing a reflow or ensuring CSS has taken effect.
-                // The setWeiboState already clears inline transform, so CSS should apply.
                 animateIdleWeibo();
             }
         } else {
@@ -221,7 +213,6 @@ function toggleBackgroundWork() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
-    // Re-assign global consts (ensure they are defined if script loaded early)
     if (!window.chatLogArea) window.chatLogArea = document.getElementById('chatLogArea');
     if (!window.userInput) window.userInput = document.getElementById('userInput');
     if (!window.sendButton) window.sendButton = document.getElementById('sendButton');
