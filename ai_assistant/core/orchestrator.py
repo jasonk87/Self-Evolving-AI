@@ -723,6 +723,24 @@ class DynamicOrchestrator:
             if response: # Only add if there's a response string
                 self.conversation_history.append({"role": "assistant", "content": response})
 
+            # --- Perform Post-Interaction Analysis (New Step) ---
+            try:
+                # Gather context for analysis
+                analysis_context = {
+                    "user_prompt": prompt,
+                    "ai_response": response, # The final textual response to the user
+                    "plan_details_json": json.dumps(self.current_plan) if self.current_plan else "null",
+                    "tool_results_json": json.dumps(self.context.get('last_results', [])) if self.context.get('last_results') else "null",
+                    "overall_success_status": str(overall_success_of_plan)
+                }
+                # This method will be implemented in the next step.
+                # It should be an async method if it involves LLM calls directly.
+                asyncio.create_task(self._perform_post_interaction_analysis(analysis_context))
+                logger.info("Orchestrator: Scheduled post-interaction analysis.")
+            except Exception as pia_ex:
+                logger.error(f"Orchestrator: Error scheduling or initiating post-interaction analysis: {pia_ex}", exc_info=True)
+            # --- End Post-Interaction Analysis ---
+
             return overall_success_of_plan, response_data # Ensure returning the dict
 
         except Exception as e:
@@ -775,3 +793,206 @@ class DynamicOrchestrator:
             'context': self.context,
             'last_success': self.context.get('last_success')
         }
+
+    async def _perform_post_interaction_analysis(self, context_data: Dict[str, Any]):
+        """
+        Performs post-interaction analysis using an LLM to identify tasks, suggestions, or facts.
+        This method is intended to be called as a background task.
+        """
+        logger.info("Orchestrator: Starting post-interaction analysis...")
+        try:
+            # LLM Prompt designed in Step 1 of the plan for "Implement Proactive Post-Interaction Analysis..."
+            # This is a simplified representation; the actual prompt is more detailed.
+            # For brevity, I'm not embedding the full multi-line prompt string here directly.
+            # It would be loaded from a constant or a template file in a real scenario.
+
+            # Constructing the prompt string (referencing the detailed prompt designed earlier)
+            # Ensure all placeholders are correctly filled from context_data
+            analysis_prompt_template = """You are an AI System Analyst reviewing a recent interaction between an AI assistant and a user. Your goal is to identify opportunities for self-improvement, ensure the AI follows through on commitments, and capture new knowledge.
+
+Interaction Context:
+*   User's Last Prompt: "{user_prompt}"
+*   AI's Final Response: "{ai_response}"
+*   Plan Executed by AI (if any):
+    ```json
+    {plan_details_json}
+    ```
+*   Tool Execution Results (if any, corresponding to the plan):
+    ```json
+    {tool_results_json}
+    ```
+*   Overall Success of AI's Action (if a plan was attempted): {overall_success_status}
+
+Your Analysis Task:
+Based *only* on the provided interaction details, identify if any of the following actions are warranted. If the AI's response and actions were optimal and no follow-up is needed, return an empty list for "actions_to_take".
+1.  Identify AI Commitments for Follow-up (action_type: "create_task").
+2.  Identify Suboptimal Performance or Errors (action_type: "create_suggestion").
+3.  Identify New Learnable Facts (action_type: "learn_fact").
+
+Output Format (MUST BE VALID JSON):
+Respond with a single JSON object: {{"actions_to_take": [{{action_object_1}}, {{action_object_2}}, ...]}}
+Action Object Schemas:
+- create_task: {{"action_type": "create_task", "description": "...", "priority": "...", "details": {{...}} }}
+- create_suggestion: {{"action_type": "create_suggestion", "suggestion_type": "...", "suggestion_description": "...", "source_context": "..."}}
+- learn_fact: {{"action_type": "learn_fact", "fact_text": "...", "fact_category": "...", "source_interaction_summary": "..."}}
+
+If no actions are warranted, return: {{"actions_to_take": []}}
+Analyze the provided interaction and generate your JSON response.
+"""
+            # Ensure context_data keys match placeholders
+            current_user_prompt = context_data.get("user_prompt", "N/A")
+            current_ai_response = context_data.get("ai_response", "N/A")
+            current_plan_json = context_data.get("plan_details_json", "null")
+            current_results_json = context_data.get("tool_results_json", "null")
+            current_success_status = context_data.get("overall_success_status", "N/A")
+
+            # Handle potentially very long AI responses in the prompt to avoid exceeding token limits
+            max_response_len_for_prompt = 1000 # Truncate AI response if too long for the reflection prompt
+            if len(current_ai_response) > max_response_len_for_prompt:
+                current_ai_response_for_prompt = current_ai_response[:max_response_len_for_prompt] + "..."
+            else:
+                current_ai_response_for_prompt = current_ai_response
+
+            formatted_prompt = analysis_prompt_template.format(
+                user_prompt=current_user_prompt,
+                ai_response=current_ai_response_for_prompt, # Use potentially truncated version
+                plan_details_json=current_plan_json,
+                tool_results_json=current_results_json,
+                overall_success_status=current_success_status
+            ).strip()
+
+            reflection_llm_model = get_model_for_task("comprehensive_reflection") # Or a more general model
+
+            # Ensure self.action_executor.code_service.llm_provider is available
+            if not (self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider):
+                logger.error("Orchestrator: LLM provider not available for post-interaction analysis.")
+                return
+
+            llm_response_str = await self.action_executor.code_service.llm_provider.invoke_ollama_model_async(
+                prompt=formatted_prompt, # The full prompt asking for JSON
+                model_name=reflection_llm_model,
+                # No history needed here, it's a one-shot analysis of the current turn
+            )
+
+            if not llm_response_str or not llm_response_str.strip():
+                logger.warning("Orchestrator: Post-interaction analysis LLM returned empty response.")
+                return
+
+            # Attempt to parse the JSON (more robustly than just re.search)
+            actions_data = None
+            try:
+                # Try to find JSON block if LLM adds surrounding text
+                json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", llm_response_str, re.DOTALL)
+                if json_match:
+                    cleaned_response_str = json_match.group(1).strip()
+                else: # Assume the whole response is JSON or try to find the first '{' and last '}'
+                    first_brace = llm_response_str.find('{')
+                    last_brace = llm_response_str.rfind('}')
+                    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                        cleaned_response_str = llm_response_str[first_brace : last_brace+1].strip()
+                    else:
+                        cleaned_response_str = llm_response_str.strip()
+
+                actions_data = json.loads(cleaned_response_str)
+            except json.JSONDecodeError as json_err:
+                logger.error(f"Orchestrator: Failed to parse JSON from post-interaction analysis LLM. Error: {json_err}. Response: {llm_response_str[:500]}...")
+                return
+
+            if actions_data and "actions_to_take" in actions_data and isinstance(actions_data["actions_to_take"], list):
+                actions_list = actions_data["actions_to_take"]
+                if actions_list:
+                    logger.info(f"Orchestrator: Post-interaction analysis identified {len(actions_list)} action(s).")
+                    await self._dispatch_reflection_actions(actions_list) # To be implemented next
+                else:
+                    logger.info("Orchestrator: Post-interaction analysis concluded no actions needed.")
+            else:
+                logger.warning(f"Orchestrator: Post-interaction analysis JSON missing 'actions_to_take' list or invalid format. Data: {actions_data}")
+
+        except Exception as ex:
+            logger.error(f"Orchestrator: Unhandled error in _perform_post_interaction_analysis: {ex}", exc_info=True)
+
+    async def _dispatch_reflection_actions(self, actions_list: List[Dict[str, Any]]):
+        """
+        Processes actions identified by the post-interaction analysis.
+        """
+        if not actions_list:
+            return
+
+        logger.info(f"Orchestrator: Dispatching {len(actions_list)} reflection actions...")
+        for action_item in actions_list:
+            action_type = action_item.get("action_type")
+            try:
+                if action_type == "create_task":
+                    desc = action_item.get("description")
+                    if not desc:
+                        logger.warning("Orchestrator: Skipping create_task action due to missing description.")
+                        continue
+
+                    priority_str = action_item.get("priority", "medium").lower()
+                    # Assuming TaskManager might have an enum or specific strings for priority.
+                    # For now, just passing the string. TaskManager would need to handle it.
+                    # Also assuming a default task type if not specified by LLM.
+                    from .task_manager import ActiveTaskType # Import locally or at top
+                    task_details = action_item.get("details", {})
+                    task_details["source"] = "post_interaction_reflection"
+
+                    if self.task_manager:
+                        self.task_manager.add_task(
+                            description=desc,
+                            task_type=ActiveTaskType.REFLECTION_DERIVED, # Example new task type
+                            priority=priority_str, # TaskManager would need to parse this
+                            details=task_details
+                        )
+                        logger.info(f"Orchestrator: Created task from reflection: {desc[:100]}...")
+                    else:
+                        logger.error("Orchestrator: TaskManager not available to create task from reflection.")
+
+                elif action_type == "create_suggestion":
+                    sug_desc = action_item.get("suggestion_description")
+                    sug_type = action_item.get("suggestion_type", "general_reflection")
+                    sug_source_context = action_item.get("source_context", "N/A") # make sure this is a string
+
+                    if not sug_desc:
+                        logger.warning("Orchestrator: Skipping create_suggestion action due to missing description.")
+                        continue
+
+                    # Construct a more detailed description if source_context is available
+                    full_description = f"{sug_desc}\nSource Context: {sug_source_context}"
+
+
+                    # suggestion_manager_module should be imported at the top of the file
+                    suggestion_manager_module.add_new_suggestion(
+                        type=sug_type,
+                        description=full_description, # Use the combined description
+                        source_reflection_id=f"pia_{str(uuid.uuid4())[:8]}", # Post Interaction Analysis ID
+                        notification_manager=self.notification_manager
+                    )
+                    logger.info(f"Orchestrator: Created suggestion from reflection: {sug_desc[:100]}...")
+
+                elif action_type == "learn_fact":
+                    fact_text = action_item.get("fact_text")
+                    fact_category = action_item.get("fact_category", "general_knowledge")
+                    source_summary = action_item.get("source_interaction_summary", "post_interaction_reflection")
+
+                    if not fact_text:
+                        logger.warning("Orchestrator: Skipping learn_fact action due to missing fact_text.")
+                        continue
+
+                    if self.learning_agent:
+                        # Assuming learn_new_fact or similar method exists and takes these params
+                        # The LearningAgent's method might need adjustment or this call adapted
+                        await self.learning_agent.learn_new_fact(
+                            text=fact_text,
+                            category=fact_category,
+                            source=source_summary,
+                            # user_id might be useful if available from original context
+                        )
+                        logger.info(f"Orchestrator: Learned fact from reflection: {fact_text[:100]}...")
+                    else:
+                        logger.error("Orchestrator: LearningAgent not available to learn fact from reflection.")
+
+                else:
+                    logger.warning(f"Orchestrator: Unknown action_type '{action_type}' from post-interaction analysis.")
+
+            except Exception as dispatch_ex:
+                logger.error(f"Orchestrator: Error dispatching reflection action '{action_type}': {dispatch_ex}", exc_info=True)
