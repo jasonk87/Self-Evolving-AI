@@ -24,7 +24,7 @@ async def resume_interrupted_tasks(
         task_manager: The TaskManager instance with loaded tasks.
         notification_manager: Optional NotificationManager to send notifications.
     """
-    print("StartupServices: Checking for interrupted tasks...") # Replace with logger.info
+    logger.info("--- DIAGNOSTIC: StartupServices - Checking for interrupted tasks... ---")
     interrupted_tasks_found = 0
 
     # TaskManager loads tasks in its __init__. We just list them here.
@@ -49,7 +49,7 @@ async def resume_interrupted_tasks(
             original_status = task.status
             reason = f"Task was in state '{original_status.name}' and agent shutdown occurred."
 
-            print(f"StartupServices: Task {task.task_id} ('{task.description[:30]}...') was in {original_status.name}, marking as FAILED_INTERRUPTED.")
+            logger.info(f"--- DIAGNOSTIC: StartupServices - Task {task.task_id} ('{task.description[:30]}...') was in {original_status.name}, marking as FAILED_INTERRUPTED. ---")
 
             task_manager.update_task_status(
                 task.task_id,
@@ -67,9 +67,9 @@ async def resume_interrupted_tasks(
                 )
 
     if interrupted_tasks_found == 0:
-        print("StartupServices: No potentially interrupted tasks found.") # Replace with logger.info
+        logger.info("--- DIAGNOSTIC: StartupServices - No potentially interrupted tasks found. ---")
     else:
-        print(f"StartupServices: Processed {interrupted_tasks_found} potentially interrupted task(s).") # Replace with logger.info
+        logger.info(f"--- DIAGNOSTIC: StartupServices - Processed {interrupted_tasks_found} potentially interrupted task(s). ---")
 
 
 if __name__ == '__main__': # pragma: no cover
@@ -176,77 +176,74 @@ async def initialize_core_services(
     Initializes and returns the core AI services including the DynamicOrchestrator.
     It can optionally reuse existing TaskManager and NotificationManager instances.
     """
-    print("CoreServices: Initializing AI services...")
+    logger.info("--- DIAGNOSTIC: CoreServices - Initializing AI services... ---")
 
     if existing_notification_manager:
         notification_manager = existing_notification_manager
-        print("CoreServices: Reusing existing NotificationManager.")
+        logger.info("--- DIAGNOSTIC: CoreServices - Reusing existing NotificationManager. ---")
     else:
         notification_manager = NotificationManager()
-        print("CoreServices: Initialized new NotificationManager.")
+        logger.info("--- DIAGNOSTIC: CoreServices - Initialized new NotificationManager. ---")
 
     if existing_task_manager:
         task_manager = existing_task_manager
-        print("CoreServices: Reusing existing TaskManager.")
+        logger.info("--- DIAGNOSTIC: CoreServices - Reusing existing TaskManager. ---")
     else:
         task_manager = TaskManager(notification_manager=notification_manager)
-        print("CoreServices: Initialized new TaskManager.")
+        logger.info("--- DIAGNOSTIC: CoreServices - Initialized new TaskManager. ---")
 
     # Resume interrupted tasks - this should happen after TaskManager is ready
     try:
-        print("CoreServices: Attempting to resume interrupted tasks...")
+        logger.info("--- DIAGNOSTIC: CoreServices - Attempting to resume interrupted tasks... ---")
         await resume_interrupted_tasks(task_manager, notification_manager)
-        print("CoreServices: Resumed interrupted tasks successfully.")
+        logger.info("--- DIAGNOSTIC: CoreServices - Resumed interrupted tasks successfully. ---")
     except Exception as e_resume:
-        print(f"CoreServices: CRITICAL ERROR during task resumption: {e_resume}")
+        logger.error(f"--- DIAGNOSTIC: CoreServices - CRITICAL ERROR during task resumption: {e_resume} ---", exc_info=True)
         # Depending on severity, we might want to raise this or handle gracefully
 
     try:
         llm_provider = OllamaProvider()
-        print("CoreServices: LLM Provider initialized.")
+        logger.info("--- DIAGNOSTIC: CoreServices - LLM Provider initialized. ---")
     except Exception as e_llm:
-        print(f"CoreServices: CRITICAL ERROR initializing OllamaProvider: {e_llm}. Orchestrator might be non-functional.")
-        # Handle the case where LLM provider might not be available.
-        # For now, we'll let it proceed, but dependent services might fail.
-        llm_provider = None # Or raise, or return a specific error state
+        logger.error(f"--- DIAGNOSTIC: CoreServices - CRITICAL ERROR initializing OllamaProvider: {e_llm}. Orchestrator might be non-functional. ---", exc_info=True)
+        llm_provider = None
 
     hierarchical_planner = None
     if llm_provider:
         try:
             hierarchical_planner = HierarchicalPlanner(llm_provider=llm_provider)
-            print("CoreServices: Hierarchical Planner initialized.")
+            logger.info("--- DIAGNOSTIC: CoreServices - Hierarchical Planner initialized. ---")
         except Exception as e_hp:
-            print(f"CoreServices: ERROR initializing HierarchicalPlanner: {e_hp}")
-            hierarchical_planner = None # Continue without it if it fails
+            logger.error(f"--- DIAGNOSTIC: CoreServices - ERROR initializing HierarchicalPlanner: {e_hp} ---", exc_info=True)
+            hierarchical_planner = None
     else:
-        print("CoreServices: LLM Provider not available, skipping Hierarchical Planner initialization.")
+        logger.warning("--- DIAGNOSTIC: CoreServices - LLM Provider not available, skipping Hierarchical Planner initialization. ---")
 
 
-    # Configure LearningAgent to use the centralized data directory
     insights_file_name = "actionable_insights.json"
-    insights_dir = get_data_dir() # From config.py, e.g., ai_assistant/core/data
+    insights_dir = get_data_dir()
     insights_file_path = os.path.join(insights_dir, insights_file_name)
-    os.makedirs(os.path.dirname(insights_file_path), exist_ok=True) # Ensure directory exists
+    os.makedirs(os.path.dirname(insights_file_path), exist_ok=True)
 
-    print(f"CoreServices: LearningAgent insights path set to: {insights_file_path}")
+    logger.info(f"--- DIAGNOSTIC: CoreServices - LearningAgent insights path set to: {insights_file_path} ---")
 
     learning_agent = LearningAgent(
         insights_filepath=insights_file_path,
         task_manager=task_manager,
         notification_manager=notification_manager
     )
-    print("CoreServices: Learning Agent initialized.")
+    logger.info("--- DIAGNOSTIC: CoreServices - Learning Agent initialized. ---")
 
     action_executor = ActionExecutor(
         learning_agent=learning_agent,
         task_manager=task_manager,
         notification_manager=notification_manager
     )
-    print("CoreServices: Action Executor initialized.")
+    logger.info("--- DIAGNOSTIC: CoreServices - Action Executor initialized. ---")
 
-    planner_agent = PlannerAgent() # Simple planner
+    planner_agent = PlannerAgent()
     execution_agent = ExecutionAgent()
-    print("CoreServices: Planner and Execution Agents initialized.")
+    logger.info("--- DIAGNOSTIC: CoreServices - Planner and Execution Agents initialized. ---")
 
     orchestrator = DynamicOrchestrator(
         planner=planner_agent,
@@ -255,8 +252,21 @@ async def initialize_core_services(
         action_executor=action_executor,
         task_manager=task_manager,
         notification_manager=notification_manager,
-        hierarchical_planner=hierarchical_planner # Can be None if HP failed
+        hierarchical_planner=hierarchical_planner
     )
-    print("CoreServices: Dynamic Orchestrator initialized successfully.")
+    # print("CoreServices: Dynamic Orchestrator initialized successfully.") # Replaced by logger below
+    logger.info("--- DIAGNOSTIC: CoreServices - Dynamic Orchestrator initialized successfully. ---")
+
+    # Start background services after all other core components are ready
+    try:
+        from .background_service import start_background_services
+        logger.info("--- DIAGNOSTIC: CoreServices - Attempting to start background services via start_background_services()... ---")
+        start_background_services() # This function is synchronous but creates an asyncio task.
+                                    # It uses asyncio.get_running_loop().
+        logger.info("--- DIAGNOSTIC: CoreServices - Call to start_background_services() completed (background task should be scheduled). ---")
+    except ImportError:
+        logger.error("--- DIAGNOSTIC: CoreServices - FAILED to import start_background_services from .background_service. Background tasks will NOT run. ---")
+    except Exception as e_bg_start:
+        logger.error(f"--- DIAGNOSTIC: CoreServices - CRITICAL ERROR during background service startup: {e_bg_start} ---", exc_info=True)
 
     return orchestrator, task_manager, notification_manager

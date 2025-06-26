@@ -129,7 +129,7 @@ def read_text_from_file(filepath: str) -> str:
 # --- Asyncio Version ---
 async def _background_loop_async():
     global _last_fact_curation_time, _last_project_execution_scan_time
-    print("BackgroundService: Async loop started.")
+    logger.info("--- BACKGROUND SERVICE: Main _background_loop_async started. ---")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
 
@@ -143,48 +143,46 @@ async def _background_loop_async():
         
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
-            current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S') # No need for to_thread for time.strftime
-            logger.info(f"BackgroundService: Running self-reflection cycle (current time: {current_time_str_reflection})...")
+            logger.info(f"--- BACKGROUND SERVICE: Starting self-reflection cycle (Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}) ---")
             try:
                 available_tools = await asyncio.to_thread(tool_system.tool_system_instance.list_tools)
                 if not available_tools: # pragma: no cover
-                    logger.info("BackgroundService: No tools available for reflection cycle. Skipping self-reflection.")
+                    logger.info("--- BACKGROUND SERVICE: No tools available for reflection cycle. Skipping self-reflection. ---")
                 else:
                     suggestions = await asyncio.to_thread(run_self_reflection_cycle, available_tools=available_tools)
                     if suggestions: # pragma: no cover
-                        logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions.")
+                        logger.info(f"--- BACKGROUND SERVICE: Self-reflection cycle generated {len(suggestions)} suggestions. ---")
                     elif suggestions == []: # pragma: no cover
-                        logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
+                        logger.info("--- BACKGROUND SERVICE: Self-reflection cycle generated no suggestions. ---")
                     else: 
-                        logger.info("BackgroundService: Self-reflection cycle did not complete or was aborted (e.g. not enough log data).")
+                        logger.info("--- BACKGROUND SERVICE: Self-reflection cycle did not complete or was aborted (e.g. not enough log data). ---")
             except Exception as e: # pragma: no cover
-                logger.error(f"BackgroundService: Error during self-reflection cycle: {e}", exc_info=True)
+                logger.error(f"--- BACKGROUND SERVICE: Error during self-reflection cycle: {e} ---", exc_info=True)
             next_reflection_run_time = time.time() + _polling_interval_seconds
+            logger.info(f"--- BACKGROUND SERVICE: Self-reflection cycle finished. Next run in approx. {_polling_interval_seconds}s. ---")
 
         # --- LLM-Powered Fact Curation Task ---
         if current_loop_time >= next_fact_curation_run_time:
-            current_time_str_curation = time.strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"BackgroundService: Running LLM fact curation (current time: {current_time_str_curation})...")
+            logger.info(f"--- BACKGROUND SERVICE: Starting LLM fact curation (Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}) ---")
             try:
-                # Call the dedicated function from knowledge_tools
                 curation_success = await run_periodic_fact_store_curation_async()
                 if curation_success: # pragma: no cover
-                    logger.info("BackgroundService: LLM fact curation process completed successfully.")
+                    logger.info("--- BACKGROUND SERVICE: LLM fact curation process completed successfully. ---")
                 else: # pragma: no cover
-                    logger.warning("BackgroundService: LLM fact curation process encountered an issue or made no changes.")
+                    logger.warning("--- BACKGROUND SERVICE: LLM fact curation process encountered an issue or made no changes. ---")
             except Exception as e: # pragma: no cover
-                logger.error(f"BackgroundService: Error during LLM fact curation: {e}", exc_info=True)
+                logger.error(f"--- BACKGROUND SERVICE: Error during LLM fact curation: {e} ---", exc_info=True)
             _last_fact_curation_time = time.time()
-            next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
+            next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS
+            logger.info(f"--- BACKGROUND SERVICE: LLM fact curation finished. Next run in approx. {FACT_CURATION_INTERVAL_SECONDS}s. ---")
         
         # --- Autonomous Project Coding Task ---
         if PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
-            current_time_str_project_exec = await asyncio.to_thread(time.strftime, '%Y-%m-%d %H:%M:%S')
-            print(f"BackgroundService (Async): Scanning for projects with planned tasks (current time: {current_time_str_project_exec})...")
+            logger.info(f"--- BACKGROUND SERVICE: Starting project execution scan (Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}) ---")
             projects_worked_on_this_cycle = 0
             try:
                 if not os.path.isdir(BASE_PROJECTS_DIR): # pragma: no cover
-                    logger.info(f"BackgroundService: Projects directory '{BASE_PROJECTS_DIR}' does not exist. Skipping project execution scan.")
+                    logger.info(f"--- BACKGROUND SERVICE: Projects directory '{BASE_PROJECTS_DIR}' does not exist. Skipping project execution scan. ---")
                 else:
                     for project_sanitized_name in os.listdir(BASE_PROJECTS_DIR):
                         project_dir_path = os.path.join(BASE_PROJECTS_DIR, project_sanitized_name)
@@ -228,9 +226,10 @@ async def _background_loop_async():
                     logger.debug(f"[DEBUG BACKGROUND_SERVICE] No projects found with pending tasks in this scan.")
 
             except Exception as e: # pragma: no cover
-                logger.error(f"BackgroundService: Error during autonomous project execution scan: {e}", exc_info=True)
+                logger.error(f"--- BACKGROUND SERVICE: Error during autonomous project execution scan: {e} ---", exc_info=True)
             _last_project_execution_scan_time = time.time()
             next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
+            logger.info(f"--- BACKGROUND SERVICE: Project execution scan finished. Next run in approx. {PROJECT_EXECUTION_INTERVAL_SECONDS}s. ---")
         
         # Determine sleep time until the next event
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
@@ -260,21 +259,19 @@ def start_background_services():
     # Ensure is_debug_mode is available or imported if used here
 
     if _background_service_active and isinstance(_background_task, asyncio.Task) and not _background_task.done():
-        logger.info("BackgroundService: Service is already running or starting.") # pragma: no cover
+        logger.info("--- BACKGROUND SERVICE: Service is already running or starting. ---") # pragma: no cover
         return
         
     _background_service_active = True
     _last_fact_curation_time = 0.0 
     _last_project_execution_scan_time = 0.0 # Reset this too
-    if is_debug_mode():
-        logger.info("BackgroundService: Attempting to start service...")
+    logger.info("--- BACKGROUND SERVICE: Attempting to start service... ---")
     try:
         loop = asyncio.get_running_loop() 
         _background_task = loop.create_task(_background_loop_async())
-        if is_debug_mode():
-            logger.info("BackgroundService: Service task created.")
+        logger.info(f"--- BACKGROUND SERVICE: Service task _background_loop_async created: {_background_task} ---")
     except RuntimeError: # pragma: no cover
-        logger.error("BackgroundService: Asyncio loop not running. Cannot start service this way.")
+        logger.error("--- BACKGROUND SERVICE: Asyncio loop not running. Cannot start service this way. ---")
         _background_service_active = False 
         return
     except Exception as e: # pragma: no cover
@@ -287,24 +284,25 @@ async def stop_background_services():
     global _background_service_active, _background_task
     
     if not _background_service_active or not isinstance(_background_task, asyncio.Task): # pragma: no cover
-        logger.info("BackgroundService: Service is not running or task not found.")
+        logger.info("--- BACKGROUND SERVICE: Service is not running or task not found. Cannot stop. ---")
         return
 
-    logger.info("BackgroundService: Attempting to stop service...")
+    logger.info("--- BACKGROUND SERVICE: Attempting to stop service... ---")
     _background_service_active = False 
     
     if _background_task and not _background_task.done(): # pragma: no branch
+        logger.info(f"--- BACKGROUND SERVICE: Cancelling background task: {_background_task} ---")
         _background_task.cancel()
         try:
             await _background_task 
-            logger.info("BackgroundService: Service task successfully cancelled and awaited.") # pragma: no cover
+            logger.info("--- BACKGROUND SERVICE: Service task successfully cancelled and awaited. ---") # pragma: no cover
         except asyncio.CancelledError: # pragma: no cover
-            logger.info("BackgroundService: Service task explicitly cancelled.")
+            logger.info("--- BACKGROUND SERVICE: Service task explicitly cancelled by await. ---")
         except Exception as e: # pragma: no cover
-            logger.error(f"BackgroundService: Error while awaiting cancelled task: {e}", exc_info=True)
+            logger.error(f"--- BACKGROUND SERVICE: Error while awaiting cancelled task: {e} ---", exc_info=True)
             
     _background_task = None
-    logger.info("BackgroundService: Service stop procedure completed.")
+    logger.info("--- BACKGROUND SERVICE: Service stop procedure completed. ---")
 
 def is_background_service_active() -> bool:
     """Checks if the background service is currently active."""
