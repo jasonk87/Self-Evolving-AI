@@ -2,6 +2,15 @@ import asyncio
 import os
 from typing import Optional # Added this import
 from flask import Flask, render_template, request, jsonify
+import logging # Import logging
+
+# --- BEGIN DIAGNOSTIC LOGGING ---
+print("--- DIAGNOSTIC: app.py (root) - Top of file reached ---")
+logging.basicConfig(level=logging.INFO) # Basic logging config
+logger = logging.getLogger(__name__)
+logger.info("--- DIAGNOSTIC: app.py (root) - Logger initialized ---")
+logger.info(f"--- DIAGNOSTIC: app.py (root) - Current file path: {os.path.abspath(__file__)} ---")
+# --- END DIAGNOSTIC LOGGING ---
 
 # Attempt to set up Python paths similar to main.py
 import sys
@@ -15,16 +24,24 @@ if project_root not in sys.path:
         project_root = current_dir_as_project_root
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
+        logger.info(f"--- DIAGNOSTIC: app.py (root) - Added project root to sys.path: {project_root} ---")
 
 # AI Assistant Core Imports
+logger.info("--- DIAGNOSTIC: app.py (root) - Attempting AI Assistant Core Imports... ---")
 from ai_assistant.core.orchestrator import DynamicOrchestrator
+logger.info("--- DIAGNOSTIC: app.py (root) - Imported DynamicOrchestrator ---")
 # Import the new centralized initialization function
 from ai_assistant.core.startup_services import initialize_core_services
+logger.info("--- DIAGNOSTIC: app.py (root) - Imported initialize_core_services ---")
 # TaskManager and NotificationManager might still be needed for type hints or direct use if any
 from ai_assistant.core.task_manager import TaskManager
+logger.info("--- DIAGNOSTIC: app.py (root) - Imported TaskManager ---")
 from ai_assistant.core.notification_manager import NotificationManager
+logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
 
+logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
 app = Flask(__name__)
+logger.info("--- DIAGNOSTIC: app.py (root) - Flask app object initialized. ---")
 
 # Global variables for AI services
 orchestrator: Optional[DynamicOrchestrator] = None
@@ -37,12 +54,16 @@ _notification_manager_instance: Optional[NotificationManager] = None
 def startup_event():
     """Initializes AI services. Designed to be run in an asyncio event loop."""
     global orchestrator, _task_manager_instance, _notification_manager_instance
+    logger.info("--- DIAGNOSTIC: startup_event() called ---")
     if orchestrator is not None:
+        logger.info("--- DIAGNOSTIC: startup_event() - AI services already initialized. Skipping. ---")
         print("Flask App: AI services already initialized.")
         return
 
+    logger.info("--- DIAGNOSTIC: startup_event() - Initializing AI services... ---")
     print("Flask App: Initializing AI services via centralized function...")
     try:
+        logger.info("--- DIAGNOSTIC: startup_event() - Entering try block for initialize_core_services ---")
         # initialize_core_services is an async function
         # We need to run it in an event loop.
         # Flask's app.before_first_request is synchronous.
@@ -185,10 +206,13 @@ def format_task_for_json(task):
 @app.route('/api/status/active_tasks', methods=['GET'])
 def get_active_tasks():
     global _task_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/status/active_tasks called. Task Manager: {_task_manager_instance} ---")
     if _task_manager_instance is None:
+        logger.warning("--- DIAGNOSTIC: /api/status/active_tasks - Task manager not initialized, returning 503 ---")
         return jsonify({"error": "Task manager not initialized"}), 503
 
     active_tasks = _task_manager_instance.list_active_tasks()
+    logger.info(f"--- DIAGNOSTIC: /api/status/active_tasks - Found {len(active_tasks)} active tasks. ---")
 
     # Convert tasks to JSON-serializable format
     formatted_tasks = [format_task_for_json(task) for task in active_tasks]
@@ -198,12 +222,15 @@ def get_active_tasks():
 @app.route('/api/status/notifications', methods=['GET'])
 def get_recent_notifications():
     global _notification_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/status/notifications called. Notification Manager: {_notification_manager_instance} ---")
     if _notification_manager_instance is None:
+        logger.warning("--- DIAGNOSTIC: /api/status/notifications - Notification manager not initialized, returning 503 ---")
         return jsonify({"error": "Notification manager not initialized"}), 503
 
     # Fetch, for example, the 5 most recent unread notifications
     # Make sure NotificationStatus is imported or accessible if using Enum directly
     from ai_assistant.core.notification_manager import NotificationStatus # Import if not already
+    logger.info("--- DIAGNOSTIC: /api/status/notifications - NotificationStatus imported ---")
 
     try:
         # Assuming get_notifications can take status_filter as string or Enum
@@ -212,7 +239,9 @@ def get_recent_notifications():
             status_filter=NotificationStatus.UNREAD, # Or "unread" if your method handles string
             limit=5
         )
+        logger.info(f"--- DIAGNOSTIC: /api/status/notifications - Found {len(notifications)} unread notifications. ---")
     except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/status/notifications - Error fetching notifications: {e} ---", exc_info=True)
         print(f"Error fetching notifications: {e}") # Log error
         return jsonify({"error": "Failed to fetch notifications"}), 500
 

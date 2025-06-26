@@ -103,9 +103,10 @@
             <div class="help-menu-category">
                 <span class="category-title">System</span>
                 <ul class="help-menu-items">
-                    <li data-command="/status" title="Show overall system status">System Status</li>
-                    <li data-command="/notifications list unread" title="List unread notifications">List Unread Notifications</li>
-                     <li data-command="/help" title="Show all available commands (CLI style)">Full Help (CLI)</li>
+                    <li data-help-action="displayInfo" data-info-text="To see the system status, type '/status' in the chat and send." title="Display info about system status command">System Status Info</li>
+                    <li data-command="/notifications list unread" data-help-action="populateInput" title="Pre-fill command to list unread notifications">List Unread Notifications</li>
+                    <li data-help-action="displayInfo" data-info-text="You can type various commands like '/status', '/tasks list', '/suggestions list pending', etc. For a more comprehensive list, type '/help' and send it to the AI." title="General help about commands">General Command Help</li>
+                    <li data-command="/help" data-help-action="populateInput" title="Pre-fill /help command to get full list from AI">Full Help (from AI)</li>
                 </ul>
             </div>
              <!-- Add /tools, /projects later if needed -->

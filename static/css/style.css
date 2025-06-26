@@ -335,6 +335,15 @@ header h1 {
     align-self: flex-start;
     margin-right: auto;
 }
+.chat-log-area .system-help-message { /* New style for system-help messages */
+    background-color: #1c2a38; /* A slightly different, neutral background */
+    color: var(--text-secondary-color);
+    align-self: center; /* Center it, or flex-start */
+    max-width: 85%;
+    border-left: 3px solid #4a5568; /* A muted border color */
+    font-style: italic;
+    font-size: 0.9em;
+}
 
 .input-area-sci-fi {
     position: relative;

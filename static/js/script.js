@@ -88,7 +88,7 @@ function appendToChatLog(text, sender) {
         messageDiv.classList.add('user-message');
         messageDiv.textContent = text;
         chatLogArea.appendChild(messageDiv);
-    } else {
+    } else if (sender === 'ai') {
         messageDiv.classList.add('ai-message');
         messageDiv.classList.add('typing');
 
@@ -104,17 +104,29 @@ function appendToChatLog(text, sender) {
             if (i < text.length) {
                 contentSpan.textContent += text.charAt(i);
                 i++;
-                chatLogArea.scrollTop = chatLogArea.scrollHeight;
+                if (i % 10 === 0 || i === text.length) { // Update scroll less frequently
+                    chatLogArea.scrollTop = chatLogArea.scrollHeight;
+                }
                 setTimeout(typeCharacter, typingSpeed);
             } else {
                 messageDiv.classList.remove('typing');
+                // Ensure scroll to bottom one last time after typing finishes
+                chatLogArea.scrollTop = chatLogArea.scrollHeight;
                 if (aiCoreStatusText) aiCoreStatusText.textContent = 'Response complete. Standing by.';
                 setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
             }
         }
         typeCharacter();
+    } else if (sender === 'system-help') {
+        messageDiv.classList.add('system-help-message');
+        messageDiv.textContent = text; // No typing animation for help text
+        chatLogArea.appendChild(messageDiv);
+        // No need to change Weibo state for system-help messages
     }
-    chatLogArea.scrollTop = chatLogArea.scrollHeight;
+    // Ensure scroll to bottom for user and system-help messages immediately
+    if (sender === 'user' || sender === 'system-help') {
+        chatLogArea.scrollTop = chatLogArea.scrollHeight;
+    }
 }
 
 async function sendMessage() {
@@ -519,15 +531,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         helpMenuPopup.addEventListener('click', function(event) {
             event.stopPropagation();
-            const target = event.target.closest('li[data-command]');
-            if (target) {
-                let command = target.dataset.command;
-                userInput.value = command;
-                userInput.focus();
-                if (command.endsWith(' ')) {
-                    userInput.setSelectionRange(command.length, command.length);
+            const targetLi = event.target.closest('li[data-command], li[data-help-action]');
+
+            if (targetLi) {
+                const helpAction = targetLi.dataset.helpAction;
+                const command = targetLi.dataset.command;
+                const infoText = targetLi.dataset.infoText; // New attribute for direct display
+
+                if (helpAction === 'displayInfo' && infoText) {
+                    appendToChatLog(infoText, 'system-help'); // New sender type for styling
+                    helpMenuPopup.style.display = 'none';
+                } else if (command) { // Default or explicit populateInput
+                    userInput.value = command;
+                    userInput.focus();
+                    if (command.endsWith(' ')) {
+                        userInput.setSelectionRange(command.length, command.length);
+                    }
+                    helpMenuPopup.style.display = 'none';
                 }
-                helpMenuPopup.style.display = 'none';
             }
         });
     } else { console.error("Help menu button or popup NOT FOUND!"); }
