@@ -79,6 +79,176 @@ function setWeiboState(state) {
     }
 }
 
+async function fetchAndDisplayInteractiveTasks() {
+    if (!chatLogArea) return;
+
+    appendToChatLog("Fetching active tasks...", 'system-help');
+    setWeiboState('weibo-thinking');
+
+    try {
+        const response = await fetch('/api/status/active_tasks'); // Using existing endpoint for active tasks
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}: ${response.statusText}` }));
+            throw new Error(errorData.error || `Failed to fetch tasks. Server responded with ${response.status}`);
+        }
+        const tasks = await response.json();
+
+        if (tasks && tasks.length > 0) {
+            const tasksContainer = document.createElement('div');
+            tasksContainer.className = 'tasks-list-container interactive-list'; // For styling
+
+            let htmlContent = `<div class="tasks-header">Found ${tasks.length} active task(s):</div>`;
+            tasks.forEach((task) => {
+                const descSnippet = (task.description || 'N/A').substring(0, 150) +
+                                    ((task.description && task.description.length > 150) ? '...' : '');
+                const reasonText = task.status_reason ? `<div class="task-reason">Reason: ${task.status_reason}</div>` : '';
+                const currentStepText = task.current_step_description ? `<div class="task-current-step">Current Step: ${task.current_step_description}</div>` : '';
+
+                let actionButtonsHTML = `
+                    <button class="view-task-plan-btn" data-task-id="${task.task_id}">View Plan</button>
+                    <button class="archive-task-btn" data-task-id="${task.task_id}">Archive</button>`;
+
+                if (task.status && task.status.toLowerCase() !== 'completed' && task.status.toLowerCase() !== 'failed' && task.status.toLowerCase() !== 'archived') {
+                    actionButtonsHTML += ` <button class="complete-task-btn" data-task-id="${task.task_id}">Mark Complete</button>`;
+                }
+
+                htmlContent += `
+                    <div class="task-item" id="task-item-${task.task_id}">
+                        <div class="task-id">ID: ${task.task_id || 'N/A'}</div>
+                        <div class="task-type">Type: ${task.task_type || 'N/A'}</div>
+                        <div class="task-description">Desc: ${descSnippet}</div>
+                        <div class="task-status">Status: <span class="status-value">${task.status || 'N/A'}</span></div>
+                        ${currentStepText}
+                        ${reasonText}
+                        <div class="task-actions">
+                            ${actionButtonsHTML}
+                        </div>
+                    </div>`;
+            });
+            tasksContainer.innerHTML = htmlContent;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai-message', 'interactive-list');
+            messageDiv.appendChild(tasksContainer);
+            chatLogArea.appendChild(messageDiv);
+            chatLogArea.scrollTop = chatLogArea.scrollHeight;
+
+        } else {
+            appendToChatLog('No active tasks found.', 'ai');
+        }
+    } catch (error) {
+        console.error("Failed to fetch interactive tasks:", error);
+        appendToChatLog(`Error fetching tasks: ${error.message}`, 'ai');
+    } finally {
+        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+    }
+}
+
+async function handleTaskAction(taskId, actionType, params = {}) {
+    if (!chatLogArea) return;
+
+    let apiUrl = '';
+    let method = 'GET';
+    let body = null;
+    const actionTypeDisplay = actionType.replace('_', ' '); // For messages
+
+    appendToChatLog(`${actionTypeDisplay.charAt(0).toUpperCase() + actionTypeDisplay.slice(1)} task ${taskId}...`, 'system-help');
+    setWeiboState('weibo-thinking');
+
+    switch (actionType) {
+        case 'view_plan':
+            apiUrl = `/api/tasks/${taskId}/plan`;
+            method = 'GET';
+            break;
+        case 'complete':
+            apiUrl = `/api/tasks/${taskId}/complete`;
+            method = 'POST';
+            body = JSON.stringify({ reason: params.reason });
+            break;
+        case 'archive':
+            apiUrl = `/api/tasks/${taskId}/archive`;
+            method = 'POST';
+            body = JSON.stringify({ reason: params.reason });
+            break;
+        default:
+            console.error("Invalid task action type:", actionType);
+            appendToChatLog(`Error: Unknown task action '${actionType}'.`, 'ai');
+            setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+            return;
+    }
+
+    try {
+        const fetchOptions = {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json', // Needed even for GET if server expects it for errors
+            }
+        };
+        if (body) {
+            fetchOptions.body = body;
+        }
+
+        const response = await fetch(apiUrl, fetchOptions);
+        const data = await response.json(); // Attempt to parse JSON for all responses
+
+        if (!response.ok) {
+            throw new Error(data.error || `Server error ${response.status} for ${actionTypeDisplay}`);
+        }
+
+        if (data.success) {
+            let successMessage = data.message || `Task ${actionTypeDisplay} successful.`;
+            if (actionType === 'view_plan' && data.plan) {
+                // Format and display the plan
+                let planText = `Plan for Task ${taskId}:\n`;
+                if (Array.isArray(data.plan) && data.plan.length > 0) {
+                    data.plan.forEach((step, index) => {
+                        if (typeof step === 'string') {
+                            planText += `${index + 1}. ${step}\n`;
+                        } else if (typeof step === 'object' && step.description) { // Assuming step objects
+                            planText += `${index + 1}. ${step.description}\n`;
+                        }
+                    });
+                } else if (typeof data.plan === 'string') { // Simple plan string
+                    planText = data.plan;
+                } else {
+                    planText += "No detailed plan steps available or plan is in an unrecognized format.";
+                }
+                appendToChatLog(planText, 'ai');
+            } else {
+                appendToChatLog(successMessage, 'ai');
+            }
+
+            // UI Update for complete/archive
+            if (actionType === 'complete' || actionType === 'archive') {
+                const taskItemElement = document.getElementById(`task-item-${taskId}`);
+                if (taskItemElement) {
+                    const statusElement = taskItemElement.querySelector('.task-status .status-value');
+                    if (statusElement && data.task && data.task.status) { // If backend returns updated task
+                        statusElement.textContent = data.task.status;
+                    } else { // Generic update if no specific task data returned for archive/complete
+                        statusElement.textContent = actionType.charAt(0).toUpperCase() + actionType.slice(1); // e.g., "Completed"
+                    }
+
+                    // Remove all action buttons for completed/archived tasks
+                    const actionButtonsElement = taskItemElement.querySelector('.task-actions');
+                    if (actionButtonsElement) {
+                        actionButtonsElement.innerHTML = `<span class="task-action-finalized">(${actionTypeDisplay}d)</span>`;
+                    }
+                }
+            }
+        } else {
+            appendToChatLog(data.error || `Failed to ${actionTypeDisplay} task.`, 'ai');
+        }
+
+    } catch (error) {
+        console.error(`Error during task ${actionType} for ${taskId}:`, error);
+        appendToChatLog(`Error: ${error.message}`, 'ai');
+    } finally {
+        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+    }
+}
+
+
 async function handleSuggestionAction(suggestionId, action, reason) {
     if (!chatLogArea) return;
     if (!['approve', 'deny'].includes(action)) {
@@ -215,6 +385,13 @@ async function sendMessage() {
         userInput.value = '';
         const status = suggestionsListMatch[1];
         fetchAndDisplaySuggestions(status);
+        return;
+    }
+
+    if (lowerMessageText === '/tasks list') {
+        appendToChatLog(messageText, 'user');
+        userInput.value = '';
+        fetchAndDisplayInteractiveTasks();
         return;
     }
 
@@ -939,9 +1116,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 // handleSuggestionAction should be fine with a null reason.
                 handleSuggestionAction(suggestionId, action, reason);
             }
+
+            // Event listeners for task actions
+            let taskAction = null;
+            let taskId = null;
+            let taskParams = {};
+
+            if (target.classList.contains('view-task-plan-btn')) {
+                taskAction = 'view_plan';
+                taskId = target.dataset.taskId;
+            } else if (target.classList.contains('complete-task-btn')) {
+                taskAction = 'complete';
+                taskId = target.dataset.taskId;
+                // Optionally prompt for a reason for completion
+                taskParams.reason = prompt(`Enter reason for completing task ${taskId} (optional):`) || "Completed by user.";
+            } else if (target.classList.contains('archive-task-btn')) {
+                taskAction = 'archive';
+                taskId = target.dataset.taskId;
+                taskParams.reason = prompt(`Enter reason for archiving task ${taskId} (optional):`) || "Archived by user.";
+            }
+
+            if (taskAction && taskId) {
+                handleTaskAction(taskId, taskAction, taskParams);
+            }
         });
     } else {
-        console.error("Chat log area not found for attaching suggestion action listeners.");
+        console.error("Chat log area not found for attaching suggestion/task action listeners.");
     }
 });
 

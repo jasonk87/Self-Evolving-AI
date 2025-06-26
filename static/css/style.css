@@ -1180,3 +1180,113 @@ body.project-fullscreen-active > .status-panel {
     background-color: #d32f2f;
     box-shadow: 0 0 5px #d32f2f;
 }
+
+/* === Interactive Task List Styles === */
+/* .ai-message.interactive-list is already defined from suggestions */
+
+.tasks-list-container { /* Similar to suggestions-list-container */
+    padding: 10px;
+    border: 1px solid rgba(var(--border-color), 0.5);
+    border-radius: 6px;
+    background-color: rgba(var(--input-bg-color), 0.5);
+}
+
+.tasks-header { /* Similar to suggestions-header */
+    font-family: var(--font-primary);
+    color: var(--accent-color);
+    font-size: 1.1em;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.task-item { /* Similar to suggestion-item */
+    background-color: rgba(var(--secondary-bg-color), 0.7);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+.task-item:last-child {
+    margin-bottom: 0;
+}
+
+.task-id, .task-type {
+    font-size: 0.8em;
+    color: var(--text-secondary-color);
+    margin-bottom: 3px;
+}
+
+.task-description { /* Similar to suggestion-description */
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+.task-status { /* Similar to suggestion-status */
+    margin-bottom: 5px;
+    font-style: italic;
+}
+.task-status .status-value { /* Shared with suggestion-status */
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.task-current-step, .task-reason { /* Similar to suggestion-reason */
+    font-size: 0.85em;
+    color: var(--text-secondary-color);
+    margin-top: 3px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(var(--border-color), 0.5);
+}
+
+.task-actions { /* Similar to suggestion-actions */
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap; /* Allow buttons to wrap if many */
+    gap: 8px;
+}
+
+.task-actions button { /* Shared base style with suggestion-actions button */
+    font-family: var(--font-secondary);
+    font-size: 0.85em;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--border-color);
+}
+
+/* Specific button styles for tasks if needed, or they can share with suggestions */
+.view-task-plan-btn {
+    background-color: #0277bd; /* Blueish */
+    color: #e1f5fe;
+}
+.view-task-plan-btn:hover {
+    background-color: #039be5;
+    box-shadow: 0 0 5px #039be5;
+}
+
+.complete-task-btn { /* Can share with approve-suggestion-btn if desired */
+    background-color: #00695c; /* Tealish green */
+    color: #e0f2f1;
+}
+.complete-task-btn:hover {
+    background-color: #00897b;
+    box-shadow: 0 0 5px #00897b;
+}
+
+.archive-task-btn {
+    background-color: #455a64; /* Bluish-grey */
+    color: #eceff1;
+}
+.archive-task-btn:hover {
+    background-color: #607d8b;
+    box-shadow: 0 0 5px #607d8b;
+}
+
+.task-action-finalized {
+    font-style: italic;
+    color: var(--text-secondary-color);
+    font-size: 0.9em;
+}

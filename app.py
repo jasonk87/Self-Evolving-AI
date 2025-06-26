@@ -409,6 +409,106 @@ def deny_suggestion_api(suggestion_id):
         logger.error(f"--- DIAGNOSTIC: /api/suggestions/{suggestion_id}/deny - Error: {e} ---", exc_info=True)
         return jsonify({"success": False, "error": "An internal server error occurred."}), 500
 
+# --- Task Specific Action API Endpoints ---
+
+@app.route('/api/tasks/<string:task_id>/plan', methods=['GET'])
+def get_task_plan_api(task_id):
+    global _task_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/tasks/{task_id}/plan GET called ---")
+    if _task_manager_instance is None:
+        logger.warning(f"--- DIAGNOSTIC: /api/tasks/{task_id}/plan - Task manager not initialized, returning 503 ---")
+        return jsonify({"error": "Task manager not initialized"}), 503
+
+    try:
+        # Assuming TaskManager has a method to get plan details
+        # This method might return a list of strings, or a list of step objects, etc.
+        # For now, let's assume it returns something directly serializable or a simple structure.
+        if hasattr(_task_manager_instance, 'get_task_by_id'):
+            task = _task_manager_instance.get_task_by_id(task_id)
+            if not task:
+                return jsonify({"error": "Task not found"}), 404
+
+            # Assuming the task object has a 'plan_details' attribute or similar
+            # This is highly dependent on the Task object structure from TaskManager
+            plan_details = getattr(task, 'plan_details', None)
+            if hasattr(task, 'get_plan_steps_descriptions'): # Prioritize a method if exists
+                plan_details = task.get_plan_steps_descriptions()
+            elif hasattr(task, 'plan') and isinstance(task.plan, list): # Common attribute name
+                plan_details = task.plan
+
+            if plan_details is not None:
+                # If plan_details are complex objects, they might need their own formatting function.
+                # For now, assume they are simple enough or TaskManager returns them ready.
+                return jsonify({"success": True, "task_id": task_id, "plan": plan_details}), 200
+            else:
+                return jsonify({"success": False, "error": "Plan details not available for this task or task attribute missing."}), 404
+        else:
+            logger.warning(f"--- DIAGNOSTIC: /api/tasks/{task_id}/plan - TaskManager missing get_task_by_id method. ---")
+            return jsonify({"error": "Task retrieval method not available on manager."}), 500
+
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/tasks/{task_id}/plan - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred while fetching task plan."}), 500
+
+@app.route('/api/tasks/<string:task_id>/complete', methods=['POST'])
+def complete_task_api(task_id):
+    global _task_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/tasks/{task_id}/complete POST called ---")
+    if _task_manager_instance is None:
+        return jsonify({"error": "Task manager not initialized"}), 503
+
+    data = request.get_json()
+    reason = data.get('reason') if data else "Completed via API call"
+
+    try:
+        if hasattr(_task_manager_instance, 'mark_task_status_as_completed'): # Updated method name assumption
+            success = _task_manager_instance.mark_task_status_as_completed(task_id, reason=reason)
+            if success:
+                updated_task = _task_manager_instance.get_task_by_id(task_id)
+                return jsonify({"success": True, "message": "Task marked as complete.", "task": format_task_for_json(updated_task)}), 200
+            else:
+                # Check if task exists to differentiate not found from other failure
+                task = _task_manager_instance.get_task_by_id(task_id)
+                if not task:
+                    return jsonify({"success": False, "error": "Task not found."}), 404
+                return jsonify({"success": False, "error": "Failed to mark task as complete."}), 400
+        else:
+            logger.warning(f"--- DIAGNOSTIC: /api/tasks/{task_id}/complete - TaskManager missing mark_task_status_as_completed method. ---")
+            return jsonify({"error": "Task completion method not available on manager."}), 500
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/tasks/{task_id}/complete - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred."}), 500
+
+@app.route('/api/tasks/<string:task_id>/archive', methods=['POST'])
+def archive_task_api(task_id):
+    global _task_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/tasks/{task_id}/archive POST called ---")
+    if _task_manager_instance is None:
+        return jsonify({"error": "Task manager not initialized"}), 503
+
+    data = request.get_json()
+    reason = data.get('reason') if data else "Archived via API call"
+
+    try:
+        if hasattr(_task_manager_instance, 'archive_task_by_id'): # Updated method name assumption
+            success = _task_manager_instance.archive_task_by_id(task_id, reason=reason)
+            if success:
+                # Optionally, try to fetch the task to confirm its archived status or just return success
+                # For an archived task, get_task_by_id might still return it, or it might be in a different list.
+                # Let's assume for now that success from archive_task_by_id is sufficient.
+                return jsonify({"success": True, "message": "Task archived."}), 200
+            else:
+                task = _task_manager_instance.get_task_by_id(task_id) # Check if it exists
+                if not task:
+                     return jsonify({"success": False, "error": "Task not found."}), 404
+                return jsonify({"success": False, "error": "Failed to archive task."}), 400
+        else:
+            logger.warning(f"--- DIAGNOSTIC: /api/tasks/{task_id}/archive - TaskManager missing archive_task_by_id method. ---")
+            return jsonify({"error": "Task archival method not available on manager."}), 500
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/tasks/{task_id}/archive - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred."}), 500
+
 if __name__ == '__main__':
     # Note: For development only. In production, use a proper WSGI server like Gunicorn.
     # The default Flask dev server is single-threaded by default.
