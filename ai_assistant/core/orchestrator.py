@@ -136,40 +136,82 @@ class DynamicOrchestrator:
 
             # --- Fact Retrieval ---
             all_learned_facts = load_learned_facts()
-            relevant_facts_for_prompt: List[Dict[str, Any]] = [] # Ensure type
+            relevant_facts_for_prompt: List[Dict[str, Any]] = []
+            user_id_for_fact_retrieval = user_id # Passed into process_prompt
 
             if all_learned_facts:
-                # Refined selection logic:
-                keyword_matched_facts: List[Dict[str, Any]] = [] # Ensure type
-                prompt_keywords_set = set(prompt.lower().split()) # Ensure type
+                # 1. Prioritize user-specific facts if user_id is available
+                user_specific_facts: List[Dict[str, Any]] = []
+                if user_id_for_fact_retrieval:
+                    for fact_entry in all_learned_facts:
+                        # This assumes 'user_id' field exists in fact_entry when it's user-specific
+                        if fact_entry.get("user_id") == user_id_for_fact_retrieval:
+                            user_specific_facts.append(fact_entry)
+
+                # Sort user-specific facts (e.g., by recency or a specific 'user_preference' category first)
+                # For now, just taking them as found. Could enhance sorting later.
+                relevant_facts_for_prompt.extend(user_specific_facts)
+
+                # 2. Add keyword-matched general facts (not already added)
+                keyword_matched_general_facts: List[Dict[str, Any]] = []
+                prompt_keywords_set = set(prompt.lower().split())
                 for fact_entry in all_learned_facts:
-                    fact_text_lower = fact_entry.get("text", "").lower()
-                    if any(keyword in fact_text_lower for keyword in prompt_keywords_set):
-                        if len(keyword_matched_facts) < 5:
-                            keyword_matched_facts.append(fact_entry)
+                    if len(relevant_facts_for_prompt) + len(keyword_matched_general_facts) >= 7: # MAX_FACTS_FOR_PROMPT
+                        break
+                    # Add only if not already in relevant_facts (by fact_id) AND it's a general fact (no user_id or different user_id)
+                    is_already_added = any(rf.get('fact_id') == fact_entry.get('fact_id') for rf in relevant_facts_for_prompt)
+                    if not is_already_added and fact_entry.get("user_id") != user_id_for_fact_retrieval : # General fact condition
+                        fact_text_lower = fact_entry.get("text", "").lower()
+                        if any(keyword in fact_text_lower for keyword in prompt_keywords_set):
+                            keyword_matched_general_facts.append(fact_entry)
 
-                relevant_facts_for_prompt = list(keyword_matched_facts)
+                relevant_facts_for_prompt.extend(keyword_matched_general_facts)
+                # Remove duplicates again just in case, though logic above tries to prevent it
+                temp_dict = {fact.get('fact_id'): fact for fact in relevant_facts_for_prompt}
+                relevant_facts_for_prompt = list(temp_dict.values())
 
-                category_matched_facts_count = 0
-                preferred_categories = ["user_preference", "project_context", "general_knowledge"] # Moved definition here
+
+                # 3. Add other high-priority category general facts (not already added)
+                category_matched_general_facts_count = 0
+                preferred_categories = ["project_context", "general_knowledge"] # User preferences handled above
+                                                                                # or could be a general "user_preference_template"
+
+                # Iterate all_learned_facts in reverse for recency bias if desired (or sort by date)
                 for fact_entry in reversed(all_learned_facts):
-                    if len(relevant_facts_for_prompt) >= 7:
+                    if len(relevant_facts_for_prompt) >= 7: # MAX_FACTS_FOR_PROMPT
                         break
-                    if category_matched_facts_count >= 2:
+                    if category_matched_general_facts_count >= 2: # Limit additional category facts
                         break
 
-                    is_already_added = any(rf['fact_id'] == fact_entry['fact_id'] for rf in relevant_facts_for_prompt)
-                    if not is_already_added and fact_entry.get("category") in preferred_categories:
+                    is_already_added = any(rf.get('fact_id') == fact_entry.get('fact_id') for rf in relevant_facts_for_prompt)
+                    # Add only if general and from preferred categories
+                    if not is_already_added and fact_entry.get("user_id") != user_id_for_fact_retrieval and \
+                       fact_entry.get("category") in preferred_categories:
                          relevant_facts_for_prompt.append(fact_entry)
-                         category_matched_facts_count +=1
+                         category_matched_general_facts_count +=1
 
+                # Final deduplication and limit
+                final_temp_dict = {fact.get('fact_id'): fact for fact in relevant_facts_for_prompt}
+                relevant_facts_for_prompt = list(final_temp_dict.values())
                 MAX_FACTS_FOR_PROMPT = 7
                 if len(relevant_facts_for_prompt) > MAX_FACTS_FOR_PROMPT:
+                    # A more sophisticated pruning might be needed here, e.g. based on relevance score or date
                     relevant_facts_for_prompt = relevant_facts_for_prompt[:MAX_FACTS_FOR_PROMPT]
 
             learned_facts_section_str = ""
             if relevant_facts_for_prompt:
-                facts_str_list = [f"- {fact.get('text', '')} (Category: {fact.get('category', 'N/A')}, Source: {fact.get('source', 'N/A')})" for fact in relevant_facts_for_prompt]
+                facts_str_list = []
+                for fact in relevant_facts_for_prompt:
+                    prefix = ""
+                    # Check if user_id matches the current session's user_id
+                    if user_id_for_fact_retrieval and fact.get("user_id") == user_id_for_fact_retrieval:
+                        prefix = f"(User Preference for you): "
+                    elif fact.get("category") == "user_preference": # General user preference template
+                        prefix = f"(General User Preference Tip): "
+                    elif fact.get("category") == "project_context":
+                         prefix = f"(Project Context): "
+
+                    facts_str_list.append(f"- {prefix}{fact.get('text', '')} (Source: {fact.get('source', 'N/A')})")
                 learned_facts_section_str = "\nRelevant Learned Facts:\n" + "\n".join(facts_str_list)
             # --- End Fact Retrieval ---
 
