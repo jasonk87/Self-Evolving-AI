@@ -114,6 +114,20 @@ class DynamicOrchestrator:
         # Add user's prompt to history
         self.conversation_history.append({"role": "user", "content": prompt})
 
+        # --- Project Intent Recognition (Step 1 of new plan) ---
+        prompt_lower_for_intent = prompt.lower()
+        project_creation_keywords = [
+            "create a project", "build a project", "develop a project",
+            "create a game", "build a game", "develop a game", "make a game",
+            "create an app", "build an app", "develop an app", "make an app",
+            "create a website", "build a website", "develop a website", "make a website",
+            "generate a complete", "code a full" # Broader creation terms
+        ]
+        is_project_creation_intent = any(keyword in prompt_lower_for_intent for keyword in project_creation_keywords)
+        if is_project_creation_intent:
+            logger.info(f"Orchestrator: Detected project creation intent for prompt: '{prompt}'")
+        # --- End Project Intent Recognition ---
+
         # Truncate history before processing (keeps most recent, plus current prompt)
         from ai_assistant.config import CONVERSATION_HISTORY_TURNS # Import here or at top
         max_history_messages = CONVERSATION_HISTORY_TURNS * 2
@@ -295,75 +309,123 @@ class DynamicOrchestrator:
                 displayed_code_content=self.current_project_display_code # Pass displayed code
             )
 
-            use_hierarchical_planner = False
-            if not self.current_plan:
-                complex_keywords = ["project", "develop", "create a game", "build an app", "design a system", "implement a feature", "refactor module"]
-                prompt_lower_for_check = prompt.lower()
-                if any(keyword in prompt_lower_for_check for keyword in complex_keywords):
-                    if self.hierarchical_planner:
-                        use_hierarchical_planner = True
-                        if is_debug_mode():
-                            print("DynamicOrchestrator: Initial plan empty for complex prompt, attempting Hierarchical Planning.")
-                    else:
-                        if is_debug_mode():
-                            print("DynamicOrchestrator: HierarchicalPlanner not available, cannot attempt complex planning for empty initial plan.")
+            # --- Hierarchical Planning for Project Intents or Complex Fallbacks ---
+            # This block handles both explicit project intents and fallbacks for complex tasks if initial planning fails.
 
-            if use_hierarchical_planner and self.hierarchical_planner:
+            use_hierarchical_planner_flag = False # General flag to trigger HP
+
+            if is_project_creation_intent:
+                if self.hierarchical_planner:
+                    logger.info(f"Orchestrator: Project creation intent detected. Prioritizing HierarchicalPlanner for: {prompt}")
+                    use_hierarchical_planner_flag = True
+                else: # pragma: no cover
+                    logger.warning("Orchestrator: Project creation intent detected, but HierarchicalPlanner is not available. Standard planning will be attempted if possible, or will fallback.")
+                    # self.current_plan might be None here, will be handled by subsequent logic
+            elif not self.current_plan: # Standard plan was empty, check if it's complex enough for HP fallback
+                complex_keywords = ["develop", "create a game", "build an app", "design a system", "implement a feature", "refactor module"] # "project" is covered by is_project_creation_intent
+                if any(keyword in prompt_lower_for_intent for keyword in complex_keywords):
+                    if self.hierarchical_planner:
+                        logger.info("Orchestrator: Initial plan empty for complex prompt. Attempting Hierarchical Planning as fallback.")
+                        use_hierarchical_planner_flag = True
+                    else: # pragma: no cover
+                        logger.info("Orchestrator: HierarchicalPlanner not available for complex fallback.")
+
+            if use_hierarchical_planner_flag and self.hierarchical_planner:
+                log_event_description = f"Hierarchical planning triggered for goal: {prompt} (Intent: {'Project Creation' if is_project_creation_intent else 'Complex Fallback'})"
                 log_event(
                     event_type="ORCHESTRATOR_HIERARCHICAL_PLANNING_TRIGGERED",
-                    description=f"Hierarchical planning triggered for goal: {prompt}",
+                    description=log_event_description,
                     source="DynamicOrchestrator.process_prompt",
-                    metadata={"original_prompt": prompt}
+                    metadata={"original_prompt": prompt, "trigger_reason": 'Project Creation Intent' if is_project_creation_intent else 'Complex Fallback'}
                 )
-                if is_debug_mode():
-                    print(f"DEBUG: Hierarchical Planner invoked for: {prompt}")
 
                 generated_project_plan = await self.hierarchical_planner.generate_full_project_plan(
                     user_goal=prompt,
                     project_context=final_context_for_planner
                 )
 
-                if not generated_project_plan:
-                    logger.warning(f"HierarchicalPlanner failed to generate a project plan for goal: {prompt}")
-                    self.current_plan = []
-                    self.context['last_error_info'] = "Hierarchical planner failed to produce a detailed project plan."
-                else:
-                    if not self.task_manager:
-                        logger.critical("TaskManager not available. Cannot create ActiveTask for hierarchical project execution.")
-                        self.current_plan = []
-                        self.context['last_error_info'] = "TaskManager not available, cannot execute complex project."
+                if generated_project_plan:
+                    logger.info(f"Orchestrator: HierarchicalPlanner generated a project plan with {len(generated_project_plan)} steps.")
+                    if not self.task_manager: # pragma: no cover
+                        logger.error("Orchestrator: TaskManager not available. Cannot create parent task for hierarchical project. Will attempt direct execution of HP plan if possible.")
+                        # This is suboptimal as it won't be a background task and won't have user acknowledgement first.
+                        # The generated_project_plan might need transformation if it's not directly executable by self.executor
+                        # For now, assume it might be a list of tool calls compatible with self.current_plan
+                        self.current_plan = generated_project_plan
                     else:
-                        active_hierarchical_task = self.task_manager.add_task(
-                            description=f"Executing hierarchical project: {prompt[:100]}...", # Corrected order
-                            task_type=ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION,
+                        from .task_manager import ActiveTaskType # Ensure ActiveTaskType is imported
+                        project_task_description = f"Project: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+
+                        # Determine task type based on original intent
+                        task_type_for_hp = ActiveTaskType.USER_PROJECT_CREATION if is_project_creation_intent else ActiveTaskType.HIERARCHICAL_PLAN_EXECUTION
+
+                        parent_task = self.task_manager.add_task(
+                            description=project_task_description,
+                            task_type=task_type_for_hp, # USER_PROJECT_CREATION or HIERARCHICAL_PLAN_EXECUTION
                             details={
-                                "project_plan": generated_project_plan,
                                 "user_goal": prompt,
-                                "project_name": project_name_for_context or "Unnamed Project"
+                                "hierarchical_plan_steps": generated_project_plan,
+                                "project_name_for_context": project_name_for_context or "Unnamed Project"
                             }
                         )
-                        hierarchical_task_id = active_hierarchical_task.task_id
+                        logger.info(f"Orchestrator: Created parent task {parent_task.task_id} for '{project_task_description}' with type {task_type_for_hp.name}.")
 
+                        # The main plan for the orchestrator now becomes a single step: to execute this project plan.
                         self.current_plan = [{
-                            "tool_name": "execute_project_plan",
+                            "tool_name": "execute_project_plan", # This tool will manage the generated_project_plan
                             "args": {
-                                "project_plan": generated_project_plan,
-                                "parent_task_id": hierarchical_task_id,
-                                "task_manager_instance": self.task_manager
+                                "project_plan_steps": generated_project_plan,
+                                "parent_task_id": parent_task.task_id,
+                                "task_manager_instance": self.task_manager,
+                                "notification_manager_instance": self.notification_manager,
+                                "original_user_goal": prompt,
+                                "project_name": project_name_for_context or parent_task.details.get("project_name_for_context", "Unnamed Project")
                             },
-                            "description": f"Execute the multi-step project plan for: {prompt[:70]}...",
-                            "reasoning": "Hierarchical planner generated a detailed project breakdown, now executing it."
+                            "description": f"Initiate and manage the execution of the generated project plan for: {prompt[:70]}...",
+                            "reasoning": "A hierarchical project plan has been created and needs to be executed, likely as a background task by the tool."
                         }]
                         log_event(
-                            event_type="ORCHESTRATOR_HIERARCHICAL_PLAN_READY",
-                            description=f"Hierarchical plan created for '{prompt}', ready for execution via execute_project_plan tool.",
+                            event_type="ORCHESTRATOR_HIERARCHICAL_PLAN_READY_FOR_TOOL",
+                            description=f"Hierarchical plan for '{prompt}' passed to 'execute_project_plan' tool. Parent Task: {parent_task.task_id}",
                             source="DynamicOrchestrator.process_prompt",
-                            metadata={"num_steps_in_project_plan": len(generated_project_plan), "parent_task_id": hierarchical_task_id}
+                            metadata={"num_steps_in_project_plan": len(generated_project_plan), "parent_task_id": parent_task.task_id}
                         )
 
-            elif not self.current_plan:
-                # The planner returned an empty plan. This could be a conversational prompt
-                # or a task the planner genuinely couldn't handle.
+                        # If it was an explicit project creation intent, acknowledge and return, letting execute_project_plan run.
+                        # The tool itself should handle its async nature or backgrounding.
+                        if is_project_creation_intent:
+                            ack_message = f"Okay, I've started working on your project: \"{prompt[:70]}...\" (Task ID: {parent_task.task_id}). I'll keep you updated on its progress."
+                            self.conversation_history.append({"role": "assistant", "content": ack_message})
+                            analysis_context_for_project_ack = {
+                                "user_prompt": prompt, "ai_response": ack_message,
+                                "plan_details_json": json.dumps(self.current_plan),
+                                "tool_results_json": "null",
+                                "overall_success_status": "True",
+                                "user_id": user_id
+                            }
+                            asyncio.create_task(self._perform_post_interaction_analysis(analysis_context_for_project_ack))
+                            return True, {"chat_response": ack_message, "project_area_html": None}
+                        # If it was a fallback HP for a non-project-intent, self.current_plan is now set to call execute_project_plan,
+                        # and execution will proceed below in this turn.
+
+                elif not generated_project_plan: # HP was called but failed to produce a plan
+                    logger.warning(f"Orchestrator: HierarchicalPlanner failed to generate a plan for: {prompt}")
+                    self.current_plan = None # Ensure it's None to trigger conversational fallback if standard plan also failed/was empty
+                    if is_project_creation_intent:
+                         self.context['last_error_info'] = "I tried to create a detailed project plan but encountered an issue. I'm unable to proceed with this project right now."
+
+            # --- End Hierarchical Planning Logic ---
+
+
+            # Standard plan execution or conversational fallback if no plan from any source
+            if not self.current_plan:
+                # This block is reached if:
+                # 1. Standard planner returned no plan.
+                # 2. AND It wasn't a project intent that successfully set up an execute_project_plan step.
+                # 3. AND It wasn't a complex fallback that successfully set up an execute_project_plan step.
+                # 4. OR HP failed for a project intent / complex fallback and set current_plan to None.
+
+                # Let's attempt to generate a direct, conversational response.
                 # Let's attempt to generate a direct, conversational response as a primary strategy.
                 if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                     try:

@@ -267,12 +267,20 @@ async def generate_and_review_code_tool(
     }
 
 def execute_project_plan(
-    project_plan: List[Dict[str, Any]],
+    project_plan_steps: List[Dict[str, Any]], # Renamed for clarity from Orchestrator
     parent_task_id: str,
     task_manager_instance: TaskManager,
-    project_name: Optional[str] = None
+    notification_manager_instance: Optional[NotificationManager] = None, # Added
+    original_user_goal: Optional[str] = None, # Added
+    project_name: Optional[str] = None # Kept, can be derived or passed
 ) -> Dict[str, Any]:
-    if not project_plan:
+    # TODO: This tool's current synchronous, all-in-one execution model is not ideal for long projects.
+    # The logic herein should be largely moved to/managed by BackgroundService for true async project execution.
+    # For now, it will run synchronously if called.
+    # The Orchestrator, when is_project_creation_intent is true, now returns an ACK to the user
+    # and this tool would ideally be triggered by BackgroundService processing the created TaskManager task.
+
+    if not project_plan_steps:
         return {
             "overall_status": "error",
             "error_message": "No project plan provided.",

@@ -144,6 +144,43 @@ async function fetchAndDisplayInteractiveTasks() {
     }
 }
 
+async function fetchAndShowProject(taskId) {
+    if (!chatLogArea || !projectDisplayArea) return;
+
+    appendToChatLog(`Fetching output for project task ${taskId}...`, 'system-help');
+    setWeiboState('weibo-thinking');
+
+    try {
+        const response = await fetch(`/api/project_output/${taskId}`);
+        const data = await response.json(); // Try to parse JSON first, as backend sends structured errors/success
+
+        if (!response.ok) {
+            throw new Error(data.error || `Failed to fetch project output. Server responded with ${response.status}`);
+        }
+
+        if (data.success && data.html_content) {
+            appendToChatLog(`Displaying project: ${data.project_name || taskId}`, 'ai');
+            toggleProjectDisplay(true); // Ensure project display area is visible
+            const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
+            if (iframe) {
+                iframe.srcdoc = data.html_content;
+            } else { // Should not happen if HTML structure is correct
+                console.error("Project display iframe not found!");
+                appendToChatLog("Error: Could not find the project display area to show the content.", 'ai');
+            }
+        } else {
+            // This case handles data.success being false or html_content missing
+            appendToChatLog(data.error || `Could not retrieve displayable output for project task ${taskId}.`, 'ai');
+        }
+    } catch (error) {
+        console.error(`Failed to fetch or display project ${taskId}:`, error);
+        appendToChatLog(`Error fetching project ${taskId}: ${error.message}`, 'ai');
+    } finally {
+        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+    }
+}
+
+
 async function handleTaskAction(taskId, actionType, params = {}) {
     if (!chatLogArea) return;
 
@@ -392,6 +429,15 @@ async function sendMessage() {
         appendToChatLog(messageText, 'user');
         userInput.value = '';
         fetchAndDisplayInteractiveTasks();
+        return;
+    }
+
+    const showProjectMatch = lowerMessageText.match(/^\/show_project\s+([\w-]+)$/);
+    if (showProjectMatch) {
+        appendToChatLog(messageText, 'user');
+        userInput.value = '';
+        const taskId = showProjectMatch[1];
+        fetchAndShowProject(taskId);
         return;
     }
 

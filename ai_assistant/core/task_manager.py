@@ -39,6 +39,9 @@ class ActiveTaskType(Enum):
     MISC_CODE_GENERATION = auto() # For tasks like scaffold generation, or detail generation not part of a larger flow
     PLANNING_CODE_STRUCTURE = auto() # For outline generation
     HIERARCHICAL_PROJECT_EXECUTION = auto() # For executing a plan from HierarchicalPlanner
+    USER_PROJECT_CREATION = auto() # For top-level user-requested projects
+    REFLECTION_DERIVED = auto() # For tasks created by post-interaction reflection
+
 
 @dataclass
 class ActiveTask:
@@ -254,7 +257,24 @@ class TaskManager:
         )
         self._active_tasks[new_task.task_id] = new_task
         self._save_active_tasks()
-        print(f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})")
+        log_msg = f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})"
+        print(log_msg)
+        logger.info(log_msg) # Also log to standard logger
+
+        if self.notification_manager:
+            try:
+                # Ensure NotificationType is imported if not already at module top
+                # from .notification_manager import NotificationType (if it's not there)
+                self.notification_manager.add_notification(
+                    event_type=NotificationType.TASK_CREATED, # Assuming this type exists
+                    summary_message=f"New task started: '{new_task.description[:50]}{'...' if len(new_task.description) > 50 else ''}' (ID: {new_task.task_id})",
+                    related_item_id=new_task.task_id,
+                    related_item_type="task",
+                    details_payload=new_task.to_dict()
+                )
+                logger.info(f"TaskManager: Notification sent for new task {new_task.task_id}")
+            except Exception as e_notif: # pragma: no cover
+                logger.error(f"TaskManager: Failed to send notification for new task {new_task.task_id}: {e_notif}", exc_info=True)
         return new_task
 
     def get_task(self, task_id: str) -> Optional[ActiveTask]:
@@ -335,14 +355,43 @@ class TaskManager:
                 ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
                 ActiveTaskStatus.POST_MOD_TEST_FAILED,
                 ActiveTaskStatus.FAILED_CODE_GENERATION,
-                ActiveTaskStatus.FAILED_INTERRUPTED
+                ActiveTaskStatus.FAILED_INTERRUPTED,
+                ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP # Add this as a terminal status
             ]
+
+            # Progress Notification for Projects
+            if task.task_type in [ActiveTaskType.USER_PROJECT_CREATION, ActiveTaskType.HIERARCHICAL_PLAN_EXECUTION] \
+               and new_status == ActiveTaskStatus.EXECUTING_PROJECT_PLAN \
+               and resume_data and resume_data.get("plan_step_update") \
+               and self.notification_manager:
+                step_info = resume_data["plan_step_update"]
+                prog_summary = f"Project '{task.description[:30]}...': Step '{step_info.get('description', step_info.get('step_id'))}' status is {step_info.get('status')}."
+                if step_info.get('error_message'):
+                    prog_summary += f" Error: {str(step_info.get('error_message'))[:50]}..."
+                elif step_info.get('output_preview'):
+                     prog_summary += f" Output: {str(step_info.get('output_preview'))[:50]}..."
+
+                try:
+                    self.notification_manager.add_notification(
+                        event_type=NotificationType.TASK_PROGRESS_UPDATE, # Assuming this type exists
+                        summary_message=prog_summary,
+                        related_item_id=task.task_id,
+                        related_item_type="task_progress",
+                        details_payload=step_info # Send step details
+                    )
+                    logger.info(f"TaskManager: Progress notification sent for task {task.task_id}, step {step_info.get('step_id')}")
+                except Exception as e_prog_notif: # pragma: no cover
+                    logger.error(f"TaskManager: Failed to send progress notification for task {task.task_id}: {e_prog_notif}", exc_info=True)
+
             if new_status in terminal_statuses:
                 print(f"TaskManager: Task {task_id} reached terminal status: {new_status.name}. Archiving.")
                 if self.notification_manager:
                     notif_type = NotificationType.GENERAL_INFO
                     if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
                         notif_type = NotificationType.TASK_COMPLETED_SUCCESSFULLY
+                    elif new_status == ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP:
+                        # Use a more specific notification type if available, or a generic failure one
+                        notif_type = getattr(NotificationType, "TASK_FAILED_PROJECT_STEP", NotificationType.TASK_FAILED_UNKNOWN)
                     elif new_status == ActiveTaskStatus.CRITIC_REVIEW_REJECTED:
                         notif_type = NotificationType.TASK_FAILED_CRITIC_REVIEW
                     elif new_status == ActiveTaskStatus.POST_MOD_TEST_FAILED:

@@ -509,6 +509,88 @@ def archive_task_api(task_id):
         logger.error(f"--- DIAGNOSTIC: /api/tasks/{task_id}/archive - Error: {e} ---", exc_info=True)
         return jsonify({"success": False, "error": "An internal server error occurred."}), 500
 
+@app.route('/api/project_output/<string:task_id>', methods=['GET'])
+def get_project_output_api(task_id):
+    global _task_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/project_output/{task_id} GET called ---")
+    if _task_manager_instance is None:
+        return jsonify({"error": "Task manager not initialized"}), 503
+
+    try:
+        # Task might be active or archived. TaskManager needs a way to get completed/archived tasks.
+        # Assuming get_task can find it, or a new method like get_archived_task_by_id exists.
+        # For now, let's try get_task and if not found, check an assumed archive retrieval.
+        task = _task_manager_instance.get_task(task_id)
+        if not task:
+            # Try fetching from archive if TaskManager supports it
+            if hasattr(_task_manager_instance, 'get_archived_task_by_id'):
+                task = _task_manager_instance.get_archived_task_by_id(task_id) # Assumed method
+            elif hasattr(_task_manager_instance, 'list_archived_tasks'): # Fallback to searching list
+                archived_tasks = _task_manager_instance.list_archived_tasks(limit=500) # Adjust limit as needed
+                task = next((t for t in archived_tasks if t.task_id == task_id), None)
+
+        if not task:
+            return jsonify({"success": False, "error": "Project task not found."}), 404
+
+        if task.status != ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
+            return jsonify({"success": False, "error": f"Project task '{task.description[:50]}' is not yet completed successfully. Current status: {task.status.name}"}), 400
+
+        details = task.details if task.details else {}
+        html_content = details.get("final_output_html_content")
+        output_path = details.get("final_output_path") # e.g., relative to a known project base dir
+
+        if html_content:
+            logger.info(f"--- DIAGNOSTIC: Serving direct HTML content for project task {task_id} ---")
+            return jsonify({"success": True, "project_name": task.description, "html_content": html_content}), 200
+        elif output_path:
+            # IMPORTANT: Construct the full, safe path to the file.
+            # This needs to be relative to a secure, known base directory for AI-generated projects.
+            # For now, using a placeholder base_dir. This MUST be configured securely.
+            # Assuming file_system_tools.BASE_PROJECTS_DIR is the correct base.
+            from ai_assistant.custom_tools.file_system_tools import BASE_PROJECTS_DIR, read_text_from_file as fs_read_text
+
+            # Ensure output_path is treated as relative to the project's specific directory
+            # Example: if output_path is "index.html" and project was "my_game",
+            # full_path should be something like ".../ai_generated_projects/my_game/index.html"
+            # This requires knowing the project's sanitized name or specific folder.
+            # For now, let's assume output_path might be relative to BASE_PROJECTS_DIR or a subfolder.
+            # This path resolution needs to be robust.
+
+            # A simple, potentially insecure way if output_path is not sanitized or relative:
+            # full_file_path = os.path.join(BASE_PROJECTS_DIR, output_path)
+            # A better way would be if 'output_path' is relative to the specific project's dir
+            # and task.details contains 'project_sanitized_name' or similar.
+            project_sanitized_name = details.get("project_sanitized_name", details.get("project_name_for_context"))
+            if not project_sanitized_name: # Fallback if not explicitly stored
+                 project_sanitized_name = sanitize_project_name(task.description.replace("Project: ", "")[:50])
+
+
+            if project_sanitized_name:
+                full_file_path = os.path.join(BASE_PROJECTS_DIR, project_sanitized_name, output_path)
+            else: # Fallback if no project name context, treat output_path as relative to BASE_PROJECTS_DIR
+                full_file_path = os.path.join(BASE_PROJECTS_DIR, output_path)
+
+            logger.info(f"--- DIAGNOSTIC: Attempting to read project output from path {full_file_path} for task {task_id} ---")
+
+            # Security: Ensure the path is within the allowed base directory
+            if not os.path.abspath(full_file_path).startswith(os.path.abspath(BASE_PROJECTS_DIR)):
+                logger.error(f"--- DIAGNOSTIC: Security alert! Attempt to access file outside project directory: {full_file_path} ---")
+                return jsonify({"success": False, "error": "Access to file path is restricted."}), 403
+
+            file_content = fs_read_text(full_file_path) # Use the one from file_system_tools
+            if file_content.startswith("Error:"):
+                logger.error(f"--- DIAGNOSTIC: Error reading file {full_file_path}: {file_content} ---")
+                return jsonify({"success": False, "error": f"Could not read project output file: {output_path}. Detail: {file_content}"}), 500
+
+            logger.info(f"--- DIAGNOSTIC: Successfully read content from {full_file_path} for task {task_id} ---")
+            return jsonify({"success": True, "project_name": task.description, "html_content": file_content}), 200
+        else:
+            return jsonify({"success": False, "error": "No final output (HTML content or file path) found for this completed project task."}), 404
+
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/project_output/{task_id} - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred while fetching project output."}), 500
+
 if __name__ == '__main__':
     # Note: For development only. In production, use a proper WSGI server like Gunicorn.
     # The default Flask dev server is single-threaded by default.
