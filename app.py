@@ -41,8 +41,8 @@ from ai_assistant.core.task_manager import TaskManager
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported TaskManager ---")
 from ai_assistant.core.notification_manager import NotificationManager
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
-from ai_assistant.core.suggestion_manager import SuggestionManager # Assuming path
-logger.info("--- DIAGNOSTIC: app.py (root) - Imported SuggestionManager ---")
+import ai_assistant.core.suggestion_manager as suggestion_manager_module # Import the module
+logger.info("--- DIAGNOSTIC: app.py (root) - Imported suggestion_manager_module ---")
 
 
 # Global variables for AI services
@@ -51,13 +51,13 @@ orchestrator: Optional[DynamicOrchestrator] = None
 # For now, they are primarily managed within initialize_core_services
 _task_manager_instance: Optional[TaskManager] = None
 _notification_manager_instance: Optional[NotificationManager] = None
-_suggestion_manager_instance: Optional[SuggestionManager] = None
+# No _suggestion_manager_instance needed as we'll use module functions
 
 def startup_event():
     """Initializes AI services. Designed to be run in an asyncio event loop."""
-    global orchestrator, _task_manager_instance, _notification_manager_instance, _suggestion_manager_instance
+    global orchestrator, _task_manager_instance, _notification_manager_instance
     logger.info("--- DIAGNOSTIC: startup_event() called ---")
-    if orchestrator is not None:
+    if orchestrator is not None: # Assuming orchestrator is the primary flag for initialization
         logger.info("--- DIAGNOSTIC: startup_event() - AI services already initialized. Skipping. ---")
         print("Flask App: AI services already initialized.")
         return
@@ -77,19 +77,17 @@ def startup_event():
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        # We don't need to pass existing managers as app.py creates its own scope
-        # Assuming initialize_core_services now returns orchestrator, task_manager, notification_manager, suggestion_manager
-        orch, tm, nm, sm = loop.run_until_complete(initialize_core_services())
+        # Assuming initialize_core_services returns orchestrator, task_manager, notification_manager (3 items)
+        orch, tm, nm = loop.run_until_complete(initialize_core_services())
         loop.close()
 
         orchestrator = orch
         _task_manager_instance = tm
         _notification_manager_instance = nm
-        _suggestion_manager_instance = sm # Assign suggestion manager
         logger.info(f"--- DIAGNOSTIC: startup_event() - Orchestrator initialized: {isinstance(orchestrator, DynamicOrchestrator)} ---")
         logger.info(f"--- DIAGNOSTIC: startup_event() - TaskManager initialized: {isinstance(_task_manager_instance, TaskManager)} ---")
         logger.info(f"--- DIAGNOSTIC: startup_event() - NotificationManager initialized: {isinstance(_notification_manager_instance, NotificationManager)} ---")
-        logger.info(f"--- DIAGNOSTIC: startup_event() - SuggestionManager initialized: {isinstance(_suggestion_manager_instance, SuggestionManager)} ---")
+        # Suggestion manager module is imported, no instance to check here.
         print("Flask App: AI services initialized successfully.")
 
     except Exception as e:
@@ -98,7 +96,6 @@ def startup_event():
         orchestrator = None # Ensure it's None if initialization fails
         _task_manager_instance = None # Also ensure these are None on error
         _notification_manager_instance = None # Also ensure these are None on error
-        _suggestion_manager_instance = None # Also ensure this is None on error
 
 logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
 app = Flask(__name__)
@@ -334,41 +331,27 @@ def format_suggestion_for_json(suggestion):
 
 @app.route('/api/suggestions', methods=['GET'])
 def get_suggestions_api():
-    global _suggestion_manager_instance
-    logger.info(f"--- DIAGNOSTIC: Route /api/suggestions called. Suggestion Manager: {_suggestion_manager_instance} ---")
-    if _suggestion_manager_instance is None:
-        logger.warning("--- DIAGNOSTIC: /api/suggestions - Suggestion manager not initialized, returning 503 ---")
-        return jsonify({"error": "Suggestion manager not initialized"}), 503
+    # Using suggestion_manager_module directly
+    logger.info(f"--- DIAGNOSTIC: Route /api/suggestions called. Using suggestion_manager_module. ---")
 
     try:
         status_filter_str = request.args.get('status')
         logger.info(f"--- DIAGNOSTIC: /api/suggestions - Requested status filter: {status_filter_str} ---")
 
-        # Assuming SuggestionManager has a method like get_suggestions
-        # And SuggestionStatus enum exists if filtering by enum is needed.
-        # For simplicity, let's assume status_filter_str can be 'pending', 'approved', 'denied', or 'all' (or None for all).
-        # The manager method would need to handle this.
+        all_suggestions = suggestion_manager_module.list_suggestions()
 
-        # Example: suggestions = _suggestion_manager_instance.get_suggestions(status_filter=status_filter_str)
-        # For now, let's assume a placeholder method or that get_suggestions handles a string filter.
-        # If SuggestionManager.get_suggestions expects an Enum, conversion is needed here.
+        suggestions_to_return = []
+        if status_filter_str and status_filter_str != 'all':
+            # Ensure status comparison is robust, assuming suggestion['status'] is a string
+            suggestions_to_return = [
+                sug for sug in all_suggestions
+                if str(sug.get('status', '')).lower() == status_filter_str.lower()
+            ]
+        else: # 'all' or no status filter means return all suggestions
+            suggestions_to_return = all_suggestions
 
-        suggestions = []
-        if hasattr(_suggestion_manager_instance, 'get_suggestions_by_status_str'):
-            suggestions = _suggestion_manager_instance.get_suggestions_by_status_str(status_filter=status_filter_str if status_filter_str != 'all' else None)
-        elif hasattr(_suggestion_manager_instance, 'get_all_suggestions'): # Fallback if no specific filter method
-             all_suggestions = _suggestion_manager_instance.get_all_suggestions()
-             if status_filter_str and status_filter_str != 'all':
-                 suggestions = [s for s in all_suggestions if hasattr(s, 'status') and (s.status.name if isinstance(s.status, Enum) else str(s.status)).lower() == status_filter_str.lower()]
-             else:
-                 suggestions = all_suggestions
-        else:
-            logger.warning("--- DIAGNOSTIC: /api/suggestions - SuggestionManager does not have a known method to fetch suggestions. ---")
-            return jsonify({"error": "Suggestion retrieval method not available on manager."}), 500
-
-
-        logger.info(f"--- DIAGNOSTIC: /api/suggestions - Found {len(suggestions)} suggestions. ---")
-        formatted_suggestions = [format_suggestion_for_json(sug) for sug in suggestions]
+        logger.info(f"--- DIAGNOSTIC: /api/suggestions - Found {len(suggestions_to_return)} suggestions after filtering. ---")
+        formatted_suggestions = [format_suggestion_for_json(sug) for sug in suggestions_to_return]
         return jsonify(formatted_suggestions)
     except Exception as e:
         logger.error(f"--- DIAGNOSTIC: /api/suggestions - Error fetching suggestions: {e} ---", exc_info=True)
