@@ -23,6 +23,7 @@ import ai_assistant.core.suggestion_manager as suggestion_manager_module # For a
 from ai_assistant.config import get_model_for_task # For getting reflection model
 import uuid
 import logging
+import json # Added import for json.dumps
 
 logger = logging.getLogger(__name__)
 
