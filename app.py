@@ -3,6 +3,9 @@ import os
 from typing import Optional # Added this import
 from flask import Flask, render_template, request, jsonify
 import logging # Import logging
+from dataclasses import asdict
+from enum import Enum
+from datetime import datetime
 
 # --- BEGIN DIAGNOSTIC LOGGING ---
 print("--- DIAGNOSTIC: app.py (root) - Top of file reached ---")
@@ -155,21 +158,7 @@ async def chat_api():
             "project_area_html": None
         }), 500
 
-
-if __name__ == '__main__':
-    # Note: For development only. In production, use a proper WSGI server like Gunicorn.
-    # The default Flask dev server is single-threaded by default.
-    # For async operations, especially if they are CPU-bound or involve external I/O
-    # not handled by asyncio-native libraries, you might need an ASGI server
-    # or run Flask with `threaded=True` for some concurrency.
-    # However, since `process_prompt` is async and Flask supports async routes,
-    # it should integrate with asyncio's event loop.
-    app.run(host='0.0.0.0', debug=True, use_reloader=False)
-
-# --- New API Endpoint for Status Panel Data ---
-from dataclasses import asdict
-from enum import Enum
-from datetime import datetime # Added import
+# --- API Endpoints for Status Panel Data & Analysis ---
 
 def format_task_for_json(task):
     """Helper to convert an ActiveTask object (or similar) to a JSON-serializable dict."""
@@ -200,9 +189,9 @@ def format_task_for_json(task):
 
 
     for key, value in task_dict.items():
-        if isinstance(value, Enum):
+        if isinstance(value, Enum): # Enum was imported at the top
             task_dict[key] = value.name
-        elif isinstance(value, datetime): # Ensure datetime is imported if used here
+        elif isinstance(value, datetime): # datetime was imported at the top
             task_dict[key] = value.isoformat()
         # Add other type conversions if necessary (e.g., complex nested objects)
     return task_dict
@@ -252,14 +241,8 @@ def get_recent_notifications():
         print(f"Error fetching notifications: {e}") # Log error
         return jsonify({"error": "Failed to fetch notifications"}), 500
 
-    # The format_task_for_json helper should be generic enough if Notification objects
-    # have similar attribute access (like .name for enums, .isoformat() for datetime)
-    # or can be converted to dicts. Otherwise, a specific format_notification_for_json is needed.
-    # For now, let's assume format_task_for_json can be adapted or Notification objects are dict-like.
-
     formatted_notifications = []
     for notif in notifications:
-        # Create a dictionary for each notification manually to ensure correct fields
         notif_dict = {
             "notification_id": notif.notification_id,
             "event_type": notif.event_type.name if isinstance(notif.event_type, Enum) else str(notif.event_type),
@@ -268,7 +251,6 @@ def get_recent_notifications():
             "status": notif.status.name if isinstance(notif.status, Enum) else str(notif.status),
             "related_item_id": notif.related_item_id,
             "related_item_type": notif.related_item_type
-            # Add other relevant fields from Notification object if needed
         }
         formatted_notifications.append(notif_dict)
 
@@ -287,8 +269,6 @@ async def analyze_display_api():
         return jsonify({"success": False, "error": "No HTML content provided for analysis."}), 400
 
     try:
-        # Construct a specific prompt for the AI to analyze the HTML
-        # Making this a bit more specific about what kind of analysis is expected.
         analysis_prompt = (
             f"The user has requested an analysis of the following HTML content currently displayed in their project area. "
             f"Please review this HTML code and provide a brief, user-friendly summary or analysis of its structure, "
@@ -298,27 +278,27 @@ async def analyze_display_api():
             f"{'... (HTML content truncated)' if len(html_content) > 3000 else ''}"
         )
 
-        # Use the orchestrator to process this prompt.
-        # The orchestrator will handle planning (if any) or direct LLM interaction.
-        # The response from process_prompt is (success_bool, data_dict)
-        # where data_dict = {"chat_response": Optional[str], "project_area_html": Optional[str]}
-        # For analysis, we primarily care about the chat_response.
-
-        success, response_data = await orchestrator.process_prompt(analysis_prompt, user_id="system_display_analyzer") # Using a system user_id
-
+        success, response_data = await orchestrator.process_prompt(analysis_prompt, user_id="system_display_analyzer")
         ai_analysis_text = response_data.get("chat_response")
 
         if success and ai_analysis_text:
             return jsonify({"success": True, "analysis_text": ai_analysis_text}), 200
-        elif ai_analysis_text: # Success might be false if plan failed, but we still got some text
+        elif ai_analysis_text:
              return jsonify({"success": False, "analysis_text": ai_analysis_text, "error": "AI processed the request but indicated an issue."}), 200
         else:
-            # This case means orchestrator.process_prompt returned success=False AND no chat_response,
-            # or success=True but no chat_response (which would be odd for an analysis prompt).
             error_message = response_data.get("error", "AI analysis failed or returned no text.")
             return jsonify({"success": False, "error": error_message}), 500
 
     except Exception as e:
-        print(f"Error in /api/analyze_display: {e}") # Log the error
-        # Ensure consistent error structure for critical failures
+        print(f"Error in /api/analyze_display: {e}")
         return jsonify({"success": False, "error": "An internal server error occurred during content analysis."}), 500
+
+if __name__ == '__main__':
+    # Note: For development only. In production, use a proper WSGI server like Gunicorn.
+    # The default Flask dev server is single-threaded by default.
+    # For async operations, especially if they are CPU-bound or involve external I/O
+    # not handled by asyncio-native libraries, you might need an ASGI server
+    # or run Flask with `threaded=True` for some concurrency.
+    # However, since `process_prompt` is async and Flask supports async routes,
+    # it should integrate with asyncio's event loop.
+    app.run(host='0.0.0.0', debug=True, use_reloader=False)
