@@ -19,6 +19,7 @@ from ai_assistant.custom_tools.project_management_tools import (
 )
 from .code_execution_tools import execute_sandboxed_python_script # Added import
 from ..core.task_manager import TaskManager, ActiveTaskStatus # Added
+from ..core.notification_manager import NotificationManager # Added import for type hint
 
 # --- Plan Execution Tool ---
 
