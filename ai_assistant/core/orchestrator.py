@@ -787,12 +787,13 @@ class DynamicOrchestrator:
                     # Or, if analyze_last_failure can take the rich list. Let's assume it wants Name:Desc dict.
 
                     # Get tools in the simple Name: Description format.
-                    # tool_system_instance.list_tools_for_llm() is usually a string.
-                    # Let's use list_tools() which returns List[Dict] and extract name/desc.
-                    tools_list_rich = tool_system_instance.list_tools()
+                    # Use list_tools_with_sources() which returns List[Dict[str, Any]]
+                    # Each dict should have 'name' and 'description'.
+                    tools_list_details = tool_system_instance.list_tools_with_sources() # This returns the richer list of dicts
                     tool_registry_for_reflection = {
-                        tool.get("name", "unknown"): tool.get("description", "no description")
-                        for tool in tools_list_rich
+                        tool_info.get("name", "unknown_tool"): tool_info.get("description", "No description available.")
+                        for tool_info in tools_list_details
+                        if isinstance(tool_info, dict) # Ensure items are dicts
                     }
 
                     reflection_model = get_model_for_task("reflection")
@@ -835,7 +836,7 @@ class DynamicOrchestrator:
                     "user_prompt": prompt,
                     "ai_response": response, # The final textual response to the user
                     "plan_details_json": json.dumps(self.current_plan) if self.current_plan else "null",
-                    "tool_results_json": json.dumps(self.context.get('last_results', [])) if self.context.get('last_results') else "null",
+                    "tool_results_json": json.dumps(self._serialize_execution_results(self.context.get('last_results', []))) if self.context.get('last_results') else "null",
                     "overall_success_status": str(overall_success_of_plan),
                     "user_id": user_id # Pass along the user_id from the original prompt
                 }
@@ -899,6 +900,47 @@ class DynamicOrchestrator:
             'context': self.context,
             'last_success': self.context.get('last_success')
         }
+
+    def _serialize_execution_results(self, results: List[Any]) -> List[Any]:
+        """Converts execution results, especially custom error objects, into a JSON-serializable format."""
+        serialized_results = []
+        # Attempt to import ToolExecutionError locally to avoid circular dependencies at module level if it's complex
+        # This is a common pattern for types only used in specific methods.
+        ToolExecutionError = None
+        try:
+            from ai_assistant.tools.tool_system import ToolExecutionError as ToolError_ToolSystem
+            ToolExecutionError = ToolError_ToolSystem # Prioritize if available from common location
+        except ImportError:
+            try:
+                from ai_assistant.execution.execution_agent import ToolExecutionError as ToolError_ExecAgent
+                ToolExecutionError = ToolError_ExecAgent
+            except ImportError:
+                logger.warning("Orchestrator: ToolExecutionError class not found for specific serialization. Will use generic Exception handling.")
+
+        for res_item in results:
+            if ToolExecutionError and isinstance(res_item, ToolExecutionError):
+                # Assuming ToolExecutionError might have specific attributes like 'tool_name', 'original_exception'
+                error_details = {
+                    "tool_name": getattr(res_item, 'tool_name', 'Unknown Tool'),
+                    "original_error_type": type(getattr(res_item, 'original_exception', None)).__name__ if getattr(res_item, 'original_exception', None) else "N/A"
+                }
+                serialized_results.append({
+                    "_is_tool_execution_error_": True,
+                    "error_type": type(res_item).__name__,
+                    "error_message": str(res_item),
+                    "details": error_details
+                })
+            elif isinstance(res_item, Exception): # Generic exceptions
+                serialized_results.append({
+                    "_is_exception_": True,
+                    "error_type": type(res_item).__name__,
+                    "error_message": str(res_item)
+                })
+            else:
+                # For other types, assume they are directly serializable or let json.dumps handle them
+                # (it will fail if they aren't, but this function focuses on custom errors)
+                serialized_results.append(res_item)
+        return serialized_results
 
     async def _perform_post_interaction_analysis(self, context_data: Dict[str, Any]):
         """
