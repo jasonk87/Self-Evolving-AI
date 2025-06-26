@@ -39,18 +39,12 @@ logger.info("--- DIAGNOSTIC: app.py (root) - Imported TaskManager ---")
 from ai_assistant.core.notification_manager import NotificationManager
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
 
-logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
-app = Flask(__name__)
-logger.info("--- DIAGNOSTIC: app.py (root) - Flask app object initialized. ---")
-startup_event() # Call the startup_event function
-
 # Global variables for AI services
 orchestrator: Optional[DynamicOrchestrator] = None
 # Keep references to task_manager and notification_manager if needed by other parts of app.py
 # For now, they are primarily managed within initialize_core_services
 _task_manager_instance: Optional[TaskManager] = None
 _notification_manager_instance: Optional[NotificationManager] = None
-
 
 def startup_event():
     """Initializes AI services. Designed to be run in an asyncio event loop."""
@@ -88,6 +82,12 @@ def startup_event():
     except Exception as e:
         print(f"Flask App: CRITICAL ERROR during AI services initialization: {e}")
         orchestrator = None # Ensure it's None if initialization fails
+
+logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
+app = Flask(__name__)
+logger.info("--- DIAGNOSTIC: app.py (root) - Flask app object initialized. ---")
+startup_event() # Call the startup_event function
+
 
 @app.route('/')
 def home():
