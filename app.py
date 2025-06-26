@@ -77,11 +77,17 @@ def startup_event():
         orchestrator = orch
         _task_manager_instance = tm
         _notification_manager_instance = nm
+        logger.info(f"--- DIAGNOSTIC: startup_event() - Orchestrator initialized: {isinstance(orchestrator, DynamicOrchestrator)} ---")
+        logger.info(f"--- DIAGNOSTIC: startup_event() - TaskManager initialized: {isinstance(_task_manager_instance, TaskManager)} ---")
+        logger.info(f"--- DIAGNOSTIC: startup_event() - NotificationManager initialized: {isinstance(_notification_manager_instance, NotificationManager)} ---")
         print("Flask App: AI services initialized successfully.")
 
     except Exception as e:
         print(f"Flask App: CRITICAL ERROR during AI services initialization: {e}")
+        logger.error(f"--- DIAGNOSTIC: startup_event() - CRITICAL ERROR: {e} ---", exc_info=True)
         orchestrator = None # Ensure it's None if initialization fails
+        _task_manager_instance = None # Also ensure these are None on error
+        _notification_manager_instance = None # Also ensure these are None on error
 
 logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
 app = Flask(__name__)
@@ -209,13 +215,16 @@ def get_active_tasks():
         logger.warning("--- DIAGNOSTIC: /api/status/active_tasks - Task manager not initialized, returning 503 ---")
         return jsonify({"error": "Task manager not initialized"}), 503
 
-    active_tasks = _task_manager_instance.list_active_tasks()
-    logger.info(f"--- DIAGNOSTIC: /api/status/active_tasks - Found {len(active_tasks)} active tasks. ---")
+    try:
+        active_tasks = _task_manager_instance.list_active_tasks()
+        logger.info(f"--- DIAGNOSTIC: /api/status/active_tasks - Found {len(active_tasks)} active tasks. ---")
 
-    # Convert tasks to JSON-serializable format
-    formatted_tasks = [format_task_for_json(task) for task in active_tasks]
-
-    return jsonify(formatted_tasks)
+        # Convert tasks to JSON-serializable format
+        formatted_tasks = [format_task_for_json(task) for task in active_tasks]
+        return jsonify(formatted_tasks)
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/status/active_tasks - Error fetching active tasks: {e} ---", exc_info=True)
+        return jsonify({"error": "Failed to fetch active tasks"}), 500
 
 @app.route('/api/status/notifications', methods=['GET'])
 def get_recent_notifications():
