@@ -470,9 +470,53 @@ class DynamicOrchestrator:
                         processed_results.append(res_item)
                         # overall_success_of_plan already updated above for general errors
 
-                    # Store displayed HTML content if the specific tool was called and succeeded
+                    # Handle html_modification_request by applying the change and preparing to update display
+                    if isinstance(res_item, dict) and res_item.get("type") == "html_modification_request":
+                        search_pattern = res_item.get("search_pattern")
+                        replacement_code = res_item.get("replacement_code")
+                        # occurrence_index = res_item.get("occurrence_index", 0) # Currently supporting first
+
+                        if not self.current_project_display_code:
+                            err_msg = "Cannot modify display: No content currently displayed or remembered."
+                            logger.error(err_msg)
+                            # Update res_item itself to reflect this operational error for this step
+                            res_item["error"] = err_msg
+                            res_item["ran_successfully"] = False
+                            overall_success_of_plan = False; step_succeeded = False
+                        elif search_pattern:
+                            original_code = self.current_project_display_code
+                            # Simple first occurrence replacement
+                            modified_code = original_code.replace(search_pattern, replacement_code, 1)
+
+                            if modified_code == original_code:
+                                warn_msg = f"HTML modification: search_pattern '{search_pattern}' not found. No changes made."
+                                logger.warning(warn_msg)
+                                # Update res_item to give feedback to summarizer/user
+                                res_item["modification_status"] = "pattern_not_found"
+                                res_item["error"] = warn_msg # Treat pattern not found as an error for this step
+                                res_item["ran_successfully"] = False
+                                step_succeeded = False
+                                overall_success_of_plan = False # If a modification was expected but didn't happen.
+                            else:
+                                # self.current_project_display_code = modified_code # This is done by new_displayed_code_to_set
+                                new_displayed_code_to_set = modified_code
+                                res_item["modification_status"] = "success" # Add status for clarity
+                                # res_item["ran_successfully"] is implicitly True if no error key is added by tool
+                                logger.info(f"HTML content modified. Search: '{search_pattern}'.")
+                        else: # This else corresponds to `elif search_pattern:`
+                            err_msg = "HTML modification request failed: Missing search_pattern."
+                            logger.error(err_msg)
+                            res_item["error"] = err_msg
+                            res_item["ran_successfully"] = False
+                            overall_success_of_plan = False; step_succeeded = False
+
+
+                    # Store displayed HTML content if the display_html_content_in_project_area tool was called and succeeded
                     if step_tool_name == "display_html_content_in_project_area" and step_succeeded:
                         if step_args and isinstance(step_args[0], str):
+                            # This will overwrite any modification made by html_modification_request
+                            # if display_html_content_in_project_area is called *after* it in the same plan.
+                            # This is generally fine, as display_html would be a full refresh.
                             new_displayed_code_to_set = step_args[0]
                         else: # pragma: no cover
                             logger.warning("display_html_content_in_project_area called with invalid args structure, cannot store HTML.")
@@ -480,7 +524,11 @@ class DynamicOrchestrator:
                 if len(processed_results) < len(final_plan_attempted): # pragma: no cover
                     overall_success_of_plan = False # Should not happen if results_of_final_attempt is padded
 
-            self.current_project_display_code = new_displayed_code_to_set # Set at the end
+            # Set current_project_display_code based on the *last* successful display or modification
+            if new_displayed_code_to_set is not None:
+                self.current_project_display_code = new_displayed_code_to_set
+            elif not overall_success_of_plan and not final_plan_attempted : # If plan failed very early or was empty and not conversational
+                 pass # Keep existing self.current_project_display_code or let it be None
 
             self.context.update({
                 'last_results': processed_results,

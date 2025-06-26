@@ -167,6 +167,17 @@ Each step dictionary *MUST* contain the following keys:
 **Handling Purely Analytical or Conversational Goals:**
 - If the LATEST user goal is primarily for analysis, explanation, or a conversational response (e.g., "summarize this code", "what is this?", "how does this work?") AND no available tools are suitable for performing the core task, you SHOULD return an empty JSON list `[]`. This signals that a direct textual response from the AI is likely more appropriate than a tool-based plan.
 
+**Modifying Displayed HTML Content (Granular Changes):**
+- If the user asks to make a *small, targeted change* to the HTML/CSS/JS content already shown in the 'Project Display Area' (which will be provided in the '{displayed_code_section}'):
+    - Prioritize using the `modify_displayed_html_content` tool.
+    - **Args for `modify_displayed_html_content`**:
+        - `search_pattern` (string): The exact text snippet from the *current displayed code* that you want to replace. Be very specific. Look at the `{displayed_code_section}` to find a unique string to search for. For example, if changing `<p style="color: red;">`, a good search pattern might be `style="color: red;"` or just `color: red;` if it's unique enough in context.
+        - `replacement_code` (string): The new code snippet that will replace the `search_pattern`.
+        - `occurrence_index` (int, optional, default 0): Use 0 to replace the first match.
+    - **Example:** User says "Change the text color to blue." The `{displayed_code_section}` shows `<p style="color: red;">Hello</p>`. A good plan step would be:
+      `{{"tool_name": "modify_displayed_html_content", "args": ["color: red;", "color: blue;"], "kwargs": {{"occurrence_index": 0}}}}`
+    - If the change is very large or involves restructuring the entire displayed content, it might be better to use `display_html_content_in_project_area` with completely new HTML. But for small tweaks, `modify_displayed_html_content` is preferred.
+
 If the goal cannot be achieved with the available tools (and is not purely analytical/conversational as described above), or if it's unclear after considering context and search, return an empty JSON list [].
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
@@ -193,6 +204,7 @@ Remember the instructions about:
 - Using search tools (followed by 'process_search_results').
 - Using 'display_html_content_in_project_area' for rich UI content.
 - Generating PAUSABLE JAVASCRIPT (listening for 'pause'/'resume' messages) for interactive JS.
+- Using `modify_displayed_html_content` for small, targeted changes to existing displayed code, referencing `{displayed_code_section}`.
 - Returning an empty plan `[]` if the goal is purely analytical/conversational and no tools are suitable.
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
