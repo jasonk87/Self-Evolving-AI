@@ -222,3 +222,52 @@ def get_recent_notifications():
         formatted_notifications.append(notif_dict)
 
     return jsonify(formatted_notifications)
+
+@app.route('/api/analyze_display', methods=['POST'])
+async def analyze_display_api():
+    global orchestrator
+    if orchestrator is None:
+        return jsonify({"success": False, "error": "AI services are not initialized."}), 503
+
+    data = request.get_json()
+    html_content = data.get('html_content')
+
+    if not html_content:
+        return jsonify({"success": False, "error": "No HTML content provided for analysis."}), 400
+
+    try:
+        # Construct a specific prompt for the AI to analyze the HTML
+        # Making this a bit more specific about what kind of analysis is expected.
+        analysis_prompt = (
+            f"The user has requested an analysis of the following HTML content currently displayed in their project area. "
+            f"Please review this HTML code and provide a brief, user-friendly summary or analysis of its structure, "
+            f"purpose, or any notable features. If it contains scripts, briefly describe what they might do. "
+            f"Avoid simply repeating the code. Focus on insights.\n\n"
+            f"HTML Content to Analyze:\n```html\n{html_content[:3000]}\n```"
+            f"{'... (HTML content truncated)' if len(html_content) > 3000 else ''}"
+        )
+
+        # Use the orchestrator to process this prompt.
+        # The orchestrator will handle planning (if any) or direct LLM interaction.
+        # The response from process_prompt is (success_bool, data_dict)
+        # where data_dict = {"chat_response": Optional[str], "project_area_html": Optional[str]}
+        # For analysis, we primarily care about the chat_response.
+
+        success, response_data = await orchestrator.process_prompt(analysis_prompt, user_id="system_display_analyzer") # Using a system user_id
+
+        ai_analysis_text = response_data.get("chat_response")
+
+        if success and ai_analysis_text:
+            return jsonify({"success": True, "analysis_text": ai_analysis_text}), 200
+        elif ai_analysis_text: # Success might be false if plan failed, but we still got some text
+             return jsonify({"success": False, "analysis_text": ai_analysis_text, "error": "AI processed the request but indicated an issue."}), 200
+        else:
+            # This case means orchestrator.process_prompt returned success=False AND no chat_response,
+            # or success=True but no chat_response (which would be odd for an analysis prompt).
+            error_message = response_data.get("error", "AI analysis failed or returned no text.")
+            return jsonify({"success": False, "error": error_message}), 500
+
+    except Exception as e:
+        print(f"Error in /api/analyze_display: {e}") # Log the error
+        # Ensure consistent error structure for critical failures
+        return jsonify({"success": False, "error": "An internal server error occurred during content analysis."}), 500

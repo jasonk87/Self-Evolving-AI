@@ -164,7 +164,10 @@ Each step dictionary *MUST* contain the following keys:
       ```
 - Example: If the user asks to "show me the project plan as a table", and you have the plan details, you would format it as an HTML table and pass it to 'display_html_content_in_project_area'.
 
-If the goal cannot be achieved with the available tools, or if it's unclear after considering context and search, return an empty JSON list [].
+**Handling Purely Analytical or Conversational Goals:**
+- If the LATEST user goal is primarily for analysis, explanation, or a conversational response (e.g., "summarize this code", "what is this?", "how does this work?") AND no available tools are suitable for performing the core task, you SHOULD return an empty JSON list `[]`. This signals that a direct textual response from the AI is likely more appropriate than a tool-based plan.
+
+If the goal cannot be achieved with the available tools (and is not purely analytical/conversational as described above), or if it's unclear after considering context and search, return an empty JSON list [].
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
 JSON Plan:
@@ -176,6 +179,7 @@ Available Tools:
 {tools_json_string}
 {conversation_history_section}
 {project_context_section}
+{displayed_code_section} <!-- Ensure this context is also considered if relevant to the original goal -->
 
 Your Previous Incorrect Response:
 ---
@@ -185,7 +189,11 @@ Error Description: {error_description}
 
 Please try again. Generate a plan as a JSON list of step dictionaries.
 Each step *MUST* be a dictionary with "tool_name" (string from available tools), "args" (list of strings, use "" or "TODO_infer_arg_value" for missing values), and "kwargs" (dictionary of string:string, use {{}} if none).
-Remember the instructions about using search tools (followed by 'process_search_results'), the 'display_html_content_in_project_area' tool for rich UI content, and the requirement for PAUSABLE JAVASCRIPT (listening for 'pause'/'resume' messages) if generating interactive JS content.
+Remember the instructions about:
+- Using search tools (followed by 'process_search_results').
+- Using 'display_html_content_in_project_area' for rich UI content.
+- Generating PAUSABLE JAVASCRIPT (listening for 'pause'/'resume' messages) for interactive JS.
+- Returning an empty plan `[]` if the goal is purely analytical/conversational and no tools are suitable.
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
 """

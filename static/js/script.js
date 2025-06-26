@@ -599,6 +599,62 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Pause/Resume buttons or project iframe not found for event listener setup.");
     }
 
+    // Analyze Display Button Logic
+    const analyzeDisplayBtn = document.getElementById('analyzeDisplayBtn');
+    // projectIframe is already defined above for Pause/Resume
+
+    if (analyzeDisplayBtn && projectIframe) {
+        analyzeDisplayBtn.addEventListener('click', async () => {
+            const htmlContent = projectIframe.srcdoc;
+            if (!htmlContent || htmlContent.trim() === '' || htmlContent.includes("Project Display Area - Content will appear here")) {
+                appendToChatLog("There is no content in the project display area to analyze.", 'ai');
+                // Optionally, briefly change Weibo state to 'talking' then 'idle'
+                setWeiboState('weibo-talking');
+                setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 2000);
+                return;
+            }
+
+            analyzeDisplayBtn.disabled = true;
+            const originalButtonTitle = analyzeDisplayBtn.title;
+            analyzeDisplayBtn.title = "Analyzing...";
+            // You could also change the icon to a spinner here if you have one
+
+            setWeiboState('weibo-thinking'); // AI is "thinking" about the analysis
+            if (aiCoreStatusText) aiCoreStatusText.textContent = 'Analyzing displayed content...';
+
+            try {
+                const response = await fetch('/api/analyze_display', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ html_content: htmlContent })
+                });
+
+                const data = await response.json();
+                setWeiboState('weibo-talking'); // AI is "talking" about the analysis
+
+                if (response.ok && data.success && data.analysis_text) {
+                    appendToChatLog(data.analysis_text, 'ai');
+                } else {
+                    const errorMsg = data.analysis_text || data.error || "Failed to get analysis from server.";
+                    appendToChatLog(`Analysis Error: ${errorMsg}`, 'ai');
+                    if (aiCoreStatusText) aiCoreStatusText.textContent = 'Error during analysis.';
+                }
+            } catch (error) {
+                console.error('Error sending content for analysis:', error);
+                setWeiboState('idle'); // Reset Weibo on error
+                if (aiCoreStatusText) aiCoreStatusText.textContent = 'Connection error during analysis.';
+                appendToChatLog(`Network Error: Could not analyze display content. ${error.message}`, 'ai');
+            } finally {
+                analyzeDisplayBtn.disabled = false;
+                analyzeDisplayBtn.title = originalButtonTitle;
+                // Revert icon if changed
+                // appendToChatLog for AI messages already handles resetting Weibo state after typing.
+            }
+        });
+    } else {
+        console.error("Analyze Display button or project iframe not found for event listener setup.");
+    }
+
 });
 
 document.addEventListener('click', function(event) {
