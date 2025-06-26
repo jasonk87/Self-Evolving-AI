@@ -773,7 +773,8 @@ class DynamicOrchestrator:
                     "ai_response": response, # The final textual response to the user
                     "plan_details_json": json.dumps(self.current_plan) if self.current_plan else "null",
                     "tool_results_json": json.dumps(self.context.get('last_results', [])) if self.context.get('last_results') else "null",
-                    "overall_success_status": str(overall_success_of_plan)
+                    "overall_success_status": str(overall_success_of_plan),
+                    "user_id": user_id # Pass along the user_id from the original prompt
                 }
                 # This method will be implemented in the next step.
                 # It should be an async method if it involves LLM calls directly.
@@ -944,7 +945,9 @@ Analyze the provided interaction and generate your JSON response.
                 actions_list = actions_data["actions_to_take"]
                 if actions_list:
                     logger.info(f"Orchestrator: Post-interaction analysis identified {len(actions_list)} action(s).")
-                    await self._dispatch_reflection_actions(actions_list) # To be implemented next
+                    # Pass user_id from context_data to dispatcher
+                    original_user_id = context_data.get("user_id")
+                    await self._dispatch_reflection_actions(actions_list, original_user_id)
                 else:
                     logger.info("Orchestrator: Post-interaction analysis concluded no actions needed.")
             else:
@@ -953,7 +956,7 @@ Analyze the provided interaction and generate your JSON response.
         except Exception as ex:
             logger.error(f"Orchestrator: Unhandled error in _perform_post_interaction_analysis: {ex}", exc_info=True)
 
-    async def _dispatch_reflection_actions(self, actions_list: List[Dict[str, Any]]):
+    async def _dispatch_reflection_actions(self, actions_list: List[Dict[str, Any]], original_user_id: Optional[str] = None):
         """
         Processes actions identified by the post-interaction analysis.
         """
@@ -1021,15 +1024,13 @@ Analyze the provided interaction and generate your JSON response.
                         continue
 
                     if self.learning_agent:
-                        # Assuming learn_new_fact or similar method exists and takes these params
-                        # The LearningAgent's method might need adjustment or this call adapted
-                        await self.learning_agent.learn_new_fact(
+                        await self.learning_agent.learn_new_fact_from_reflection(
                             text=fact_text,
                             category=fact_category,
                             source=source_summary,
-                            # user_id might be useful if available from original context
+                            user_id=original_user_id # Pass the user_id from the interaction
                         )
-                        logger.info(f"Orchestrator: Learned fact from reflection: {fact_text[:100]}...")
+                        logger.info(f"Orchestrator: Learned fact from reflection: {fact_text[:100]}... for user_id: {original_user_id}")
                     else:
                         logger.error("Orchestrator: LearningAgent not available to learn fact from reflection.")
 

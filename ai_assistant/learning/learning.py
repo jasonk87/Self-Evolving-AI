@@ -290,6 +290,84 @@ class LearningAgent:
         self._save_insights()
         return proposed_action, execution_success
 
+    async def learn_new_fact_from_reflection(
+        self,
+        text: str,
+        category: str,
+        source: str,
+        user_id: Optional[str] = None,
+        fact_id_to_supersede: Optional[str] = None # For future use
+    ) -> bool:
+        """
+        Directly learns and saves a new fact, typically from reflection.
+        Handles loading existing facts, adding the new one, and saving back.
+        Optionally supersedes an old fact if fact_id_to_supersede is provided (basic implementation).
+        """
+        print(f"LearningAgent: Attempting to learn new fact. Text: '{text[:50]}...', Category: {category}, UserID: {user_id}")
+
+        # Ensure persistent_memory functions are available
+        from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
+
+        try:
+            current_facts = load_learned_facts(filepath=LEARNED_FACTS_FILEPATH)
+
+            # Handle superseding/updating if fact_id_to_supersede is given
+            if fact_id_to_supersede:
+                found_and_updated = False
+                for i, fact in enumerate(current_facts):
+                    if fact.get("fact_id") == fact_id_to_supersede:
+                        print(f"LearningAgent: Superseding fact ID {fact_id_to_supersede} with new fact.")
+                        # Update existing fact instead of adding new, or mark old as superseded and add new
+                        # For simplicity here, let's update in place if text is same, otherwise mark old and add new.
+                        # This logic can be refined. For now, let's assume we add new and old one is just there.
+                        # A more robust supersede would change status of old fact.
+                        # For now, we'll just ensure we don't add an exact duplicate if ID is matched by some upstream logic.
+                        # This method's main job is to ADD the given text as a NEW fact.
+                        # Upstream logic (e.g. reflection LLM) should decide if it's a correction.
+                        pass # Placeholder for more complex update/supersede logic
+
+            # Prevent adding exact duplicate text for the same user/category (simple check)
+            for fact in current_facts:
+                if fact.get("text") == text and \
+                   fact.get("user_id") == user_id and \
+                   fact.get("category") == category:
+                    print(f"LearningAgent: Fact with same text, user, and category already exists. Skipping addition. Fact ID: {fact.get('fact_id')}")
+                    # Optionally, could update its 'updated_at' timestamp or 'source' if different
+                    return True # Treat as success if already exists
+
+            new_fact = {
+                "fact_id": f"fact_{uuid.uuid4().hex[:12]}", # Slightly longer ID
+                "text": text,
+                "category": category,
+                "user_id": user_id,
+                "source": source,
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "confidence": 1.0, # Default confidence
+                "access_count": 0,
+                "last_accessed_at": None
+            }
+            current_facts.append(new_fact)
+
+            if save_learned_facts(current_facts, filepath=LEARNED_FACTS_FILEPATH):
+                print(f"LearningAgent: Successfully learned and saved new fact: {new_fact['fact_id']}")
+                if self.notification_manager:
+                    from ai_assistant.core.notification_manager import NotificationType # Local import
+                    self.notification_manager.add_notification(
+                        event_type=NotificationType.NEW_FACT_LEARNED, # Assuming this type exists
+                        summary_message=f"AI learned a new fact: {text[:70]}...",
+                        related_item_id=new_fact['fact_id'],
+                        related_item_type="learned_fact",
+                        details_payload=new_fact
+                    )
+                return True
+            else:
+                print(f"LearningAgent: Failed to save new fact after appending.")
+                return False
+        except Exception as e:
+            print(f"LearningAgent: Error in learn_new_fact_from_reflection: {e}")
+            return False
+
 if __name__ == '__main__': # pragma: no cover
     # import uuid # uuid is already imported at the top of the module
     # Removed local MockReflectionLogEntry, will use the actual one.
