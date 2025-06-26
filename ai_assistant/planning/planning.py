@@ -44,7 +44,8 @@ class PlannerAgent:
         available_tools: Dict[str, Any],
         project_context_summary: Optional[str] = None,
         project_name_for_context: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        displayed_code_content: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         import json 
 
@@ -87,6 +88,7 @@ class PlannerAgent:
 **Contextual Information (Use ONLY if directly relevant to the LATEST user goal):**
 {conversation_history_section}
 {project_context_section}
+{displayed_code_section}
 <!-- Relevant Learned Facts might be part of project_context_section or conversation_history_section if provided by orchestrator -->
 
 **Instructions for Using Context:**
@@ -95,7 +97,8 @@ class PlannerAgent:
     *   If provided under "Recent Conversation History", use the LAST 1-2 user/assistant turns to understand pronouns (he, she, it, that) and the immediate topic related to "{goal}".
     *   **Crucial:** DO NOT let older or unrelated topics in the history distract you from the current "{goal}". If "{goal}" introduces a new topic, prioritize that new topic.
 3.  **Project Context:** If provided under "Current Project Context", use this ONLY if "{goal}" explicitly asks to modify, discuss, or use that specific project. Otherwise, IGNORE it.
-4.  **Learned Facts:** If any learned facts are implicitly part of the provided context sections, use them to make informed decisions about tools/arguments for "{goal}" and to avoid redundant actions. Only use facts pertinent to "{goal}".
+4.  **Currently Displayed Project Code:** If provided under "Currently Displayed Project Code", this is the HTML/CSS/JS for the content currently shown in the UI's Project Display Area. Use this as a DIRECT REFERENCE if the user's LATEST goal is to *modify* or *discuss* this specific displayed content (e.g., "change the button color," "what does this script do?"). If the goal is unrelated to the displayed content, you can largely ignore this section.
+5.  **Learned Facts:** If any learned facts are implicitly part of the provided context sections, use them to make informed decisions about tools/arguments for "{goal}" and to avoid redundant actions. Only use facts pertinent to "{goal}".
 
 **Your Task:** Based *primarily* on the LATEST user goal ("{goal}"), and using other context *only for clarification and direct relevance* to this goal, generate a plan.
 
@@ -119,6 +122,46 @@ Each step dictionary *MUST* contain the following keys:
 - Construct valid, well-formed HTML for the `html_content` argument. This content will be directly rendered in a designated UI panel.
 - This tool is for displaying substantial content. For brief informational messages or confirmations, a standard chat response (implied, no specific tool call needed for just text output) is usually sufficient.
 - If you generate HTML for display, ensure it is self-contained and does not rely on external CSS or JS files not already part of the main UI. Basic inline styles are acceptable if necessary.
+- **Pausable JavaScript for Interactive Content:** If the HTML content includes JavaScript for animations, games, or other continuously running interactive elements, this JavaScript *MUST* be pausable.
+    - Implement this by adding an event listener for `message` events from the parent window.
+    - The script should listen for `event.data === 'pause'` and `event.data === 'resume'`.
+    - On 'pause', halt animations (e.g., `cancelAnimationFrame()`, clear intervals/timeouts) and store necessary state.
+    - On 'resume', restart animations/processes from their saved state.
+    - Example (Conceptual - adapt to specific animation loop):
+      ```html
+      <script>
+        let animationFrameId = null;
+        let isPaused = false;
+        // ... your animation variables ...
+
+        function gameLoop() {
+          if (isPaused) return;
+          // ... update logic ...
+          // ... drawing logic ...
+          animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('message', function(event) {
+          if (event.data === 'pause') {
+            isPaused = true;
+            if (animationFrameId) {
+              cancelAnimationFrame(animationFrameId);
+              animationFrameId = null;
+            }
+            console.log('Project content paused');
+          } else if (event.data === 'resume') {
+            if (isPaused) {
+              isPaused = false;
+              gameLoop(); // Or however your loop is restarted
+              console.log('Project content resumed');
+            }
+          }
+        });
+
+        // Start your game/animation
+        // gameLoop();
+      </script>
+      ```
 - Example: If the user asks to "show me the project plan as a table", and you have the plan details, you would format it as an HTML table and pass it to 'display_html_content_in_project_area'.
 
 If the goal cannot be achieved with the available tools, or if it's unclear after considering context and search, return an empty JSON list [].
@@ -142,15 +185,25 @@ Error Description: {error_description}
 
 Please try again. Generate a plan as a JSON list of step dictionaries.
 Each step *MUST* be a dictionary with "tool_name" (string from available tools), "args" (list of strings, use "" or "TODO_infer_arg_value" for missing values), and "kwargs" (dictionary of string:string, use {{}} if none).
-Remember the instructions about using search tools (followed by 'process_search_results') and the 'display_html_content_in_project_area' tool for rich UI content.
+Remember the instructions about using search tools (followed by 'process_search_results'), the 'display_html_content_in_project_area' tool for rich UI content, and the requirement for PAUSABLE JAVASCRIPT (listening for 'pause'/'resume' messages) if generating interactive JS content.
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
 """
+
+        displayed_code_section_str = ""
+        if displayed_code_content:
+            # Truncate if too long to avoid excessive prompt length
+            max_displayed_code_len = 2000
+            truncated_code = displayed_code_content
+            if len(displayed_code_content) > max_displayed_code_len:
+                truncated_code = displayed_code_content[:max_displayed_code_len] + "\n[... code truncated ...]"
+            displayed_code_section_str = f"\n\nCurrently Displayed Project Code (for reference if modifying):\n---\n{truncated_code}\n---\n"
 
         current_prompt_text = LLM_PLANNING_PROMPT_TEMPLATE.format(
             goal=goal_description,
             conversation_history_section=conversation_history_section_str,
             project_context_section=project_context_section_str,
+            displayed_code_section=displayed_code_section_str,
             tools_json_string=tools_json_string
         )
 
@@ -172,11 +225,17 @@ JSON Plan:
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description, 
+                        goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        tools_json_string=tools_json_string, 
-                        previous_llm_response=llm_response_str or "", 
+                        # Make sure displayed_code_section is passed to correction too
+                        # For brevity, if it's part of project_context_section or a general context reminder is sufficient
+                        # This correction prompt is getting long, let's assume the main prompt's context elements are implicitly included
+                        # or the error is about the plan structure itself.
+                        # For now, not explicitly adding displayed_code_section to CORRECTION_PROMPT_TEMPLATE's format string
+                        # to keep it focused on the error. The LLM should remember context from initial attempt.
+                        tools_json_string=tools_json_string,
+                        previous_llm_response=llm_response_str or "",
                         error_description=last_error_description
                     )
                 continue
@@ -196,11 +255,11 @@ JSON Plan:
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description, 
+                        goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        tools_json_string=tools_json_string, 
-                        previous_llm_response=llm_response_str, 
+                        tools_json_string=tools_json_string,
+                        previous_llm_response=llm_response_str,
                         error_description=f"Response was not valid JSON. Error: {e}"
                     )
                 continue
@@ -211,11 +270,11 @@ JSON Plan:
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                      current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description, 
+                        goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        tools_json_string=tools_json_string, 
-                        previous_llm_response=llm_response_str, 
+                        tools_json_string=tools_json_string,
+                        previous_llm_response=llm_response_str,
                         error_description=last_error_description
                     )
                 parsed_plan = None
@@ -245,11 +304,11 @@ JSON Plan:
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description, 
+                        goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        tools_json_string=tools_json_string, 
-                        previous_llm_response=llm_response_str, 
+                        tools_json_string=tools_json_string,
+                        previous_llm_response=llm_response_str,
                         error_description=last_error_description
                     )
                 parsed_plan = None

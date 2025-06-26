@@ -49,6 +49,7 @@ class DynamicOrchestrator:
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
         self.conversation_history: List[Dict[str, str]] = [] # New: For chat history
+        self.current_project_display_code: Optional[str] = None # For recalling displayed HTML
 
     def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
         if not plan:
@@ -245,7 +246,8 @@ class DynamicOrchestrator:
                 available_tools=available_tools_rich,
                 project_context_summary=final_context_for_planner,
                 project_name_for_context=project_name_for_context,
-                conversation_history=self.conversation_history # Pass history
+                conversation_history=self.conversation_history, # Pass history
+                displayed_code_content=self.current_project_display_code # Pass displayed code
             )
 
             use_hierarchical_planner = False
@@ -410,56 +412,75 @@ class DynamicOrchestrator:
 
             processed_results = []
             overall_success_of_plan = True
+            # Default to clearing displayed code unless a display tool succeeds
+            new_displayed_code_to_set = None
 
             if not results_of_final_attempt and final_plan_attempted :
                 overall_success_of_plan = False
-            elif not final_plan_attempted and not results_of_final_attempt:
-                overall_success_of_plan = False
+            elif not final_plan_attempted and not results_of_final_attempt: # No plan, no results
+                overall_success_of_plan = False # Or could be True if it was a direct conversational response handled earlier
 
-            for i, res_item in enumerate(results_of_final_attempt):
-                if isinstance(res_item, dict) and res_item.get("action_type_for_executor") == "PROPOSE_TOOL_MODIFICATION":
-                    action_details = res_item.get("action_details_for_executor")
-                    if action_details:
-                        proposed_action_for_ae = {
-                            "action_type": "PROPOSE_TOOL_MODIFICATION",
-                            "details": action_details,
-                            "source_insight_id": f"planner_staged_mod_{str(uuid.uuid4())[:8]}"
-                        }
-                        log_event(
-                            event_type="ORCHESTRATOR_DISPATCH_TO_ACTION_EXECUTOR",
-                            description=f"Dispatching staged self-modification to ActionExecutor for tool: {action_details.get('tool_name', 'unknown_tool')}",
-                            source="DynamicOrchestrator.process_prompt",
-                            metadata={"action_details": action_details}
-                        )
-                        if not self.action_executor:
-                             logger.error("ActionExecutor not initialized in DynamicOrchestrator. Cannot execute staged modification.")
-                             processed_results.append({"error": "ActionExecutor not available.", "ran_successfully": False})
-                             overall_success_of_plan = False
-                             continue
+            if final_plan_attempted: # Only process results if there was a plan
+                for i, step_details in enumerate(final_plan_attempted):
+                    res_item = results_of_final_attempt[i] if i < len(results_of_final_attempt) else {"error": "Missing result for step", "ran_successfully": False}
 
-                        ae_success = await self.action_executor.execute_action(proposed_action_for_ae)
+                    step_tool_name = step_details.get("tool_name")
+                    step_args = step_details.get("args", [])
 
-                        processed_results.append({
-                            "tool_name_original_staged": action_details.get('tool_name', 'unknown_tool_from_stage'),
-                            "action_executor_result": ae_success,
-                            "summary": f"Self-modification attempt for '{action_details.get('tool_name')}' {'succeeded' if ae_success else 'failed'}"
-                        })
-                        if not ae_success:
-                            overall_success_of_plan = False
-                    else: # pragma: no cover
-                        processed_results.append({"error": "Invalid staged action structure from tool", "ran_successfully": False})
-                        overall_success_of_plan = False
-                else:
-                    processed_results.append(res_item)
+                    step_succeeded = True
                     if isinstance(res_item, Exception) or \
                        (isinstance(res_item, dict) and (
                            res_item.get("error") or \
                            res_item.get("ran_successfully") is False or \
-                           res_item.get("overall_status") == "failed" )):
+                           res_item.get("overall_status") == "failed")):
                         overall_success_of_plan = False
+                        step_succeeded = False
 
-            if final_plan_attempted and len(processed_results) < len(final_plan_attempted): # pragma: no cover
-                overall_success_of_plan = False
+                    if isinstance(res_item, dict) and res_item.get("action_type_for_executor") == "PROPOSE_TOOL_MODIFICATION":
+                        action_details = res_item.get("action_details_for_executor")
+                        if action_details:
+                            # ... (existing PROPOSE_TOOL_MODIFICATION logic remains the same) ...
+                            proposed_action_for_ae = {
+                                "action_type": "PROPOSE_TOOL_MODIFICATION",
+                                "details": action_details,
+                                "source_insight_id": f"planner_staged_mod_{str(uuid.uuid4())[:8]}"
+                            }
+                            log_event(
+                                event_type="ORCHESTRATOR_DISPATCH_TO_ACTION_EXECUTOR",
+                                description=f"Dispatching staged self-modification to ActionExecutor for tool: {action_details.get('tool_name', 'unknown_tool')}",
+                                source="DynamicOrchestrator.process_prompt",
+                                metadata={"action_details": action_details}
+                            )
+                            if not self.action_executor:
+                                 logger.error("ActionExecutor not initialized in DynamicOrchestrator. Cannot execute staged modification.")
+                                 processed_results.append({"error": "ActionExecutor not available.", "ran_successfully": False})
+                                 overall_success_of_plan = False; step_succeeded = False
+                            else:
+                                ae_success = await self.action_executor.execute_action(proposed_action_for_ae)
+                                processed_results.append({
+                                    "tool_name_original_staged": action_details.get('tool_name', 'unknown_tool_from_stage'),
+                                    "action_executor_result": ae_success,
+                                    "summary": f"Self-modification attempt for '{action_details.get('tool_name')}' {'succeeded' if ae_success else 'failed'}"
+                                })
+                                if not ae_success: overall_success_of_plan = False; step_succeeded = False
+                        else:
+                            processed_results.append({"error": "Invalid staged action structure from tool", "ran_successfully": False})
+                            overall_success_of_plan = False; step_succeeded = False
+                    else:
+                        processed_results.append(res_item)
+                        # overall_success_of_plan already updated above for general errors
+
+                    # Store displayed HTML content if the specific tool was called and succeeded
+                    if step_tool_name == "display_html_content_in_project_area" and step_succeeded:
+                        if step_args and isinstance(step_args[0], str):
+                            new_displayed_code_to_set = step_args[0]
+                        else: # pragma: no cover
+                            logger.warning("display_html_content_in_project_area called with invalid args structure, cannot store HTML.")
+
+                if len(processed_results) < len(final_plan_attempted): # pragma: no cover
+                    overall_success_of_plan = False # Should not happen if results_of_final_attempt is padded
+
+            self.current_project_display_code = new_displayed_code_to_set # Set at the end
 
             self.context.update({
                 'last_results': processed_results,

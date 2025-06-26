@@ -870,3 +870,112 @@ header h1 {
         transform: translateX(0);
     }
 }
+
+/* === Project Display Area & Fullscreen Button === */
+/* #projectDisplayArea styling is already present, will be enhanced by .fullscreen */
+
+.project-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 100; /* Ensure controls are above iframe content */
+}
+
+.project-controls button {
+    background-color: rgba(30, 40, 60, 0.7);
+    color: var(--text-color-light, var(--accent-color));
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    line-height: 0; /* Helps align SVG icons */
+}
+
+.project-controls button:hover:not(:disabled) {
+    background-color: rgba(45, 55, 80, 0.9);
+    box-shadow: 0 0 5px var(--glow-color);
+}
+
+.project-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.project-controls button svg {
+    display: block;
+    width: 18px;
+    height: 18px;
+}
+
+
+/* Specific button for fullscreen, if it's part of .project-controls */
+#fullscreenToggleBtn {
+    /* position, top, right are handled by .project-controls if it's a direct child */
+    /* If #fullscreenToggleBtn is still positioned independently, its existing styles are fine */
+    /* For this example, assuming it's now part of .project-controls so removing explicit pos. */
+    /* position: absolute; */
+    /* top: 10px; */
+    /* right: 10px; */
+    background-color: rgba(30, 40, 60, 0.7);
+    color: var(--text-color-light, var(--accent-color)); /* Fallback for text-color-light */
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 6px; /* Slightly more padding for better click area */
+    cursor: pointer;
+    z-index: 100; /* Ensure it's above the iframe content */
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    line-height: 0; /* Helps align SVG icon if it has extra space */
+}
+
+#fullscreenToggleBtn:hover {
+    background-color: rgba(45, 55, 80, 0.9);
+    box-shadow: 0 0 5px var(--glow-color);
+}
+
+#fullscreenToggleBtn svg {
+    display: block; /* Ensures SVG takes up its own line if needed, good for sizing */
+    width: 18px; /* Consistent sizing */
+    height: 18px;
+}
+
+/* Fullscreen Mode for Project Display Area */
+#projectDisplayArea.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw !important;  /* Use !important to override inline styles or other specific rules if necessary */
+    height: 100vh !important; /* Use !important */
+    z-index: 2000; /* Very high z-index to cover everything */
+    padding: 0; /* No padding in fullscreen */
+    margin: 0; /* No margin in fullscreen */
+    border-radius: 0; /* No rounded corners in fullscreen */
+    border: none; /* No border in fullscreen */
+    /* Ensure flex properties from default state are overridden or managed if they conflict */
+    display: block; /* Override flex if it causes issues, iframe will fill */
+}
+
+#projectDisplayArea.fullscreen #projectDisplayIframe {
+    width: 100%;
+    height: 100%;
+}
+
+#projectDisplayArea.fullscreen #fullscreenToggleBtn {
+    top: 15px; /* Reposition button in fullscreen */
+    right: 15px;
+    background-color: rgba(10, 15, 24, 0.8); /* Darker background for better visibility on varied content */
+}
+
+/* Optional: Hide other major UI elements when project area is fullscreen for a cleaner view */
+/* This is better handled by adding a class to a common parent like .sci-fi-container or body */
+/* For now, the high z-index of .fullscreen should suffice to visually cover them. */
+/* If direct hiding is needed:
+body.project-fullscreen-active > header,
+body.project-fullscreen-active > .main-content > :not(.project-display-area),
+body.project-fullscreen-active > .input-area-sci-fi,
+body.project-fullscreen-active > .status-panel {
+    display: none;
+}
+*/

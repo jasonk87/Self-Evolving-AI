@@ -530,6 +530,75 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("One or more core elements for Weibo state are missing. Cannot set initial state.");
         if(aiCoreStatusText) aiCoreStatusText.textContent = "UI Error: Core elements missing.";
     }
+
+    // Fullscreen Toggle for Project Display Area
+    const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
+    // projectDisplayArea is already globally defined and assigned in DOMContentLoaded
+
+    if (fullscreenToggleBtn && projectDisplayArea) {
+        const enterIcon = fullscreenToggleBtn.querySelector('.icon-fullscreen-enter');
+        const exitIcon = fullscreenToggleBtn.querySelector('.icon-fullscreen-exit');
+
+        if (enterIcon && exitIcon) {
+            fullscreenToggleBtn.addEventListener('click', () => {
+                projectDisplayArea.classList.toggle('fullscreen');
+                const isFullscreen = projectDisplayArea.classList.contains('fullscreen');
+                if (isFullscreen) {
+                    enterIcon.style.display = 'none';
+                    exitIcon.style.display = 'block';
+                    fullscreenToggleBtn.title = "Exit Fullscreen";
+                    // Potentially hide other elements like .ai-core-display, .chat-log-area, .input-area-sci-fi
+                    // by adding a class to a common parent or directly to them.
+                    // For now, CSS will handle z-index and sizing.
+                } else {
+                    enterIcon.style.display = 'block';
+                    exitIcon.style.display = 'none';
+                    fullscreenToggleBtn.title = "Toggle Fullscreen";
+                }
+            });
+        } else {
+            console.error("Fullscreen toggle icons not found within the button.");
+        }
+    } else {
+        console.error("Fullscreen toggle button or project display area not found for event listener setup.");
+    }
+
+    // Pause/Resume for Project Display Iframe
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const projectIframe = document.getElementById('projectDisplayIframe');
+
+    if (pauseBtn && resumeBtn && projectIframe) {
+        pauseBtn.addEventListener('click', () => {
+            if (projectIframe.contentWindow) {
+                projectIframe.contentWindow.postMessage('pause', '*');
+                console.log('Sent "pause" message to project iframe.');
+                pauseBtn.disabled = true;
+                resumeBtn.disabled = false;
+            } else {
+                console.error("Project iframe contentWindow not accessible to send pause message.");
+            }
+        });
+
+        resumeBtn.addEventListener('click', () => {
+            if (projectIframe.contentWindow) {
+                projectIframe.contentWindow.postMessage('resume', '*');
+                console.log('Sent "resume" message to project iframe.');
+                resumeBtn.disabled = true;
+                pauseBtn.disabled = false;
+            } else {
+                console.error("Project iframe contentWindow not accessible to send resume message.");
+            }
+        });
+
+        // Consider enabling pauseBtn only when there's "active" content.
+        // For now, it's always enabled, and resume is initially disabled.
+        // We might need a message from the iframe to indicate it's pausable.
+
+    } else {
+        console.error("Pause/Resume buttons or project iframe not found for event listener setup.");
+    }
+
 });
 
 document.addEventListener('click', function(event) {
