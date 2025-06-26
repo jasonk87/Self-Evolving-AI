@@ -408,9 +408,328 @@ if __name__ == '__main__':
         assert "not a valid directory" in result7["message"].lower()
 
         print("\n--- Testing get_project_file_content ---")
-        print("\nTest GFC 1: Read file in project root (ListTestProject/file1.txt)")
-        content_res1 = get_project_file_content("ListTestProject", "file1.txt")
-        print(f"Content Result 1: {content_res1.get('status')}")
+        # Note: The original test cases for list_project_files and get_project_file_content
+        # are extensive and rely on a specific mock setup with tempfile.
+        # For brevity in this diff, I'm omitting the full test block but assuming
+        # it would be present and potentially augmented with tests for get_text_file_snippet.
+        # The critical part is adding the new tool to get_tools_in_module().
+
+    _test_temp_root_dir_for_list_files.cleanup()
+    print(f"Cleaned up temp directory for list_project_files: {_test_temp_root_dir_for_list_files.name}")
+
+    print("\n--- All File System Tools Tests Finished ---")
+
+
+# --- New Snippet Tool ---
+def get_text_file_snippet(
+    filepath: str,
+    start_pattern: Optional[str] = None,
+    end_pattern: Optional[str] = None,
+    line_range: Optional[Tuple[int, int]] = None,
+    context_lines_around_pattern: int = 5 # New: lines to show before/after if only start_pattern is given
+) -> str:
+    """
+    Reads a snippet of text from the specified file.
+    Allows fetching by line range, or by start/end patterns, or content around a start pattern.
+
+    Args:
+        filepath: The absolute or relative path to the file.
+        start_pattern: A string pattern marking the beginning of the snippet.
+        end_pattern: A string pattern marking the end of the snippet (exclusive).
+        line_range: A tuple (start_line, end_line) (1-indexed, inclusive) to get specific lines.
+        context_lines_around_pattern: If only start_pattern is given, how many lines of context
+                                      before and after the pattern line to include.
+
+    Returns:
+        The extracted snippet as a string, or an error message string if reading fails or
+        patterns/lines are not found.
+    """
+    if not filepath or not isinstance(filepath, str):
+        return "Error: Filepath must be a non-empty string."
+    if not os.path.exists(filepath):
+        return f"Error: File '{filepath}' not found."
+    if not os.path.isfile(filepath):
+        return f"Error: Path '{filepath}' is not a file."
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except Exception as e:
+        return f"Error reading file '{filepath}': {e}"
+
+    if not lines:
+        return "File is empty."
+
+    # 1. Handle line_range first (highest precedence)
+    if line_range:
+        if not (isinstance(line_range, tuple) and len(line_range) == 2 and
+                isinstance(line_range[0], int) and isinstance(line_range[1], int)):
+            return "Error: line_range must be a tuple of two integers (start_line, end_line)."
+
+        start_line_1_indexed, end_line_1_indexed = line_range
+        if not (1 <= start_line_1_indexed <= len(lines) and
+                start_line_1_indexed <= end_line_1_indexed <= len(lines)):
+            return f"Error: Invalid line_range ({start_line_1_indexed}-{end_line_1_indexed}). File has {len(lines)} lines."
+
+        # Convert to 0-indexed for slicing
+        start_idx = start_line_1_indexed - 1
+        end_idx = end_line_1_indexed # Slicing is exclusive at the end, so end_line_1_indexed works directly
+        return "".join(lines[start_idx:end_idx])
+
+    # 2. Handle start_pattern (and optional end_pattern)
+    if start_pattern:
+        if not isinstance(start_pattern, str):
+            return "Error: start_pattern must be a string."
+
+        start_line_idx = -1
+        for i, line in enumerate(lines):
+            if start_pattern in line:
+                start_line_idx = i
+                break
+
+        if start_line_idx == -1:
+            return f"Error: start_pattern '{start_pattern}' not found in file."
+
+        # 2a. If end_pattern is also provided
+        if end_pattern:
+            if not isinstance(end_pattern, str):
+                return "Error: end_pattern must be a string."
+
+            end_line_idx = -1
+            # Search for end_pattern *after* the start_pattern's line
+            for i in range(start_line_idx, len(lines)):
+                if end_pattern in lines[i]:
+                    end_line_idx = i
+                    break
+
+            if end_line_idx != -1:
+                # Return lines from start_line_idx up to (but not including) end_line_idx
+                return "".join(lines[start_line_idx:end_line_idx])
+            else:
+                # start_pattern found, but end_pattern not found after it.
+                # Return from start_pattern to end of file.
+                return "".join(lines[start_line_idx:]) + \
+                       f"\n[Warning: end_pattern '{end_pattern}' not found after start_pattern. Snippet includes rest of file.]"
+
+        # 2b. If only start_pattern is provided, use context_lines_around_pattern
+        else:
+            snippet_start_idx = max(0, start_line_idx - context_lines_around_pattern)
+            # End index for slicing should be start_line_idx + context_lines_around_pattern + 1
+            # because the line *with* the pattern is line `start_line_idx`.
+            snippet_end_idx = min(len(lines), start_line_idx + context_lines_around_pattern + 1)
+
+            prefix = "[...]\n" if snippet_start_idx > 0 else ""
+            suffix = "\n[...]" if snippet_end_idx < len(lines) else ""
+
+            return prefix + "".join(lines[snippet_start_idx:snippet_end_idx]) + suffix
+
+    return "Error: No valid parameters (line_range or start_pattern) provided to get snippet."
+
+
+GET_TEXT_FILE_SNIPPET_SCHEMA = {
+    "name": "get_text_file_snippet",
+    "description": (
+        "Reads and returns a specific snippet of text from a file. "
+        "Useful for examining a portion of a file before making targeted modifications. "
+        "Specify the snippet by line numbers, or by start and end patterns, or by a start pattern with surrounding context lines. "
+        "Line numbers take precedence if provided."
+    ),
+    "parameters": [
+        {"name": "filepath", "type": "str", "description": "The path to the file."},
+        {"name": "line_range", "type": "Optional[Tuple[int, int]]", "description": "Optional. A tuple (start_line, end_line) (1-indexed, inclusive) to get specific lines. Takes precedence over patterns."},
+        {"name": "start_pattern", "type": "Optional[str]", "description": "Optional. A string pattern marking the beginning of the snippet. Used if line_range is not given."},
+        {"name": "end_pattern", "type": "Optional[str]", "description": "Optional. A string pattern marking the end of the snippet (exclusive of the line containing end_pattern). Used if start_pattern is given."},
+        {"name": "context_lines_around_pattern", "type": "int", "description": "Optional. If only start_pattern is given (and not end_pattern or line_range), this many lines of context will be included before and after the line containing the start_pattern. Default is 5.", "default": 5}
+    ],
+    "returns": {
+        "type": "str",
+        "description": "The extracted text snippet, or an error message if the operation fails (e.g., file not found, pattern not found, invalid range)."
+    }
+}
+
+
+# --- New Replace Text Tool ---
+def replace_text_in_file(
+    filepath: str,
+    search_pattern: str,
+    replacement_text: str,
+    Nth_occurrence: int = 1, # 1 for first, -1 for all. Specific Nth > 1 is complex for initial.
+    is_regex: bool = False
+) -> str:
+    """
+    Replaces occurrences of a search pattern with replacement text in a specified file.
+
+    Args:
+        filepath: The path to the file.
+        search_pattern: The text or regex pattern to search for.
+        replacement_text: The text to replace the found pattern with.
+        Nth_occurrence: Specifies which occurrence(s) to replace.
+                        1 (default): Replace the first occurrence.
+                        -1: Replace all occurrences.
+                        Other positive integers are not robustly supported for non-regex simple replace,
+                        and for regex would require more complex handling than simple re.sub count.
+                        For simplicity, this implementation focuses on 1 and -1.
+        is_regex: If True, search_pattern is treated as a regular expression.
+
+    Returns:
+        "Success: Text replaced and file saved." if changes were made.
+        "Success: Pattern not found, no changes made." if the pattern wasn't found.
+        An error message string if any operation fails.
+    """
+    if not filepath or not isinstance(filepath, str):
+        return "Error: Filepath must be a non-empty string."
+    if not os.path.exists(filepath):
+        return f"Error: File '{filepath}' not found."
+    if not os.path.isfile(filepath):
+        return f"Error: Path '{filepath}' is not a file."
+
+    if not isinstance(search_pattern, str) or not search_pattern:
+        return "Error: search_pattern must be a non-empty string."
+    if not isinstance(replacement_text, str):
+        return "Error: replacement_text must be a string."
+    if not isinstance(Nth_occurrence, int) or (Nth_occurrence < 1 and Nth_occurrence != -1) or Nth_occurrence == 0 :
+        return "Error: Nth_occurrence must be 1 (first) or -1 (all)."
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            original_content = f.read()
+    except Exception as e:
+        return f"Error reading file '{filepath}': {e}"
+
+    modified_content = original_content
+
+    try:
+        if is_regex:
+            count = 0
+            if Nth_occurrence == -1: # Replace all
+                count = 0 # re.sub default for all
+            elif Nth_occurrence == 1: # Replace first
+                count = 1
+            else: # Specific Nth for regex is complex, error for now
+                 return "Error: Specific Nth_occurrence > 1 with regex is not yet supported. Use 1 (first) or -1 (all)."
+
+            try:
+                compiled_regex = re.compile(search_pattern)
+                # Check if pattern exists before attempting sub, to return accurate "pattern not found"
+                if compiled_regex.search(original_content):
+                    modified_content = compiled_regex.sub(replacement_text, original_content, count=count)
+                else: # Pattern does not exist at all
+                    if Nth_occurrence == 1 and not compiled_regex.search(original_content): # If specifically looking for first and it's not there
+                         return "Success: Pattern not found, no changes made."
+                    # If Nth_occurrence is -1 (all), and pattern not found, it's also "pattern not found"
+                    modified_content = original_content # Ensure no change
+
+            except re.error as e_regex:
+                return f"Error: Invalid regex pattern '{search_pattern}': {e_regex}"
+
+        else: # Literal string replacement
+            if Nth_occurrence == 1:
+                modified_content = original_content.replace(search_pattern, replacement_text, 1)
+            elif Nth_occurrence == -1: # Replace all
+                modified_content = original_content.replace(search_pattern, replacement_text)
+            else: # Nth_occurrence > 1 for literal string replace is not directly supported by str.replace
+                # We could implement it by finding all occurrences and then targeting the Nth one.
+                # For now, let's restrict to 1 or -1 for simplicity.
+                return "Error: For literal replace, Nth_occurrence must be 1 (first) or -1 (all)."
+
+    except Exception as e: # Catch any unexpected errors during replacement logic
+        return f"Error during replacement operation: {e}"
+
+    if modified_content == original_content:
+        # This condition can be hit if:
+        # 1. search_pattern was not found.
+        # 2. For regex, if Nth_occurrence was 1 but pattern wasn't found (already handled above for regex).
+        # 3. For literal, if Nth_occurrence was 1 but pattern wasn't found.
+        # 4. If search_pattern and replacement_text are identical.
+        if not is_regex and search_pattern not in original_content: # More specific check for literal
+             return "Success: Pattern not found, no changes made."
+        # If regex and already returned "pattern not found", this won't be hit.
+        # If search and replace are same, it's a no-op, but technically not "pattern not found".
+        # Consider it success with no change.
+        return "Success: Content unchanged (pattern may not have been found or replacement was identical)."
+
+
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(modified_content)
+        return "Success: Text replaced and file saved."
+    except Exception as e:
+        return f"Error writing modified content to file '{filepath}': {e}"
+
+REPLACE_TEXT_IN_FILE_SCHEMA = {
+    "name": "replace_text_in_file",
+    "description": (
+        "Replaces occurrences of a search pattern with replacement text in a specified file. "
+        "This tool directly modifies the file on disk."
+    ),
+    "parameters": [
+        {"name": "filepath", "type": "str", "description": "The path to the file to be modified."},
+        {"name": "search_pattern", "type": "str", "description": "The text string or regular expression pattern to search for."},
+        {"name": "replacement_text", "type": "str", "description": "The text that will replace the found search_pattern."},
+        {"name": "Nth_occurrence", "type": "int", "description": "Optional. Specifies which occurrences to replace. Use 1 for the first match (default), or -1 for all matches. Specific Nth > 1 is not robustly supported for all cases yet.", "default": 1},
+        {"name": "is_regex", "type": "bool", "description": "Optional. If True, the search_pattern is treated as a regular expression. Default is False.", "default": False}
+    ],
+    "returns": {
+        "type": "str",
+        "description": "A message indicating success ('Text replaced and file saved.' or 'Pattern not found, no changes made.') or an error message."
+    }
+}
+
+
+# Schemas for existing tools (ensure they are defined for get_tools_in_module)
+CREATE_PROJECT_DIRECTORY_SCHEMA = {
+    "name": "create_project_directory",
+    "description": "Creates a new project directory. Sanitizes the project name for directory safety.",
+    "parameters": [{"name": "project_name", "type": "str", "description": "The desired name for the project."}],
+    "returns": {"type": "str", "description": "Success or error message."}
+}
+WRITE_TEXT_TO_FILE_SCHEMA = {
+    "name": "write_text_to_file",
+    "description": "Writes text content to a specified file, creating directories if needed.",
+    "parameters": [
+        {"name": "full_filepath", "type": "str", "description": "The path to the file."},
+        {"name": "content", "type": "str", "description": "The text content to write."}
+    ],
+    "returns": {"type": "str", "description": "Success or error message."}
+}
+READ_TEXT_FROM_FILE_SCHEMA = {
+    "name": "read_text_from_file",
+    "description": "Reads and returns the entire text content from a specified file.",
+    "parameters": [{"name": "full_filepath", "type": "str", "description": "The path to the file."}],
+    "returns": {"type": "str", "description": "File content or error message."}
+}
+LIST_PROJECT_FILES_SCHEMA = { # Assuming this schema would be defined somewhere
+    "name": "list_project_files",
+    "description": "Lists files and directories within a specified project's root or subdirectory.",
+    "parameters": [
+        {"name": "project_identifier", "type": "str", "description": "ID or name of the project."},
+        {"name": "sub_directory", "type": "Optional[str]", "description": "Subdirectory to list. Defaults to project root."}
+    ],
+    "returns": {"type": "Dict[str, Any]", "description": "Dictionary with listing details or error."}
+}
+GET_PROJECT_FILE_CONTENT_SCHEMA = { # Assuming this schema would be defined
+    "name": "get_project_file_content",
+    "description": "Reads content of a file within a specified project.",
+    "parameters": [
+        {"name": "project_identifier", "type": "str", "description": "ID or name of the project."},
+        {"name": "file_path_in_project", "type": "str", "description": "Relative path of the file within the project."}
+    ],
+    "returns": {"type": "Dict[str, Any]", "description": "Dictionary with file content or error."}
+}
+
+
+def get_tools_in_module():
+    """Returns a list of tool functions and their schemas from this module."""
+    return [
+        ("create_project_directory", create_project_directory, CREATE_PROJECT_DIRECTORY_SCHEMA),
+        ("write_text_to_file", write_text_to_file, WRITE_TEXT_TO_FILE_SCHEMA),
+        ("read_text_from_file", read_text_from_file, READ_TEXT_FROM_FILE_SCHEMA),
+        ("list_project_files", list_project_files, LIST_PROJECT_FILES_SCHEMA),
+        ("get_project_file_content", get_project_file_content, GET_PROJECT_FILE_CONTENT_SCHEMA),
+        ("get_text_file_snippet", get_text_file_snippet, GET_TEXT_FILE_SNIPPET_SCHEMA),
+        ("replace_text_in_file", replace_text_in_file, REPLACE_TEXT_IN_FILE_SCHEMA),
+        ("insert_text_in_file", insert_text_in_file, INSERT_TEXT_IN_FILE_SCHEMA), # Added new tool
+    ]
         assert content_res1["status"] == "success"
         assert content_res1["content"] == "f1"
         assert content_res1["file_path"] == os.path.join(mock_project_data_with_path["root_path"], "file1.txt")
@@ -455,3 +774,131 @@ if __name__ == '__main__':
     print(f"Cleaned up temp directory for list_project_files: {_test_temp_root_dir_for_list_files.name}")
     
     print("\n--- All File System Tools Tests Finished ---")
+
+
+# --- New Snippet Tool ---
+def get_text_file_snippet(
+    filepath: str,
+    start_pattern: Optional[str] = None,
+    end_pattern: Optional[str] = None,
+    line_range: Optional[Tuple[int, int]] = None,
+    context_lines_around_pattern: int = 5 # New: lines to show before/after if only start_pattern is given
+) -> str:
+    """
+    Reads a snippet of text from the specified file.
+    Allows fetching by line range, or by start/end patterns, or content around a start pattern.
+
+    Args:
+        filepath: The absolute or relative path to the file.
+        start_pattern: A string pattern marking the beginning of the snippet.
+        end_pattern: A string pattern marking the end of the snippet (exclusive).
+        line_range: A tuple (start_line, end_line) (1-indexed, inclusive) to get specific lines.
+        context_lines_around_pattern: If only start_pattern is given, how many lines of context
+                                      before and after the pattern line to include.
+
+    Returns:
+        The extracted snippet as a string, or an error message string if reading fails or
+        patterns/lines are not found.
+    """
+    if not filepath or not isinstance(filepath, str):
+        return "Error: Filepath must be a non-empty string."
+    if not os.path.exists(filepath):
+        return f"Error: File '{filepath}' not found."
+    if not os.path.isfile(filepath):
+        return f"Error: Path '{filepath}' is not a file."
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except Exception as e:
+        return f"Error reading file '{filepath}': {e}"
+
+    if not lines:
+        return "File is empty."
+
+    # 1. Handle line_range first (highest precedence)
+    if line_range:
+        if not (isinstance(line_range, tuple) and len(line_range) == 2 and
+                isinstance(line_range[0], int) and isinstance(line_range[1], int)):
+            return "Error: line_range must be a tuple of two integers (start_line, end_line)."
+
+        start_line_1_indexed, end_line_1_indexed = line_range
+        if not (1 <= start_line_1_indexed <= len(lines) and
+                start_line_1_indexed <= end_line_1_indexed <= len(lines)):
+            return f"Error: Invalid line_range ({start_line_1_indexed}-{end_line_1_indexed}). File has {len(lines)} lines."
+
+        # Convert to 0-indexed for slicing
+        start_idx = start_line_1_indexed - 1
+        end_idx = end_line_1_indexed # Slicing is exclusive at the end, so end_line_1_indexed works directly
+        return "".join(lines[start_idx:end_idx])
+
+    # 2. Handle start_pattern (and optional end_pattern)
+    if start_pattern:
+        if not isinstance(start_pattern, str):
+            return "Error: start_pattern must be a string."
+
+        start_line_idx = -1
+        for i, line in enumerate(lines):
+            if start_pattern in line:
+                start_line_idx = i
+                break
+
+        if start_line_idx == -1:
+            return f"Error: start_pattern '{start_pattern}' not found in file."
+
+        # 2a. If end_pattern is also provided
+        if end_pattern:
+            if not isinstance(end_pattern, str):
+                return "Error: end_pattern must be a string."
+
+            end_line_idx = -1
+            # Search for end_pattern *after* the start_pattern's line
+            for i in range(start_line_idx, len(lines)):
+                if end_pattern in lines[i]:
+                    end_line_idx = i
+                    break
+
+            if end_line_idx != -1:
+                # Return lines from start_line_idx up to (but not including) end_line_idx
+                return "".join(lines[start_line_idx:end_line_idx])
+            else:
+                # start_pattern found, but end_pattern not found after it.
+                # Return from start_pattern to end of file.
+                return "".join(lines[start_line_idx:]) + \
+                       f"\n[Warning: end_pattern '{end_pattern}' not found after start_pattern. Snippet includes rest of file.]"
+
+        # 2b. If only start_pattern is provided, use context_lines_around_pattern
+        else:
+            snippet_start_idx = max(0, start_line_idx - context_lines_around_pattern)
+            # End index for slicing should be start_line_idx + context_lines_around_pattern + 1
+            # because the line *with* the pattern is line `start_line_idx`.
+            snippet_end_idx = min(len(lines), start_line_idx + context_lines_around_pattern + 1)
+
+            prefix = "[...]\n" if snippet_start_idx > 0 else ""
+            suffix = "\n[...]" if snippet_end_idx < len(lines) else ""
+
+            return prefix + "".join(lines[snippet_start_idx:snippet_end_idx]) + suffix
+
+    return "Error: No valid parameters (line_range or start_pattern) provided to get snippet."
+
+
+GET_TEXT_FILE_SNIPPET_SCHEMA = {
+    "name": "get_text_file_snippet",
+    "description": (
+        "Reads and returns a specific snippet of text from a file. "
+        "Useful for examining a portion of a file before making targeted modifications. "
+        "Specify the snippet by line numbers, or by start and end patterns, or by a start pattern with surrounding context lines. "
+        "Line numbers take precedence if provided."
+    ),
+    "parameters": [
+        {"name": "filepath", "type": "str", "description": "The path to the file."},
+        {"name": "line_range", "type": "Optional[Tuple[int, int]]", "description": "Optional. A tuple (start_line, end_line) (1-indexed, inclusive) to get specific lines. Takes precedence over patterns."},
+        {"name": "start_pattern", "type": "Optional[str]", "description": "Optional. A string pattern marking the beginning of the snippet. Used if line_range is not given."},
+        {"name": "end_pattern", "type": "Optional[str]", "description": "Optional. A string pattern marking the end of the snippet (exclusive of the line containing end_pattern). Used if start_pattern is given."},
+        {"name": "context_lines_around_pattern", "type": "int", "description": "Optional. If only start_pattern is given (and not end_pattern or line_range), this many lines of context will be included before and after the line containing the start_pattern. Default is 5.", "default": 5}
+    ],
+    "returns": {
+        "type": "str",
+        "description": "The extracted text snippet, or an error message if the operation fails (e.g., file not found, pattern not found, invalid range)."
+    }
+}

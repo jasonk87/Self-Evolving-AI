@@ -178,6 +178,30 @@ Each step dictionary *MUST* contain the following keys:
       `{{"tool_name": "modify_displayed_html_content", "args": ["color: red;", "color: blue;"], "kwargs": {{"occurrence_index": 0}}}}`
     - If the change is very large or involves restructuring the entire displayed content, it might be better to use `display_html_content_in_project_area` with completely new HTML. But for small tweaks, `modify_displayed_html_content` is preferred.
 
+**Workflow for Modifying Code in Existing Files (e.g., Python tool files, project files):**
+- If the user asks to modify code in a file that is *not* the currently displayed HTML content (e.g., "modify the `my_tool.py` file"):
+    1.  **Understand the Goal:** Clarify what specific change is needed.
+    2.  **Inspect Relevant Code (If Necessary):**
+        - Use `get_text_file_snippet` to read the specific small section of the file you need to examine or modify.
+        - Provide precise arguments to `get_text_file_snippet` (e.g., `filepath`, and either `line_range` or `start_pattern` perhaps with `end_pattern` or `context_lines_around_pattern`) to fetch only the relevant lines.
+        - **Example:** To see lines 10-20 of 'src/utils.py': `{{"tool_name": "get_text_file_snippet", "args": ["src/utils.py"], "kwargs": {{"line_range": [10, 20]}}}}`
+        - **Example:** To see the content of a function `def my_func(arg):` in 'code.py' and a few lines after: `{{"tool_name": "get_text_file_snippet", "args": ["code.py"], "kwargs": {{"start_pattern": "def my_func(arg):", "context_lines_around_pattern": 3}}}}` (this will show 3 lines before, the function line, and 3 lines after).
+    3.  **Analyze Snippet & Plan Modification:** Based on the user's goal and the snippet obtained:
+        - If replacing text: Use `replace_text_in_file`.
+            - `filepath`: Path to the file.
+            - `search_pattern`: An *exact* string from the snippet that uniquely identifies the text to be replaced.
+            - `replacement_text`: The new text.
+            - `Nth_occurrence` (int, default 1): Typically 1 for the first match. Use -1 for all.
+            - `is_regex` (bool, default False): Set to true if `search_pattern` is a regex.
+            - **Example:** `{{"tool_name": "replace_text_in_file", "args": ["src/utils.py", "old_variable_name", "new_variable_name"], "kwargs": {{"Nth_occurrence": 1}}}}`
+        - If inserting new text/code: Use `insert_text_in_file`.
+            - `filepath`: Path to the file.
+            - `text_to_insert`: The new lines of code/text. Ensure proper indentation and newlines in this string.
+            - Specify location using one of: `at_line_number` (1-indexed), `after_pattern` (insert after line with this text), or `before_pattern`.
+            - **Example:** `{{"tool_name": "insert_text_in_file", "args": ["src/utils.py", "    # New comment added\\n    new_code_line();"], "kwargs": {{"after_pattern": "existing_line_of_code_to_insert_after"}}}}`
+    4.  **Sequential Steps:** These operations (get snippet, then replace/insert) should often be separate steps in your plan to ensure you operate on the correct information.
+    5.  **Verification (Optional but Recommended):** After a modification, you might consider using `get_text_file_snippet` again to read the modified section or `read_text_from_file` (if small) to confirm the change, then use `respond_to_user` to inform about the outcome.
+
 If the goal cannot be achieved with the available tools (and is not purely analytical/conversational as described above), or if it's unclear after considering context and search, return an empty JSON list [].
 Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
 The entire response must be a single, valid JSON object (a list of steps).
@@ -204,7 +228,8 @@ Remember the instructions about:
 - Using search tools (followed by 'process_search_results').
 - Using 'display_html_content_in_project_area' for rich UI content.
 - Generating PAUSABLE JAVASCRIPT (listening for 'pause'/'resume' messages) for interactive JS.
-- Using `modify_displayed_html_content` for small, targeted changes to existing displayed code, referencing `{displayed_code_section}`.
+- Using `modify_displayed_html_content` for small, targeted changes to existing displayed HTML code.
+- Following the **Workflow for Modifying Code in Existing Files** (using `get_text_file_snippet`, then `replace_text_in_file` or `insert_text_in_file`) for changes to Python files or other non-display-area files.
 - Returning an empty plan `[]` if the goal is purely analytical/conversational and no tools are suitable.
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
