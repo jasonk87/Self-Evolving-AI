@@ -357,6 +357,58 @@ def get_suggestions_api():
         logger.error(f"--- DIAGNOSTIC: /api/suggestions - Error fetching suggestions: {e} ---", exc_info=True)
         return jsonify({"error": "Failed to fetch suggestions"}), 500
 
+@app.route('/api/suggestions/<string:suggestion_id>/approve', methods=['POST'])
+def approve_suggestion_api(suggestion_id):
+    global _notification_manager_instance # Needed by suggestion_manager_module.approve_suggestion
+    logger.info(f"--- DIAGNOSTIC: Route /api/suggestions/{suggestion_id}/approve POST called ---")
+    data = request.get_json()
+    reason = data.get('reason') if data else None
+
+    try:
+        # Assuming approve_suggestion function exists in the module and handles NotificationManager correctly
+        success = suggestion_manager_module.approve_suggestion(
+            suggestion_id,
+            reason=reason,
+            notification_manager=_notification_manager_instance
+        )
+        if success:
+            updated_suggestion = suggestion_manager_module.find_suggestion(suggestion_id)
+            return jsonify({"success": True, "message": "Suggestion approved.", "suggestion": format_suggestion_for_json(updated_suggestion)}), 200
+        else:
+            # find_suggestion to check if it was not found vs. other failure
+            sugg = suggestion_manager_module.find_suggestion(suggestion_id)
+            if sugg is None:
+                return jsonify({"success": False, "error": "Suggestion not found."}), 404
+            return jsonify({"success": False, "error": "Failed to approve suggestion."}), 400 # Or 500 if it's an internal error
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/suggestions/{suggestion_id}/approve - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred."}), 500
+
+@app.route('/api/suggestions/<string:suggestion_id>/deny', methods=['POST'])
+def deny_suggestion_api(suggestion_id):
+    global _notification_manager_instance # Needed by suggestion_manager_module.deny_suggestion
+    logger.info(f"--- DIAGNOSTIC: Route /api/suggestions/{suggestion_id}/deny POST called ---")
+    data = request.get_json()
+    reason = data.get('reason') if data else None
+
+    try:
+        success = suggestion_manager_module.deny_suggestion(
+            suggestion_id,
+            reason=reason,
+            notification_manager=_notification_manager_instance
+        )
+        if success:
+            updated_suggestion = suggestion_manager_module.find_suggestion(suggestion_id)
+            return jsonify({"success": True, "message": "Suggestion denied.", "suggestion": format_suggestion_for_json(updated_suggestion)}), 200
+        else:
+            sugg = suggestion_manager_module.find_suggestion(suggestion_id)
+            if sugg is None:
+                return jsonify({"success": False, "error": "Suggestion not found."}), 404
+            return jsonify({"success": False, "error": "Failed to deny suggestion."}), 400
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/suggestions/{suggestion_id}/deny - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred."}), 500
+
 if __name__ == '__main__':
     # Note: For development only. In production, use a proper WSGI server like Gunicorn.
     # The default Flask dev server is single-threaded by default.

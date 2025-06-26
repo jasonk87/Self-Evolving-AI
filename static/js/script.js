@@ -79,6 +79,71 @@ function setWeiboState(state) {
     }
 }
 
+async function handleSuggestionAction(suggestionId, action, reason) {
+    if (!chatLogArea) return;
+    if (!['approve', 'deny'].includes(action)) {
+        console.error("Invalid action for suggestion:", action);
+        return;
+    }
+
+    const apiUrl = `/api/suggestions/${suggestionId}/${action}`;
+    const systemMessage = `${action.charAt(0).toUpperCase() + action.slice(1)}ing suggestion ${suggestionId}...`;
+    appendToChatLog(systemMessage, 'system-help');
+    setWeiboState('weibo-thinking');
+
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ reason: reason }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || `Server error ${response.status}`);
+        }
+
+        if (data.success) {
+            appendToChatLog(data.message || `Suggestion ${action}d successfully.`, 'ai');
+            // Update the UI for the specific suggestion
+            const suggestionItemElement = document.getElementById(`suggestion-item-${suggestionId}`);
+            if (suggestionItemElement) {
+                const statusElement = suggestionItemElement.querySelector('.suggestion-status .status-value');
+                if (statusElement && data.suggestion && data.suggestion.status) {
+                    statusElement.textContent = data.suggestion.status;
+                }
+                // Remove action buttons as it's no longer pending
+                const actionButtonsElement = suggestionItemElement.querySelector('.suggestion-actions');
+                if (actionButtonsElement) {
+                    actionButtonsElement.remove();
+                }
+                // Optionally, add reason if it was updated
+                if (data.suggestion && data.suggestion.reason) {
+                    let reasonDiv = suggestionItemElement.querySelector('.suggestion-reason');
+                    if (!reasonDiv) {
+                        reasonDiv = document.createElement('div');
+                        reasonDiv.className = 'suggestion-reason';
+                        // Insert after status or at the end of details
+                        statusElement.closest('.suggestion-status').insertAdjacentElement('afterend', reasonDiv);
+                    }
+                    reasonDiv.textContent = `Reason: ${data.suggestion.reason}`;
+                }
+            }
+        } else {
+            appendToChatLog(data.error || `Failed to ${action} suggestion.`, 'ai');
+        }
+
+    } catch (error) {
+        console.error(`Error during suggestion ${action}:`, error);
+        appendToChatLog(`Error: ${error.message}`, 'ai');
+    } finally {
+        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
+    }
+}
+
 function appendToChatLog(text, sender) {
     if (!chatLogArea) return;
     const messageDiv = document.createElement('div');
@@ -414,12 +479,48 @@ async function fetchAndDisplaySuggestions(status = 'all') {
         const suggestions = await response.json();
 
         if (suggestions && suggestions.length > 0) {
-            let suggestionMessages = `Found ${suggestions.length} ${status} suggestion(s):\n`;
-            suggestions.forEach((sug, index) => {
-                suggestionMessages += `\n${index + 1}. ID: ${sug.suggestion_id || 'N/A'}\n   Title: ${sug.title || 'N/A'}\n   Desc: ${(sug.description || 'N/A').substring(0, 100)}${sug.description && sug.description.length > 100 ? '...' : ''}\n   Status: ${sug.status || 'N/A'}`;
-                if (sug.reason) suggestionMessages += `\n   Reason: ${sug.reason}`;
+            const suggestionsContainer = document.createElement('div');
+            suggestionsContainer.className = 'suggestions-list-container'; // For styling the whole block
+
+            let htmlContent = `<div class="suggestions-header">Found ${suggestions.length} ${status} suggestion(s):</div>`;
+            suggestions.forEach((sug) => {
+                const descSnippet = (sug.description || 'N/A').substring(0, 150) +
+                                    ((sug.description && sug.description.length > 150) ? '...' : '');
+                const reasonText = sug.reason ? `<div class="suggestion-reason">Reason: ${sug.reason}</div>` : '';
+
+                // Buttons are only added if status is 'pending'
+                let actionButtons = '';
+                if (sug.status && sug.status.toLowerCase() === 'pending') {
+                    actionButtons = `
+                        <div class="suggestion-actions">
+                            <button class="approve-suggestion-btn" data-suggestion-id="${sug.suggestion_id}">Approve</button>
+                            <button class="deny-suggestion-btn" data-suggestion-id="${sug.suggestion_id}">Deny</button>
+                        </div>`;
+                }
+
+                htmlContent += `
+                    <div class="suggestion-item" id="suggestion-item-${sug.suggestion_id}">
+                        <div class="suggestion-id">ID: ${sug.suggestion_id || 'N/A'}</div>
+                        <div class="suggestion-title">Title: ${sug.title || 'N/A'}</div>
+                        <div class="suggestion-description">Desc: ${descSnippet}</div>
+                        <div class="suggestion-status">Status: <span class="status-value">${sug.status || 'N/A'}</span></div>
+                        ${reasonText}
+                        ${actionButtons}
+                    </div>`;
             });
-            appendToChatLog(suggestionMessages, 'ai'); // Display as an AI message block
+            suggestionsContainer.innerHTML = htmlContent;
+
+            // Append as a rich HTML message to chatLogArea
+            // This requires appendToChatLog to handle HTML content for 'ai' sender type,
+            // or a new function to append raw HTML.
+            // For now, let's assume appendToChatLog can take simple HTML string for 'ai' messages.
+            // A better way would be to create a message div and set its innerHTML.
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai-message', 'interactive-list'); // Add 'interactive-list' for specific styling
+            messageDiv.appendChild(suggestionsContainer);
+            chatLogArea.appendChild(messageDiv);
+            chatLogArea.scrollTop = chatLogArea.scrollHeight;
+
         } else {
             appendToChatLog(`No ${status} suggestions found.`, 'ai');
         }
@@ -816,6 +917,32 @@ document.addEventListener('DOMContentLoaded', () => {
     // Call initially to ensure correct default state (hidden)
     // toggleProjectDisplay(false); // Ensure it's hidden by default if CSS isn't enough (CSS should be enough)
 
+    // Delegated event listeners for suggestion action buttons
+    if (chatLogArea) {
+        chatLogArea.addEventListener('click', function(event) {
+            const target = event.target;
+            let action = null;
+            let suggestionId = null;
+
+            if (target.classList.contains('approve-suggestion-btn')) {
+                action = 'approve';
+                suggestionId = target.dataset.suggestionId;
+            } else if (target.classList.contains('deny-suggestion-btn')) {
+                action = 'deny';
+                suggestionId = target.dataset.suggestionId;
+            }
+
+            if (action && suggestionId) {
+                // For now, using a simple prompt. Could be replaced with a modal later.
+                const reason = prompt(`Enter reason for ${action}ing suggestion ${suggestionId} (optional):`);
+                // User might cancel prompt, in which case reason is null.
+                // handleSuggestionAction should be fine with a null reason.
+                handleSuggestionAction(suggestionId, action, reason);
+            }
+        });
+    } else {
+        console.error("Chat log area not found for attaching suggestion action listeners.");
+    }
 });
 
 document.addEventListener('click', function(event) {

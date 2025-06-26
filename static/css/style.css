@@ -1076,3 +1076,107 @@ body.project-fullscreen-active > .status-panel {
     display: none;
 }
 */
+
+/* === Interactive Suggestion List Styles === */
+.ai-message.interactive-list {
+    /* Use full width or align-self: stretch if parent is flex column */
+    align-self: stretch;
+    max-width: 100%; /* Override default max-width for AI messages if needed */
+    border-left: 3px solid var(--button-hover-bg-color); /* Distinct border for interactive lists */
+}
+
+.suggestions-list-container {
+    padding: 10px;
+    border: 1px solid rgba(var(--border-color), 0.5);
+    border-radius: 6px;
+    background-color: rgba(var(--input-bg-color), 0.5); /* Slightly transparent */
+}
+
+.suggestions-header {
+    font-family: var(--font-primary);
+    color: var(--accent-color);
+    font-size: 1.1em;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.suggestion-item {
+    background-color: rgba(var(--secondary-bg-color), 0.7);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+.suggestion-item:last-child {
+    margin-bottom: 0;
+}
+
+.suggestion-id {
+    font-size: 0.8em;
+    color: var(--text-secondary-color);
+    margin-bottom: 3px;
+}
+
+.suggestion-title {
+    font-weight: bold;
+    color: var(--text-color);
+    margin-bottom: 5px;
+}
+
+.suggestion-description {
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+.suggestion-status {
+    margin-bottom: 5px;
+    font-style: italic;
+}
+.suggestion-status .status-value {
+    font-weight: bold;
+    color: var(--accent-color); /* Highlight status */
+}
+
+.suggestion-reason {
+    font-size: 0.85em;
+    color: var(--text-secondary-color);
+    margin-top: 3px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(var(--border-color), 0.5);
+}
+
+.suggestion-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+}
+
+.suggestion-actions button {
+    font-family: var(--font-secondary);
+    font-size: 0.85em;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--border-color);
+}
+
+.approve-suggestion-btn {
+    background-color: #00695c; /* Tealish green */
+    color: #e0f2f1;
+}
+.approve-suggestion-btn:hover {
+    background-color: #00897b;
+    box-shadow: 0 0 5px #00897b;
+}
+
+.deny-suggestion-btn {
+    background-color: #b71c1c; /* Reddish */
+    color: #ffebee;
+}
+.deny-suggestion-btn:hover {
+    background-color: #d32f2f;
+    box-shadow: 0 0 5px #d32f2f;
+}
