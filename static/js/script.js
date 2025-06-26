@@ -135,13 +135,22 @@ async function sendMessage() {
     if (messageText === '') return;
 
     // Client-side command handling
-    if (messageText.toLowerCase() === '/toggle_project_display') {
-        appendToChatLog(messageText, 'user'); // Log the command
-        userInput.value = ''; // Clear input
-        window.toggleProjectDisplay(); // Call the JS function directly
-        // Optionally, provide feedback that the command was handled locally
-        // appendToChatLog("Toggled project display area.", 'system-help');
-        return; // Prevent sending to backend
+    const lowerMessageText = messageText.toLowerCase();
+
+    if (lowerMessageText === '/toggle_project_display') {
+        appendToChatLog(messageText, 'user');
+        userInput.value = '';
+        window.toggleProjectDisplay();
+        return;
+    }
+
+    const suggestionsListMatch = lowerMessageText.match(/^\/suggestions list (pending|approved|denied|all)$/);
+    if (suggestionsListMatch) {
+        appendToChatLog(messageText, 'user');
+        userInput.value = '';
+        const status = suggestionsListMatch[1];
+        fetchAndDisplaySuggestions(status);
+        return;
     }
 
     appendToChatLog(messageText, 'user');
@@ -384,6 +393,44 @@ function stopMatrixAnimation() {
     }
     matrixColumns = [];
 }
+
+async function fetchAndDisplaySuggestions(status = 'all') {
+    if (!chatLogArea) return;
+
+    let apiUrl = '/api/suggestions';
+    if (status && status !== 'all') {
+        apiUrl += `?status=${encodeURIComponent(status)}`;
+    }
+
+    appendToChatLog(`Fetching ${status} suggestions...`, 'system-help');
+    setWeiboState('weibo-thinking'); // Optional: show AI is "working"
+
+    try {
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}: ${response.statusText}` }));
+            throw new Error(errorData.error || `Failed to fetch suggestions. Server responded with ${response.status}`);
+        }
+        const suggestions = await response.json();
+
+        if (suggestions && suggestions.length > 0) {
+            let suggestionMessages = `Found ${suggestions.length} ${status} suggestion(s):\n`;
+            suggestions.forEach((sug, index) => {
+                suggestionMessages += `\n${index + 1}. ID: ${sug.suggestion_id || 'N/A'}\n   Title: ${sug.title || 'N/A'}\n   Desc: ${(sug.description || 'N/A').substring(0, 100)}${sug.description && sug.description.length > 100 ? '...' : ''}\n   Status: ${sug.status || 'N/A'}`;
+                if (sug.reason) suggestionMessages += `\n   Reason: ${sug.reason}`;
+            });
+            appendToChatLog(suggestionMessages, 'ai'); // Display as an AI message block
+        } else {
+            appendToChatLog(`No ${status} suggestions found.`, 'ai');
+        }
+    } catch (error) {
+        console.error(`Failed to fetch ${status} suggestions:`, error);
+        appendToChatLog(`Error fetching ${status} suggestions: ${error.message}`, 'ai');
+    } finally {
+        setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'); // Reset AI state
+    }
+}
+
 
 // --- Status Panel Logic ---
 async function fetchAndDisplayActiveTasks() {
