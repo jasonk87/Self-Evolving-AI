@@ -19,6 +19,8 @@ from .notification_manager import NotificationManager
 from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
 from ..llm_interface.ollama_client import OllamaProvider
 from ..planning.hierarchical_planner import HierarchicalPlanner
+import ai_assistant.core.suggestion_manager as suggestion_manager_module # For adding suggestions
+from ai_assistant.config import get_model_for_task # For getting reflection model
 import uuid
 import logging
 
@@ -669,7 +671,59 @@ class DynamicOrchestrator:
                         logger.error(f"Orchestrator: INNER EXCEPTION during summary append: {inner_ex}", exc_info=True)
                         response = f"DEBUG_INNER_EXCEPTION_CAUGHT: Type={type(inner_ex).__name__}, Msg='{str(inner_ex)}'. SummaryValWas='{execution_summary_val}'"
 
-            return overall_success_of_plan, response
+            # --- Post-Failure Reflection ---
+            if not overall_success_of_plan:
+                try:
+                    logger.info("Orchestrator: Plan execution failed. Initiating post-failure reflection.")
+                    # Ensure tool_registry is in the format expected by analyze_last_failure (Dict[str, str])
+                    # list_tools_for_llm() seems appropriate if it returns Name: Description format.
+                    # Or, list_tools() and then format if necessary.
+                    # For now, assuming list_tools() returns a list of dicts, and we need to format it.
+                    # Or, if analyze_last_failure can take the rich list. Let's assume it wants Name:Desc dict.
+
+                    # Get tools in the simple Name: Description format.
+                    # tool_system_instance.list_tools_for_llm() is usually a string.
+                    # Let's use list_tools() which returns List[Dict] and extract name/desc.
+                    tools_list_rich = tool_system_instance.list_tools()
+                    tool_registry_for_reflection = {
+                        tool.get("name", "unknown"): tool.get("description", "no description")
+                        for tool in tools_list_rich
+                    }
+
+                    reflection_model = get_model_for_task("reflection")
+                    failure_analysis_text = analyze_last_failure(
+                        tool_registry=tool_registry_for_reflection,
+                        ollama_model_name=reflection_model
+                    )
+
+                    if failure_analysis_text and failure_analysis_text.strip() and not failure_analysis_text.startswith("No critical failure"):
+                        logger.info(f"Orchestrator: Post-failure reflection generated analysis: {failure_analysis_text[:200]}...")
+
+                        # Try to get the reflection log entry ID if possible for source_reflection_id
+                        # This assumes the last entry in global_reflection_log corresponds to this failure.
+                        source_ref_id = None
+                        if global_reflection_log.log_entries:
+                            source_ref_id = global_reflection_log.log_entries[-1].entry_id
+
+                        suggestion_manager_module.add_new_suggestion(
+                            type="error_reflection_insight",
+                            description=failure_analysis_text,
+                            source_reflection_id=source_ref_id,
+                            notification_manager=self.notification_manager
+                        )
+                        logger.info("Orchestrator: Suggestion added based on failure reflection.")
+                    else:
+                        logger.info("Orchestrator: Post-failure reflection did not yield significant analysis or no critical failure to analyze.")
+                except Exception as reflection_ex:
+                    logger.error(f"Orchestrator: Error during post-failure reflection or suggestion saving: {reflection_ex}", exc_info=True)
+            # --- End Post-Failure Reflection ---
+
+            response_data = {"chat_response": response, "project_area_html": self.current_project_display_code}
+            # Add AI's response to history before returning
+            if response: # Only add if there's a response string
+                self.conversation_history.append({"role": "assistant", "content": response})
+
+            return overall_success_of_plan, response_data # Ensure returning the dict
 
         except Exception as e:
             # Enhanced logging for the mysterious error

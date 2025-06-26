@@ -261,7 +261,7 @@ async def initialize_core_services(
     try:
         from .background_service import start_background_services
         logger.info("--- DIAGNOSTIC: CoreServices - Attempting to start background services via start_background_services()... ---")
-        start_background_services() # This function is synchronous but creates an asyncio task.
+        start_background_services(notification_manager_instance=notification_manager) # Pass the instance
                                     # It uses asyncio.get_running_loop().
         logger.info("--- DIAGNOSTIC: CoreServices - Call to start_background_services() completed (background task should be scheduled). ---")
     except ImportError:
