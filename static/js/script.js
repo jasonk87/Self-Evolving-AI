@@ -491,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (helpButton && helpMenuPopup && userInput) {
         helpButton.addEventListener('click', function(event) {
+            console.log("Help button clicked"); // Diagnostic log
             event.stopPropagation();
             const isHidden = helpMenuPopup.style.display === 'none' || helpMenuPopup.style.display === '';
             if (isHidden) {
