@@ -211,23 +211,41 @@ Response:
     except Exception as e: # Catch other potential errors with input
         return f"Error preparing data for LLM: {e}"
 
+    actual_instruction = processing_instruction
+    if isinstance(processing_instruction, str) and \
+       processing_instruction.startswith("{") and \
+       processing_instruction.endswith("}") and \
+       "processing_instruction" in processing_instruction:
+        try:
+            # Attempt to parse it as a stringified dict
+            # Convert Python dict string to valid JSON string by replacing single quotes
+            json_compatible_str = processing_instruction.replace("'", "\"")
+            parsed_dict = json.loads(json_compatible_str)
+            if isinstance(parsed_dict, dict) and "processing_instruction" in parsed_dict:
+                actual_instruction = parsed_dict["processing_instruction"]
+                print(f"process_search_results: Info - Parsed processing_instruction from stringified dict. Original: '{processing_instruction}', Parsed: '{actual_instruction}'")
+        except json.JSONDecodeError:
+            # Not a valid JSON string that we can parse this way, proceed with original value
+            print(f"process_search_results: Warning - processing_instruction looked like a dict but failed to parse: {processing_instruction}")
+            pass # actual_instruction remains the original string
+
     formatted_prompt = ""
     model_for_processing = get_model_for_task("summarization") # Default model, can be specialized later if needed
 
-    if processing_instruction == "summarize_results":
+    if actual_instruction == "summarize_results":
         formatted_prompt = SUMMARIZE_RESULTS_LLM_PROMPT_TEMPLATE.format(
             query=search_query,
             results_json=search_results_json
         )
         print(f"process_search_results: Using SUMMARIZE_RESULTS prompt for query '{search_query}'")
-    elif processing_instruction == "extract_entities":
+    elif actual_instruction == "extract_entities":
         formatted_prompt = EXTRACT_ENTITIES_LLM_PROMPT_TEMPLATE.format(
             query=search_query,
             results_json=search_results_json
         )
         print(f"process_search_results: Using EXTRACT_ENTITIES prompt for query '{search_query}'")
-    elif processing_instruction.startswith("custom_instruction:"):
-        custom_instruction_text = processing_instruction.split(":", 1)[1].strip()
+    elif isinstance(actual_instruction, str) and actual_instruction.startswith("custom_instruction:"):
+        custom_instruction_text = actual_instruction.split(":", 1)[1].strip()
         if not custom_instruction_text:
             return "Error: Custom instruction is empty."
         formatted_prompt = CUSTOM_INSTRUCTION_LLM_PROMPT_TEMPLATE.format(
@@ -236,16 +254,16 @@ Response:
             custom_instruction=custom_instruction_text
         )
         print(f"process_search_results: Using CUSTOM_INSTRUCTION prompt for query '{search_query}' with instruction: '{custom_instruction_text}'")
-    elif processing_instruction == "answer_query":
+    elif actual_instruction == "answer_query":
         formatted_prompt = ANSWER_QUERY_LLM_PROMPT_TEMPLATE.format(
             query=search_query,
             results_json=search_results_json
         )
         print(f"process_search_results: Using ANSWER_QUERY prompt for query '{search_query}'")
     else:
-        return f"Error: Unknown processing_instruction: '{processing_instruction}'. Valid options are 'answer_query', 'summarize_results', 'extract_entities', or 'custom_instruction:<your_request>'."
+        return f"Error: Unknown processing_instruction: '{actual_instruction}'. Valid options are 'answer_query', 'summarize_results', 'extract_entities', or 'custom_instruction:<your_request>'."
 
-    print(f"process_search_results: Sending prompt to LLM (model: {model_for_processing}) for query '{search_query}' with instruction '{processing_instruction}'")
+    print(f"process_search_results: Sending prompt to LLM (model: {model_for_processing}) for query '{search_query}' with instruction '{actual_instruction}'")
     
     llm_response = invoke_ollama_model(
         formatted_prompt,
