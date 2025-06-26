@@ -134,29 +134,29 @@ Each step dictionary *MUST* contain the following keys:
         let isPaused = false;
         // ... your animation variables ...
 
-        function gameLoop() {
+        function gameLoop() {{
           if (isPaused) return;
           // ... update logic ...
           // ... drawing logic ...
           animationFrameId = requestAnimationFrame(gameLoop);
-        }
+        }}
 
-        window.addEventListener('message', function(event) {
-          if (event.data === 'pause') {
+        window.addEventListener('message', function(event) {{
+          if (event.data === 'pause') {{
             isPaused = true;
-            if (animationFrameId) {
+            if (animationFrameId) {{
               cancelAnimationFrame(animationFrameId);
               animationFrameId = null;
-            }
+            }}
             console.log('Project content paused');
-          } else if (event.data === 'resume') {
-            if (isPaused) {
+          }} else if (event.data === 'resume') {{
+            if (isPaused) {{
               isPaused = false;
               gameLoop(); // Or however your loop is restarted
               console.log('Project content resumed');
-            }
-          }
-        });
+            }}
+          }}
+        }});
 
         // Start your game/animation
         // gameLoop();
@@ -273,12 +273,7 @@ JSON Plan:
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        # Make sure displayed_code_section is passed to correction too
-                        # For brevity, if it's part of project_context_section or a general context reminder is sufficient
-                        # This correction prompt is getting long, let's assume the main prompt's context elements are implicitly included
-                        # or the error is about the plan structure itself.
-                        # For now, not explicitly adding displayed_code_section to CORRECTION_PROMPT_TEMPLATE's format string
-                        # to keep it focused on the error. The LLM should remember context from initial attempt.
+                        displayed_code_section=displayed_code_section_str, # Added
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str or "",
                         error_description=last_error_description
@@ -303,6 +298,7 @@ JSON Plan:
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
+                        displayed_code_section=displayed_code_section_str, # Added
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=f"Response was not valid JSON. Error: {e}"
@@ -318,6 +314,7 @@ JSON Plan:
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
+                        displayed_code_section=displayed_code_section_str, # Added
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=last_error_description
@@ -352,6 +349,7 @@ JSON Plan:
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
+                        displayed_code_section=displayed_code_section_str, # Added
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str,
                         error_description=last_error_description

@@ -1,5 +1,5 @@
 # ai_assistant/custom_tools/awareness_tools.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification # Added
 from datetime import datetime, timezone, timedelta # datetime was already imported

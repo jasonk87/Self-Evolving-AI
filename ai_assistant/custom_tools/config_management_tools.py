@@ -1,7 +1,7 @@
 # ai_assistant/custom_tools/config_management_tools.py
 import json
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 # Import get_data_dir from the main config to centralize data paths
 from ..config import get_data_dir
 

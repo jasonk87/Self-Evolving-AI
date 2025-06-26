@@ -1,7 +1,7 @@
 # ai_assistant/custom_tools/my_extra_tools.py
 from duckduckgo_search import DDGS
 import json
-from typing import Optional, Union, List, Dict, Any # Added List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Tuple # Added List, Dict, Any, Tuple
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model
 from ai_assistant.config import get_model_for_task, GOOGLE_API_KEY as CFG_GOOGLE_API_KEY, GOOGLE_CSE_ID as CFG_GOOGLE_CSE_ID
 import os # For environment variables

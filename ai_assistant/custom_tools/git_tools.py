@@ -6,7 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Optional
+from typing import Optional, Tuple
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)

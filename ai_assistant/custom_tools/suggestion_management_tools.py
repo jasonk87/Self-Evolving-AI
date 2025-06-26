@@ -1,5 +1,5 @@
 # ai_assistant/custom_tools/suggestion_management_tools.py
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, Tuple
 from ai_assistant.core.suggestion_manager import approve_suggestion, deny_suggestion, find_suggestion
 from ai_assistant.core.notification_manager import NotificationManager
 

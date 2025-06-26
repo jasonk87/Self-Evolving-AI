@@ -99,6 +99,14 @@ async def summarize_tool_result_conversationally(
     model_name: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, str]]] = None # New parameter
 ) -> str:
+    # Handle single-step request_user_clarification: directly return the question.
+    if len(executed_plan_steps) == 1 and \
+       executed_plan_steps[0].get("tool_name") == "request_user_clarification":
+        tool_args = executed_plan_steps[0].get("args", [])
+        # Ensure args exist and the first arg is a string (the question)
+        if tool_args and isinstance(tool_args[0], str):
+            return tool_args[0]
+
     actions_summary_parts = []
     for i, step in enumerate(executed_plan_steps):
         tool_name = step.get("tool_name", "Unknown Tool")

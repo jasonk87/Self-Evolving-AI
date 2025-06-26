@@ -2,7 +2,7 @@
 # ai_assistant/custom_tools/project_execution_tools.py
 import json
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 
 # Import BASE_PROJECTS_DIR and alias it for default usage

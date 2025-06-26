@@ -87,13 +87,28 @@ async def chat_api():
     try:
         # Orchestrator now returns: success_bool, data_dict
         # data_dict = {"chat_response": Optional[str], "project_area_html": Optional[str]}
-        success, response_data_dict = await orchestrator.process_prompt(user_message, user_id=user_id)
+        success, response_data = await orchestrator.process_prompt(user_message, user_id=user_id)
+
+        chat_response_text: Optional[str] = None
+        project_area_html_content: Optional[str] = None
+
+        if isinstance(response_data, dict):
+            chat_response_text = response_data.get("chat_response")
+            project_area_html_content = response_data.get("project_area_html")
+        elif isinstance(response_data, str):
+            chat_response_text = response_data
+            # project_area_html_content remains None, which is correct
+        else:
+            # Should not happen based on orchestrator's current return types, but good for robustness
+            success = False # Indicate an issue if the response type is unexpected
+            chat_response_text = "Error: Received unexpected response format from AI core."
+            # project_area_html_content remains None
 
         # Construct the final JSON response for the frontend
         json_response_payload = {
             "success": success,
-            "chat_response": response_data_dict.get("chat_response"),
-            "project_area_html": response_data_dict.get("project_area_html")
+            "chat_response": chat_response_text,
+            "project_area_html": project_area_html_content
         }
 
         # Determine HTTP status code.

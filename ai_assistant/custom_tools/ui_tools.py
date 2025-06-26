@@ -1,5 +1,5 @@
 # ai_assistant/custom_tools/ui_tools.py
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 def display_html_content_in_project_area(html_content: str) -> Dict[str, Any]:
     """

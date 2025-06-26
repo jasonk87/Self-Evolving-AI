@@ -2,7 +2,7 @@ import os
 import subprocess
 import tempfile
 # import shutil # Not strictly needed if TemporaryDirectory handles all cleanup
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 
 def execute_sandboxed_python_script(

@@ -1,6 +1,6 @@
 # ai_assistant/custom_tools/knowledge_tools.py
 import json
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # Changed to async
 from ai_assistant.config import get_model_for_task, is_debug_mode
