@@ -153,9 +153,37 @@ async function sendMessage() {
         // Handle project area HTML first
         if (data.project_area_html && projectDisplayArea) {
             projectDisplayArea.innerHTML = data.project_area_html;
-        } else if (data.project_area_html && !projectDisplayArea) {
+            // projectDisplayArea.classList.add('visible'); // .visible class might be redundant if project-mode-active handles display
+            document.body.classList.add('project-mode-active');
+
+            if (processingIndicator && projectDisplayArea && aiCoreDisplay) {
+                if (processingIndicator.parentNode !== projectDisplayArea) { // Avoid re-appending if already there
+                    projectDisplayArea.appendChild(processingIndicator);
+                }
+                processingIndicator.classList.add('weibo-project-corner');
+                // Re-apply current logical state (idle, thinking, talking) if needed,
+                // as moving DOM element might affect animations or setWeiboState might need a refresh.
+                // For now, assuming CSS handles the visual state in corner.
+            }
+        } else if (!data.project_area_html && document.body.classList.contains('project-mode-active')) {
+            // This condition means: no new project HTML, AND project mode was previously active.
+            // We should hide the project display area and restore Weibo.
+            document.body.classList.remove('project-mode-active');
+            // projectDisplayArea.classList.remove('visible'); // Ensure it's hidden via CSS
+
+            if (processingIndicator && aiCoreDisplay) {
+                if (processingIndicator.parentNode !== aiCoreDisplay) { // Avoid re-appending
+                    aiCoreDisplay.appendChild(processingIndicator); // Move Weibo back to its original container
+                }
+                processingIndicator.classList.remove('weibo-project-corner');
+                // Re-apply current logical state to Weibo in its original position.
+                // This might require calling setWeiboState with the current logical state.
+                // For example: setWeiboState(getCurrentWeiboState() || 'idle');
+            }
+        } else if (data.project_area_html && !projectDisplayArea) { // Error case
             console.error("Project display area HTML received, but #projectDisplayArea element not found!");
         }
+
 
         // Handle chat response
         if (data.chat_response) {

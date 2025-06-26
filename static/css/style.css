@@ -75,7 +75,14 @@ header h1 {
     box-sizing: border-box;
     overflow: auto; /* Allow scrolling for project content */
     color: var(--text-secondary-color);
-    display: flex; /* To center placeholder text */
+    /* display: flex; /* To center placeholder text - will be set by JS when shown */
+    /* align-items: center; /* Will be set by JS when shown */
+    /* justify-content: center; /* Will be set by JS when shown */
+    /* text-align: center; /* Will be set by JS when shown */
+    display: none; /* Hidden by default */
+}
+#projectDisplayArea.visible { /* New class to make it visible */
+    display: flex; /* Or block, depending on desired layout when visible */
     align-items: center;
     justify-content: center;
     text-align: center;
@@ -571,7 +578,7 @@ header h1 {
 .status-panel-toggle {
     position: absolute;
     left: -40px;
-    top: 20px;
+    top: 70px; /* Moved down from 20px */
     width: 40px;
     height: 40px;
     background-color: var(--secondary-bg-color);
@@ -872,7 +879,88 @@ header h1 {
 }
 
 /* === Project Display Area & Fullscreen Button === */
-/* #projectDisplayArea styling is already present, will be enhanced by .fullscreen */
+
+/* Default state for projectDisplayArea */
+#projectDisplayArea {
+    /* ... existing styles from before ... */
+    flex-basis: 40%;
+    min-height: 150px;
+    background-color: var(--input-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    box-sizing: border-box;
+    overflow: auto;
+    color: var(--text-secondary-color);
+    /* display: flex; -- handled by .visible or project-mode-active */
+    /* align-items: center; -- handled by .visible or project-mode-active */
+    /* justify-content: center; -- handled by .visible or project-mode-active */
+    /* text-align: center; -- handled by .visible or project-mode-active */
+    display: none; /* Hidden by default */
+    opacity: 0;
+    transition: flex-basis 0.5s ease-in-out, min-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+/* projectDisplayArea when it's simply made visible (old logic, might remove if new logic covers all) */
+#projectDisplayArea.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    opacity: 1;
+    /* flex-basis might still be its original 40% here */
+}
+
+
+/* When project mode is active (body has .project-mode-active class) */
+body.project-mode-active .main-content {
+    /* Optional: Adjust main content layout if needed */
+}
+
+body.project-mode-active #projectDisplayArea {
+    display: flex !important; /* Ensure it's shown */
+    align-items: stretch; /* Stretch children like iframe */
+    justify-content: stretch;
+    text-align: left; /* Reset from centered placeholder */
+    flex-basis: 70% !important; /* Takes significant space */
+    min-height: 300px !important; /* Ensure it's large enough */
+    opacity: 1 !important;
+}
+
+body.project-mode-active .ai-core-display {
+    display: none !important; /* Hide AI Core display (Weibo's original box) */
+}
+
+/* Weibo's corner mode - to be applied by JS when body.project-mode-active */
+.processing-indicator.weibo-project-corner {
+    width: 70px !important; /* Slightly larger for better visibility in corner */
+    height: 70px !important;
+    position: absolute !important; /* Positioned relative to its new parent (#projectDisplayArea) */
+    bottom: 10px !important;
+    left: 10px !important;
+    top: auto !important;
+    right: auto !important;
+    transform: scale(1) !important; /* Reset scale from other modes if any, or use a fixed small scale */
+    z-index: 1050; /* Above projectDisplayArea content, but below fullscreen controls if they are higher */
+}
+.processing-indicator.weibo-project-corner .main-orb {
+    width: 25px !important;
+    height: 25px !important;
+    animation: subtle-pulse 3s infinite ease-in-out !important;
+}
+.processing-indicator.weibo-project-corner .satellite-orb {
+    display: none !important; /* Hide satellites for simplicity in corner mode */
+}
+/* Ensure that thinking/talking animations don't override corner mode's fixed position/size */
+.processing-indicator.weibo-project-corner.weibo-thinking,
+.processing-indicator.weibo-project-corner.weibo-talking {
+    /* The .weibo-project-corner class uses !important for positioning and size,
+       so it should override the general weibo-thinking/talking styles.
+       We might only need to ensure animations are compatible or simplified.
+       The main orb animation is already set above. Satellites are hidden.
+    */
+}
+
 
 .project-controls {
     position: absolute;
