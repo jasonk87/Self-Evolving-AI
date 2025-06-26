@@ -122,6 +122,25 @@ Each step dictionary *MUST* contain the following keys:
 - Construct valid, well-formed HTML for the `html_content` argument. This content will be directly rendered in a designated UI panel.
 - This tool is for displaying substantial content. For brief informational messages or confirmations, a standard chat response (implied, no specific tool call needed for just text output) is usually sufficient.
 - If you generate HTML for display, ensure it is self-contained and does not rely on external CSS or JS files not already part of the main UI. Basic inline styles are acceptable if necessary.
+
+**Crucial Formatting for HTML Content in JSON:**
+- When providing HTML for the 'display_html_content_in_project_area' tool's `html_content` argument, the entire HTML code block MUST be formatted as a SINGLE VALID JSON STRING.
+- This means:
+    - All actual newline characters within your HTML code MUST be escaped as '\\n'.
+    - All double quotes (") within your HTML code (e.g., in attributes like `class="example"`) MUST be escaped as '\\"'.
+    - All backslashes (\\) within your HTML code (e.g., in JavaScript string literals) MUST be escaped as '\\\\'.
+- **Example of Correctly Formatted HTML in JSON:**
+  Suppose you want to display:
+  ```html
+  <div class="container">
+    <h1>Hello!</h1>
+    <p>This is a "test".</p>
+  </div>
+  ```
+  The `args` list for the tool call in your JSON plan would look like this:
+  `"args": ["<div class=\\\"container\\\">\\n  <h1>Hello!</h1>\\n  <p>This is a \\\"test\\\".</p>\\n</div>"]`
+  Notice the `\\n` for newlines and `\\\"` for internal double quotes.
+
 - **Pausable JavaScript for Interactive Content:** If the HTML content includes JavaScript for animations, games, or other continuously running interactive elements, this JavaScript *MUST* be pausable.
     - Implement this by adding an event listener for `message` events from the parent window.
     - The script should listen for `event.data === 'pause'` and `event.data === 'resume'`.
