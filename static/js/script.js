@@ -134,6 +134,16 @@ async function sendMessage() {
     const messageText = userInput.value.trim();
     if (messageText === '') return;
 
+    // Client-side command handling
+    if (messageText.toLowerCase() === '/toggle_project_display') {
+        appendToChatLog(messageText, 'user'); // Log the command
+        userInput.value = ''; // Clear input
+        window.toggleProjectDisplay(); // Call the JS function directly
+        // Optionally, provide feedback that the command was handled locally
+        // appendToChatLog("Toggled project display area.", 'system-help');
+        return; // Prevent sending to backend
+    }
+
     appendToChatLog(messageText, 'user');
     userInput.value = '';
 
@@ -164,34 +174,30 @@ async function sendMessage() {
 
         // Handle project area HTML first
         if (data.project_area_html && projectDisplayArea) {
-            projectDisplayArea.innerHTML = data.project_area_html;
-            // projectDisplayArea.classList.add('visible'); // .visible class might be redundant if project-mode-active handles display
-            document.body.classList.add('project-mode-active');
+            // Use the new toggle function to ensure all UI changes are applied
+            toggleProjectDisplay(true); // Show project display and move Weibo orb
 
-            if (processingIndicator && projectDisplayArea && aiCoreDisplay) {
-                if (processingIndicator.parentNode !== projectDisplayArea) { // Avoid re-appending if already there
-                    projectDisplayArea.appendChild(processingIndicator);
-                }
-                processingIndicator.classList.add('weibo-project-corner');
-                // Re-apply current logical state (idle, thinking, talking) if needed,
-                // as moving DOM element might affect animations or setWeiboState might need a refresh.
-                // For now, assuming CSS handles the visual state in corner.
+            const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
+            if (iframe) {
+                iframe.srcdoc = data.project_area_html;
+            } else {
+                // Fallback if iframe isn't there, though it should be.
+                // This part might need adjustment if projectDisplayArea itself is the target for innerHTML.
+                // For now, assuming we always want to load into the iframe.
+                console.warn("#projectDisplayIframe not found inside #projectDisplayArea. Attempting to set innerHTML of projectDisplayArea directly.");
+                projectDisplayArea.innerHTML = data.project_area_html;
             }
+
         } else if (!data.project_area_html && document.body.classList.contains('project-mode-active')) {
-            // This condition means: no new project HTML, AND project mode was previously active.
-            // We should hide the project display area and restore Weibo.
-            document.body.classList.remove('project-mode-active');
-            // projectDisplayArea.classList.remove('visible'); // Ensure it's hidden via CSS
-
-            if (processingIndicator && aiCoreDisplay) {
-                if (processingIndicator.parentNode !== aiCoreDisplay) { // Avoid re-appending
-                    aiCoreDisplay.appendChild(processingIndicator); // Move Weibo back to its original container
-                }
-                processingIndicator.classList.remove('weibo-project-corner');
-                // Re-apply current logical state to Weibo in its original position.
-                // This might require calling setWeiboState with the current logical state.
-                // For example: setWeiboState(getCurrentWeiboState() || 'idle');
-            }
+            // This condition implies: no new project HTML from AI, but project mode was previously active.
+            // We might want to leave it open if the user manually opened it.
+            // Or, if AI explicitly "closes" a project, it should send a null/empty project_area_html
+            // and potentially a chat message indicating closure.
+            // For now, if AI sends no project HTML, we don't automatically close the display
+            // if it was already open. The user can close it with the toggle.
+            // However, if the AI's response *implies* closure, then:
+            // toggleProjectDisplay(false);
+            // For now, this path does nothing to the display if it's already open.
         } else if (data.project_area_html && !projectDisplayArea) { // Error case
             console.error("Project display area HTML received, but #projectDisplayArea element not found!");
         }
@@ -476,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     recentNotificationsList = document.getElementById('recentNotificationsList');
     refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn');
     projectDisplayArea = document.getElementById('projectDisplayArea'); // Assign projectDisplayArea
+    const toggleProjectDisplayBtn = document.getElementById('toggleProjectDisplayBtn');
 
 
     if (aiCoreDisplay) {
@@ -656,20 +663,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (analyzeDisplayBtn && projectIframe) {
         analyzeDisplayBtn.addEventListener('click', async () => {
             const htmlContent = projectIframe.srcdoc;
-            if (!htmlContent || htmlContent.trim() === '' || htmlContent.includes("Project Display Area - Content will appear here")) {
-                appendToChatLog("There is no content in the project display area to analyze.", 'ai');
-                // Optionally, briefly change Weibo state to 'talking' then 'idle'
+            if (!htmlContent || htmlContent.trim() === '' || htmlContent.includes("Project Display Area - Content will appear here") || projectDisplayArea.style.display === 'none') {
+                appendToChatLog("There is no active project content in the display area to analyze.", 'ai');
                 setWeiboState('weibo-talking');
-                setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 2000);
+                setTimeout(() => setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle'), 2500);
                 return;
             }
 
             analyzeDisplayBtn.disabled = true;
             const originalButtonTitle = analyzeDisplayBtn.title;
             analyzeDisplayBtn.title = "Analyzing...";
-            // You could also change the icon to a spinner here if you have one
 
-            setWeiboState('weibo-thinking'); // AI is "thinking" about the analysis
+            setWeiboState('weibo-thinking');
             if (aiCoreStatusText) aiCoreStatusText.textContent = 'Analyzing displayed content...';
 
             try {
@@ -680,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 const data = await response.json();
-                setWeiboState('weibo-talking'); // AI is "talking" about the analysis
+                setWeiboState('weibo-talking');
 
                 if (response.ok && data.success && data.analysis_text) {
                     appendToChatLog(data.analysis_text, 'ai');
@@ -691,19 +696,78 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 console.error('Error sending content for analysis:', error);
-                setWeiboState('idle'); // Reset Weibo on error
+                setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
                 if (aiCoreStatusText) aiCoreStatusText.textContent = 'Connection error during analysis.';
                 appendToChatLog(`Network Error: Could not analyze display content. ${error.message}`, 'ai');
             } finally {
                 analyzeDisplayBtn.disabled = false;
                 analyzeDisplayBtn.title = originalButtonTitle;
-                // Revert icon if changed
-                // appendToChatLog for AI messages already handles resetting Weibo state after typing.
             }
         });
     } else {
         console.error("Analyze Display button or project iframe not found for event listener setup.");
     }
+
+    // --- Project Display Area Toggle Logic ---
+    const projectDisplayDefaultText = "<p style='padding: 10px; color: #ccc;'>Project Display Active. No project loaded. Ask the AI to create something or use a command to load a project.</p>";
+
+    function toggleProjectDisplay(forceShow) {
+        const isProjectModeCurrentlyActive = document.body.classList.contains('project-mode-active');
+        const show = typeof forceShow === 'boolean' ? forceShow : !isProjectModeCurrentlyActive;
+
+        if (show) {
+            document.body.classList.add('project-mode-active');
+            // projectDisplayArea.classList.add('visible'); // CSS now uses body.project-mode-active #projectDisplayArea
+
+            if (processingIndicator && projectDisplayArea && aiCoreDisplay) {
+                if (processingIndicator.parentNode !== projectDisplayArea) {
+                    projectDisplayArea.appendChild(processingIndicator);
+                }
+                processingIndicator.classList.add('weibo-project-corner');
+                // Remove other state classes that might conflict with corner positioning/sizing
+                processingIndicator.classList.remove('idle', 'weibo-thinking', 'weibo-talking', 'weibo-in-work-zone');
+                 // Re-apply logical state if needed, or let corner mode dominate
+                const currentLogicalState = getCurrentWeiboState() || 'idle'; // Get state before it was moved
+                setWeiboState(currentLogicalState); // This will re-evaluate based on new parent/classes
+            }
+
+            // Set default content if no project is actively being loaded by AI
+            // Check if iframe content is already set by AI or is the initial placeholder
+            const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
+            if (iframe && (!iframe.srcdoc || iframe.srcdoc.includes('Interactive Project Area') || iframe.srcdoc.includes('projectDisplayDefaultText'))) {
+                iframe.srcdoc = projectDisplayDefaultText;
+            }
+            if (toggleProjectDisplayBtn) toggleProjectDisplayBtn.title = "Hide Project Display";
+
+        } else { // Hiding project display
+            document.body.classList.remove('project-mode-active');
+            // projectDisplayArea.classList.remove('visible');
+
+            if (processingIndicator && aiCoreDisplay) {
+                if (processingIndicator.parentNode !== aiCoreDisplay) {
+                    aiCoreDisplay.appendChild(processingIndicator);
+                }
+                processingIndicator.classList.remove('weibo-project-corner');
+                // Restore normal Weibo state (e.g., idle, or whatever it was before)
+                // setWeiboState needs to be called to re-evaluate its position and animation
+                // based on its original container and classes.
+                const currentLogicalState = getCurrentWeiboState() || 'idle';
+                setWeiboState(currentLogicalState);
+            }
+            if (toggleProjectDisplayBtn) toggleProjectDisplayBtn.title = "Show Project Display";
+        }
+    }
+
+    if (toggleProjectDisplayBtn) {
+        toggleProjectDisplayBtn.addEventListener('click', () => toggleProjectDisplay());
+    } else {
+        console.error("Toggle Project Display button not found.");
+    }
+
+    // Expose toggleProjectDisplay globally if needed for commands, or handle commands internally
+    window.toggleProjectDisplay = toggleProjectDisplay;
+    // Call initially to ensure correct default state (hidden)
+    // toggleProjectDisplay(false); // Ensure it's hidden by default if CSS isn't enough (CSS should be enough)
 
 });
 

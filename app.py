@@ -42,6 +42,7 @@ logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
 logger.info("--- DIAGNOSTIC: app.py (root) - Initializing Flask app object... ---")
 app = Flask(__name__)
 logger.info("--- DIAGNOSTIC: app.py (root) - Flask app object initialized. ---")
+startup_event() # Call the startup_event function
 
 # Global variables for AI services
 orchestrator: Optional[DynamicOrchestrator] = None
@@ -150,9 +151,6 @@ async def chat_api():
 
 
 if __name__ == '__main__':
-    # Initialize AI services once before starting the app if running directly
-    startup_event() # Call the startup_event function
-
     # Note: For development only. In production, use a proper WSGI server like Gunicorn.
     # The default Flask dev server is single-threaded by default.
     # For async operations, especially if they are CPU-bound or involve external I/O

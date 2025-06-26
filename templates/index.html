@@ -39,6 +39,11 @@
                             <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
                         </svg>
                     </button>
+                    <button id="toggleProjectDisplayBtn" title="Toggle Project Display Area">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18px" height="18px">
+                            <path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 7h2v2H5zm4 0h2v2H9zm4 0h2v2h-2z"/> <!-- Simple 'window' like icon -->
+                        </svg>
+                    </button>
                 </div>
             </div>
             <div class="ai-core-display" id="aiCoreDisplay">
@@ -107,6 +112,12 @@
                     <li data-command="/notifications list unread" data-help-action="populateInput" title="Pre-fill command to list unread notifications">List Unread Notifications</li>
                     <li data-help-action="displayInfo" data-info-text="You can type various commands like '/status', '/tasks list', '/suggestions list pending', etc. For a more comprehensive list, type '/help' and send it to the AI." title="General help about commands">General Command Help</li>
                     <li data-command="/help" data-help-action="populateInput" title="Pre-fill /help command to get full list from AI">Full Help (from AI)</li>
+                </ul>
+            </div>
+            <div class="help-menu-category">
+                <span class="category-title">Display</span>
+                <ul class="help-menu-items">
+                    <li data-command="/toggle_project_display" title="Show/Hide the Project Display Area">Toggle Project Display</li>
                 </ul>
             </div>
              <!-- Add /tools, /projects later if needed -->
