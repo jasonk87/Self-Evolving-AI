@@ -366,8 +366,39 @@ JSON Plan:
             try:
                 parsed_plan = json.loads(json_str_to_parse)
             except json.JSONDecodeError as e:
-                last_error_description = f"Failed to parse JSON response. Error: {e}. Response after cleaning: '{json_str_to_parse}'"
-                print(f"PlannerAgent (LLM): {last_error_description}")
+                # Enhanced error reporting for JSONDecodeError
+                error_line_num = e.lineno
+                error_col_num = e.colno
+                error_msg = e.msg
+
+                lines = json_str_to_parse.splitlines()
+                snippet_parts = []
+
+                # Add line before error, error line, and line after error
+                for i in range(max(0, error_line_num - 2), min(len(lines), error_line_num + 1)):
+                    current_line_num_for_display = i + 1 # 1-indexed for display
+                    line_content = lines[i]
+                    if current_line_num_for_display == error_line_num:
+                        # Add marker to the error line
+                        # Adjust colno because it's 1-indexed and strings are 0-indexed
+                        marker_pos = error_col_num - 1
+                        if marker_pos < 0: marker_pos = 0
+                        if marker_pos > len(line_content): marker_pos = len(line_content)
+                        marked_line = line_content[:marker_pos] + " HERE>>> " + line_content[marker_pos:]
+                        snippet_parts.append(f"L{current_line_num_for_display}: {marked_line}")
+                    else:
+                        snippet_parts.append(f"L{current_line_num_for_display}: {line_content}")
+
+                json_snippet_str = "\n".join(snippet_parts)
+
+                last_error_description = (
+                    f"Failed to parse JSON response.\n"
+                    f"Error: {error_msg}\n"
+                    f"At: Line {error_line_num}, Column {error_col_num}\n"
+                    f"Problematic JSON snippet:\n---\n{json_snippet_str}\n---\n"
+                    f"Full response that failed parsing (after cleaning, first 500 chars):\n'{json_str_to_parse[:500]}{'...' if len(json_str_to_parse) > 500 else ''}'"
+                )
+                print(f"PlannerAgent (LLM): Detailed JSONDecodeError: {last_error_description}") # Print the detailed error
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
@@ -583,7 +614,34 @@ JSON Plan:
             try:
                 parsed_plan = json.loads(json_str_to_parse)
             except json.JSONDecodeError as e:
-                last_error_description = f"Failed to parse JSON response for re-plan. Error: {e}. Response after cleaning: '{json_str_to_parse}'"
+                # Enhanced error reporting for JSONDecodeError
+                error_line_num = e.lineno
+                error_col_num = e.colno
+                error_msg = e.msg
+
+                lines = json_str_to_parse.splitlines()
+                snippet_parts = []
+                for i in range(max(0, error_line_num - 2), min(len(lines), error_line_num + 1)):
+                    current_line_num_for_display = i + 1
+                    line_content = lines[i]
+                    if current_line_num_for_display == error_line_num:
+                        marker_pos = error_col_num - 1
+                        if marker_pos < 0: marker_pos = 0
+                        if marker_pos > len(line_content): marker_pos = len(line_content)
+                        marked_line = line_content[:marker_pos] + " HERE>>> " + line_content[marker_pos:]
+                        snippet_parts.append(f"L{current_line_num_for_display}: {marked_line}")
+                    else:
+                        snippet_parts.append(f"L{current_line_num_for_display}: {line_content}")
+                json_snippet_str = "\n".join(snippet_parts)
+
+                last_error_description = (
+                    f"Failed to parse JSON response for re-plan.\n"
+                    f"Error: {error_msg}\n"
+                    f"At: Line {error_line_num}, Column {error_col_num}\n"
+                    f"Problematic JSON snippet:\n---\n{json_snippet_str}\n---\n"
+                    f"Full response that failed parsing (after cleaning, first 500 chars):\n'{json_str_to_parse[:500]}{'...' if len(json_str_to_parse) > 500 else ''}'"
+                )
+                print(f"PlannerAgent (Re-plan): Detailed JSONDecodeError: {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
