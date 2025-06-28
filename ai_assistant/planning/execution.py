@@ -29,10 +29,13 @@ class ExecutionAgent:
         learning_agent: LearningAgent, # Added LearningAgent
         task_manager: Optional[TaskManager] = None,
         notification_manager: Optional[NotificationManager] = None, # New parameter
+        current_plan_large_content_store: Optional[dict] = None, # New parameter for large content
         ollama_model_name: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], List[Any]]: # Returns final_plan, results
         """
         Executes each step in the provided plan with retries and logs the execution.
+        Manages large content placeholders by resolving them before tool execution
+        and injecting context for saving large content.
         Includes logic for re-planning if critical failures occur.
         """
         if initial_plan is None:
@@ -91,49 +94,105 @@ class ExecutionAgent:
                     if not isinstance(args, tuple): args = tuple(args) if isinstance(args, list) else (args,)
                     if not isinstance(kwargs, dict): kwargs = {}
 
-                    processed_args = list(args)
-                    for i_arg, arg_val in enumerate(processed_args):
-                        if isinstance(arg_val, str):
-                            match = re.fullmatch(r"\[\[step_(\d+)_output\]\]", arg_val)
-                            if match:
-                                ref_step_num = int(match.group(1))
+                    # Initialize effective_large_content_store for this plan execution
+                    effective_large_content_store = current_plan_large_content_store if current_plan_large_content_store is not None else {}
+
+
+                    # --- Argument Processing: Resolve step outputs and large content placeholders ---
+                    resolved_args_for_tool = []
+                    for arg_val in args:
+                        val_to_process = arg_val
+                        # 1. Resolve step outputs first
+                        if isinstance(val_to_process, str):
+                            match_step_ref = re.fullmatch(r"\[\[step_(\d+)_output\]\]", val_to_process)
+                            if match_step_ref:
+                                ref_step_num = int(match_step_ref.group(1))
                                 if 1 <= ref_step_num <= len(plan_results):
-                                    plan_result_to_sub = plan_results[ref_step_num - 1]
-                                    if not isinstance(plan_result_to_sub, str):
-                                        print(f"Warning: Step {ref_step_num} result is not a string ('{type(plan_result_to_sub).__name__}'). Using its string representation for placeholder '{arg_val}'.")
-                                        processed_args[i_arg] = str(plan_result_to_sub)
-                                    else:
-                                        processed_args[i_arg] = plan_result_to_sub
+                                    val_to_process = plan_results[ref_step_num - 1]
+                                    # No explicit string conversion here yet, preserve type for placeholder check
                                 else:
                                     print(f"ExecutionAgent: Warning - Invalid step reference {arg_val} for step {i+1}. Placeholder passed as is.")
-                    final_args_for_tool = tuple(processed_args)
+                                    # val_to_process remains the original placeholder string
 
-                    processed_kwargs = kwargs.copy()
-                    for kw_key, kw_val in processed_kwargs.items():
-                        if isinstance(kw_val, str):
-                            match = re.fullmatch(r"\[\[step_(\d+)_output\]\]", kw_val)
-                            if match:
-                                ref_step_num = int(match.group(1))
-                                if 1 <= ref_step_num <= len(plan_results):
-                                    kw_plan_result_to_sub = plan_results[ref_step_num-1]
-                                    if not isinstance(kw_plan_result_to_sub, str):
-                                        print(f"Warning: Step {ref_step_num} result for kwarg '{kw_key}' is not str. Using str().")
-                                        processed_kwargs[kw_key] = str(kw_plan_result_to_sub)
-                                    else:
-                                        processed_kwargs[kw_key] = kw_plan_result_to_sub
+                        # 2. Resolve large content placeholders (AI_CONTENT_REF)
+                        if isinstance(val_to_process, str) and val_to_process.startswith("{{AI_CONTENT_REF::") and val_to_process.endswith("}}"):
+                            placeholder_id = val_to_process[len("{{AI_CONTENT_REF::"):-len("}}")]
+                            retrieved_content = effective_large_content_store.get(placeholder_id)
+                            if retrieved_content is not None:
+                                resolved_args_for_tool.append(retrieved_content)
+                                print(f"ExecutionAgent: Resolved placeholder '{val_to_process}' to content of length {len(retrieved_content)}")
+                            else:
+                                err_msg_placeholder = f"Placeholder ID '{placeholder_id}' not found in store for arg."
+                                print(f"ExecutionAgent: ERROR - {err_msg_placeholder}")
+                                step_result = ValueError(err_msg_placeholder) # This will cause step to fail
+                                current_step_error_details = {'error_type': 'ValueError', 'error_message': err_msg_placeholder}
+                                plan_failed_critically = True # Mark plan as failed
+                                break # Break from processing args for this step
+                        else: # Not a large content placeholder, or was a step ref that resolved to non-string
+                            resolved_args_for_tool.append(val_to_process)
+
+                    if plan_failed_critically: # If arg processing failed (placeholder not found)
+                        plan_results.append(step_result)
+                        plan_step_notes.append(current_step_error_details.get('error_message','Argument processing failed'))
+                        # Further logic to break from main step loop and attempt replan will be handled outside
+                        break # Break from the main FOR loop over steps
+
+                    final_args_for_tool = tuple(resolved_args_for_tool)
+
+                    resolved_kwargs_for_tool = {}
+                    for kw_key, kw_val in kwargs.items():
+                        val_to_process_kw = kw_val
+                        # 1. Resolve step outputs first for kwargs
+                        if isinstance(val_to_process_kw, str):
+                            match_step_ref_kw = re.fullmatch(r"\[\[step_(\d+)_output\]\]", val_to_process_kw)
+                            if match_step_ref_kw:
+                                ref_step_num_kw = int(match_step_ref_kw.group(1))
+                                if 1 <= ref_step_num_kw <= len(plan_results):
+                                    val_to_process_kw = plan_results[ref_step_num_kw - 1]
                                 else:
                                     print(f"ExecutionAgent: Warning - Invalid step reference {kw_val} for kwarg '{kw_key}' in step {i+1}. Placeholder passed as is.")
-                    final_kwargs_for_tool = processed_kwargs
+
+                        # 2. Resolve large content placeholders for kwargs
+                        if isinstance(val_to_process_kw, str) and val_to_process_kw.startswith("{{AI_CONTENT_REF::") and val_to_process_kw.endswith("}}"):
+                            placeholder_id_kw = val_to_process_kw[len("{{AI_CONTENT_REF::"):-len("}}")]
+                            retrieved_content_kw = effective_large_content_store.get(placeholder_id_kw)
+                            if retrieved_content_kw is not None:
+                                resolved_kwargs_for_tool[kw_key] = retrieved_content_kw
+                                print(f"ExecutionAgent: Resolved placeholder '{val_to_process_kw}' for kwarg '{kw_key}' to content of length {len(retrieved_content_kw)}")
+                            else:
+                                err_msg_placeholder_kw = f"Placeholder ID '{placeholder_id_kw}' not found for kwarg '{kw_key}'."
+                                print(f"ExecutionAgent: ERROR - {err_msg_placeholder_kw}")
+                                step_result = ValueError(err_msg_placeholder_kw)
+                                current_step_error_details = {'error_type': 'ValueError', 'error_message': err_msg_placeholder_kw}
+                                plan_failed_critically = True
+                                break # Break from processing kwargs for this step
+                        else:
+                            resolved_kwargs_for_tool[kw_key] = val_to_process_kw
+
+                    if plan_failed_critically: # If kwarg processing failed
+                        plan_results.append(step_result)
+                        plan_step_notes.append(current_step_error_details.get('error_message','Kwarg processing failed'))
+                        break # Break from the main FOR loop over steps
+
+                    final_kwargs_for_tool = resolved_kwargs_for_tool.copy() # Make a copy for modification
+
+                    # --- Inject execution_context for save_large_content tool ---
+                    if tool_name == "save_large_content":
+                        final_kwargs_for_tool["execution_context"] = {
+                            "large_content_store": effective_large_content_store
+                        }
+                        print(f"ExecutionAgent: Injected large_content_store into execution_context for '{tool_name}'.")
+                    # --- End Argument Processing ---
 
                     for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
                         try:
-                            print(f"ExecutionAgent: Executing step {i+1}/{len(current_plan)} - Tool: {tool_name} (Args: {final_args_for_tool}, Kwargs: {final_kwargs_for_tool}), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")
+                            print(f"ExecutionAgent: Executing step {i+1}/{len(current_plan)} - Tool: {tool_name} (Args: {str(final_args_for_tool)[:100]}..., Kwargs: {str(final_kwargs_for_tool)[:100]}...), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")
                             step_result = await tool_system.execute_tool(
                                 tool_name,
-                                args=final_args_for_tool,
-                                kwargs=final_kwargs_for_tool,
+                                args=final_args_for_tool, # Use resolved args
+                                kwargs=final_kwargs_for_tool, # Use resolved and potentially context-injected kwargs
                                 task_manager=task_manager,
-                                notification_manager=notification_manager # Pass notification_manager
+                                notification_manager=notification_manager
                             )
                             current_step_error_details = {} 
                             if attempt > 0:

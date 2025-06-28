@@ -506,6 +506,15 @@ class DynamicOrchestrator:
             if is_debug_mode():
                 print(f"DynamicOrchestrator: Executing plan with {len(self.current_plan)} steps")
 
+            # Create the large content store for this plan execution
+            current_plan_large_content_store = {}
+            log_event(
+                event_type="ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+                description="Initialized large content store for current plan execution.",
+                source="DynamicOrchestrator.process_prompt",
+                metadata={"plan_id": self.current_plan[0].get("tool_name", "unknown_plan_start") if self.current_plan else "empty_plan"}
+            )
+
             final_plan_attempted, results_of_final_attempt = await self.executor.execute_plan(
                 prompt,
                 self.current_plan,
@@ -513,9 +522,20 @@ class DynamicOrchestrator:
                 self.planner,
                 self.learning_agent,
                 task_manager=self.task_manager,
-                notification_manager=self.notification_manager
+                notification_manager=self.notification_manager,
+                current_plan_large_content_store=current_plan_large_content_store # Pass the store
             )
             self.current_plan = final_plan_attempted
+
+            # Clear the store after plan execution
+            if current_plan_large_content_store: # Check if it has items, just for logging
+                log_event(
+                    event_type="ORCHESTRATOR_LARGE_CONTENT_STORE_CLEARED",
+                    description=f"Cleared large content store. Contained {len(current_plan_large_content_store)} items.",
+                    source="DynamicOrchestrator.process_prompt",
+                    metadata={"num_items_cleared": len(current_plan_large_content_store)}
+                )
+            current_plan_large_content_store.clear() # Explicitly clear
 
             processed_results = []
             overall_success_of_plan = True
