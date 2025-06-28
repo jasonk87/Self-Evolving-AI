@@ -6,6 +6,57 @@ from ai_assistant.planning.llm_argument_parser import populate_tool_arguments_wi
 from ai_assistant.config import get_model_for_task
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # For re-planning
 
+def clean_llm_json_output(raw_llm_output: str) -> str:
+    """
+    Attempts to clean a raw string output from an LLM to make it more
+    parsable as JSON. This is a best-effort approach and might not
+    fix all malformed JSON.
+    It focuses on common, relatively safe cleaning operations.
+    """
+    if not raw_llm_output:
+        return ""
+
+    cleaned_output = raw_llm_output.strip()
+
+    # 1. Remove JavaScript-style line comments (//...)
+    #    Only removes if // is at the start of a line (after optional whitespace)
+    #    or if it's not inside a string (heuristic: not preceded by an odd number of quotes)
+    #    This is a simplified heuristic. A full parser would be needed for perfect accuracy.
+    lines = cleaned_output.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        # More conservative line comment removal: only if at the start of a line (after optional whitespace)
+        line = re.sub(r"^\s*\/\/.*", "", line)
+        if line.strip(): # Only add line if it's not empty after comment removal
+            cleaned_lines.append(line)
+    cleaned_output = "\n".join(cleaned_lines)
+
+    # Re-strip after potential empty lines from comment removal
+    cleaned_output = cleaned_output.strip()
+
+    # 2. Remove JavaScript-style block comments (/* ... */) - DISABLED FOR NOW
+    #    The previous regex r"/\*.*?\*/" was too aggressive and could remove
+    #    content from string literals. Disabling until a safer method is implemented.
+    # cleaned_output = re.sub(r"/\*.*?\*/", "", cleaned_output, flags=re.DOTALL)
+
+    # Re-strip after potential multiline comment removal (if it were enabled)
+    # cleaned_output = cleaned_output.strip() # Not strictly needed if block comments are disabled
+
+    # 3. Replace Pythonic Booleans/None with JSON equivalents
+    #    Using word boundaries (\b) to avoid replacing parts of other words.
+    cleaned_output = re.sub(r"\bTrue\b", "true", cleaned_output)
+    cleaned_output = re.sub(r"\bFalse\b", "false", cleaned_output)
+    cleaned_output = re.sub(r"\bNone\b", "null", cleaned_output)
+
+    # 4. Remove trailing commas
+    #    - Before closing square brackets: ],
+    cleaned_output = re.sub(r",\s*\]", "]", cleaned_output)
+    #    - Before closing curly braces: },
+    cleaned_output = re.sub(r",\s*\}", "}", cleaned_output)
+
+    return cleaned_output.strip()
+
+
 class PlannerAgent:
     """
     Responsible for creating a sequence of tool invocations (a plan)
@@ -292,6 +343,37 @@ JSON Plan:
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
+                        displayed_code_section=displayed_code_section_str,
+                        tools_json_string=tools_json_string,
+                        previous_llm_response=llm_response_str or "",
+                        error_description=last_error_description
+                    )
+                continue
+
+            print(f"PlannerAgent (LLM): Raw response from LLM (Attempt {current_attempt + 1}):\n---\n{llm_response_str}\n---")
+
+            # Attempt to clean the LLM output before parsing
+            cleaned_llm_response_str = clean_llm_json_output(llm_response_str)
+            if cleaned_llm_response_str != llm_response_str:
+                print(f"PlannerAgent (LLM): Applied JSON cleaning. Original length: {len(llm_response_str)}, Cleaned length: {len(cleaned_llm_response_str)}")
+                print(f"PlannerAgent (LLM): Cleaned response snippet (first 300 chars):\n---\n{cleaned_llm_response_str[:300]}\n---")
+
+            json_str_to_parse = cleaned_llm_response_str # Use the cleaned version
+            match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
+            if match: json_str_to_parse = match.group(1)
+            json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
+
+            try:
+                parsed_plan = json.loads(json_str_to_parse)
+            except json.JSONDecodeError as e:
+                last_error_description = f"Failed to parse JSON response. Error: {e}. Response after cleaning: '{json_str_to_parse}'"
+                print(f"PlannerAgent (LLM): {last_error_description}")
+                current_attempt += 1
+                if current_attempt <= MAX_CORRECTION_ATTEMPTS:
+                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
+                        goal=goal_description,
+                        conversation_history_section=conversation_history_section_str,
+                        project_context_section=project_context_section_str,
                         displayed_code_section=displayed_code_section_str, # Added
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str or "",
@@ -476,7 +558,7 @@ JSON Plan:
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
-                        goal=original_goal, # Corrected from goal_description
+                        goal=original_goal,
                         failure_analysis=failure_analysis,
                         conversation_history_section=conversation_history_section_str_replan,
                         tools_json_string=tools_json_string,
@@ -485,8 +567,15 @@ JSON Plan:
                     )
                 continue
             
-            # ... (rest of parsing and validation logic as in create_plan_with_llm) ...
-            json_str_to_parse = llm_response_str
+            print(f"PlannerAgent (Re-plan): Raw response from LLM (Attempt {current_attempt + 1}):\n---\n{llm_response_str}\n---")
+
+            # Attempt to clean the LLM output before parsing
+            cleaned_llm_response_str_replan = clean_llm_json_output(llm_response_str)
+            if cleaned_llm_response_str_replan != llm_response_str:
+                print(f"PlannerAgent (Re-plan): Applied JSON cleaning. Original length: {len(llm_response_str)}, Cleaned length: {len(cleaned_llm_response_str_replan)}")
+                print(f"PlannerAgent (Re-plan): Cleaned response snippet (first 300 chars):\n---\n{cleaned_llm_response_str_replan[:300]}\n---")
+
+            json_str_to_parse = cleaned_llm_response_str_replan # Use the cleaned version
             match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
             if match: json_str_to_parse = match.group(1)
             json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
@@ -494,7 +583,7 @@ JSON Plan:
             try:
                 parsed_plan = json.loads(json_str_to_parse)
             except json.JSONDecodeError as e:
-                last_error_description = f"Failed to parse JSON response for re-plan. Error: {e}. Response: '{json_str_to_parse}'"
+                last_error_description = f"Failed to parse JSON response for re-plan. Error: {e}. Response after cleaning: '{json_str_to_parse}'"
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE_REPLAN.format(
