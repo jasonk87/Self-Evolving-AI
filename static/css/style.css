@@ -908,10 +908,14 @@ header h1 {
     display: none; /* Hidden by default */
     opacity: 0;
     transition: flex-basis 0.5s ease-in-out, min-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
+    position: relative; /* For positioning loading indicator and controls */
+    flex-direction: column; /* To stack header, iframe, etc. */
 }
 
 /* projectDisplayArea when it's simply made visible (old logic, might remove if new logic covers all) */
 #projectDisplayArea.visible {
+    display: flex; /* This should be flex, and if it's for placeholder, then align/justify center */
+    /* flex-direction: column; /* Moved to base style */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -934,7 +938,63 @@ body.project-mode-active #projectDisplayArea {
     flex-basis: 70% !important; /* Takes significant space */
     min-height: 300px !important; /* Ensure it's large enough */
     opacity: 1 !important;
+    border: 2px solid var(--accent-color); /* More prominent border */
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.6); /* Inset shadow for depth */
 }
+
+.project-display-header {
+    background-color: var(--secondary-bg-color); /* Or a slightly darker var(--input-bg-color) */
+    color: var(--accent-color);
+    padding: 6px 12px; /* Adjusted padding */
+    font-family: var(--font-primary);
+    font-size: 0.9em; /* Slightly smaller header text */
+    border-bottom: 1px solid var(--border-color);
+    text-align: center; /* Center the header text */
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+#projectDisplayArea iframe { /* Ensure iframe takes remaining space after header */
+    flex-grow: 1;
+    width: 100%;
+    border: none; /* Already had this inline, but good to ensure */
+}
+
+
+.loading-indicator-container {
+    position: absolute;
+    top: 0; /* Cover entire area, or adjust if header should be visible */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(16, 24, 40, 0.85); /* Match var(--secondary-bg-color) but with alpha */
+    display: flex; /* Hidden by default via inline style, JS will toggle to flex */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50; /* Above iframe, below project-controls */
+    color: var(--text-color);
+    border-radius: इन्हेरिट; /* Inherit parent's border radius if any part shows */
+}
+
+.loading-indicator-container .spinner {
+    border: 4px solid rgba(224, 230, 240, 0.3); /* var(--text-color) with alpha */
+    border-left-color: var(--accent-color);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+.loading-indicator-container p {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary-color);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 
 body.project-mode-active .ai-core-display {
     display: none !important; /* Hide AI Core display (Weibo's original box) */

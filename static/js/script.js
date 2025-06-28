@@ -15,7 +15,8 @@ let activeTasksList = null;
 let refreshActiveTasksBtn = null;
 let recentNotificationsList = null;
 let refreshNotificationsBtn = null;
-let projectDisplayArea = null; // For Project Display Area
+let projectDisplayArea = null;
+let projectDisplayLoadingIndicator = null; // New global for loading indicator
 
 
 let idleAnimationTimeoutId = null;
@@ -150,6 +151,11 @@ async function fetchAndShowProject(taskId) {
     appendToChatLog(`Fetching output for project task ${taskId}...`, 'system-help');
     setWeiboState('weibo-thinking');
 
+    if (projectDisplayLoadingIndicator && projectDisplayArea) {
+        toggleProjectDisplay(true); // Ensure area is visible
+        projectDisplayLoadingIndicator.style.display = 'flex'; // Show loading indicator
+    }
+
     try {
         const response = await fetch(`/api/project_output/${taskId}`);
         const data = await response.json(); // Try to parse JSON first, as backend sends structured errors/success
@@ -160,22 +166,27 @@ async function fetchAndShowProject(taskId) {
 
         if (data.success && data.html_content) {
             appendToChatLog(`Displaying project: ${data.project_name || taskId}`, 'ai');
-            toggleProjectDisplay(true); // Ensure project display area is visible
+            // toggleProjectDisplay(true); // Already called above if indicator was shown
             const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
             if (iframe) {
                 iframe.srcdoc = data.html_content;
-            } else { // Should not happen if HTML structure is correct
+            } else {
                 console.error("Project display iframe not found!");
                 appendToChatLog("Error: Could not find the project display area to show the content.", 'ai');
             }
         } else {
-            // This case handles data.success being false or html_content missing
             appendToChatLog(data.error || `Could not retrieve displayable output for project task ${taskId}.`, 'ai');
         }
     } catch (error) {
         console.error(`Failed to fetch or display project ${taskId}:`, error);
         appendToChatLog(`Error fetching project ${taskId}: ${error.message}`, 'ai');
     } finally {
+        if (projectDisplayLoadingIndicator) {
+            // Use a small timeout to ensure content has a chance to render, similar to sendMessage
+            setTimeout(() => {
+                projectDisplayLoadingIndicator.style.display = 'none';
+            }, 100);
+        }
         setWeiboState(isWeiboWorkingInBackground ? 'background-processing' : 'idle');
     }
 }
@@ -470,22 +481,32 @@ async function sendMessage() {
         }
 
         // Handle project area HTML first
-        if (data.project_area_html && projectDisplayArea) {
-            // Use the new toggle function to ensure all UI changes are applied
-            toggleProjectDisplay(true); // Show project display and move Weibo orb
+        if (data.project_area_html && projectDisplayArea && projectDisplayLoadingIndicator) {
+            toggleProjectDisplay(true); // Show project display area if not already visible
+
+            projectDisplayLoadingIndicator.style.display = 'flex'; // Show loading indicator
 
             const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
             if (iframe) {
+                // Setting srcdoc is quite fast. For more complex loading,
+                // an iframe.onload event might be used, but can be tricky with srcdoc.
                 iframe.srcdoc = data.project_area_html;
+                // Hide indicator shortly after. If content is very complex and takes time to render,
+                // this might hide too soon. A more robust solution might involve postMessage from iframe.
+                setTimeout(() => {
+                    projectDisplayLoadingIndicator.style.display = 'none';
+                }, 100); // Small delay to allow immediate rendering pass
             } else {
-                // Fallback if iframe isn't there, though it should be.
-                // This part might need adjustment if projectDisplayArea itself is the target for innerHTML.
-                // For now, assuming we always want to load into the iframe.
-                console.warn("#projectDisplayIframe not found inside #projectDisplayArea. Attempting to set innerHTML of projectDisplayArea directly.");
-                projectDisplayArea.innerHTML = data.project_area_html;
+                console.warn("#projectDisplayIframe not found. Cannot display project content.");
+                projectDisplayLoadingIndicator.style.display = 'none'; // Hide indicator if iframe fails
+                appendToChatLog("Error: Could not find the project display iframe.", 'ai');
             }
-
-        } else if (!data.project_area_html && document.body.classList.contains('project-mode-active')) {
+        } else if (data.project_area_html && (!projectDisplayArea || !projectDisplayLoadingIndicator)) {
+            console.error("Project display area or loading indicator not found, cannot show project_area_html.");
+        }
+        // This handles the case where project mode was active but AI sends no new HTML.
+        // No change to loading indicator here as no new content is being loaded.
+        else if (!data.project_area_html && document.body.classList.contains('project-mode-active')) {
             // This condition implies: no new project HTML from AI, but project mode was previously active.
             // We might want to leave it open if the user manually opened it.
             // Or, if AI explicitly "closes" a project, it should send a null/empty project_area_html
@@ -852,7 +873,8 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshActiveTasksBtn = document.getElementById('refreshActiveTasksBtn');
     recentNotificationsList = document.getElementById('recentNotificationsList');
     refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn');
-    projectDisplayArea = document.getElementById('projectDisplayArea'); // Assign projectDisplayArea
+    projectDisplayArea = document.getElementById('projectDisplayArea');
+    projectDisplayLoadingIndicator = document.querySelector('#projectDisplayArea .loading-indicator-container'); // Assign new element
     const toggleProjectDisplayBtn = document.getElementById('toggleProjectDisplayBtn');
 
 
