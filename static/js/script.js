@@ -16,7 +16,8 @@ let refreshActiveTasksBtn = null;
 let recentNotificationsList = null;
 let refreshNotificationsBtn = null;
 let projectDisplayArea = null;
-let projectDisplayLoadingIndicator = null; // New global for loading indicator
+let projectDisplayLoadingIndicator = null;
+let reloadBtn = null; // New global for reload button
 
 
 let idleAnimationTimeoutId = null;
@@ -170,6 +171,11 @@ async function fetchAndShowProject(taskId) {
             const iframe = projectDisplayArea.querySelector('iframe#projectDisplayIframe');
             if (iframe) {
                 iframe.srcdoc = data.html_content;
+                // Reset Pause/Resume buttons
+                if (pauseBtn && resumeBtn) {
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = true;
+                }
             } else {
                 console.error("Project display iframe not found!");
                 appendToChatLog("Error: Could not find the project display area to show the content.", 'ai');
@@ -496,6 +502,12 @@ async function sendMessage() {
                 setTimeout(() => {
                     projectDisplayLoadingIndicator.style.display = 'none';
                 }, 100); // Small delay to allow immediate rendering pass
+
+                // Reset Pause/Resume buttons
+                if (pauseBtn && resumeBtn) {
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = true;
+                }
             } else {
                 console.warn("#projectDisplayIframe not found. Cannot display project content.");
                 projectDisplayLoadingIndicator.style.display = 'none'; // Hide indicator if iframe fails
@@ -874,7 +886,8 @@ document.addEventListener('DOMContentLoaded', () => {
     recentNotificationsList = document.getElementById('recentNotificationsList');
     refreshNotificationsBtn = document.getElementById('refreshNotificationsBtn');
     projectDisplayArea = document.getElementById('projectDisplayArea');
-    projectDisplayLoadingIndicator = document.querySelector('#projectDisplayArea .loading-indicator-container'); // Assign new element
+    projectDisplayLoadingIndicator = document.querySelector('#projectDisplayArea .loading-indicator-container');
+    reloadBtn = document.getElementById('reloadBtn'); // Assign reload button
     const toggleProjectDisplayBtn = document.getElementById('toggleProjectDisplayBtn');
 
 
@@ -1161,6 +1174,37 @@ document.addEventListener('DOMContentLoaded', () => {
     window.toggleProjectDisplay = toggleProjectDisplay;
     // Call initially to ensure correct default state (hidden)
     // toggleProjectDisplay(false); // Ensure it's hidden by default if CSS isn't enough (CSS should be enough)
+
+    // Reload Button Logic
+    if (reloadBtn && projectDisplayIframe && projectDisplayLoadingIndicator) {
+        reloadBtn.addEventListener('click', () => {
+            if (projectDisplayArea && projectDisplayArea.style.display !== 'none' && projectDisplayIframe.srcdoc) {
+                console.log("Reloading project display iframe content...");
+                projectDisplayLoadingIndicator.style.display = 'flex';
+
+                // Store current srcdoc and re-assign to trigger reload
+                const currentSrcDoc = projectDisplayIframe.srcdoc;
+                projectDisplayIframe.srcdoc = ""; // Clear it first briefly, might help some browsers
+                projectDisplayIframe.srcdoc = currentSrcDoc;
+
+                // Reset Pause/Resume buttons
+                if (pauseBtn && resumeBtn) {
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = true;
+                }
+
+                setTimeout(() => {
+                    projectDisplayLoadingIndicator.style.display = 'none';
+                }, 200); // Slightly longer delay for reload, as it might involve script re-initialization
+            } else {
+                console.log("Reload button clicked, but no content to reload or display area is hidden.");
+                // Optionally, provide some feedback to the user if needed
+                // appendToChatLog("Nothing to reload in the project display.", 'system-help');
+            }
+        });
+    } else {
+        console.error("Reload button, iframe, or loading indicator not found for event listener setup.");
+    }
 
     // Delegated event listeners for suggestion action buttons
     if (chatLogArea) {
