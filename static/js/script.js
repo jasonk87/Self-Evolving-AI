@@ -1175,6 +1175,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Call initially to ensure correct default state (hidden)
     // toggleProjectDisplay(false); // Ensure it's hidden by default if CSS isn't enough (CSS should be enough)
 
+    // --- Initial Proactive Greeting ---
+    // Wait a bit for the initial UI to settle and for the user to see the first static message.
+    setTimeout(() => {
+        fetchAndDisplayProactiveGreeting();
+    }, 3000); // 3-second delay as per design
+
     // Reload Button Logic
     if (reloadBtn && projectDisplayIframe && projectDisplayLoadingIndicator) {
         reloadBtn.addEventListener('click', () => {
@@ -1256,6 +1262,36 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Chat log area not found for attaching suggestion/task action listeners.");
     }
 });
+
+async function fetchAndDisplayProactiveGreeting() {
+    if (!chatLogArea || !aiCoreStatusText) {
+        console.warn("Proactive greeting: Core UI elements not ready.");
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/proactive_greeting');
+        if (!response.ok) {
+            console.warn(`Proactive greeting fetch failed: ${response.status}`);
+            return; // Don't show an error to the user for this, just fail silently for now
+        }
+        const data = await response.json();
+
+        if (data && data.message) {
+            // Ensure Weibo is in a talking state for the greeting
+            // appendToChatLog will handle the typing animation and then reset the state.
+            setWeiboState('weibo-talking');
+            if (aiCoreStatusText) aiCoreStatusText.textContent = 'Delivering greeting...'; // Optional status update
+
+            appendToChatLog(data.message, 'ai');
+            // Note: appendToChatLog for 'ai' sender type already handles reverting
+            // Weibo state to idle/background-processing after typing is complete.
+        }
+    } catch (error) {
+        console.error('Error fetching or displaying proactive greeting:', error);
+        // Fail silently for the user for this feature for now
+    }
+}
 
 document.addEventListener('click', function(event) {
     const currentHelpMenuPopup = helpMenuPopup || document.getElementById('helpMenuPopup');

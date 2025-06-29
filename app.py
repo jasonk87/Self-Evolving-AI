@@ -163,6 +163,15 @@ async def chat_api():
             "project_area_html": None
         }), 500
 
+@app.route('/api/proactive_greeting', methods=['GET'])
+def proactive_greeting():
+    """
+    Endpoint to provide a proactive greeting message.
+    """
+    greeting_message = "Hello! I'm Weibo, your AI assistant. How can I help you today?"
+    logger.info(f"Proactive greeting requested, sending: '{greeting_message}'")
+    return jsonify({"message": greeting_message})
+
 # --- API Endpoints for Status Panel Data & Analysis ---
 
 def format_task_for_json(task):
