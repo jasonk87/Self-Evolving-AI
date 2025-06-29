@@ -932,7 +932,26 @@ async function fetchAndDisplayRecentNotifications() {
                 }
                 li.textContent = `[${tsDisplay} | ${type}] ${summary}`;
                 li.title = `ID: ${notif.notification_id}\nType: ${type}\nFull Summary: ${notif.summary_message}\nStatus: ${notif.status}\nTimestamp: ${notif.timestamp}`;
-                recentNotificationsList.appendChild(li);
+
+                // Check for PROACTIVE_TASK_CHECKIN type
+                if (notif.event_type === 'PROACTIVE_TASK_CHECKIN' && notif.status === 'UNREAD') {
+                    if (notif.details_payload && notif.details_payload.proactive_chat_message) {
+                        console.log(`Found PROACTIVE_TASK_CHECKIN notification to display as chat: ${notif.notification_id}`);
+                        // Display as AI chat message
+                        setWeiboState('weibo-talking');
+                        if (aiCoreStatusText) aiCoreStatusText.textContent = 'Providing an update...';
+                        appendToChatLog(notif.details_payload.proactive_chat_message, 'ai');
+
+                        // Mark as actioned (API call to be implemented in next step)
+                        markNotificationAsActioned(notif.notification_id);
+                    } else {
+                        // If payload is missing, just list it as a normal notification for now
+                        recentNotificationsList.appendChild(li);
+                    }
+                } else {
+                    // For other types or already actioned check-ins, just list them
+                    recentNotificationsList.appendChild(li);
+                }
             });
         } else {
             recentNotificationsList.innerHTML = '<li>No new notifications.</li>';
@@ -940,6 +959,31 @@ async function fetchAndDisplayRecentNotifications() {
     } catch (error) {
         console.error("Failed to fetch recent notifications:", error);
         recentNotificationsList.innerHTML = '<li>Error loading notifications.</li>';
+    }
+}
+
+async function markNotificationAsActioned(notificationId) {
+    console.log(`Attempting to mark notification ${notificationId} as actioned.`);
+    try {
+        const response = await fetch(`/api/notifications/${notificationId}/actioned`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(`Failed to mark notification ${notificationId} as actioned: ${response.status}`, errorData.error || '');
+        } else {
+            const data = await response.json();
+            if (data.success) {
+                console.log(`Notification ${notificationId} successfully marked as actioned.`);
+                // Optionally, remove or update its visual state in the notifications list if it was also displayed there.
+                // For now, we assume it's primarily handled as a chat message and doesn't need UI update in the list.
+            } else {
+                console.error(`Server failed to mark notification ${notificationId} as actioned:`, data.error || 'Unknown error');
+            }
+        }
+    } catch (error) {
+        console.error(`Error in markNotificationAsActioned for ${notificationId}:`, error);
     }
 }
 

@@ -54,6 +54,9 @@ class NotificationType(Enum):
     WARNING = auto()
     ERROR = auto()
 
+    # Proactive AI Messages
+    PROACTIVE_TASK_CHECKIN = auto() # For long-running task updates
+
 
 @dataclass
 class Notification:

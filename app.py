@@ -418,6 +418,27 @@ def deny_suggestion_api(suggestion_id):
         logger.error(f"--- DIAGNOSTIC: /api/suggestions/{suggestion_id}/deny - Error: {e} ---", exc_info=True)
         return jsonify({"success": False, "error": "An internal server error occurred."}), 500
 
+@app.route('/api/notifications/<string:notification_id>/actioned', methods=['POST'])
+def mark_notification_actioned_api(notification_id):
+    global _notification_manager_instance
+    logger.info(f"--- DIAGNOSTIC: Route /api/notifications/{notification_id}/actioned POST called ---")
+    if _notification_manager_instance is None:
+        return jsonify({"success": False, "error": "Notification manager not initialized"}), 503
+
+    try:
+        success = _notification_manager_instance.mark_as_read([notification_id])
+        if success:
+            return jsonify({"success": True, "message": f"Notification {notification_id} marked as actioned (read)."}), 200
+        else:
+            # Check if the notification exists to give a more specific error
+            notification = _notification_manager_instance._get_notification_by_id(notification_id) # Protected access for check
+            if not notification:
+                return jsonify({"success": False, "error": "Notification not found or already actioned."}), 404
+            return jsonify({"success": False, "error": "Failed to mark notification as actioned."}), 400
+    except Exception as e:
+        logger.error(f"--- DIAGNOSTIC: /api/notifications/{notification_id}/actioned - Error: {e} ---", exc_info=True)
+        return jsonify({"success": False, "error": "An internal server error occurred."}), 500
+
 # --- Task Specific Action API Endpoints ---
 
 @app.route('/api/tasks/<string:task_id>/plan', methods=['GET'])

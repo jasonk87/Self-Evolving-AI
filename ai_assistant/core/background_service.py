@@ -41,13 +41,22 @@ except ImportError: # pragma: no cover
     PROJECT_EXECUTION_INTERVAL_SECONDS = 720 # Default to 12 minutes if not in config
 
 # --- Service State ---
-# --- Service State ---
 _background_service_active = False
 _background_task: Optional[asyncio.Task] = None
 _nm_instance_for_bg_service: Optional[NotificationManager] = None # To hold NM instance
-_polling_interval_seconds = 300  # For self-reflection
+_tm_instance_for_bg_service: Optional['TaskManager'] = None # To hold TaskManager instance
+_polling_interval_seconds = 300  # For self-reflection (5 minutes)
+_long_task_check_interval_seconds = 60 # Check for long tasks every 1 minute
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0
+_last_long_task_check_time: float = 0.0
+_task_last_checkin_time: Dict[str, float] = {} # Stores task_id: timestamp of last check-in
+
+# Define these constants based on Step 1 of the plan
+LONG_RUNNING_TASK_THRESHOLD_SECONDS = 5 * 60  # 5 minutes
+TASK_CHECKIN_COOLDOWN_SECONDS = 15 * 60    # 15 minutes
+MONITORED_TASK_TYPES_FOR_CHECKIN: List['ActiveTaskType'] = [] # Will be populated after ActiveTaskType is available
+ACTIVE_STATUSES_FOR_MONITORING: List['ActiveTaskStatus'] = [] # Will be populated
 
 def sanitize_project_name(name: str) -> str:
     """
@@ -129,16 +138,23 @@ def read_text_from_file(filepath: str) -> str:
     except IOError as e:
         return f"Error reading file '{filepath}': {e} (IOError)"
 
+from ai_assistant.core.task_manager import ActiveTaskType, ActiveTaskStatus # For monitored types/statuses
+from datetime import datetime, timezone # For duration calculation
+
 # --- Asyncio Version ---
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_long_task_check_time, _task_last_checkin_time
     logger.info("--- BACKGROUND SERVICE: Main _background_loop_async started. ---")
-    _last_fact_curation_time = time.time()
-    _last_project_execution_scan_time = time.time()
+    current_time_init = time.time()
+    _last_fact_curation_time = current_time_init
+    _last_project_execution_scan_time = current_time_init
+    _last_long_task_check_time = current_time_init
+    _task_last_checkin_time = {} # Ensure it's reset if service restarts
 
-    next_reflection_run_time = time.time() + _polling_interval_seconds
-    next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
-    next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
+    next_reflection_run_time = current_time_init + _polling_interval_seconds
+    next_fact_curation_run_time = current_time_init + FACT_CURATION_INTERVAL_SECONDS
+    next_project_execution_run_time = current_time_init + PROJECT_EXECUTION_INTERVAL_SECONDS
+    next_long_task_check_run_time = current_time_init + _long_task_check_interval_seconds
 
 
     while _background_service_active:
@@ -271,8 +287,64 @@ async def _background_loop_async():
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
+        time_until_next_long_task_check = max(0, next_long_task_check_run_time - time.time()) if _tm_instance_for_bg_service else float('inf')
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, 10)
+        # --- Long-Running Task Check ---
+        if _tm_instance_for_bg_service and current_loop_time >= next_long_task_check_run_time:
+            logger.info(f"--- BACKGROUND SERVICE: Checking for long-running tasks (Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}) ---")
+            try:
+                active_tasks = await asyncio.to_thread(_tm_instance_for_bg_service.list_active_tasks)
+                for task in active_tasks:
+                    if task.task_type in MONITORED_TASK_TYPES_FOR_CHECKIN and \
+                       task.status in ACTIVE_STATUSES_FOR_MONITORING:
+
+                        # Use created_at for total duration since task started and is still active
+                        task_start_time = task.created_at
+                        if not task_start_time.tzinfo: # If naive, assume UTC (as per ActiveTask default factory)
+                            task_start_time = task_start_time.replace(tzinfo=timezone.utc)
+
+                        duration_seconds = (datetime.now(timezone.utc) - task_start_time).total_seconds()
+
+                        if duration_seconds > LONG_RUNNING_TASK_THRESHOLD_SECONDS:
+                            last_checkin = _task_last_checkin_time.get(task.task_id, 0)
+                            if (current_loop_time - last_checkin) > TASK_CHECKIN_COOLDOWN_SECONDS:
+                                duration_minutes = int(duration_seconds / 60)
+                                # Select a message template (can be randomized later)
+                                # For now, using the first template:
+                                # "I'm still working on '[Task Description]' (Task ID: [Task ID]). It's been about [Duration] minutes. Would you like an update on the current step, or should I continue as planned?"
+                                message_template = "I'm still working on '{task_description}' (Task ID: {task_id}). It's been about {duration_minutes} minutes. Would you like an update on the current step, or should I continue as planned?"
+                                checkin_message = message_template.format(
+                                    task_description=task.description[:70] + "..." if len(task.description) > 70 else task.description,
+                                    task_id=task.task_id,
+                                    duration_minutes=duration_minutes
+                                )
+
+                                if _nm_instance_for_bg_service:
+                                    # This NotificationType needs to be defined in notification_manager.py
+                                    # For now, using a placeholder string, assuming it will be mapped to an Enum.
+                                    # The frontend will need to know how to handle this type.
+                                    from ai_assistant.core.notification_manager import NotificationType # Import here
+
+                                    _nm_instance_for_bg_service.add_notification(
+                                        event_type=getattr(NotificationType, "PROACTIVE_TASK_CHECKIN", NotificationType.SYSTEM_ALERT), # Use getattr for safety
+                                        summary_message=f"Task Check-in: {task.description[:50]}...",
+                                        details_payload={"proactive_chat_message": checkin_message, "task_id": task.task_id},
+                                        related_item_id=task.task_id,
+                                        related_item_type="task_checkin"
+                                    )
+                                    _task_last_checkin_time[task.task_id] = current_loop_time
+                                    logger.info(f"--- BACKGROUND SERVICE: Sent PROACTIVE_TASK_CHECKIN for task {task.task_id} ('{task.description[:30]}...'). Message: {checkin_message}")
+                                else:
+                                    logger.warning("--- BACKGROUND SERVICE: NotificationManager not available. Cannot send proactive task check-in.")
+                            # else: logger.debug(f"Task {task.task_id} is long-running but in cooldown.")
+                        # else: logger.debug(f"Task {task.task_id} duration {duration_seconds:.0f}s not over threshold {LONG_RUNNING_TASK_THRESHOLD_SECONDS}s.")
+            except Exception as e_task_check:
+                logger.error(f"--- BACKGROUND SERVICE: Error during long-running task check: {e_task_check} ---", exc_info=True)
+            _last_long_task_check_time = current_loop_time # Update last check time
+            next_long_task_check_run_time = current_loop_time + _long_task_check_interval_seconds
+        # --- End Long-Running Task Check ---
+
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_long_task_check, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover
@@ -289,16 +361,47 @@ async def _background_loop_async():
             
     logger.info("BackgroundService: Async loop finished.")
 
-# Renamed and made synchronous as it just creates a task
-def start_background_services(notification_manager_instance: Optional[NotificationManager] = None):
-    global _background_service_active, _background_task, _last_fact_curation_time, _last_project_execution_scan_time, _nm_instance_for_bg_service
+def start_background_services(
+    notification_manager_instance: Optional[NotificationManager] = None,
+    task_manager_instance: Optional['TaskManager'] = None # Added TaskManager
+):
+    global _background_service_active, _background_task, _last_fact_curation_time
+    global _last_project_execution_scan_time, _nm_instance_for_bg_service, _tm_instance_for_bg_service
+    global MONITORED_TASK_TYPES_FOR_CHECKIN, ACTIVE_STATUSES_FOR_MONITORING, _last_long_task_check_time
 
     if notification_manager_instance:
         _nm_instance_for_bg_service = notification_manager_instance
         logger.info(f"--- BACKGROUND SERVICE: NotificationManager instance received: {_nm_instance_for_bg_service} ---")
     else:
-        logger.warning("--- BACKGROUND SERVICE: Started without a NotificationManager instance. Suggestion notifications will be disabled. ---")
+        logger.warning("--- BACKGROUND SERVICE: Started without a NotificationManager instance. Some notifications may be disabled. ---")
         _nm_instance_for_bg_service = None
+
+    if task_manager_instance: # Store TaskManager instance
+        _tm_instance_for_bg_service = task_manager_instance
+        logger.info(f"--- BACKGROUND SERVICE: TaskManager instance received: {_tm_instance_for_bg_service} ---")
+    else:
+        logger.warning("--- BACKGROUND SERVICE: Started without a TaskManager instance. Long-running task monitoring will be disabled. ---")
+        _tm_instance_for_bg_service = None
+
+    # Populate monitored types and statuses (idempotent)
+    if not MONITORED_TASK_TYPES_FOR_CHECKIN: # Check if already populated
+        MONITORED_TASK_TYPES_FOR_CHECKIN = [
+            ActiveTaskType.USER_PROJECT_CREATION,
+            ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION
+        ]
+        logger.info(f"--- BACKGROUND SERVICE: Populated MONITORED_TASK_TYPES_FOR_CHECKIN: {MONITORED_TASK_TYPES_FOR_CHECKIN} ---")
+
+    if not ACTIVE_STATUSES_FOR_MONITORING: # Check if already populated
+        ACTIVE_STATUSES_FOR_MONITORING = [
+            ActiveTaskStatus.INITIALIZING,
+            ActiveTaskStatus.PLANNING,
+            ActiveTaskStatus.GENERATING_CODE,
+            ActiveTaskStatus.AWAITING_CRITIC_REVIEW,
+            ActiveTaskStatus.POST_MOD_TESTING,
+            ActiveTaskStatus.APPLYING_CHANGES,
+            ActiveTaskStatus.EXECUTING_PROJECT_PLAN # Important for hierarchical tasks
+        ]
+        logger.info(f"--- BACKGROUND SERVICE: Populated ACTIVE_STATUSES_FOR_MONITORING: {ACTIVE_STATUSES_FOR_MONITORING} ---")
 
 
     if _background_service_active and isinstance(_background_task, asyncio.Task) and not _background_task.done():
@@ -308,10 +411,11 @@ def start_background_services(notification_manager_instance: Optional[Notificati
     _background_service_active = True
     _last_fact_curation_time = 0.0 
     _last_project_execution_scan_time = 0.0
+    _last_long_task_check_time = 0.0 # Initialize this too
     logger.info("--- BACKGROUND SERVICE: Attempting to start service... ---")
     try:
         loop = asyncio.get_running_loop() 
-        _background_task = loop.create_task(_background_loop_async()) # _background_loop_async will use global _nm_instance_for_bg_service
+        _background_task = loop.create_task(_background_loop_async())
         logger.info(f"--- BACKGROUND SERVICE: Service task _background_loop_async created: {_background_task} ---")
     except RuntimeError: # pragma: no cover
         logger.error("--- BACKGROUND SERVICE: Asyncio loop not running. Cannot start service this way. ---")
