@@ -31,6 +31,83 @@ const MATRIX_COLUMN_WIDTH = 15;
 const MATRIX_SPAWN_INTERVAL = 100;
 let lastMatrixSpawnTime = 0;
 
+// --- Inactivity Prompt Logic ---
+const INACTIVITY_TIMEOUT_DURATION = 2 * 60 * 1000; // 2 minutes
+const INACTIVITY_PROMPT_COOLDOWN_DURATION = 10 * 60 * 1000; // 10 minutes
+
+let inactivityTimerId = null;
+let inactivityPromptCooldownTimerId = null;
+let isUserInactivePromptShownRecently = false;
+
+const inactivityMessages = [
+    "Still there? Let me know if I can help with anything.",
+    "Just checking in! Is there something I can assist you with?",
+    "Feel free to ask if you have any questions or need assistance."
+];
+
+function handleInactivity() {
+    console.log("User inactivity detected.");
+    if (inactivityTimerId) clearTimeout(inactivityTimerId); // Clear current timer just in case
+
+    const currentWeiboState = getCurrentWeiboState();
+    if (currentWeiboState === 'idle' && !isUserInactivePromptShownRecently) {
+        console.log("Conditions met for showing inactivity prompt.");
+        isUserInactivePromptShownRecently = true;
+
+        // Select a random message
+        const message = inactivityMessages[Math.floor(Math.random() * inactivityMessages.length)];
+
+        setWeiboState('weibo-talking');
+        if (aiCoreStatusText) aiCoreStatusText.textContent = 'Offering assistance...';
+        appendToChatLog(message, 'ai'); // This will reset Weibo state after typing
+
+        // Start cooldown timer
+        if (inactivityPromptCooldownTimerId) clearTimeout(inactivityPromptCooldownTimerId);
+        inactivityPromptCooldownTimerId = setTimeout(() => {
+            console.log("Inactivity prompt cooldown finished.");
+            isUserInactivePromptShownRecently = false;
+        }, INACTIVITY_PROMPT_COOLDOWN_DURATION);
+
+        // After showing prompt, restart inactivity timer to detect next period of inactivity
+        // (though another prompt won't show until cooldown is over)
+        resetInactivityTimer();
+
+    } else {
+        console.log("Conditions not met for inactivity prompt:",
+                    "Weibo state:", currentWeiboState,
+                    "Prompt shown recently:", isUserInactivePromptShownRecently);
+        // If conditions not met (e.g., AI busy, or cooldown active), just restart the main inactivity timer
+        resetInactivityTimer();
+    }
+}
+
+function resetInactivityTimer() {
+    if (inactivityTimerId) {
+        clearTimeout(inactivityTimerId);
+    }
+    // console.log("Inactivity timer reset."); // Can be noisy, enable for debugging
+    inactivityTimerId = setTimeout(handleInactivity, INACTIVITY_TIMEOUT_DURATION);
+}
+
+function setupInactivityDetection() {
+    // Initial setup of the timer
+    resetInactivityTimer();
+
+    // Events that indicate user activity
+    window.addEventListener('mousemove', resetInactivityTimer, { passive: true });
+    window.addEventListener('keydown', resetInactivityTimer, { passive: true });
+    window.addEventListener('focus', resetInactivityTimer, { passive: true }); // When window gets focus
+    // Consider also 'scroll', 'click', 'touchstart' if needed for more robust activity detection
+
+    // Specifically for chat input
+    if (userInput) {
+        userInput.addEventListener('input', resetInactivityTimer, { passive: true });
+        userInput.addEventListener('keypress', resetInactivityTimer, { passive: true });
+    }
+    console.log("Inactivity detection setup complete.");
+}
+// --- End Inactivity Prompt Logic ---
+
 
 function setWeiboState(state) {
     if (!processingIndicator) {
@@ -1180,6 +1257,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         fetchAndDisplayProactiveGreeting();
     }, 3000); // 3-second delay as per design
+
+    // --- Setup Inactivity Detection ---
+    setupInactivityDetection();
 
     // Reload Button Logic
     if (reloadBtn && projectDisplayIframe && projectDisplayLoadingIndicator) {
