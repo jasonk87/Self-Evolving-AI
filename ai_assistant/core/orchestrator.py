@@ -50,9 +50,15 @@ class DynamicOrchestrator:
         self.hierarchical_planner = hierarchical_planner
         self.context: Dict[str, Any] = {} # For last_results, etc.
         self.current_goal: Optional[str] = None
-        self.current_plan: Optional[List[Dict[str, Any]]] = None
-        self.conversation_history: List[Dict[str, str]] = [] # New: For chat history
-        self.current_project_display_code: Optional[str] = None # For recalling displayed HTML
+        self.current_plan: Optional[List[Dict[str, Any]]] = None # This will store the plan from PlannerAgent's dict
+        self.conversation_history: List[Dict[str, str]] = []
+        self.current_project_display_code: Optional[str] = None
+
+        # State variables for clarification flow
+        self.awaiting_clarification: bool = False
+        self.original_prompt_for_clarification: Optional[str] = None
+        self.last_clarification_question_sent_to_user: Optional[str] = None
+        self.clarification_context: Optional[Dict[str, Any]] = None # To store history, project_context etc.
 
     def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
         if not plan:
@@ -290,27 +296,91 @@ class DynamicOrchestrator:
                 project_context_summary = "\n".join(context_parts)
             # --- END Contextualization Phase ---
 
-            if is_debug_mode():
-                print(f"DynamicOrchestrator: Creating initial plan for: {prompt}")
-
-            final_context_for_planner = project_context_summary if project_context_summary else ""
-            if learned_facts_section_str:
-                if final_context_for_planner:
-                    final_context_for_planner += "\n\n" + learned_facts_section_str
+            planner_input_goal = prompt
+            planner_input_context_summary = project_context_summary if project_context_summary else ""
+            if learned_facts_section_str: # Append learned facts to the project context summary for the planner
+                if planner_input_context_summary:
+                    planner_input_context_summary += "\n\n" + learned_facts_section_str
                 else:
-                    final_context_for_planner = learned_facts_section_str
+                    planner_input_context_summary = learned_facts_section_str
 
-            self.current_plan = await self.planner.create_plan_with_llm(
-                goal_description=prompt,
+            planner_input_conversation_history = self.conversation_history
+            planner_input_displayed_code = self.current_project_display_code
+            planner_input_project_name = project_name_for_context
+
+
+            if self.awaiting_clarification:
+                logger.info(f"Orchestrator: Received clarification response: '{prompt}' for original prompt: '{self.original_prompt_for_clarification}'")
+                # Construct a new goal description for the planner
+                planner_input_goal = (
+                    f"Original user request was: \"{self.original_prompt_for_clarification}\"\n"
+                    f"I asked for clarification: \"{self.last_clarification_question_sent_to_user}\"\n"
+                    f"The user's response to my clarification is: \"{prompt}\"\n"
+                    f"Please now attempt to create a plan based on this combined information."
+                )
+                # Use the stored context from the original ambiguous prompt
+                if self.clarification_context:
+                    planner_input_context_summary = self.clarification_context.get("project_context_summary", planner_input_context_summary)
+                    planner_input_project_name = self.clarification_context.get("project_name_for_context", planner_input_project_name)
+                    planner_input_conversation_history = self.clarification_context.get("conversation_history", planner_input_conversation_history)
+                    planner_input_displayed_code = self.clarification_context.get("displayed_code_content", planner_input_displayed_code)
+
+                # Reset clarification state immediately
+                self.awaiting_clarification = False
+                self.original_prompt_for_clarification = None
+                self.last_clarification_question_sent_to_user = None
+                self.clarification_context = None
+                logger.info("Orchestrator: Clarification state reset. Re-planning with new information.")
+
+
+            if is_debug_mode():
+                print(f"DynamicOrchestrator: Calling planner for goal: {planner_input_goal[:150]}...")
+
+            # Planner now returns a dictionary: {"plan": ..., "clarification_question": ..., "error_message": ...}
+            planner_response = await self.planner.create_plan_with_llm(
+                goal_description=planner_input_goal,
                 available_tools=available_tools_rich,
-                project_context_summary=final_context_for_planner,
-                project_name_for_context=project_name_for_context,
-                conversation_history=self.conversation_history, # Pass history
-                displayed_code_content=self.current_project_display_code # Pass displayed code
+                project_context_summary=planner_input_context_summary,
+                project_name_for_context=planner_input_project_name,
+                conversation_history=planner_input_conversation_history,
+                displayed_code_content=planner_input_displayed_code
             )
 
+            self.current_plan = planner_response.get("plan") # This might be None, a list, or an empty list
+            clarification_question_from_planner = planner_response.get("clarification_question")
+            planner_error_message = planner_response.get("error_message")
+
+            if clarification_question_from_planner:
+                logger.info(f"Orchestrator: Planner requested clarification: '{clarification_question_from_planner}'")
+                self.awaiting_clarification = True
+                self.original_prompt_for_clarification = prompt # The user's most recent prompt that led to this
+                self.last_clarification_question_sent_to_user = clarification_question_from_planner
+                self.clarification_context = { # Store the context used for *this* planning attempt
+                    "project_context_summary": planner_input_context_summary, # This already includes facts
+                    "project_name_for_context": planner_input_project_name,
+                    "conversation_history": planner_input_conversation_history, # History up to the ambiguous prompt
+                    "displayed_code_content": planner_input_displayed_code
+                }
+
+                response_message_for_history = clarification_question_from_planner
+                self.conversation_history.append({"role": "assistant", "content": response_message_for_history})
+                # Schedule post-interaction analysis even for clarification requests
+                analysis_context_clarify = {
+                    "user_prompt": prompt, "ai_response": response_message_for_history,
+                    "plan_details_json": "null", "tool_results_json": "null",
+                    "overall_success_status": "clarification_requested", "user_id": user_id
+                }
+                asyncio.create_task(self._perform_post_interaction_analysis(analysis_context_clarify))
+                return True, {"chat_response": response_message_for_history, "project_area_html": None}
+
+            if planner_error_message:
+                logger.error(f"Orchestrator: Planner returned an error: {planner_error_message}")
+                # This error will be caught by the main try...except block or handled by conversational fallback
+                self.context['last_error_info'] = f"Planning Error: {planner_error_message}"
+                # self.current_plan will be None, leading to conversational fallback which might use last_error_info
+
             # --- Hierarchical Planning for Project Intents or Complex Fallbacks ---
-            # This block handles both explicit project intents and fallbacks for complex tasks if initial planning fails.
+            # This block handles both explicit project intents and fallbacks for complex tasks if initial planning (self.current_plan) is empty/None.
 
             use_hierarchical_planner_flag = False # General flag to trigger HP
 

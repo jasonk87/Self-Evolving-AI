@@ -97,14 +97,22 @@ class PlannerAgent:
         project_name_for_context: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         displayed_code_content: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        import json 
+    ) -> Dict[str, Any]: # New return type
+        import json
 
         MAX_CORRECTION_ATTEMPTS = 1
         current_attempt = 0
         llm_response_str: Optional[str] = None
-        parsed_plan: Optional[List[Dict[str, Any]]] = None
+        # parsed_data can be a list (plan) or dict (clarification)
+        parsed_data: Optional[Any] = None
         last_error_description: str = "No response from LLM."
+
+        # Default return structure
+        result_dict: Dict[str, Any] = {
+            "plan": None,
+            "clarification_question": None,
+            "error_message": None
+        }
 
         print(f"\nPlannerAgent (LLM): Attempting to create plan for goal: '{goal_description}'")
 
@@ -304,9 +312,20 @@ Each step dictionary *MUST* contain the following keys:
     5.  **Verification (Optional but Recommended):** After a modification, you might consider using `get_text_file_snippet` again to read the modified section or `read_text_from_file` (if small) to confirm the change, then use `respond_to_user` to inform about the outcome.
 
 If the goal cannot be achieved with the available tools (and is not purely analytical/conversational as described above), or if it's unclear after considering context and search, return an empty JSON list [].
-Respond ONLY with the JSON plan. Do not include any other text, comments, or explanations outside the JSON structure.
-The entire response must be a single, valid JSON object (a list of steps).
-JSON Plan:
+
+**Handling Ambiguity and Requesting Clarification:**
+- If the user's LATEST goal is ambiguous, unclear, or lacks critical information needed to select a tool or populate its arguments, DO NOT attempt to guess or make a flawed plan.
+- Instead, your primary response should be to ask a concise clarifying question.
+- To do this, your JSON output should be structured as follows:
+  `{{"request_clarification": true, "clarification_question": "Your specific question to the user here."}}`
+- In this case, do not include a "plan" (list of tool steps). Only provide the clarification request object.
+- Example: If user says "Convert the file.", you might return:
+  `{{"request_clarification": true, "clarification_question": "Which file would you like me to convert, and what format should it be converted to?"}}`
+- If the goal is clear and a plan can be made, then provide the plan as a JSON list of steps as previously instructed (e.g., `[ {{"tool_name": ..., "args": ...}}, ... ]`), and do not include "request_clarification".
+
+Respond ONLY with the JSON (either the plan list or the clarification request object). Do not include any other text, comments, or explanations outside the JSON structure.
+The entire response must be a single, valid JSON object.
+JSON Output:
 """
         
         CORRECTION_PROMPT_TEMPLATE = """Your previous attempt to generate a JSON plan had issues.
@@ -392,26 +411,22 @@ JSON Plan:
             json_str_to_parse = cleaned_llm_response_str # Use the cleaned version
             match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
             if match: json_str_to_parse = match.group(1)
-            json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
+            # Updated to strip "JSON Output:" as well
+            json_str_to_parse = re.sub(r"^\s*JSON (?:Plan|Output):?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
 
             try:
-                parsed_plan = json.loads(json_str_to_parse)
+                parsed_data = json.loads(json_str_to_parse) # Changed variable name
             except json.JSONDecodeError as e:
                 # Enhanced error reporting for JSONDecodeError
                 error_line_num = e.lineno
                 error_col_num = e.colno
                 error_msg = e.msg
-
                 lines = json_str_to_parse.splitlines()
                 snippet_parts = []
-
-                # Add line before error, error line, and line after error
-                for i in range(max(0, error_line_num - 2), min(len(lines), error_line_num + 1)):
-                    current_line_num_for_display = i + 1 # 1-indexed for display
-                    line_content = lines[i]
+                for i_err_line in range(max(0, error_line_num - 2), min(len(lines), error_line_num + 1)):
+                    current_line_num_for_display = i_err_line + 1
+                    line_content = lines[i_err_line]
                     if current_line_num_for_display == error_line_num:
-                        # Add marker to the error line
-                        # Adjust colno because it's 1-indexed and strings are 0-indexed
                         marker_pos = error_col_num - 1
                         if marker_pos < 0: marker_pos = 0
                         if marker_pos > len(line_content): marker_pos = len(line_content)
@@ -419,9 +434,7 @@ JSON Plan:
                         snippet_parts.append(f"L{current_line_num_for_display}: {marked_line}")
                     else:
                         snippet_parts.append(f"L{current_line_num_for_display}: {line_content}")
-
                 json_snippet_str = "\n".join(snippet_parts)
-
                 last_error_description = (
                     f"Failed to parse JSON response.\n"
                     f"Error: {error_msg}\n"
@@ -429,99 +442,92 @@ JSON Plan:
                     f"Problematic JSON snippet:\n---\n{json_snippet_str}\n---\n"
                     f"Full response that failed parsing (after cleaning, first 500 chars):\n'{json_str_to_parse[:500]}{'...' if len(json_str_to_parse) > 500 else ''}'"
                 )
-                print(f"PlannerAgent (LLM): Detailed JSONDecodeError: {last_error_description}") # Print the detailed error
+                print(f"PlannerAgent (LLM): Detailed JSONDecodeError: {last_error_description}")
                 current_attempt += 1
                 if current_attempt <= MAX_CORRECTION_ATTEMPTS:
                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
                         goal=goal_description,
                         conversation_history_section=conversation_history_section_str,
                         project_context_section=project_context_section_str,
-                        displayed_code_section=displayed_code_section_str, # Added
+                        displayed_code_section=displayed_code_section_str,
                         tools_json_string=tools_json_string,
                         previous_llm_response=llm_response_str or "",
                         error_description=last_error_description
                     )
-                continue
+                parsed_data = None # Ensure parsed_data is None before continue
+                continue # Next attempt in the while loop
 
-            print(f"PlannerAgent (LLM): Raw response from LLM (Attempt {current_attempt + 1}):\n---\n{llm_response_str}\n---")
+            # --- Check if LLM requested clarification ---
+            if isinstance(parsed_data, dict) and parsed_data.get("request_clarification") is True:
+                clarification_q = parsed_data.get("clarification_question")
+                if isinstance(clarification_q, str) and clarification_q.strip():
+                    print(f"PlannerAgent (LLM): LLM requested clarification: '{clarification_q}'")
+                    result_dict["clarification_question"] = clarification_q.strip()
+                    return result_dict # Return immediately with clarification question
+                else:
+                    last_error_description = "LLM indicated 'request_clarification' but provided no valid 'clarification_question' string."
+                    print(f"PlannerAgent (LLM): {last_error_description}")
+                    # Fall through to treat as other error, will trigger retry or final failure.
             
-            json_str_to_parse = llm_response_str
-            match = re.search(r"```json\s*([\s\S]*?)\s*```", json_str_to_parse)
-            if match: json_str_to_parse = match.group(1)
-            json_str_to_parse = re.sub(r"^\s*JSON Plan:?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
+            # --- If not clarification, assume it's a plan (list of steps) ---
+            elif isinstance(parsed_data, list):
+                validated_plan: List[Dict[str, Any]] = []
+                valid_plan_overall = True
+                if not parsed_data: # Empty list [] is a valid plan for conversational/analytical goals
+                    print(f"PlannerAgent (LLM): Successfully parsed an empty plan (Attempt {current_attempt + 1}).")
+                    result_dict["plan"] = []
+                    return result_dict
 
-            try:
-                parsed_plan = json.loads(json_str_to_parse)
-            except json.JSONDecodeError as e:
-                last_error_description = f"Failed to parse JSON response. Error: {e}. Response: '{json_str_to_parse}'"
-                print(f"PlannerAgent (LLM): {last_error_description}")
-                current_attempt += 1
-                if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description,
-                        conversation_history_section=conversation_history_section_str,
-                        project_context_section=project_context_section_str,
-                        displayed_code_section=displayed_code_section_str, # Added
-                        tools_json_string=tools_json_string,
-                        previous_llm_response=llm_response_str,
-                        error_description=f"Response was not valid JSON. Error: {e}"
-                    )
-                continue
+                for i_step, step in enumerate(parsed_data):
+                    if not isinstance(step, dict):
+                        last_error_description = f"Step {i_step+1} is not a dictionary. Content: {step}"
+                        valid_plan_overall = False; break
+                    tool_name = step.get("tool_name")
+                    args = step.get("args", [])
+                    kwargs = step.get("kwargs", {})
+                    if not tool_name or not isinstance(tool_name, str) or tool_name not in available_tools:
+                        last_error_description = f"Step {i_step+1} has missing/invalid/unavailable tool_name '{tool_name}'. Content: {step}"
+                        valid_plan_overall = False; break
+                    if not isinstance(args, list): args = [] # Default to empty list if not list
+                    if not isinstance(kwargs, dict): kwargs = {} # Default to empty dict if not dict
+                    validated_plan.append({"tool_name": tool_name, "args": tuple(str(a) for a in args), "kwargs": {str(k): str(v) for k, v in kwargs.items()}})
 
-            if not isinstance(parsed_plan, list):
-                last_error_description = f"LLM returned an invalid plan format - not a list. Got: {type(parsed_plan)}"
-                print(f"PlannerAgent (LLM): {last_error_description}")
-                current_attempt += 1
-                if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                     current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description,
-                        conversation_history_section=conversation_history_section_str,
-                        project_context_section=project_context_section_str,
-                        displayed_code_section=displayed_code_section_str, # Added
-                        tools_json_string=tools_json_string,
-                        previous_llm_response=llm_response_str,
-                        error_description=last_error_description
-                    )
-                parsed_plan = None
-                continue
+                if valid_plan_overall:
+                    print(f"PlannerAgent (LLM): Successfully parsed and validated LLM plan (Attempt {current_attempt + 1}): {validated_plan}")
+                    result_dict["plan"] = validated_plan
+                    return result_dict
+                else: # Plan validation failed
+                    print(f"PlannerAgent (LLM): Plan validation failed. Error: {last_error_description}")
+                    # Fall through to trigger retry or final failure.
 
-            validated_plan: List[Dict[str, Any]] = []
-            valid_plan_overall = True
-            for i, step in enumerate(parsed_plan):
-                if not isinstance(step, dict):
-                    last_error_description = f"Step {i+1} is not a dictionary. Content: {step}"
-                    valid_plan_overall = False; break
-                tool_name = step.get("tool_name")
-                args = step.get("args", []) 
-                kwargs = step.get("kwargs", {}) 
-                if not tool_name or not isinstance(tool_name, str) or tool_name not in available_tools:
-                    last_error_description = f"Step {i+1} has missing/invalid/unavailable tool_name '{tool_name}'. Content: {step}"
-                    valid_plan_overall = False; break
-                if not isinstance(args, list): args = []
-                if not isinstance(kwargs, dict): kwargs = {}
-                validated_plan.append({"tool_name": tool_name, "args": tuple(str(a) for a in args), "kwargs": {str(k): str(v) for k, v in kwargs.items()}})
-            
-            if valid_plan_overall:
-                print(f"PlannerAgent (LLM): Successfully parsed and validated LLM plan (Attempt {current_attempt + 1}): {validated_plan}")
-                return validated_plan
-            else: # Error message already printed
+            else: # Parsed data is not a dict for clarification, nor a list for a plan
+                last_error_description = f"LLM returned an invalid top-level JSON structure. Expected a list (for a plan) or a dict (for clarification), but got {type(parsed_data)}."
                 print(f"PlannerAgent (LLM): {last_error_description}")
-                current_attempt += 1
-                if current_attempt <= MAX_CORRECTION_ATTEMPTS:
-                    current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
-                        goal=goal_description,
-                        conversation_history_section=conversation_history_section_str,
-                        project_context_section=project_context_section_str,
-                        displayed_code_section=displayed_code_section_str, # Added
-                        tools_json_string=tools_json_string,
-                        previous_llm_response=llm_response_str,
-                        error_description=last_error_description
-                    )
-                parsed_plan = None
+                # Fall through to trigger retry or final failure.
+
+            # --- If we reached here, it means an error occurred after successful JSON parsing but before returning a valid plan/clarification ---
+            # This could be due to invalid plan structure, or clarification indicated but no question.
+            current_attempt += 1
+            if current_attempt <= MAX_CORRECTION_ATTEMPTS:
+                current_prompt_text = CORRECTION_PROMPT_TEMPLATE.format(
+                    goal=goal_description,
+                    conversation_history_section=conversation_history_section_str,
+                    project_context_section=project_context_section_str,
+                    displayed_code_section=displayed_code_section_str,
+                    tools_json_string=tools_json_string,
+                    previous_llm_response=llm_response_str or "",
+                    error_description=last_error_description
+                )
+                parsed_data = None # Reset before next attempt
                 continue
+            else: # Max attempts reached for this type of error
+                break # Exit while loop, will fall through to final error message
+
+        # End of while loop for attempts
         
-        print(f"PlannerAgent (LLM): All {MAX_CORRECTION_ATTEMPTS + 1} attempts to generate a valid plan failed. Last error: {last_error_description}")
-        return []
+        result_dict["error_message"] = f"PlannerAgent (LLM): All {MAX_CORRECTION_ATTEMPTS + 1} attempts to generate a valid plan or clarification failed. Last error: {last_error_description}"
+        print(result_dict["error_message"])
+        return result_dict
 
     async def replan_after_failure(
         self,
