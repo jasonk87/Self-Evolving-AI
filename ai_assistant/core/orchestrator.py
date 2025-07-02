@@ -50,7 +50,7 @@ class DynamicOrchestrator:
         self.hierarchical_planner = hierarchical_planner
         self.context: Dict[str, Any] = {} # For last_results, etc.
         self.current_goal: Optional[str] = None
-        self.current_plan: Optional[List[Dict[str, Any]]] = None # This will store the plan from PlannerAgent's dict
+        self.current_plan: Optional[List[Dict[str, Any]]] = None
         self.conversation_history: List[Dict[str, str]] = []
         self.current_project_display_code: Optional[str] = None
 
@@ -58,7 +58,18 @@ class DynamicOrchestrator:
         self.awaiting_clarification: bool = False
         self.original_prompt_for_clarification: Optional[str] = None
         self.last_clarification_question_sent_to_user: Optional[str] = None
-        self.clarification_context: Optional[Dict[str, Any]] = None # To store history, project_context etc.
+        self.clarification_context: Optional[Dict[str, Any]] = None
+
+        # Conversational Memory & Summarization
+        self.current_conversation_summary: Optional[str] = None
+        from ai_assistant.config import CONVERSATION_HISTORY_TURNS
+        self._N_raw_pairs = CONVERSATION_HISTORY_TURNS # e.g., 5 pairs
+        self._max_raw_history_messages = self._N_raw_pairs * 2 # e.g., 10 messages
+        # Summarize when raw history has N_raw_pairs + K_buffer_pairs
+        # K_buffer_pairs = 2 means summarize when we have N+2 pairs, summarize the oldest 2 pairs.
+        self._K_buffer_pairs = 2
+        self._summarization_threshold_messages = (self._N_raw_pairs + self._K_buffer_pairs) * 2 # e.g., (5+2)*2 = 14 messages
+        self._messages_to_summarize_chunk = self._K_buffer_pairs * 2 # e.g., 2*2 = 4 messages (2 pairs)
 
     def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
         if not plan:
@@ -297,14 +308,25 @@ class DynamicOrchestrator:
             # --- END Contextualization Phase ---
 
             planner_input_goal = prompt
-            planner_input_context_summary = project_context_summary if project_context_summary else ""
-            if learned_facts_section_str: # Append learned facts to the project context summary for the planner
-                if planner_input_context_summary:
-                    planner_input_context_summary += "\n\n" + learned_facts_section_str
-                else:
-                    planner_input_context_summary = learned_facts_section_str
 
-            planner_input_conversation_history = self.conversation_history
+            # Start with project context and learned facts for planner_input_context_summary
+            current_project_and_facts_context = project_context_summary if project_context_summary else ""
+            if learned_facts_section_str:
+                if current_project_and_facts_context:
+                    current_project_and_facts_context += "\n\n" + learned_facts_section_str
+                else:
+                    current_project_and_facts_context = learned_facts_section_str
+
+            # Prepend conversation summary if it exists
+            planner_input_context_summary = current_project_and_facts_context
+            if self.current_conversation_summary:
+                summary_to_prepend = f"Previous Conversation Summary (Oldest to Newest Segments):\n---\n{self.current_conversation_summary}\n---\n\n"
+                if planner_input_context_summary:
+                    planner_input_context_summary = summary_to_prepend + planner_input_context_summary
+                else:
+                    planner_input_context_summary = summary_to_prepend.strip() # Remove trailing newlines if it's the only context
+
+            planner_input_conversation_history = self.conversation_history # This is the raw recent history
             planner_input_displayed_code = self.current_project_display_code
             planner_input_project_name = project_name_for_context
 
@@ -938,6 +960,33 @@ class DynamicOrchestrator:
                 logger.error(f"Orchestrator: Error scheduling or initiating post-interaction analysis: {pia_ex}", exc_info=True)
             # --- End Post-Interaction Analysis ---
 
+            # --- Conversation History Summarization ---
+            if len(self.conversation_history) >= self._summarization_threshold_messages:
+                logger.info(f"Orchestrator: Conversation history length ({len(self.conversation_history)}) reached threshold ({self._summarization_threshold_messages}). Attempting summarization.")
+
+                # Ensure _messages_to_summarize_chunk is even, as it represents pairs
+                num_messages_to_summarize = self._messages_to_summarize_chunk
+                if num_messages_to_summarize % 2 != 0 and num_messages_to_summarize > 0: # Should be even from definition
+                    num_messages_to_summarize -=1 # Make it even by reducing one, less ideal but safe
+
+                if num_messages_to_summarize > 0:
+                    chunk_to_summarize = self.conversation_history[:num_messages_to_summarize]
+
+                    new_summary_chunk = await self._summarize_conversation_chunk(chunk_to_summarize)
+                    if new_summary_chunk:
+                        if self.current_conversation_summary:
+                            self.current_conversation_summary += f"\n\n---\n[Summary of next {len(chunk_to_summarize)//2} turns]\n{new_summary_chunk}"
+                        else:
+                            self.current_conversation_summary = f"[Summary of first {len(chunk_to_summarize)//2} turns]\n{new_summary_chunk}"
+
+                        # Remove summarized part from raw history
+                        self.conversation_history = self.conversation_history[num_messages_to_summarize:]
+                        logger.info(f"Orchestrator: Summarized {len(chunk_to_summarize)} messages. New raw history length: {len(self.conversation_history)}. Total summary length: {len(self.current_conversation_summary)}")
+                    else:
+                        logger.warning("Orchestrator: Summarization of conversation chunk returned no content. Raw history not pruned for this cycle.")
+            # --- End Conversation History Summarization ---
+
+
             return overall_success_of_plan, response_data # Ensure returning the dict
 
         except Exception as e:
@@ -1150,6 +1199,51 @@ Analyze the provided interaction and generate your JSON response.
 
         except Exception as ex:
             logger.error(f"Orchestrator: Unhandled error in _perform_post_interaction_analysis: {ex}", exc_info=True)
+
+    async def _summarize_conversation_chunk(self, history_chunk: List[Dict[str, str]]) -> Optional[str]:
+        """
+        Summarizes a chunk of conversation history using an LLM.
+        """
+        if not history_chunk:
+            return None
+
+        if not (self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider):
+            logger.error("Orchestrator: LLM provider not available for summarization.")
+            return None
+
+        formatted_chunk = "\n".join([f"{turn['role'].capitalize()}: {turn['content']}" for turn in history_chunk])
+
+        summarizer_prompt_template = """You are a helpful AI assistant tasked with summarizing a portion of an ongoing conversation between a User and an AI Assistant. Your goal is to create a concise summary that captures the key information, decisions made, important entities mentioned, unresolved questions, or the main progression of this specific segment of the conversation. This summary will be used later to provide long-term context to the AI Assistant.
+
+Focus on factual information and the conversational flow. Avoid conversational fluff.
+The summary should be a few sentences to a short paragraph.
+
+Conversation Segment to Summarize:
+---
+{formatted_conversation_chunk}
+---
+
+Concise Summary of the above segment:"""
+
+        prompt_for_summarizer = summarizer_prompt_template.format(formatted_conversation_chunk=formatted_chunk)
+        summarization_model = get_model_for_task("summarization") # Ensure "summarization" is a valid task in config
+
+        try:
+            logger.info(f"Orchestrator: Requesting summarization for a chunk of {len(history_chunk)} messages.")
+            summary = await self.action_executor.code_service.llm_provider.invoke_ollama_model_async(
+                prompt=prompt_for_summarizer,
+                model_name=summarization_model
+            )
+            if summary and summary.strip():
+                logger.info(f"Orchestrator: Summarization successful. Summary length: {len(summary)}")
+                return summary.strip()
+            else:
+                logger.warning("Orchestrator: Summarization LLM returned empty or whitespace-only summary.")
+                return None
+        except Exception as e_summary:
+            logger.error(f"Orchestrator: Error during LLM call for summarization: {e_summary}", exc_info=True)
+            return None
+
 
     async def _dispatch_reflection_actions(self, actions_list: List[Dict[str, Any]], original_user_id: Optional[str] = None):
         """

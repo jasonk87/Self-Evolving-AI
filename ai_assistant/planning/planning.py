@@ -145,19 +145,26 @@ class PlannerAgent:
         LLM_PLANNING_PROMPT_TEMPLATE = """**Primary Directive:** Your main task is to formulate a JSON plan of tool calls to achieve the LATEST user goal: "{goal}"
 
 **Contextual Information (Use ONLY if directly relevant to the LATEST user goal):**
-{conversation_history_section}
+<!-- Note: project_context_section may include a "Previous Conversation Summary" if available -->
 {project_context_section}
+{conversation_history_section} <!-- This is RECENT raw history -->
 {displayed_code_section}
-<!-- Relevant Learned Facts might be part of project_context_section or conversation_history_section if provided by orchestrator -->
+<!-- Relevant Learned Facts might be part of project_context_section if provided by orchestrator -->
 
 **Instructions for Using Context:**
 1.  **LATEST User Goal is Paramount:** The user's statement "{goal}" is your primary focus. Your plan MUST directly address this.
-2.  **Conversation History:**
-    *   If provided under "Recent Conversation History", use the LAST 1-2 user/assistant turns to understand pronouns (he, she, it, that) and the immediate topic related to "{goal}".
-    *   **Crucial:** DO NOT let older or unrelated topics in the history distract you from the current "{goal}". If "{goal}" introduces a new topic, prioritize that new topic.
-3.  **Project Context:** If provided under "Current Project Context", use this ONLY if "{goal}" explicitly asks to modify, discuss, or use that specific project. Otherwise, IGNORE it.
-4.  **Currently Displayed Project Code:** If provided under "Currently Displayed Project Code", this is the HTML/CSS/JS for the content currently shown in the UI's Project Display Area. Use this as a DIRECT REFERENCE if the user's LATEST goal is to *modify* or *discuss* this specific displayed content (e.g., "change the button color," "what does this script do?"). If the goal is unrelated to the displayed content, you can largely ignore this section.
-5.  **Learned Facts:** If any learned facts are implicitly part of the provided context sections, use them to make informed decisions about tools/arguments for "{goal}" and to avoid redundant actions. Only use facts pertinent to "{goal}".
+2.  **Previous Conversation Summary (if provided in `project_context_section`):**
+    *   This summary contains key information and progression from *earlier parts of the current extended conversation*.
+    *   Use this to understand broader context, recall previous decisions, facts mentioned earlier, or unresolved topics related to the current "{goal}".
+    *   It complements the "Recent Conversation History".
+3.  **Recent Conversation History (`conversation_history_section`):**
+    *   This provides the last few raw turns of the conversation.
+    *   Use this for immediate context: understanding pronouns (he, she, it, that), direct follow-ups to the very last messages, and the immediate topic related to "{goal}".
+    *   **Crucial:** DO NOT let older or unrelated topics in the history distract you from the current "{goal}". If "{goal}" introduces a new topic, prioritize that new topic, but check the Summary if that new topic might have roots earlier in the conversation.
+4.  **Project Context (if provided in `project_context_section` separately from summary):**
+    *   Use this ONLY if "{goal}" explicitly asks to modify, discuss, or use that specific project. Otherwise, IGNORE it.
+5.  **Currently Displayed Project Code:** If provided under "Currently Displayed Project Code", this is the HTML/CSS/JS for the content currently shown in the UI's Project Display Area. Use this as a DIRECT REFERENCE if the user's LATEST goal is to *modify* or *discuss* this specific displayed content (e.g., "change the button color," "what does this script do?"). If the goal is unrelated to the displayed content, you can largely ignore this section.
+6.  **Learned Facts:** If any learned facts are implicitly part of the provided context sections, use them to make informed decisions about tools/arguments for "{goal}" and to avoid redundant actions. Only use facts pertinent to "{goal}".
 
 **Your Task:** Based *primarily* on the LATEST user goal ("{goal}"), and using other context *only for clarification and direct relevance* to this goal, generate a plan.
 
