@@ -25,18 +25,48 @@ class TestCodeService(unittest.TestCase):
     def setUp(self):
         self.mock_llm_provider = mock.AsyncMock()
         self.mock_self_mod_service = mock.Mock()
+        self.mock_task_manager = mock.Mock()
+        # Mock the add_task method to return a mock task object with a task_id
+        self.mock_task = mock.Mock()
+        self.mock_task.task_id = str(uuid.uuid4())
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
+        self.mock_notification_manager = mock.Mock()
+
 
         self.code_service = CodeService(
             llm_provider=self.mock_llm_provider,
-            self_modification_service=self.mock_self_mod_service
+            self_modification_service=self.mock_self_mod_service,
+            task_manager=self.mock_task_manager,
+            notification_manager=self.mock_notification_manager
         )
         # Store a version of code_service with None providers for specific tests
-        self.code_service_no_llm = CodeService(llm_provider=None, self_modification_service=self.mock_self_mod_service)
-        self.code_service_no_self_mod = CodeService(llm_provider=self.mock_llm_provider, self_modification_service=None)
+        self.code_service_no_llm = CodeService(
+            llm_provider=None,
+            self_modification_service=self.mock_self_mod_service,
+            task_manager=self.mock_task_manager,
+            notification_manager=self.mock_notification_manager
+        )
+        self.code_service_no_self_mod = CodeService(
+            llm_provider=self.mock_llm_provider,
+            self_modification_service=None,
+            task_manager=self.mock_task_manager,
+            notification_manager=self.mock_notification_manager
+        )
+        self.code_service_no_task_manager = CodeService(
+            llm_provider=self.mock_llm_provider,
+            self_modification_service=self.mock_self_mod_service,
+            task_manager=None, # No TaskManager
+            notification_manager=self.mock_notification_manager
+        )
 
 
     # --- Tests for generate_code (NEW_TOOL context) ---
     async def test_generate_code_new_tool_success_no_save(self): # RENAMED, target_path=None
+        # Reset mocks for this specific test if they are instance-wide and might be affected by other tests
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task # Re-assign after reset
+
         expected_metadata = {"suggested_function_name": "add_numbers", "suggested_tool_name": "addNumbers", "suggested_description": "Adds two numbers."}
         metadata_json_str = json.dumps(expected_metadata)
         expected_code_content = "def add_numbers(a: int, b: int) -> int:\n    return a + b"
@@ -55,9 +85,29 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNone(result["error"])
         self.assertIsNone(result.get("saved_to_path")) # Verify no save path
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.mock_task_manager.update_task_status.assert_called_with(
+            self.mock_task.task_id,
+            mock.ANY, # Status can vary (e.g., GENERATING_CODE, COMPLETED_SUCCESSFULLY)
+            reason=mock.ANY, # Reason can vary
+            step_desc=mock.ANY # step_desc can vary
+        )
+        # Check that update_task_status was called at least for 'COMPLETED_SUCCESSFULLY'
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY status update was not made."
+        )
+
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_new_tool_success_and_save(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock() # Reset for this test
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
+
         expected_metadata = {"suggested_function_name": "add_numbers", "suggested_tool_name": "addNumbers", "suggested_description": "Adds two numbers."}
         metadata_json_str = json.dumps(expected_metadata)
         expected_code_content = "def add_numbers(a: int, b: int) -> int:\n    return a + b"
@@ -80,9 +130,20 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNone(result["error"])
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
         mock_write_to_file.assert_called_once_with(test_target_path, expected_code_content)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY status update was not made for successful save."
+        )
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_new_tool_save_fails(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock() # Reset for this test
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
         expected_metadata = {"suggested_function_name": "add_numbers", "suggested_tool_name": "addNumbers", "suggested_description": "Adds two numbers."}
         metadata_json_str = json.dumps(expected_metadata)
         expected_code_content = "def add_numbers(a: int, b: int) -> int:\n    return a + b"
@@ -105,8 +166,18 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNotNone(result["error"])
         self.assertIn("failed to save", result["error"])
         mock_write_to_file.assert_called_once_with(test_target_path, expected_code_content)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_DURING_APPLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_DURING_APPLY status update was not made for save failure."
+        )
 
     async def test_generate_code_new_tool_llm_no_code(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty response
 
         result = await self.code_service.generate_code(
@@ -116,8 +187,18 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_LLM_NO_CODE")
         self.assertIsNone(result["code_string"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status update for LLM_NO_CODE."
+        )
 
     async def test_generate_code_new_tool_missing_metadata_line(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         llm_output = "def my_func(): pass" # No # METADATA: line
         self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_output
 
@@ -129,8 +210,18 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["code_string"], "def my_func(): pass")
         self.assertIsNone(result["metadata"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status update for METADATA_PARSING error."
+        )
 
     async def test_generate_code_new_tool_malformed_metadata_json(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         llm_output = "# METADATA: {this_is_not_json: }\ndef my_func(): pass"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_output
 
@@ -142,8 +233,18 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["code_string"].strip(), "def my_func(): pass")
         self.assertIsNone(result["metadata"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status update for malformed METADATA_JSON."
+        )
 
     async def test_generate_code_new_tool_metadata_ok_no_code_block(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         expected_metadata = {"suggested_function_name": "add_numbers", "suggested_tool_name": "addNumbers", "suggested_description": "Adds two numbers."}
         metadata_json_str = json.dumps(expected_metadata)
         llm_output = f"# METADATA: {metadata_json_str}\n   # Only comments, no actual code"
@@ -157,17 +258,38 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["code_string"], "# Only comments, no actual code")
         self.assertEqual(result["metadata"], expected_metadata)
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status update for CODE_EMPTY_POST_METADATA."
+        )
 
     async def test_generate_code_unsupported_context_for_generate(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         # This test doesn't involve LLM provider, so can use any CS instance
         result = await self.code_service.generate_code(
-            context="SELF_FIX_TOOL",
+            context="SELF_FIX_TOOL", # Using a context not valid for generate_code
             prompt_or_description="A test tool."
         )
         self.assertEqual(result["status"], "ERROR_UNSUPPORTED_CONTEXT")
         self.assertIsNone(result["code_string"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW status for UNSUPPORTED_CONTEXT."
+        )
+
 
     async def test_generate_code_llm_provider_missing(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         result = await self.code_service_no_llm.generate_code(
             context="NEW_TOOL",
             prompt_or_description="A tool."
@@ -175,9 +297,20 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_LLM_PROVIDER_MISSING")
         self.assertIsNone(result["code_string"])
         self.assertIn("LLM provider not configured", result["error"])
+        self.mock_task_manager.add_task.assert_called_once() # Task is added before provider check
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW status for LLM_PROVIDER_MISSING."
+        )
+
 
     # --- Tests for modify_code (focused on SELF_FIX_TOOL context) ---
     async def test_modify_code_self_fix_tool_success(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_self_mod_service.get_function_source_code.return_value = "def old_func(a): return a"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "def old_func(a): return a + 1 # Fixed by LLM"
 
@@ -193,8 +326,18 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["modified_code_string"], "def old_func(a): return a + 1 # Fixed by LLM")
         self.mock_self_mod_service.get_function_source_code.assert_called_once_with("dummy.module", "old_func")
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY status for SELF_FIX_TOOL success."
+        )
 
     async def test_modify_code_self_fix_tool_no_original_code(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_self_mod_service.get_function_source_code.return_value = None
 
         result = await self.code_service.modify_code(
@@ -207,8 +350,18 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_NO_ORIGINAL_CODE")
         self.assertIsNone(result["modified_code_string"])
         self.mock_self_mod_service.get_function_source_code.assert_called_once_with("dummy.module", "some_func")
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW status for NO_ORIGINAL_CODE."
+        )
 
     async def test_modify_code_self_fix_tool_llm_no_suggestion(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         # Provide existing_code directly, so get_function_source_code is not called
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "// NO_CODE_SUGGESTION_POSSIBLE"
 
@@ -223,8 +376,18 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNone(result["modified_code_string"])
         self.mock_self_mod_service.get_function_source_code.assert_not_called() # Because existing_code was provided
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status for LLM_NO_SUGGESTION."
+        )
 
     async def test_modify_code_self_fix_tool_llm_empty_response(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "   "
 
         result = await self.code_service.modify_code(
@@ -237,26 +400,57 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_LLM_NO_SUGGESTION")
         self.assertIsNone(result["modified_code_string"])
         self.mock_self_mod_service.get_function_source_code.assert_not_called()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN status for LLM empty response in SELF_FIX_TOOL."
+        )
 
     async def test_modify_code_unsupported_context(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         result = await self.code_service.modify_code(
             context="UNKNOWN_CONTEXT",
             modification_instruction="Do something.",
             existing_code="code"
         )
         self.assertEqual(result["status"], "ERROR_UNSUPPORTED_CONTEXT")
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW status for UNKNOWN_CONTEXT in modify_code."
+        )
 
     async def test_modify_code_missing_details_for_self_fix(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         result = await self.code_service.modify_code(
             context="SELF_FIX_TOOL",
             modification_instruction="Fix it.",
-            existing_code="code",
-            module_path=None,
+            existing_code="code", # existing_code is provided, so self_mod_service not called for fetch
+            module_path=None, # This is the detail that's missing for the prompt
             function_name="some_func"
         )
         self.assertEqual(result["status"], "ERROR_MISSING_DETAILS")
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW status for MISSING_DETAILS in SELF_FIX_TOOL."
+        )
+
 
     async def test_modify_code_llm_provider_missing(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         # For this test, self_modification_service might be called first if existing_code is None
         self.mock_self_mod_service.get_function_source_code.return_value = "def old_func(): pass"
         result = await self.code_service_no_llm.modify_code(
@@ -271,9 +465,19 @@ class TestCodeService(unittest.TestCase):
         self.assertIn("LLM provider not configured", result["error"])
         # Ensure self_mod_service was called as it's configured for code_service_no_llm
         self.mock_self_mod_service.get_function_source_code.assert_called_with("dummy.module", "old_func")
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW for LLM_PROVIDER_MISSING in modify_code."
+        )
 
 
     async def test_modify_code_self_mod_service_missing(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         result = await self.code_service_no_self_mod.modify_code(
             context="SELF_FIX_TOOL",
             modification_instruction="Fix it.",
@@ -284,9 +488,19 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_SELF_MOD_SERVICE_MISSING")
         self.assertIsNone(result["modified_code_string"])
         self.assertIn("Self modification service not configured", result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW for SELF_MOD_SERVICE_MISSING."
+        )
 
     # --- Tests for generate_code (GENERATE_UNIT_TEST_SCAFFOLD context) ---
     async def test_generate_code_unit_test_scaffold_success_no_save(self): # RENAMED
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         expected_scaffold = "import unittest\nfrom your_module_to_test import my_func\n\nclass TestMyFunc(unittest.TestCase):\n    def test_my_func_basic(self):\n        self.fail(\"Test not yet implemented\")"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_scaffold
@@ -307,9 +521,17 @@ class TestCodeService(unittest.TestCase):
         args, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
         self.assertIn(sample_code_to_test, args[0])
         self.assertIn("module_name_hint='your_module_to_test'", args[0])
+        self.mock_task_manager.add_task.assert_called_once()
+        # This context currently doesn't have specific COMPLETED_SUCCESSFULLY update in service.py
+        # It will fall to the generic generate_code exception handler or implicit success if no error.
+        # For now, just check add_task was called. More specific status checks can be added if service logic changes.
+        self.assertTrue(self.mock_task_manager.update_task_status.called)
+
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_unit_test_scaffold_success_and_save(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         expected_scaffold = "import unittest\nfrom your_module_to_test import my_func\n\nclass TestMyFunc(unittest.TestCase):\n    def test_my_func_basic(self):\n        self.fail(\"Test not yet implemented\")"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_scaffold
@@ -328,9 +550,13 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["saved_to_path"], test_target_path)
         self.assertIsNone(result["error"])
         mock_write_to_file.assert_called_once_with(test_target_path, expected_scaffold)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(self.mock_task_manager.update_task_status.called) # Basic check for now
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_unit_test_scaffold_save_fails(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         expected_scaffold = "import unittest\nfrom your_module_to_test import my_func\n\nclass TestMyFunc(unittest.TestCase):\n    def test_my_func_basic(self):\n        self.fail(\"Test not yet implemented\")"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_scaffold
@@ -350,8 +576,14 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNotNone(result["error"])
         self.assertIn("failed to save", result["error"])
         mock_write_to_file.assert_called_once_with(test_target_path, expected_scaffold)
+        self.mock_task_manager.add_task.assert_called_once()
+        # This context also doesn't have specific FAILED_DURING_APPLY, relies on general error handling
+        self.assertTrue(self.mock_task_manager.update_task_status.called)
+
 
     async def test_generate_code_unit_test_scaffold_llm_no_code(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty response
 
@@ -363,8 +595,19 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_LLM_NO_CODE")
         self.assertIsNone(result["code_string"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        # Relies on general error handling in generate_code for task update
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN # From top-level except
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ) or not self.mock_task_manager.update_task_status.called # If error happens before first update
+        )
+
 
     async def test_generate_code_unit_test_scaffold_llm_returns_none(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = None # None response
 
@@ -376,8 +619,17 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_LLM_NO_CODE")
         self.assertIsNone(result["code_string"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ) or not self.mock_task_manager.update_task_status.called
+        )
 
     async def test_generate_code_unit_test_scaffold_cleaning_applied(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         sample_code_to_test = "def my_func(x): return x*2"
         raw_llm_output = "```python\ndef test_scaffold(): pass\n```"
         expected_cleaned_output = "def test_scaffold(): pass"
@@ -393,9 +645,13 @@ class TestCodeService(unittest.TestCase):
         # Check that the default module_name_hint was used in the prompt
         args, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
         self.assertIn("module_name_hint='your_module_to_test'", args[0])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(self.mock_task_manager.update_task_status.called)
 
     # --- Tests for generate_code (EXPERIMENTAL_HIERARCHICAL_OUTLINE context) ---
     async def test_generate_code_hierarchical_outline_success(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         # Use self.mock_llm_provider from setUp
         expected_outline_dict = {"module_name": "test_module.py", "components": [{"type": "function", "name": "main"}]}
         llm_json_output = json.dumps(expected_outline_dict)
@@ -412,8 +668,18 @@ class TestCodeService(unittest.TestCase):
         self.assertIsNone(result["code_string"])
         self.assertIsNone(result["error"])
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for hierarchical_outline_success."
+        )
 
     async def test_generate_code_hierarchical_outline_llm_empty(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_llm_provider.invoke_ollama_model_async.return_value = ""
 
         result = await self.code_service.generate_code(
@@ -422,8 +688,18 @@ class TestCodeService(unittest.TestCase):
         )
         self.assertEqual(result["status"], "ERROR_LLM_NO_OUTLINE")
         self.assertIsNone(result["parsed_outline"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN for hierarchical_outline_llm_empty."
+        )
 
     async def test_generate_code_hierarchical_outline_bad_json(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "{'bad_json': not_quoted}" # Malformed JSON
 
         result = await self.code_service.generate_code(
@@ -433,8 +709,19 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING")
         self.assertIsNone(result["parsed_outline"])
         self.assertIsNotNone(result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN for hierarchical_outline_bad_json."
+        )
 
     # --- Tests for _generate_detail_for_component ---
+    # Note: _generate_detail_for_component is a private method and doesn't directly interact with TaskManager.
+    # TaskManager interactions are handled by its public callers like EXPERIMENTAL_HIERARCHICAL_FULL_TOOL.
+    # So, no direct TaskManager assertions here.
     async def test_generate_detail_for_component_success_function(self):
         component_def = {
             "type": "function", "name": "my_util_func", "signature": "(path: str) -> bool",
@@ -676,8 +963,19 @@ class MyCalc:
             self.assertEqual(call_args_method_a[0]['original_name'], "method_a") # Original name preserved
             self.assertEqual(call_args_method_a[1], mock_outline) # full_outline
 
+            self.mock_task_manager.add_task.assert_called_once()
+            self.assertTrue(
+                any(
+                    call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                    for call in self.mock_task_manager.update_task_status.call_args_list
+                ),
+                "Expected COMPLETED_SUCCESSFULLY for HIERARCHICAL_FULL_TOOL success."
+            )
+
 
     async def test_generate_code_hierarchical_full_tool_outline_fails(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         outline_gen_failure_return = {
             "status": "ERROR_OUTLINE_PARSING", "parsed_outline": None,
             "outline_str": "{bad json", "logs": ["Failed parsing"], "error": "JSON error"
@@ -691,9 +989,19 @@ class MyCalc:
             self.assertEqual(result["status"], "ERROR_OUTLINE_PARSING") # Status should propagate
             self.assertIsNone(result["component_details"])
             mock_outline_call.assert_called_once_with("A complex tool.", None)
+            self.mock_task_manager.add_task.assert_called_once()
+            self.assertTrue(
+                any(
+                    call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                    for call in self.mock_task_manager.update_task_status.call_args_list
+                ),
+                "Expected FAILED_UNKNOWN for HIERARCHICAL_FULL_TOOL outline failure."
+            )
 
 
     async def test_generate_code_hierarchical_full_tool_one_detail_fails(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_outline = {
             "module_name": "test_tool.py",
             "components": [
@@ -729,8 +1037,18 @@ class MyCalc:
             self.assertEqual(result["component_details"], expected_component_details)
             self.assertIsNotNone(result["error"]) # Error should be set for partial failure
             self.assertEqual(mock_detail_call.call_count, 2)
+            self.mock_task_manager.add_task.assert_called_once()
+            self.assertTrue(
+                any(
+                    call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                    and "Partial success" in call.kwargs.get("reason", "")
+                    for call in self.mock_task_manager.update_task_status.call_args_list
+                ),
+                "Expected FAILED_UNKNOWN with partial success reason for HIERARCHICAL_FULL_TOOL one detail_fails."
+            )
 
     # --- Tests for _generate_hierarchical_outline (private method) ---
+    # This is a private method, TaskManager calls are handled by its public callers.
     async def test_private_generate_hierarchical_outline_success(self):
         expected_outline_dict = {"module_name": "test_module.py", "components": [{"type": "function", "name": "main"}]}
         llm_json_output = json.dumps(expected_outline_dict)
@@ -807,10 +1125,20 @@ class MyCalc:
             full_outline=mock_outline,
             llm_config=None
         )
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for HIERARCHICAL_GEN_COMPLETE_TOOL success no save."
+        )
 
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_hierarchical_complete_tool_success_and_save(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
         detail_for_my_func = "def my_func():\n    print('done')"
         expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
@@ -832,9 +1160,19 @@ class MyCalc:
         self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
         self.assertEqual(result["saved_to_path"], test_target_path)
         mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for HIERARCHICAL_GEN_COMPLETE_TOOL success and save."
+        )
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_hierarchical_complete_tool_save_fails(self, mock_write_to_file):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
         detail_for_my_func = "def my_func():\n    print('done')"
         expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
@@ -858,8 +1196,19 @@ class MyCalc:
         self.assertIsNotNone(result["error"])
         self.assertIn("failed to save", result["error"])
         mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                and result.get("error") in call.kwargs.get("reason", "")
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN with error reason for HIERARCHICAL_GEN_COMPLETE_TOOL save failure."
+        )
 
     async def test_generate_code_hierarchical_complete_tool_orchestration_fails(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         # Test when _generate_hierarchical_outline fails
         self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
             "status": "ERROR_OUTLINE_PARSING", "parsed_outline": None, "logs": ["Failed parsing"], "error": "JSON error"
@@ -877,9 +1226,20 @@ class MyCalc:
         self.code_service._generate_hierarchical_outline.assert_called_once()
         self.code_service._generate_detail_for_component.assert_not_called()
         self.code_service._assemble_components.assert_not_called()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                and "Outline generation failed" in call.kwargs.get("step_desc", "")
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW with outline failure step_desc for HIERARCHICAL_GEN_COMPLETE_TOOL orchestration failure."
+        )
 
 
     async def test_generate_code_hierarchical_complete_tool_assembly_fails(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_outline = {"components": []} # Minimal valid outline
         self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
             "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
@@ -898,9 +1258,20 @@ class MyCalc:
             self.assertIsNone(result["code_string"])
             self.assertIn("Assembly crashed!", result.get("error", ""))
             mock_assemble.assert_called_once()
+            self.mock_task_manager.add_task.assert_called_once()
+            self.assertTrue(
+                any(
+                    call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                    and "Assembly failed" in call.kwargs.get("reason", "")
+                    for call in self.mock_task_manager.update_task_status.call_args_list
+                ),
+                "Expected FAILED_UNKNOWN with assembly failure reason for HIERARCHICAL_GEN_COMPLETE_TOOL assembly failure."
+            )
 
     # --- Tests for modify_code (GRANULAR_CODE_REFACTOR context) ---
     async def test_modify_code_granular_refactor_success_with_existing_code(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         original_code = "def my_func(a):\n    print('old line')\n    return a * 2"
         section_id = "print('old line')"
         instruction = "Replace the print statement with print('new line')"
@@ -925,8 +1296,18 @@ class MyCalc:
         self.assertIn(section_id, prompt_arg)
         self.assertIn(instruction, prompt_arg)
         self.mock_self_mod_service.get_function_source_code.assert_not_called()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for GRANULAR_CODE_REFACTOR success."
+        )
 
     async def test_modify_code_granular_refactor_success_fetch_code(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         original_code = "def fetched_func(b):\n    return b - 1"
         section_id = "return b - 1"
         instruction = "Change to return b - 2"
@@ -947,8 +1328,18 @@ class MyCalc:
         self.assertEqual(result["modified_code_string"], expected_modified_code)
         self.mock_self_mod_service.get_function_source_code.assert_called_once_with("fetch_test.py", "fetched_func")
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for GRANULAR_CODE_REFACTOR fetch_code success."
+        )
 
     async def test_modify_code_granular_refactor_missing_section_identifier(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         result = await self.code_service.modify_code(
             context="GRANULAR_CODE_REFACTOR",
             modification_instruction="Refactor something.",
@@ -960,8 +1351,18 @@ class MyCalc:
         self.assertEqual(result["status"], "ERROR_MISSING_SECTION_IDENTIFIER")
         self.assertIsNone(result["modified_code_string"])
         self.assertIn("Section identifier not provided", result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_PRE_REVIEW for GRANULAR_CODE_REFACTOR missing_section_identifier."
+        )
 
     async def test_modify_code_granular_refactor_llm_no_suggestion(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         self.mock_llm_provider.invoke_ollama_model_async.return_value = "// REFACTORING_SUGGESTION_IMPOSSIBLE"
         result = await self.code_service.modify_code(
             context="GRANULAR_CODE_REFACTOR",
@@ -974,10 +1375,23 @@ class MyCalc:
         self.assertEqual(result["status"], "ERROR_LLM_NO_SUGGESTION")
         self.assertIsNone(result["modified_code_string"])
         self.assertIn("REFACTORING_SUGGESTION_IMPOSSIBLE", result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_UNKNOWN for GRANULAR_CODE_REFACTOR LLM_NO_SUGGESTION."
+        )
 
     # --- Tests for Linter Integration ---
+    # These tests already mock _run_linter, so TaskManager calls related to linting
+    # are implicitly part of the success/failure paths of the calling methods (e.g., NEW_TOOL).
+    # We'll add resets and basic add_task checks for consistency.
     @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
     async def test_generate_code_new_tool_with_linter_no_issues(self, mock_run_linter_method):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_run_linter_method.return_value = ([], None) # No lint issues, no linter error
         expected_code = "def perfectly_fine_tool():\n    return True"
         self.mock_llm_provider.invoke_ollama_model_async.return_value = f'# METADATA: {json.dumps({"suggested_function_name": "fine_tool"})}\n{expected_code}'
@@ -988,9 +1402,12 @@ class MyCalc:
         self.assertEqual(result["code_string"], expected_code)
         mock_run_linter_method.assert_called_once_with(expected_code)
         self.assertTrue(all("LINT" not in log for log in result.get("logs", [])))
+        self.mock_task_manager.add_task.assert_called_once() # From NEW_TOOL context
 
     @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
     async def test_generate_code_new_tool_with_linter_issues_found(self, mock_run_linter_method):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         lint_issue_msg = "LINT (Ruff): E999 SyntaxError at 1:1: Bad syntax here"
         mock_run_linter_method.return_value = ([lint_issue_msg], None)
         buggy_code = "def buggy_tool(:\n    pass" # Syntax error
@@ -1003,9 +1420,12 @@ class MyCalc:
         mock_run_linter_method.assert_called_once_with(buggy_code)
         self.assertIn("Linting issues found:", result.get("logs", []))
         self.assertIn(lint_issue_msg, result.get("logs", []))
+        self.mock_task_manager.add_task.assert_called_once()
 
     @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
     async def test_generate_code_new_tool_with_linter_execution_error(self, mock_run_linter_method):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         linter_crash_error = "Ruff crashed unexpectedly"
         mock_run_linter_method.return_value = ([], linter_crash_error)
         some_code = "def some_code_tool():\n    return 42"
@@ -1016,9 +1436,12 @@ class MyCalc:
         self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED") # Status not affected
         mock_run_linter_method.assert_called_once_with(some_code)
         self.assertIn(f"Linter execution error: {linter_crash_error}", result.get("logs", []))
+        self.mock_task_manager.add_task.assert_called_once()
 
     @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
     async def test_generate_code_hierarchical_complete_tool_with_linter_issues(self, mock_run_linter_method):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
         mock_outline = {"module_name": "complex_tool.py", "components": [{"type": "function", "name": "main_func"}]}
         assembled_code_with_issues = "import os\n\ndef main_func( ):\n    print('issue here') # Example issue for linter"
         lint_issue_msg = "LINT (Pyflakes): main_func has trailing whitespace on params line"
@@ -1043,6 +1466,237 @@ class MyCalc:
         mock_run_linter_method.assert_called_once_with(assembled_code_with_issues)
         self.assertIn("Linting issues found in assembled code:", result.get("logs", []))
         self.assertIn(lint_issue_msg, result.get("logs", []))
+        self.mock_task_manager.add_task.assert_called_once() # From HIERARCHICAL_GEN_COMPLETE_TOOL context
+
+    # --- Tests for modify_code (SELF_FIX_AST context) ---
+    async def test_modify_code_self_fix_ast_success(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        self.mock_self_mod_service.edit_function_source_code.return_value = True # Assume it returns True on success
+
+        module_path = "my_module.py"
+        function_name = "my_function_to_fix_ast"
+        new_code = "def my_function_to_fix_ast():\n    return 'fixed by ast'"
+
+        result = await self.code_service.modify_code(
+            context="SELF_FIX_AST",
+            modification_instruction="N/A for AST fix, but param exists", # Not used by this context directly
+            module_path=module_path,
+            function_name=function_name,
+            additional_context={"new_code_string": new_code}
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_APPLIED_AST")
+        self.assertEqual(result["modified_code_string"], new_code)
+        self.assertIsNone(result["error"])
+        self.mock_self_mod_service.edit_function_source_code.assert_called_once_with(module_path, function_name, new_code)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected COMPLETED_SUCCESSFULLY for SELF_FIX_AST success."
+        )
+
+    async def test_modify_code_self_fix_ast_missing_details(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        new_code = "def test_func(): pass"
+
+        # Test missing module_path
+        result_no_module = await self.code_service.modify_code(
+            context="SELF_FIX_AST", modification_instruction="", function_name="f", additional_context={"new_code_string": new_code}
+        )
+        self.assertEqual(result_no_module["status"], "ERROR_MISSING_DETAILS")
+        self.assertIn("Missing module_path", result_no_module["error"])
+        self.mock_task_manager.add_task.assert_called_once() # Task added before detail check
+        self.mock_task_manager.update_task_status.assert_called_with(self.mock_task.task_id, self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW, reason=mock.ANY, step_desc=mock.ANY)
+
+        # Test missing function_name
+        self.mock_task_manager.reset_mock() # Reset for next call
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        result_no_func = await self.code_service.modify_code(
+            context="SELF_FIX_AST", modification_instruction="", module_path="m.py", additional_context={"new_code_string": new_code}
+        )
+        self.assertEqual(result_no_func["status"], "ERROR_MISSING_DETAILS")
+        self.assertIn("Missing function_name", result_no_func["error"])
+
+    async def test_modify_code_self_fix_ast_missing_new_code_string(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        result = await self.code_service.modify_code(
+            context="SELF_FIX_AST",
+            modification_instruction="",
+            module_path="m.py",
+            function_name="f",
+            additional_context={} # Missing new_code_string
+        )
+        self.assertEqual(result["status"], "ERROR_MISSING_NEW_CODE_STRING")
+        self.assertIn("'new_code_string' not provided", result["error"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.mock_task_manager.update_task_status.assert_called_with(self.mock_task.task_id, self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW, reason=mock.ANY, step_desc=mock.ANY)
+
+
+    async def test_modify_code_self_fix_ast_self_mod_service_missing(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        new_code = "def test_func(): pass"
+        result = await self.code_service_no_self_mod.modify_code(
+            context="SELF_FIX_AST",
+            modification_instruction="",
+            module_path="m.py",
+            function_name="f",
+            additional_context={"new_code_string": new_code}
+        )
+        self.assertEqual(result["status"], "ERROR_SELF_MOD_SERVICE_MISSING")
+        self.assertIn("Self modification service not configured", result["error"])
+        self.mock_task_manager.add_task.assert_called_once() # TaskManager is part of code_service_no_self_mod
+        self.mock_task_manager.update_task_status.assert_called_with(self.mock_task.task_id, self_modification.ActiveTaskStatus.FAILED_PRE_REVIEW, reason=mock.ANY, step_desc=mock.ANY)
+
+
+    async def test_modify_code_self_fix_ast_apply_raises_exception(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        self.mock_self_mod_service.edit_function_source_code.side_effect = Exception("AST edit failed spectacularly")
+
+        module_path = "my_module.py"
+        function_name = "my_function_to_fail_ast"
+        new_code = "def my_function_to_fail_ast():\n    return 'this will fail'"
+
+        result = await self.code_service.modify_code(
+            context="SELF_FIX_AST",
+            modification_instruction="",
+            module_path=module_path,
+            function_name=function_name,
+            additional_context={"new_code_string": new_code}
+        )
+
+        self.assertEqual(result["status"], "ERROR_APPLYING_AST_FIX")
+        self.assertIsNone(result["modified_code_string"])
+        self.assertIn("AST edit failed spectacularly", result["error"])
+        self.mock_self_mod_service.edit_function_source_code.assert_called_once_with(module_path, function_name, new_code)
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_DURING_APPLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ),
+            "Expected FAILED_DURING_APPLY for SELF_FIX_AST apply exception."
+        )
+
+
+    async def test_generate_code_new_tool_with_llm_config_override(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
+        expected_metadata = {"suggested_function_name": "custom_tool", "suggested_tool_name": "customTool", "suggested_description": "A custom tool."}
+        metadata_json_str = json.dumps(expected_metadata)
+        expected_code_content = "def custom_tool():\n    pass"
+        llm_output = f"# METADATA: {metadata_json_str}\n{expected_code_content}"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_output
+
+        custom_llm_config = {
+            "model_name": "custom_model_for_new_tool",
+            "temperature": 0.99,
+            "max_tokens": 1000
+        }
+
+        result = await self.code_service.generate_code(
+            context="NEW_TOOL",
+            prompt_or_description="A tool with custom LLM config.",
+            llm_config=custom_llm_config
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        _, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        self.assertEqual(kwargs.get("model_name"), custom_llm_config["model_name"])
+        self.assertEqual(kwargs.get("temperature"), custom_llm_config["temperature"])
+        self.assertEqual(kwargs.get("max_tokens"), custom_llm_config["max_tokens"])
+        self.mock_task_manager.add_task.assert_called_once()
+
+    async def test_modify_code_self_fix_tool_with_llm_config_override(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        self.mock_self_mod_service.get_function_source_code.return_value = "def old_func(a): return a"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "def old_func(a): return a + 1 # Fixed by custom LLM"
+
+        custom_llm_config = {
+            "model_name": "custom_model_for_fix",
+            "temperature": 0.01,
+            "max_tokens": 500
+        }
+
+        result = await self.code_service.modify_code(
+            context="SELF_FIX_TOOL",
+            existing_code=None,
+            modification_instruction="Fix the bug with custom LLM config.",
+            module_path="dummy.module",
+            function_name="old_func",
+            llm_config=custom_llm_config
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        _, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        self.assertEqual(kwargs.get("model_name"), custom_llm_config["model_name"])
+        self.assertEqual(kwargs.get("temperature"), custom_llm_config["temperature"])
+        self.assertEqual(kwargs.get("max_tokens"), custom_llm_config["max_tokens"])
+        self.mock_task_manager.add_task.assert_called_once()
+
+    def test_assemble_components_empty_outline(self):
+        outline = {}
+        details = {}
+        result_code = self.code_service._assemble_components(outline, details)
+        self.assertEqual(result_code.strip(), "")
+
+    def test_assemble_components_outline_with_only_imports(self):
+        outline = {"imports": ["os", "sys"]}
+        details = {}
+        result_code = self.code_service._assemble_components(outline, details)
+        expected_code = "import os\nimport sys"
+        self.assertEqual(result_code.strip(), expected_code.strip())
+
+    def test_assemble_components_outline_with_only_main_block(self):
+        outline = {"main_execution_block": "if __name__ == '__main__':\n    print('Hello')"}
+        details = {}
+        result_code = self.code_service._assemble_components(outline, details)
+        expected_code = "if __name__ == '__main__':\n    print('Hello')"
+        self.assertEqual(result_code.strip(), expected_code.strip())
+
+    def test_assemble_components_class_with_no_methods_or_attributes(self):
+        outline = {
+            "components": [{
+                "type": "class", "name": "EmptyClass", "description": "An empty class."
+            }]
+        }
+        details = {}
+        result_code = self.code_service._assemble_components(outline, details)
+        expected_code = """class EmptyClass:
+    \"\"\"An empty class.\"\"\"
+    pass"""
+        self.assertEqual(result_code.strip(), expected_code.strip())
+
+    def test_assemble_components_class_attributes_no_init(self):
+        outline = {
+            "components": [{
+                "type": "class", "name": "AttrsNoInit",
+                "attributes": [
+                    {"name": "attr1", "type": "int", "description": "First attribute."},
+                    {"name": "attr2", "type": "str"}
+                ],
+                "methods": [] # No __init__ method
+            }]
+        }
+        details = {}
+        result_code = self.code_service._assemble_components(outline, details)
+        expected_code = """class AttrsNoInit:
+    # Defined attributes (from outline):
+    # attr1: int # First attribute.
+    # attr2: str
+    pass""" # Pass is added if class body would be empty
+        self.assertEqual(result_code.strip(), expected_code.strip())
 
 
 if __name__ == '__main__': # pragma: no cover
