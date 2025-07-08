@@ -33,7 +33,7 @@ from ai_assistant.utils.display_utils import (
     format_status, draw_separator
 )
 from ai_assistant.core.refinement import RefinementAgent
-from ai_assistant.code_services.service import CodeService
+from ai_assistant.code_services.service import CodeService, CodeReviewSeverity
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core import project_manager
@@ -244,6 +244,81 @@ async def _handle_code_generation_and_registration(
             # for the old loop, but this needs careful thought.
             # For now, let's be conservative and not automatically trigger the old refinement.
             pass
+
+        # --- Basic Self-Correction Loop ---
+        if "SUCCESS" in review_status and review_result_dict.get("llm_suggestions"):
+            applied_a_fix = False
+            original_code_before_any_fixes = current_code # Keep a copy
+
+            for suggestion in review_result_dict["llm_suggestions"]:
+                replacement_code = suggestion.get("suggested_replacement_code")
+                severity = suggestion.get("severity")
+                line_start = suggestion.get("line_start")
+                line_end = suggestion.get("line_end")
+
+                if replacement_code and severity in [CodeReviewSeverity.STYLE.value, CodeReviewSeverity.MINOR.value] and line_start is not None and line_end is not None:
+                    print_formatted_text(format_message("INFO", f"Attempting automated fix for suggestion: '{suggestion.get('comment', 'Unnamed suggestion')}'", CLIColors.SYSTEM_MESSAGE))
+
+                    # Extract section_to_modify from current_code using line_start and line_end
+                    # This is a crucial and potentially complex step.
+                    # For now, a simple splitlines approach, but this needs to be robust.
+                    code_lines = current_code.splitlines(True) # Keep line endings
+                    if not (0 < line_start <= len(code_lines) and 0 < line_end <= len(code_lines) and line_start <= line_end):
+                        print_formatted_text(format_message("ERROR", f"Invalid line numbers ({line_start}-{line_end}) for suggestion. Skipping fix.", CLIColors.ERROR_MESSAGE))
+                        continue
+
+                    section_to_modify_lines = code_lines[line_start-1 : line_end]
+                    section_to_modify_str = "".join(section_to_modify_lines)
+
+                    # Ensure section_to_modify_str is not empty, otherwise GRANULAR_CODE_REFACTOR might have issues
+                    if not section_to_modify_str.strip():
+                        print_formatted_text(format_message("WARNING", f"Identified section for modification is empty or whitespace. Line numbers: {line_start}-{line_end}. Skipping fix.", CLIColors.WARNING))
+                        continue
+
+                    print_formatted_text(format_message("DEBUG", f"Section to modify (lines {line_start}-{line_end}):\n{section_to_modify_str}", CLIColors.DEBUG_MESSAGE))
+                    print_formatted_text(format_message("DEBUG", f"Suggested replacement:\n{replacement_code}", CLIColors.DEBUG_MESSAGE))
+
+                    # Call CodeService.modify_code with GRANULAR_CODE_REFACTOR
+                    # The 'modification_instruction' for GRANULAR_CODE_REFACTOR will be to replace the section.
+                    # The 'parsed_metadata' might be None if this flow is reached differently, handle it.
+                    func_name_for_prompt = parsed_metadata.get("suggested_function_name", "generated_function") if parsed_metadata else "generated_function"
+
+                    # For GRANULAR_CODE_REFACTOR, the `modification_instruction` is a description of the change.
+                    # The `additional_context`'s `section_identifier` is the code to find,
+                    # and we want to replace it with `replacement_code`.
+                    # The LLM prompt for GRANULAR_CODE_REFACTOR needs to be told to replace the identified section with new content.
+                    # This might require a new specific prompt or a modification to the existing one if it's too rigid.
+                    # For now, we'll formulate an instruction.
+                    granular_instruction = f"Replace the identified code section ('{section_to_modify_str[:30].strip()}...') with the following code: ```\n{replacement_code}\n```"
+
+                    modification_result = await code_service.modify_code(
+                        context="GRANULAR_CODE_REFACTOR",
+                        modification_instruction=granular_instruction,
+                        existing_code=current_code, # Pass the current state of the code
+                        module_path="generated_tool_module.py", # Placeholder
+                        function_name=func_name_for_prompt, # Placeholder or from metadata
+                        additional_context={"section_identifier": section_to_modify_str}
+                    )
+
+                    if modification_result.get("status") == "SUCCESS_CODE_GENERATED" and modification_result.get("modified_code_string"):
+                        print_formatted_text(format_message("SUCCESS", "Automated fix applied successfully.", CLIColors.SUCCESS))
+                        current_code = modification_result["modified_code_string"]
+                        applied_a_fix = True
+                        # Optional: Re-run review here on current_code and break or continue
+                        # For now, apply one fix and break.
+                        break
+                    else:
+                        error_detail = modification_result.get("error", "Failed to apply automated fix.")
+                        print_formatted_text(format_message("ERROR", f"Automated fix attempt failed: {error_detail}", CLIColors.ERROR_MESSAGE))
+                        # If a fix fails, we stop trying for this cycle to avoid cascading errors.
+                        break
+
+            if applied_a_fix:
+                print_formatted_text(format_header("Code After Automated Fix Attempt"))
+                print_formatted_text(ANSI(current_code))
+                print_formatted_text(format_header("--- End of Fixed Code ---"))
+                # Update cleaned_code if we want the rest of the flow to use the fixed version
+                cleaned_code = current_code
 
 
         if legacy_review_results_adapter.get('status') == "requires_changes": # pragma: no cover

@@ -1935,6 +1935,40 @@ class MyCalc:
         self.assertIn("refactoring and improving its structure", prompt_args[0]) # Correct prompt
         self.mock_task_manager.add_task.assert_called_once()
 
+    async def test_modify_code_granular_refactor_direct_replacement_instruction(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
+        original_code = "def my_func(a):\n    print('old line')\n    # some other code\n    return a * 2"
+        section_to_replace_str = "print('old line')" # This is what section_identifier would be
+        suggested_replacement_snippet = "print('new line by direct instruction')"
+
+        # This instruction mimics what the self-correction loop would generate
+        prescriptive_instruction = f"Replace the identified code section ('{section_to_replace_str[:20]}...') with the following code: ```\n{suggested_replacement_snippet}\n```"
+
+        # Mock LLM to return the original function but with the section_to_replace_str replaced by suggested_replacement_snippet
+        expected_modified_full_code = original_code.replace(section_to_replace_str, suggested_replacement_snippet)
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_modified_full_code
+
+        result = await self.code_service.modify_code(
+            context="GRANULAR_CODE_REFACTOR",
+            modification_instruction=prescriptive_instruction,
+            existing_code=original_code,
+            module_path="test_direct_replace.py",
+            function_name="my_func",
+            additional_context={"section_identifier": section_to_replace_str}
+        )
+
+        self.assertEqual(result["status"], "SUCCESS_CODE_GENERATED")
+        self.assertEqual(result["modified_code_string"], expected_modified_full_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_arg = self.mock_llm_provider.invoke_ollama_model_async.call_args[0][0]
+        self.assertIn(original_code, prompt_arg)
+        self.assertIn(section_to_replace_str, prompt_arg) # Check section_identifier is in prompt
+        self.assertIn("Replace the identified code section", prompt_arg) # Check prescriptive instruction part
+        self.assertIn(suggested_replacement_snippet, prompt_arg) # Check replacement code is in prompt
+        self.mock_task_manager.add_task.assert_called_once()
+
 
     def test_assemble_components_empty_outline(self):
         outline = {}
