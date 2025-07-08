@@ -23,17 +23,20 @@ from unittest.mock import patch, AsyncMock, MagicMock # Ensure these are importe
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model 
 from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry 
-from ..memory.event_logger import log_event, get_recent_events # MODIFIED: Added get_recent_events
+from ..memory.event_logger import log_event, get_recent_events
 from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
 from datetime import datetime, timezone, timedelta 
 from .notification_manager import NotificationManager
+# Import suggestion_manager_module at the top level
+import ai_assistant.core.suggestion_manager as suggestion_manager_module
+
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_ENTRIES_FOR_ANALYSIS = 5 
 DEFAULT_MAX_ENTRIES_TO_FETCH = 50
-DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION = 20 # New constant
+DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION = 20
 
 IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE = """
 You are an AI assistant analyzing a summary of your own past operational reflection logs. Your task is to identify recurring failure patterns, problematic tools or goals, and other insights that could lead to self-improvement.
@@ -122,6 +125,91 @@ Respond ONLY with the JSON object. Do not include any other text or explanations
 """
 
 GENERATE_IMPROVEMENT_SUGGESTIONS_PROMPT_TEMPLATE = """
+You are an AI assistant tasked with generating self-improvement suggestions. You have been provided with:
+1.  A JSON list of **Identified Structured Patterns** from your reflection logs (tool failures, etc.).
+2.  A JSON list of **AI Performance Observations** from a self-critique of recent interactions (suboptimal tool use, unclear responses, missed opportunities, common AI mistakes).
+3.  A list of your **Currently Available Tools**.
+
+**Input Data:**
+
+1.  Identified Structured Patterns (JSON list):
+    ```json
+    {identified_patterns_json_list_str}
+    ```
+
+2.  AI Performance Observations (JSON list):
+    ```json
+    {performance_observations_json_list_str}
+    ```
+
+3.  Available Tools (JSON - Name: Description):
+    ```json
+    {available_tools_json_str}
+    ```
+
+**Your Task:**
+Based on *all* the provided input data (Structured Patterns, Performance Observations, and Available Tools), generate a list of specific, actionable improvement suggestions.
+- Each suggestion should clearly state which pattern(s) or observation(s) it addresses.
+- Prioritize suggestions that seem most impactful or address recurring issues.
+
+**Types of Suggestions & `action_type` values:**
+
+*   **Related to Tools (from Structured Patterns or Performance Observations):**
+    *   `MODIFY_TOOL_CODE`: If an existing tool needs code changes (bug fix, enhancement).
+        *   `action_details`: `{{ "module_path": "path.to.module", "function_name": "func_name", "suggested_code_change": "full new code for function", "original_code_snippet": "(optional)", "suggested_change_description": "commit message body" }}`
+    *   `CREATE_NEW_TOOL`: If a new tool is needed.
+        *   `action_details`: `{{ "tool_description_prompt": "description for LLM to generate tool", "suggested_tool_name": "python_tool_name" }}`
+    *   `UPDATE_TOOL_DESCRIPTION`: If a tool's description needs clarification.
+        *   `action_details`: `{{ "tool_name": "tool_to_update", "new_description": "The new description." }}`
+    *   `DEPRECATE_TOOL`: If a tool is problematic and should be removed (rare).
+        *   `action_details`: `{{ "tool_name": "tool_to_deprecate", "reason": "Why it should be deprecated." }}`
+
+*   **Related to AI Behavior/Performance (Primarily from Performance Observations):**
+    *   `ADJUST_INTERNAL_PROMPT`: If an internal AI prompt (e.g., for planning, or for how it generates its own conversational responses) needs adjustment.
+        *   `action_details`: `{{ "prompt_area_identifier": "e.g., general_qa_response_prompt, tool_selection_logic_prompt", "suggested_change_summary": "Briefly, what to change. E.g., 'Make explanations more concise for topic X', 'Emphasize Y when Z occurs.'" }}`
+    *   `UPDATE_DECISION_HEURISTIC`: If the AI's internal logic/heuristics for making decisions (e.g., when to use a tool, how to interpret user ambiguity) needs an update. This is more abstract.
+        *   `action_details`: `{{ "heuristic_identifier": "e.g., tool_selection_for_file_search, user_intent_clarification_threshold", "change_description": "Describe the change. E.g., 'Consider 'find_large_files_tool' before 'basic_search_tool' if query mentions 'large files'.", "reasoning": "Why this change is needed based on observation." }}`
+    *   `FLAG_FOR_KNOWLEDGE_GAP`: If the AI identifies a recurring misunderstanding due to missing knowledge it cannot directly fix. This flags it for potential external update or learning.
+        *   `action_details`: `{{ "topic": "e.g., Quantum Entanglement Details", "missing_information_summary": "e.g., AI struggles to explain practical applications.", "example_queries": ["query1", "query2"] }}`
+
+*   **General:**
+    *   `MANUAL_REVIEW_NEEDED`: If an issue is too complex for an automated suggestion or requires human developer intervention.
+        *   `action_details`: `{{ "issue_summary": "Brief summary of the complex issue.", "relevant_data_pointers": ["e.g., Log Entry X", "User/AI Exchange Y"] }}`
+
+**Output JSON Structure:**
+Provide your suggestions as a JSON object containing a single key `"improvement_suggestions"`. This key holds a list of suggestion objects. Each suggestion object *must* have:
+- `"suggestion_id"`: A unique identifier (e.g., "SUG_001").
+- `"suggestion_text"`: Detailed description of the improvement.
+- `"addresses_observations_or_patterns"`: A list of strings, referencing `observation_id` from Performance Observations or describing the Structured Pattern addressed (e.g., ["OBS_001", "FREQUENTLY_FAILING_TOOL: some_tool"]).
+- `"priority"`: Suggested priority ("High", "Medium", "Low").
+- `"action_type"`: One of the `action_type` values listed above.
+- `"action_details"`: A nested JSON object with parameters specific to the `action_type` (see examples above).
+
+Example JSON Output:
+```json
+{{
+  "improvement_suggestions": [
+    {{
+      "suggestion_id": "SUG_001",
+      "suggestion_text": "AI responses regarding API error codes are often too technical. Adjust internal prompt for explaining API errors to be more user-friendly.",
+      "addresses_observations_or_patterns": ["OBS_005_UnclearApiResponseExplanation"],
+      "priority": "Medium",
+      "action_type": "ADJUST_INTERNAL_PROMPT",
+      "action_details": {{
+        "prompt_area_identifier": "api_error_explanation_prompt",
+        "suggested_change_summary": "When explaining API errors, provide a brief non-technical summary first, then offer technical details if requested."
+      }}
+    }},
+    // ... other suggestions for tool modifications, new tools, etc.
+  ]
+}}
+```
+
+If no actionable suggestions can be derived, return an empty list for `"improvement_suggestions"`.
+Respond ONLY with the JSON object.
+"""
+
+_LEGACY_GENERATE_IMPROVEMENT_SUGGESTIONS_PROMPT_TEMPLATE = """
 You are an AI assistant tasked with generating self-improvement suggestions based on an analysis of your operational patterns. You have been provided with a JSON list of identified issues and patterns from your reflection logs. You also have a list of your currently available tools.
 
 Identified Patterns (JSON list):
@@ -296,125 +384,111 @@ def get_reflection_log_summary_for_analysis(
 ) -> Optional[str]:
     entries: List[ReflectionLogEntry] = global_reflection_log.get_entries(limit=max_entries)
 
-    if len(entries) < min_entries_for_analysis:
-        logger.info(f"Not enough reflection log entries ({len(entries)}) for analysis. Minimum required: {min_entries_for_analysis}.")
-        return None
+    # formatted_summary_parts will collect reflection log strings
+    formatted_summary_parts: List[str] = []
+    if len(entries) >= min_entries_for_analysis:
+        formatted_summary_parts.append("Recent Reflection Log Summary for Analysis:\n")
+        relevant_entry_count = 0
+        for i, entry in enumerate(entries):
+            # ... (existing formatting logic for reflection entries)
+            entry_details = []
+            entry_details.append(f"Entry {relevant_entry_count + 1} (Timestamp: {entry.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')})")
+            entry_details.append(f"  Goal: {entry.goal_description}")
+            entry_details.append(f"  Status: {entry.status}")
 
-    formatted_summary_parts: List[str] = ["Recent Reflection Log Summary for Analysis:\n"]
-    relevant_entry_count = 0
-
-    for i, entry in enumerate(entries): 
-        entry_details = []
-        entry_details.append(f"Entry {relevant_entry_count + 1} (Timestamp: {entry.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')})")
-        entry_details.append(f"  Goal: {entry.goal_description}")
-        entry_details.append(f"  Status: {entry.status}")
-
-        if entry.error_type or entry.error_message:
-            entry_details.append(f"  Error: {entry.error_type} - {entry.error_message}")
-        
-        if entry.notes:
-            entry_details.append(f"  Notes: {entry.notes}")
-
-        if entry.plan:
-            plan_steps_summary = []
-            for step_idx, step in enumerate(entry.plan):
-                tool_name = step.get('tool_name', 'N/A')
-                args_preview = str(step.get('args', 'N/A'))[:50] 
-                step_result_preview = ""
-                if entry.execution_results and step_idx < len(entry.execution_results):
-                    res = entry.execution_results[step_idx]
-                    if isinstance(res, Exception):
-                        step_result_preview = f" -> Failed: {type(res).__name__}"
-                plan_steps_summary.append(f"    Step {step_idx + 1}: Tool: {tool_name}, Args: {args_preview}{step_result_preview}")
+            if entry.error_type or entry.error_message:
+                entry_details.append(f"  Error: {entry.error_type} - {entry.error_message}")
             
-            if plan_steps_summary:
-                entry_details.append("  Plan:")
-                entry_details.extend(plan_steps_summary)
+            if entry.notes:
+                entry_details.append(f"  Notes: {entry.notes}")
 
-        if entry.is_self_modification_attempt:
-            entry_details.append("  --- SELF-MODIFICATION ATTEMPT ---")
-            if entry.source_suggestion_id:
-                entry_details.append(f"    Source Suggestion ID: {entry.source_suggestion_id}")
-            if entry.modification_type:
-                entry_details.append(f"    Modification Type: {entry.modification_type}")
+            if entry.plan:
+                plan_steps_summary = []
+                for step_idx, step in enumerate(entry.plan):
+                    tool_name = step.get('tool_name', 'N/A')
+                    args_preview = str(step.get('args', 'N/A'))[:50]
+                    step_result_preview = ""
+                    if entry.execution_results and step_idx < len(entry.execution_results):
+                        res = entry.execution_results[step_idx]
+                        if isinstance(res, Exception):
+                            step_result_preview = f" -> Failed: {type(res).__name__}"
+                    plan_steps_summary.append(f"    Step {step_idx + 1}: Tool: {tool_name}, Args: {args_preview}{step_result_preview}")
+
+                if plan_steps_summary:
+                    entry_details.append("  Plan:")
+                    entry_details.extend(plan_steps_summary)
+
+            if entry.is_self_modification_attempt:
+                entry_details.append("  --- SELF-MODIFICATION ATTEMPT ---")
+                if entry.source_suggestion_id:
+                    entry_details.append(f"    Source Suggestion ID: {entry.source_suggestion_id}")
+                if entry.modification_type:
+                    entry_details.append(f"    Modification Type: {entry.modification_type}")
+
+                test_outcome_str = "N/A"
+                if entry.post_modification_test_passed is True:
+                    test_outcome_str = "PASSED"
+                elif entry.post_modification_test_passed is False:
+                    test_outcome_str = "FAILED"
+                entry_details.append(f"    Test Outcome: {test_outcome_str}")
+
+                if entry.post_modification_test_details and isinstance(entry.post_modification_test_details, dict):
+                    test_notes = entry.post_modification_test_details.get('notes', '')
+                    entry_details.append(f"    Test Notes: {test_notes[:100]}{'...' if len(test_notes) > 100 else ''}")
+
+                commit_status_str = "N/A"
+                if entry.commit_info and isinstance(entry.commit_info, dict):
+                    commit_success = entry.commit_info.get('status')
+                    commit_msg_snippet = str(entry.commit_info.get('message', ''))[:50]
+                    commit_err_snippet = str(entry.commit_info.get('error', ''))[:50]
+
+                    if commit_success is True:
+                        commit_status_str = f"Committed (Msg: {commit_msg_snippet}{'...' if len(commit_msg_snippet) == 50 else ''})"
+                    elif commit_success is False:
+                        commit_status_str = f"Commit FAILED ({commit_err_snippet}{'...' if len(commit_err_snippet) == 50 else ''})"
+                    else:
+                        commit_status_str = f"Commit status unknown (Info: {commit_msg_snippet}{'...' if len(commit_msg_snippet) == 50 else ''})"
+                entry_details.append(f"    Commit Status: {commit_status_str}")
+                entry_details.append("  ---------------------------------")
             
-            test_outcome_str = "N/A"
-            if entry.post_modification_test_passed is True:
-                test_outcome_str = "PASSED"
-            elif entry.post_modification_test_passed is False:
-                test_outcome_str = "FAILED"
-            entry_details.append(f"    Test Outcome: {test_outcome_str}")
+            formatted_summary_parts.append("\n".join(entry_details))
+            relevant_entry_count += 1
+        if relevant_entry_count == 0: # If loop ran but no entries were actually formatted (e.g. due to some filter if added)
+            formatted_summary_parts.append("No reflection log entries met the criteria for this summary section.")
+    else:
+        formatted_summary_parts.append("Not enough reflection log entries for detailed analysis in this section.")
 
-            if entry.post_modification_test_details and isinstance(entry.post_modification_test_details, dict):
-                test_notes = entry.post_modification_test_details.get('notes', '')
-                entry_details.append(f"    Test Notes: {test_notes[:100]}{'...' if len(test_notes) > 100 else ''}")
-            
-            commit_status_str = "N/A"
-            if entry.commit_info and isinstance(entry.commit_info, dict):
-                commit_success = entry.commit_info.get('status')
-                commit_msg_snippet = str(entry.commit_info.get('message', ''))[:50]
-                commit_err_snippet = str(entry.commit_info.get('error', ''))[:50]
-
-                if commit_success is True:
-                    commit_status_str = f"Committed (Msg: {commit_msg_snippet}{'...' if len(commit_msg_snippet) == 50 else ''})"
-                elif commit_success is False:
-                    commit_status_str = f"Commit FAILED ({commit_err_snippet}{'...' if len(commit_err_snippet) == 50 else ''})"
-                else:
-                    commit_status_str = f"Commit status unknown (Info: {commit_msg_snippet}{'...' if len(commit_msg_snippet) == 50 else ''})"
-            entry_details.append(f"    Commit Status: {commit_status_str}")
-            entry_details.append("  ---------------------------------")
-        
-        formatted_summary_parts.append("\n".join(entry_details))
-        relevant_entry_count += 1
-    
-    if relevant_entry_count == 0 :
-        # Still might have conversation events, so don't return "No relevant reflection log entries..." yet.
-        # Instead, let it fall through to conversation event processing.
-        # If both are empty, then we can return a more general "no data" message.
-        pass # formatted_summary_parts might be just the header if no reflection entries
 
     # --- Fetch and Format Recent Conversation Events ---
-    conversation_summary_parts: List[str] = ["\n\n--- Recent Conversation Snippets (Last ~{DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION} User/AI exchanges) ---\n"]
-    recent_conv_events = get_recent_events(limit=DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION * 2) # Fetch more to filter
+    conversation_summary_parts: List[str] = ["\n\n--- Recent Conversation Snippets (Last up to {DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION} User/AI exchanges) ---\n"]
+    recent_conv_events = get_recent_events(limit=DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION * 2)
 
     user_ai_pairs = []
     temp_user_event = None
-    # Iterate in reverse to process older events first and then pair them up
     for event in reversed(recent_conv_events):
         event_type = event.get("event_type", "")
-        # Heuristic: USER_INPUT_RECEIVED often contains the user's direct query text in description
-        # AI_RESPONSE_GENERATED or similar would contain the AI's reply.
-        # This needs to align with how events are actually logged by the CLI or interaction handler.
         if event_type == "USER_INPUT_RECEIVED":
             temp_user_event = event
         elif event_type == "AI_RESPONSE_GENERATED" and temp_user_event:
             user_ai_pairs.append({"user": temp_user_event, "ai": event})
             temp_user_event = None
-        elif event_type == "AI_TOOL_EXECUTION_RESPONSE" and temp_user_event: # If tool exec is the AI's response
+        elif event_type == "AI_TOOL_EXECUTION_RESPONSE" and temp_user_event:
             user_ai_pairs.append({"user": temp_user_event, "ai": event})
             temp_user_event = None
 
-    # Reverse again to get chronological order for the summary
     interaction_count = 0
     for pair in reversed(user_ai_pairs):
         if interaction_count >= DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION:
             break
-
         user_event = pair["user"]
         ai_event = pair["ai"]
-
         user_ts = datetime.fromisoformat(user_event['timestamp']).strftime('%Y-%m-%d %H:%M') if user_event.get('timestamp') else 'Unknown Time'
         ai_ts = datetime.fromisoformat(ai_event['timestamp']).strftime('%Y-%m-%d %H:%M') if ai_event.get('timestamp') else 'Unknown Time'
-
         user_desc = user_event.get("description", "N/A")
         ai_desc = ai_event.get("description", "N/A")
-
-        # For AI_TOOL_EXECUTION_RESPONSE, metadata might be more useful than raw description
         if ai_event.get("event_type") == "AI_TOOL_EXECUTION_RESPONSE":
             ai_meta = ai_event.get("metadata", {})
             ai_desc = f"Tool '{ai_meta.get('tool_name', 'UnknownTool')}' executed. Result preview: {str(ai_desc)[:100]}"
-
-
         conversation_summary_parts.append(f"Exchange {interaction_count + 1}:")
         conversation_summary_parts.append(f"  [{user_ts}] User: {user_desc[:200]}{'...' if len(user_desc) > 200 else ''}")
         conversation_summary_parts.append(f"  [{ai_ts}] AI:   {ai_desc[:200]}{'...' if len(ai_desc) > 200 else ''}")
@@ -425,11 +499,18 @@ def get_reflection_log_summary_for_analysis(
         conversation_summary_parts.append("No recent user/AI conversation exchanges found in event logs.")
 
     # --- Combine Summaries ---
-    final_summary_str = "\n".join(formatted_summary_parts) + "\n" + "\n".join(conversation_summary_parts)
+    # Only include reflection log summary if it has more than just the header
+    final_summary_str = ""
+    if len(formatted_summary_parts) > 1: # Has more than just the initial header
+        final_summary_str += "\n".join(formatted_summary_parts)
 
-    if relevant_entry_count == 0 and interaction_count == 0:
+    # Add conversation summary
+    final_summary_str += "\n" + "\n".join(conversation_summary_parts)
+
+
+    if not final_summary_str.strip() or (len(formatted_summary_parts) <=1 and interaction_count == 0) :
         logger.info("No reflection log entries or recent conversation events found for analysis.")
-        return None # Return None if truly no data
+        return None
 
     return final_summary_str.strip()
 
@@ -467,10 +548,16 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
         logger.error(f"Error decoding JSON from pattern identification LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
         return None
 
-def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, available_tools_json_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _invoke_suggestion_generation_llm(
+    identified_patterns_json_list_str: str,
+    performance_observations_json_list_str: str,
+    available_tools_json_str: str,
+    llm_model_name: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     model_to_use = llm_model_name if llm_model_name is not None else get_model_for_task("reflection")
     prompt = GENERATE_IMPROVEMENT_SUGGESTIONS_PROMPT_TEMPLATE.format(
         identified_patterns_json_list_str=identified_patterns_json_list_str,
+        performance_observations_json_list_str=performance_observations_json_list_str,
         available_tools_json_str=available_tools_json_str
     )
     llm_response_str = invoke_ollama_model(prompt, model_name=model_to_use)
@@ -571,7 +658,7 @@ def _invoke_suggestion_scoring_llm(suggestion: Dict[str, Any], llm_model_name: O
 def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     suggestion_id = suggestion.get("suggestion_id", "N/A")
     suggestion_text = suggestion.get("suggestion_text", "")
-    addresses_patterns = suggestion.get("addresses_patterns", [])
+    addresses_patterns = suggestion.get("addresses_patterns", []) # This will now be addresses_observations_or_patterns
     priority = suggestion.get("priority", "N/A")
     action_type = suggestion.get("action_type", "N/A")
     action_details = suggestion.get("action_details", {})
@@ -587,7 +674,7 @@ def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Op
     prompt = LLM_REVIEW_IMPROVEMENT_SUGGESTION_PROMPT_TEMPLATE.format(
         suggestion_id=suggestion_id,
         suggestion_text=suggestion_text,
-        addresses_patterns=str(addresses_patterns),
+        addresses_patterns=str(suggestion.get("addresses_observations_or_patterns", addresses_patterns)), # Use new key
         priority=priority,
         action_type=action_type,
         action_details_json_str=action_details_json_str,
@@ -664,7 +751,7 @@ def run_self_reflection_cycle(
 
     # --- Step 1 (New): Self-Critique and Performance Pattern Identification ---
     logger.info("Self-Reflection Cycle: Performing self-critique and identifying performance patterns...")
-    model_for_critique = llm_model_name or get_model_for_task("reflection") # Can use same model or a different one
+    model_for_critique = llm_model_name or get_model_for_task("reflection")
     critique_prompt = LLM_SELF_CRITIQUE_AND_PATTERNS_PROMPT_TEMPLATE.format(combined_interaction_summary=log_summary)
 
     critique_llm_response_str = invoke_ollama_model(critique_prompt, model_name=model_for_critique)
@@ -699,23 +786,10 @@ def run_self_reflection_cycle(
     else:
         logger.warning(f"Self-Reflection Cycle: Received no response from LLM for self-critique (model: {model_for_critique}).")
 
-    # --- Step 2 (Existing, but now uses only reflection log part of summary if needed, or could be refactored) ---
-    # For now, the existing pattern identification from structured logs will proceed.
-    # We might want to feed performance_observations_list into the suggestion generation later.
-    # The `log_summary` still contains the reflection log part.
-    # To avoid re-processing the conversation snippets with the old prompt, we could extract just the reflection log part.
-    # For simplicity in this step, we'll let it pass the full summary to the old pattern identifier,
-    # acknowledging it might not be optimal.
-
     logger.info("Self-Reflection Cycle: Identifying failure patterns from structured reflection log summary (within combined summary)...")
-    # The existing _invoke_pattern_identification_llm uses IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE
-    # which expects {reflection_log_summary}. We are passing the combined summary.
-    # This might be okay if the LLM for that prompt can ignore the conversational part,
-    # or we might need to re-extract only the reflection log part for it.
-    # For now, let it proceed with combined_interaction_summary.
     patterns_data = _invoke_pattern_identification_llm(log_summary, llm_model_name=llm_model_name) 
     
-    identified_patterns_list = [] # Default to empty list
+    identified_patterns_list = []
     if patterns_data and patterns_data.get("identified_patterns") is not None:
         identified_patterns_list = patterns_data.get("identified_patterns", [])
         log_event(
@@ -732,45 +806,40 @@ def run_self_reflection_cycle(
             source="autonomous_reflection.run_self_reflection_cycle",
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection")}
         )
-        # Don't return None yet, as we might have performance_observations.
 
     if not identified_patterns_list: 
         logger.info("Self-Reflection Cycle: No specific structured patterns were identified by the LLM from logs.")
-        # Pass, because performance_observations might still lead to suggestions if we adapt the next step.
 
-    # --- Step 3 (Existing): Generate Suggestions ---
-    # This part currently only uses identified_patterns_list (from structured logs).
-    # In the future, it could be enhanced to also consider performance_observations_list.
     if not identified_patterns_list and not performance_observations_list:
         logger.info("Self-Reflection Cycle: No patterns from logs and no performance observations. No suggestions will be generated.")
-        # Log completion and return empty list or None, as no further processing needed for suggestions.
         log_event(
             event_type="AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
             description="Self-reflection cycle finished. No patterns or observations found to generate suggestions.",
             source="autonomous_reflection.run_self_reflection_cycle",
             metadata={"num_suggestions_produced": 0}
         )
-        return [] # Return empty list of suggestions
+        return []
 
-    logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} structured pattern(s) and {len(performance_observations_list)} performance observation(s). Generating improvement suggestions (currently based on structured patterns only)...")
+    logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} structured pattern(s) and {len(performance_observations_list)} performance observation(s). Generating improvement suggestions...")
 
     try:
-        # Only pass structured patterns to the current suggestion generator
         patterns_json_list_str = json.dumps(identified_patterns_list, indent=2)
+        performance_observations_json_list_str = json.dumps(performance_observations_list, indent=2)
         available_tools_json_str = json.dumps(available_tools, indent=2)
     except TypeError as e:
-        logger.error(f"Error serializing patterns or tools to JSON for suggestion generation: {e}")
+        logger.error(f"Error serializing patterns, observations, or tools to JSON for suggestion generation: {e}")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_SERIALIZATION_ERROR",
-            description="Error serializing patterns or tools to JSON.",
+            description="Error serializing data to JSON for suggestion generation.",
             source="autonomous_reflection.run_self_reflection_cycle",
             metadata={"error": str(e)}
         )
         return None
 
     suggestions_data = _invoke_suggestion_generation_llm(
-        patterns_json_list_str, 
-        available_tools_json_str, 
+        identified_patterns_json_list_str=patterns_json_list_str,
+        performance_observations_json_list_str=performance_observations_json_list_str,
+        available_tools_json_str=available_tools_json_str,
         llm_model_name=llm_model_name
     )
 
@@ -780,7 +849,7 @@ def run_self_reflection_cycle(
             event_type="AUTONOMOUS_REFLECTION_SUGGESTION_GEN_FAILED",
             description="Suggestion generation failed or returned invalid format from LLM.",
             source="autonomous_reflection.run_self_reflection_cycle",
-            metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "num_patterns_input": len(identified_patterns_list)}
+            metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "num_patterns_input": len(identified_patterns_list), "num_observations_input": len(performance_observations_list)}
         )
         return None
         
@@ -802,54 +871,85 @@ def run_self_reflection_cycle(
         metadata={"num_suggestions": len(final_suggestions), "suggestions_preview": final_suggestions[:3], "model_used": llm_model_name or get_model_for_task("reflection")} 
     )
     
+    saved_suggestion_objects = [] # To return
     if not final_suggestions: 
         logger.info("Self-Reflection Cycle: No improvement suggestions were generated by the LLM.")
     else:
-        logger.info(f"Self-Reflection Cycle: Generated {len(final_suggestions)} improvement suggestion(s). Scoring them now...")
-        for suggestion in final_suggestions:
-            if not isinstance(suggestion, dict):
-                logger.warning(f"Skipping scoring for an invalid suggestion item: {suggestion}")
+        logger.info(f"Self-Reflection Cycle: Generated {len(final_suggestions)} improvement suggestion(s). Scoring, reviewing, and saving them now...")
+        saved_count = 0
+        for suggestion_data_from_llm in final_suggestions: # Renamed variable for clarity
+            if not isinstance(suggestion_data_from_llm, dict):
+                logger.warning(f"Skipping processing for an invalid suggestion item: {suggestion_data_from_llm}")
                 continue
 
-            scores = _invoke_suggestion_scoring_llm(suggestion, llm_model_name=llm_model_name)
+            # Scoring
+            scores = _invoke_suggestion_scoring_llm(suggestion_data_from_llm, llm_model_name=llm_model_name)
             if scores:
-                suggestion["impact_score"] = scores.get("impact_score")
-                suggestion["risk_score"] = scores.get("risk_score")
-                suggestion["effort_score"] = scores.get("effort_score")
+                suggestion_data_from_llm["impact_score"] = scores.get("impact_score")
+                suggestion_data_from_llm["risk_score"] = scores.get("risk_score")
+                suggestion_data_from_llm["effort_score"] = scores.get("effort_score")
             else:
-                logger.warning(f"Failed to score suggestion ID: {suggestion.get('suggestion_id', 'Unknown ID')}. Assigning default error scores (-1).")
-                suggestion["impact_score"] = -1
-                suggestion["risk_score"] = -1
-                suggestion["effort_score"] = -1
-        logger.info(f"Self-Reflection Cycle: Scoring completed for {len(final_suggestions)} suggestions.")
+                logger.warning(f"Failed to score suggestion ID: {suggestion_data_from_llm.get('suggestion_id', 'Unknown ID')}. Assigning default error scores (-1).")
+                suggestion_data_from_llm["impact_score"] = -1
+                suggestion_data_from_llm["risk_score"] = -1
+                suggestion_data_from_llm["effort_score"] = -1
 
-        logger.info(f"Self-Reflection Cycle: Reviewing {len(final_suggestions)} scored suggestion(s)...")
-        for suggestion in final_suggestions:
-            if not isinstance(suggestion, dict): continue
-
-            review_data = _invoke_suggestion_review_llm(suggestion, llm_model_name=llm_model_name)
+            # Reviewing
+            review_data = _invoke_suggestion_review_llm(suggestion_data_from_llm, llm_model_name=llm_model_name)
             if review_data:
-                suggestion["review_looks_good"] = review_data.get("review_looks_good")
-                suggestion["qualitative_review"] = review_data.get("qualitative_review")
-                suggestion["reviewer_confidence"] = review_data.get("confidence_score")
-                suggestion["reviewer_modifications"] = review_data.get("suggested_modifications_to_proposal")
+                suggestion_data_from_llm["review_looks_good"] = review_data.get("review_looks_good")
+                suggestion_data_from_llm["qualitative_review"] = review_data.get("qualitative_review")
+                suggestion_data_from_llm["reviewer_confidence"] = review_data.get("confidence_score")
+                suggestion_data_from_llm["reviewer_modifications"] = review_data.get("suggested_modifications_to_proposal")
             else:
-                logger.warning(f"Failed to review suggestion ID: {suggestion.get('suggestion_id', 'Unknown ID')}. Assigning default review error values.")
-                suggestion["review_looks_good"] = False
-                suggestion["qualitative_review"] = "Review process failed."
-                suggestion["reviewer_confidence"] = 0.0
-                suggestion["reviewer_modifications"] = ""
-        logger.info(f"Self-Reflection Cycle: Reviewing completed for {len(final_suggestions)} suggestions.")
+                logger.warning(f"Failed to review suggestion ID: {suggestion_data_from_llm.get('suggestion_id', 'Unknown ID')}. Assigning default review error values.")
+                suggestion_data_from_llm["review_looks_good"] = False
+                suggestion_data_from_llm["qualitative_review"] = "Review process failed."
+                suggestion_data_from_llm["reviewer_confidence"] = 0.0
+                suggestion_data_from_llm["reviewer_modifications"] = ""
+
+            # Saving (This is the part that needs to pass action_details)
+            try:
+                sug_type = suggestion_data_from_llm.get("action_type", "self_improvement_idea")
+                sug_desc = suggestion_data_from_llm.get("suggestion_text", "No description provided.")
+                sug_source_id = suggestion_data_from_llm.get("suggestion_id") # This is the ID from the LLM's list
+                sug_action_details = suggestion_data_from_llm.get("action_details", {})
+                # Add other fields from suggestion_data_from_llm to be stored by suggestion_manager if necessary
+                # For example, pass the full suggestion_data_from_llm to a field in add_new_suggestion,
+                # or expand add_new_suggestion to take all these fields.
+                # For now, we focus on getting action_details through.
+
+                # The suggestion_manager.add_new_suggestion should be modified to accept these fields
+                # and store them. For now, we're just passing them.
+                # A more complete solution would be for add_new_suggestion to take the whole suggestion_data_from_llm
+                # or specific fields like priority, scores, review status.
+                added_suggestion_to_store = suggestion_manager_module.add_new_suggestion(
+                    type=sug_type,
+                    description=sug_desc,
+                    source_reflection_id=sug_source_id,
+                    action_details=sug_action_details, # Passing action_details
+                    # Pass other fields from suggestion_data_from_llm if add_new_suggestion supports them
+                    # e.g., priority=suggestion_data_from_llm.get("priority"),
+                    # extras_to_store=suggestion_data_from_llm # or specific scores/review fields
+                    notification_manager=notification_manager
+                )
+                if added_suggestion_to_store:
+                    saved_count += 1
+                    saved_suggestion_objects.append(added_suggestion_to_store)
+            except Exception as e_add_sug:
+                logger.error(f"Error saving suggestion '{suggestion_data_from_llm.get('suggestion_id')}': {e_add_sug}", exc_info=True)
+
+        logger.info(f"Self-Reflection Cycle: Scoring, reviewing, and saving attempt completed for {len(final_suggestions)} suggestions. Successfully saved {saved_count}.")
 
 
     logger.info("--- Self-Reflection Cycle Finished ---")
     log_event(
         event_type="AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
-        description=f"Self-reflection cycle finished. Produced {len(final_suggestions) if final_suggestions is not None else 0} suggestions, attempted scoring and review.",
+        description=f"Self-reflection cycle finished. Produced {len(final_suggestions) if final_suggestions is not None else 0} suggestions, attempted scoring, review, and saving.",
         source="autonomous_reflection.run_self_reflection_cycle",
-        metadata={"num_suggestions_produced": len(final_suggestions) if final_suggestions is not None else 0}
+        metadata={"num_suggestions_produced": len(final_suggestions) if final_suggestions is not None else 0, "num_suggestions_saved": len(saved_suggestion_objects)}
     )
-    return final_suggestions
+    return saved_suggestion_objects # Return the list of dicts that were actually saved by suggestion_manager
 
 async def select_suggestion_for_autonomous_action( # Made async
     suggestions: List[Dict[str, Any]],
@@ -1144,4 +1244,5 @@ if __name__ == '__main__':
     asyncio.run(run_select_suggestion_test3())
             
     print("\n--- select_suggestion_for_autonomous_action tests complete ---")
-# Removed duplicated [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/core/autonomous_reflection.py] marker
+
+[end of ai_assistant/core/autonomous_reflection.py]

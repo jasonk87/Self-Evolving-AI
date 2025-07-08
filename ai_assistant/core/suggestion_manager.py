@@ -164,34 +164,40 @@ def _normalize_description(description: str) -> str:
 
 # Example of how a new suggestion might be added internally by the system
 def add_new_suggestion(
-    type: str,
+    type: str, # This corresponds to 'action_type' from reflection output
     description: str,
     source_reflection_id: Optional[str] = None,
-    notification_manager: Optional[NotificationManager] = None # Type hint updated
+    action_details: Optional[Dict[str, Any]] = None, # New parameter
+    notification_manager: Optional[NotificationManager] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Adds a new suggestion to the system (typically called by AI components).
     Performs deduplication based on normalized description.
     Links to a source reflection ID if provided.
+    Includes action_details specific to the suggestion type.
     """
     suggestions = _load_suggestions()
     normalized_new_description = _normalize_description(description)
 
     for existing_suggestion in suggestions:
         normalized_existing_description = _normalize_description(existing_suggestion.get("description", ""))
-        if normalized_new_description == normalized_existing_description:
-            print(color_text(f"Duplicate suggestion detected. New: '{description}' matches existing ID '{existing_suggestion['suggestion_id']}' with description '{existing_suggestion['description']}'. Not adding.", CLIColors.INFO_MESSAGE))
+        # Simple deduplication: if description and type match, consider it a duplicate.
+        # Could be enhanced to check action_details if necessary for some types.
+        if normalized_new_description == normalized_existing_description and \
+           existing_suggestion.get("type") == type:
+            print(color_text(f"Duplicate suggestion detected (description and type match). New: '{description}' matches existing ID '{existing_suggestion['suggestion_id']}'. Not adding.", CLIColors.INFO_MESSAGE))
             return existing_suggestion # Return the existing one
 
     new_suggestion = {
         "suggestion_id": str(uuid.uuid4()),
         "type": type,
-        "description": description.strip(), # Store the stripped (but not lowercased) version
+        "description": description.strip(),
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "reason_for_status": "",
-        "source_reflection_id": source_reflection_id # Add this line
+        "source_reflection_id": source_reflection_id,
+        "action_details": action_details if action_details is not None else {} # Add new field
     }
     suggestions.append(new_suggestion)
     if _save_suggestions(suggestions):
