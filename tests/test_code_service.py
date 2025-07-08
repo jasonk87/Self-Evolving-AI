@@ -10,7 +10,7 @@ import json # Added for test data
 from dataclasses import dataclass, field
 
 try:
-    from ai_assistant.code_services.service import CodeService
+    from ai_assistant.code_services.service import CodeService, CodeReviewSeverity
     from ai_assistant.core import self_modification
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -1657,15 +1657,17 @@ class MyCalc:
 
         llm_review_output = {
             "overall_summary": "Code has minor issues.",
-            "suggestions": [{"line_start": 1, "line_end": 1, "severity": "Minor", "comment": "Consider type hints."}]
+            "suggestions": [{"line_start": 1, "line_end": 1, "severity": CodeReviewSeverity.MINOR.value, "comment": "Consider type hints."}]
         }
         self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
 
-        result = await self.code_service.review_code(sample_code, review_context="TEST_CONTEXT")
+        result = await self.code_service.review_code(sample_code, review_type="general", review_context="TEST_CONTEXT")
 
         self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
         self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
-        self.assertEqual(result["llm_suggestions"], llm_review_output["suggestions"])
+        self.assertEqual(len(result["llm_suggestions"]), 1)
+        self.assertEqual(result["llm_suggestions"][0]["comment"], llm_review_output["suggestions"][0]["comment"])
+        self.assertEqual(result["llm_suggestions"][0]["severity"], CodeReviewSeverity.MINOR.value)
         self.assertEqual(result["linter_findings"], linter_findings)
         self.assertIsNone(result["error"])
 
@@ -1684,6 +1686,48 @@ class MyCalc:
         )
 
     @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_security_type_uses_correct_prompt(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def some_secure_code():\n    eval('print(1)') # Obvious issue for security prompt"
+        mock_run_linter.return_value = ([], None)
+        llm_review_output = {"overall_summary": "Security concerns found.", "suggestions": [{"line_start": 2, "line_end": 2, "severity": CodeReviewSeverity.CRITICAL.value, "comment": "Use of eval is dangerous."}]}
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code, review_type="security")
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(result["llm_suggestions"][0]["severity"], CodeReviewSeverity.CRITICAL.value)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_args, _ = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        # Check for a unique phrase from the security prompt
+        self.assertIn("specifically for potential security vulnerabilities", prompt_args[0])
+        self.assertNotIn("refactoring and improving its structure", prompt_args[0]) # Ensure it's not refactor prompt
+        self.assertNotIn("Focus on:\n- Correctness", prompt_args[0]) # Ensure it's not general prompt's detailed list
+        self.mock_task_manager.add_task.assert_called_once()
+
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_refactoring_type_uses_correct_prompt(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def long_function():\n    # ... many lines ...\n    pass"
+        mock_run_linter.return_value = ([], None)
+        llm_review_output = {"overall_summary": "Refactoring opportunities present.", "suggestions": [{"line_start": 1, "line_end": 3, "severity": CodeReviewSeverity.MAJOR.value, "comment": "Function is too long."}]} # Using MAJOR for "Medium"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code, review_type="refactoring")
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(result["llm_suggestions"][0]["severity"], CodeReviewSeverity.MAJOR.value)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_args, _ = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        # Check for a unique phrase from the refactoring prompt
+        self.assertIn("refactoring and improving its structure", prompt_args[0])
+        self.assertNotIn("specifically for potential security vulnerabilities", prompt_args[0]) # Ensure it's not security prompt
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
     async def test_review_code_llm_suggestions_no_linter_findings(self, mock_run_linter):
         self.mock_task_manager.reset_mock()
         self.mock_task_manager.add_task.return_value = self.mock_task
@@ -1692,7 +1736,7 @@ class MyCalc:
 
         llm_review_output = {
             "overall_summary": "One minor suggestion.",
-            "suggestions": [{"line_start": 1, "line_end": 1, "severity": "Style", "comment": "Add a docstring."}]
+            "suggestions": [{"line_start": 1, "line_end": 1, "severity": CodeReviewSeverity.STYLE.value, "comment": "Add a docstring."}]
         }
         self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
 
@@ -1700,7 +1744,8 @@ class MyCalc:
 
         self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
         self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
-        self.assertEqual(result["llm_suggestions"], llm_review_output["suggestions"])
+        self.assertEqual(len(result["llm_suggestions"]), 1)
+        self.assertEqual(result["llm_suggestions"][0]["severity"], CodeReviewSeverity.STYLE.value)
         self.assertEqual(result["linter_findings"], [])
         self.assertIsNone(result["error"])
         mock_run_linter.assert_called_once_with(sample_code)
@@ -1717,7 +1762,7 @@ class MyCalc:
 
         llm_review_output = {
             "overall_summary": "Code looks generally good.",
-            "suggestions": [] # No specific suggestions from LLM
+            "suggestions": [] # No specific suggestions from LLM, so no severity to check here
         }
         self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
 
@@ -1842,6 +1887,52 @@ class MyCalc:
         self.assertEqual(kwargs.get("model_name"), custom_llm_config["model_name"])
         self.assertEqual(kwargs.get("temperature"), custom_llm_config["temperature"])
         self.assertEqual(kwargs.get("max_tokens"), custom_llm_config["max_tokens"])
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_refactoring_with_suggested_replacement(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def func_name_too_long():\n    x=1 # simple var rename candidate"
+        mock_run_linter.return_value = ([], None)
+
+        llm_review_output = {
+            "overall_summary": "Minor refactoring suggestions.",
+            "suggestions": [
+                {
+                    "line_start": 2, "line_end": 2,
+                    "severity": CodeReviewSeverity.STYLE.value,
+                    "comment": "Variable 'x' could be 'item_count'.",
+                    "suggested_replacement_code": "item_count = 1"
+                },
+                {
+                    "line_start": 1, "line_end": 1,
+                    "severity": CodeReviewSeverity.MINOR.value,
+                    "comment": "Function name is a bit verbose."
+                    # No suggested_replacement_code for this one
+                }
+            ]
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code, review_type="refactoring")
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(len(result["llm_suggestions"]), 2)
+
+        suggestion1 = result["llm_suggestions"][0]
+        self.assertEqual(suggestion1["comment"], "Variable 'x' could be 'item_count'.")
+        self.assertEqual(suggestion1["suggested_replacement_code"], "item_count = 1")
+        self.assertEqual(suggestion1["severity"], CodeReviewSeverity.STYLE.value)
+
+        suggestion2 = result["llm_suggestions"][1]
+        self.assertEqual(suggestion2["comment"], "Function name is a bit verbose.")
+        self.assertNotIn("suggested_replacement_code", suggestion2) # Check it's absent
+        self.assertEqual(suggestion2["severity"], CodeReviewSeverity.MINOR.value)
+
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_args, _ = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        self.assertIn("refactoring and improving its structure", prompt_args[0]) # Correct prompt
         self.mock_task_manager.add_task.assert_called_once()
 
 

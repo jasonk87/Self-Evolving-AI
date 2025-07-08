@@ -9,6 +9,14 @@ import asyncio
 from ..config import get_model_for_task, is_debug_mode
 from ..core.fs_utils import write_to_file
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added
+from enum import Enum as PyEnum # To avoid conflict with any other Enum class
+
+class CodeReviewSeverity(PyEnum):
+    CRITICAL = "Critical"
+    MAJOR = "Major"
+    MINOR = "Minor"
+    INFO = "Info"
+    STYLE = "Style"
 
 LLM_CODE_REVIEW_PROMPT_TEMPLATE = """You are an expert Python code reviewer.
 Your task is to review the provided Python code and identify areas for improvement.
@@ -41,11 +49,97 @@ Example of a suggestion object:
 {{
   "line_start": 10,
   "line_end": 12,
-  "severity": "Minor",
+  "severity": "Minor", # Ensure this matches one of: Critical, Major, Minor, Info, Style
   "comment": "The variable 'temp_val' could be renamed to 'user_input' for better clarity."
 }}
 
+Valid severity values are: "Critical", "Major", "Minor", "Info", "Style".
+
 If you find no specific issues, return an appropriate summary and an empty list for "suggestions".
+Do not include any explanations or text outside of the main JSON object in your response.
+
+JSON Review Output:
+"""
+
+LLM_SECURITY_REVIEW_PROMPT_TEMPLATE = """You are an expert Python security reviewer.
+Your task is to review the provided Python code specifically for potential security vulnerabilities.
+Focus on common Python security issues such as:
+- Injection vulnerabilities (e.g., SQL injection, command injection - if applicable based on code context).
+- Cross-Site Scripting (XSS) vulnerabilities (if web-related).
+- Insecure handling of sensitive data (e.g., hardcoded secrets, weak encryption).
+- Use of outdated or vulnerable libraries (if version information is available or implied).
+- Insecure deserialization.
+- Insufficient input validation leading to security risks.
+- Path traversal vulnerabilities.
+- Open redirects (if applicable).
+- Use of dangerous functions like `eval()`, `exec()`, `pickle.loads()` with untrusted data.
+
+Code to Review:
+```python
+{code_to_review}
+```
+
+Review Context (Optional): {review_context}
+(If a review context is provided, consider any specific security requirements or threat models relevant to that context if known. Otherwise, perform a general Python security code review.)
+
+Output Format:
+Please provide your review as a JSON object with two main keys: "overall_summary" and "suggestions".
+1.  "overall_summary": A brief (1-2 sentences) qualitative summary of the code's security posture from your review.
+2.  "suggestions": A list of JSON objects, where each object represents a specific potential vulnerability or security concern and includes the following keys:
+  "line_start": The starting line number of tweaking the code segment relevant to your suggestion.
+    - "line_end": The ending line number of the code segment.
+    - "severity": A string indicating the severity of the issue. Use one of the following values: "Critical", "Major", "Minor", "Info", "Style".
+    - "comment": A detailed explanation of the potential vulnerability and your recommendation for mitigation.
+
+If you find no specific security issues, return an appropriate summary and an empty list for "suggestions".
+Do not include any explanations or text outside of the main JSON object in your response.
+
+JSON Review Output:
+"""
+
+LLM_REFACTORING_REVIEW_PROMPT_TEMPLATE = """You are an expert Python code refactoring advisor.
+Your task is to review the provided Python code to identify opportunities for refactoring and improving its structure, readability, and maintainability.
+Focus on aspects like:
+- Code Duplication (DRY principle violations).
+- Long Functions or Methods (violating Single Responsibility Principle).
+- Complex Conditional Logic or Deeply Nested Structures.
+- Poorly Named Variables, Functions, or Classes.
+- Lack of Modularity or Cohesion.
+- Opportunities to use more Pythonic idioms or built-in functions for clarity and conciseness.
+- Overly complex class structures or inheritance hierarchies.
+- "Code smells" that indicate underlying design problems.
+
+Do NOT focus on minor PEP 8 style issues unless they significantly impact readability or maintainability. The primary goal is structural and design improvement.
+
+Code to Review:
+```python
+{code_to_review}
+```
+
+Review Context (Optional): {review_context}
+(If a review context is provided, consider any specific refactoring goals relevant to that context if known.)
+
+Output Format:
+Please provide your review as a JSON object with two main keys: "overall_summary" and "suggestions".
+1.  "overall_summary": A brief (1-2 sentences) qualitative summary of the code's refactoring potential.
+2.  "suggestions": A list of JSON objects, where each object represents a specific refactoring suggestion and includes the following keys:
+    - "line_start": The starting line number of the code segment relevant to your suggestion.
+    - "line_end": The ending line number of the code segment.
+    - "severity": A string indicating the potential impact or benefit of the refactoring. Use one of the following values: "Critical", "Major", "Minor", "Info", "Style".
+    - "comment": A detailed explanation of the refactoring opportunity and why it would be beneficial.
+    - "suggested_replacement_code": Optional. If the suggestion involves a very simple, localized code change (e.g., renaming a variable within its scope, a minor syntactic correction), provide the exact code snippet that should replace the code from "line_start" to "line_end". Only provide this for changes you are highly confident are safe and correct. For complex refactoring, omit this field.
+
+Example of a suggestion with `suggested_replacement_code`:
+{{
+  "line_start": 5,
+  "line_end": 5,
+  "severity": "Style",
+  "comment": "Variable 'i' could be renamed to 'index' for better clarity in this context.",
+  "suggested_replacement_code": "index"
+}}
+(Assuming line 5 was `for i in range(n):` and the suggestion is to change `i` if it's only used as an index name locally)
+
+If the code is already very well-structured and offers no significant refactoring opportunities, return an appropriate summary and an empty list for "suggestions".
 Do not include any explanations or text outside of the main JSON object in your response.
 
 JSON Review Output:
@@ -1384,26 +1478,25 @@ class CodeService:
         self,
         code_string: str,
         language: str = "python",
-        review_context: Optional[str] = None, # e.g., "NEW_TOOL_REVIEW", "GENERAL_PYTHON_REVIEW"
+        review_type: str = "general", # New parameter: "general", "security", "refactoring"
+        review_context: Optional[str] = None, # e.g., "NEW_TOOL_REVIEW", "SPECIFIC_MODULE_XYZ"
         llm_config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         task_id: Optional[str] = None
         logs: List[str] = []
 
-        # For now, review_context isn't heavily used beyond logging, but good for future.
-        # related_item_id could be a hash of the code_string or a more meaningful identifier if available
-        related_item_id = f"review_{review_context or 'general'}_{hash(code_string)}"
+        related_item_id = f"review_{review_type}_{review_context or 'any'}_{hash(code_string)}"
 
         if self.task_manager:
-            task_desc = f"Review_code: Context: {review_context or 'general'}, Code snippet (first 50 chars): {code_string[:50].replace(chr(10), ' ')}..."
+            task_desc = f"Review_code: Type: {review_type}, Context: {review_context or 'N/A'}, Code snippet (first 50 chars): {code_string[:50].replace(chr(10), ' ')}..."
             task = self.task_manager.add_task(
                 description=task_desc,
-                task_type=ActiveTaskType.CODE_REVIEW, # Assuming a new ActiveTaskType
+                task_type=ActiveTaskType.CODE_REVIEW,
                 related_item_id=related_item_id
             )
             task_id = task.task_id
 
-        logs.append(f"review_code called. Context: {review_context}, Language: {language}. Task ID: {task_id}")
+        logs.append(f"review_code called. Type: {review_type}, Context: {review_context}, Lang: {language}. Task ID: {task_id}")
 
         if language != "python": # pragma: no cover
             self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Unsupported language for review.")
@@ -1464,11 +1557,21 @@ class CodeService:
                     review_temp = llm_config.get("temperature", review_temp)
                     review_max_tokens = llm_config.get("max_tokens", review_max_tokens)
 
-                formatted_prompt = LLM_CODE_REVIEW_PROMPT_TEMPLATE.format(
+                prompt_template_to_use = LLM_CODE_REVIEW_PROMPT_TEMPLATE # Default
+                if review_type == "security":
+                    prompt_template_to_use = LLM_SECURITY_REVIEW_PROMPT_TEMPLATE
+                    logs.append("Using Security Review Prompt Template.")
+                elif review_type == "refactoring":
+                    prompt_template_to_use = LLM_REFACTORING_REVIEW_PROMPT_TEMPLATE
+                    logs.append("Using Refactoring Review Prompt Template.")
+                else: # Default or "general"
+                    logs.append("Using General Code Review Prompt Template.")
+
+                formatted_prompt = prompt_template_to_use.format(
                     code_to_review=code_string,
                     review_context=review_context or "N/A"
                 )
-                logs.append(f"Sending code review prompt to LLM. Model: {review_model}, Temp: {review_temp}")
+                logs.append(f"Sending code review prompt to LLM. Model: {review_model}, Temp: {review_temp}, Type: {review_type}")
 
                 raw_llm_output = await self.llm_provider.invoke_ollama_model_async(
                     formatted_prompt, model_name=review_model, temperature=review_temp, max_tokens=review_max_tokens
