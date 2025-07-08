@@ -249,7 +249,7 @@ LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE = """You are an expert Python programmer. Y
 
 Overall Module/Class Context:
 <context_summary>
-{overall_context_summary}
+{component_specific_context}
 </context_summary>
 
 Component to Implement:
@@ -1261,7 +1261,13 @@ class CodeService:
         llm_config: Optional[Dict[str, Any]]
     ) -> Optional[str]:
         component_type = component_definition.get('type', 'unknown_type')
-        component_name = component_definition.get('name', 'UnnamedComponent')
+        # For methods, component_definition["name"] is already "ClassName.MethodName"
+        # For functions, it's "FunctionName"
+        component_name_for_prompt = component_definition.get('name', 'UnnamedComponent')
+        # original_name is relevant for methods if component_name is Class.Method
+        original_method_name_if_applicable = component_definition.get("original_name", component_name_for_prompt.split('.')[-1])
+
+
         component_signature = component_definition.get('signature', '')
         component_description = component_definition.get('description', '')
         component_body_placeholder = component_definition.get('body_placeholder', '')
@@ -1269,27 +1275,95 @@ class CodeService:
         module_imports_list = full_outline.get('imports', [])
         module_imports_str = "\n".join([f"import {imp}" for imp in module_imports_list]) if module_imports_list else "# No specific module-level imports listed in outline."
 
-        overall_context_summary = full_outline.get('description', 'No overall description provided in outline.')
-        if component_type == "method" and full_outline.get("components"):
-            for comp in full_outline["components"]:
-                if comp.get("type") == "class" and any(meth.get("name") == component_name for meth in comp.get("methods",[])): # pragma: no branch
-                    class_attrs = ", ".join([f"{attr.get('name')}: {attr.get('type')}" for attr in comp.get('attributes',[])])
-                    overall_context_summary = (
-                        f"Within class '{comp.get('name', 'UnknownClass')}' with attributes ({class_attrs}). "
-                        f"Overall class description: {comp.get('description', '')}"
-                    )
-                    break
+        # --- Enhanced Context Building ---
+        context_lines = []
+        module_overall_description = full_outline.get('description', 'No overall module description provided.')
 
-        logger.info(f"CodeService: Generating detail for component '{component_name}' (type: {component_type}).")
+        if component_type == "method":
+            parent_class_name_found = None
+            parent_class_def_found = None
+
+            # Find the parent class definition
+            for class_comp_def in full_outline.get("components", []):
+                if class_comp_def.get("type") == "class":
+                    # Check if the current method (using original_method_name_if_applicable) is in this class
+                    if any(m.get("name") == original_method_name_if_applicable for m in class_comp_def.get("methods", [])):
+                        parent_class_def_found = class_comp_def
+                        parent_class_name_found = class_comp_def.get("name", "UnknownClass")
+                        break
+
+            if parent_class_def_found and parent_class_name_found:
+                context_lines.append(f"Implementing method '{original_method_name_if_applicable}' for class '{parent_class_name_found}'.")
+                context_lines.append(f"  Class Description: {parent_class_def_found.get('description', 'N/A')}")
+
+                class_attrs = parent_class_def_found.get('attributes', [])
+                if class_attrs:
+                    context_lines.append("  Class Attributes:")
+                    for attr in class_attrs:
+                        context_lines.append(f"    - {attr.get('name', 'N/A')}: {attr.get('type', 'Any')} # {attr.get('description', '')}")
+
+                sibling_methods_info = []
+                for method_def in parent_class_def_found.get("methods", []):
+                    if method_def.get("name") != original_method_name_if_applicable:
+                        sibling_methods_info.append(
+                            f"    - {method_def.get('name', 'N/A')}{method_def.get('signature', '()')} # {method_def.get('description', '')}"
+                        )
+                if sibling_methods_info:
+                    context_lines.append("  Other available methods in this class:")
+                    context_lines.extend(sibling_methods_info)
+            else: # Fallback if class somehow not found (should ideally not happen with good outline)
+                context_lines.append(f"Implementing method '{original_method_name_if_applicable}'. Parent class context not fully identified in outline.")
+            context_lines.append(f"Overall Module Description: {module_overall_description}")
+
+
+        elif component_type == "function":
+            context_lines.append(f"Implementing function '{component_name_for_prompt}'.")
+            context_lines.append(f"Overall Module Description: {module_overall_description}")
+
+            sibling_functions_info = []
+            available_classes_info = []
+            for comp_def in full_outline.get("components", []):
+                # Skip the current function itself by comparing its definition, not just name, if possible
+                # For simplicity here, we'll rely on name and type. A more robust check might involve unique IDs if outlines had them.
+                if comp_def.get("name") == component_name_for_prompt and comp_def.get("type") == "function":
+                    continue
+
+                if comp_def.get("type") == "function":
+                    sibling_functions_info.append(
+                        f"  - {comp_def.get('name', 'N/A')}{comp_def.get('signature', '()')} # {comp_def.get('description', '')}"
+                    )
+                elif comp_def.get("type") == "class":
+                    class_methods_summary = []
+                    for method_def in comp_def.get("methods", []):
+                        class_methods_summary.append(f"{method_def.get('name')}{method_def.get('signature', '()')}")
+                    methods_str = ", ".join(class_methods_summary) if class_methods_summary else "No methods listed"
+                    available_classes_info.append(
+                        f"  - Class {comp_def.get('name', 'N/A')}: {comp_def.get('description', 'N/A')}\n      Methods: {methods_str}"
+                    )
+
+            if sibling_functions_info:
+                context_lines.append("Other available functions in this module:")
+                context_lines.extend(sibling_functions_info)
+            if available_classes_info:
+                context_lines.append("Available classes in this module:")
+                context_lines.extend(available_classes_info)
+        else:
+            context_lines.append(f"Implementing component '{component_name_for_prompt}' of type '{component_type}'.")
+            context_lines.append(f"Overall Module Description: {module_overall_description}")
+
+        component_specific_context_str = "\n".join(context_lines)
+        # --- End of Enhanced Context Building ---
+
+        logger.info(f"CodeService: Generating detail for component '{component_name_for_prompt}' (type: {component_type}). Context length: {len(component_specific_context_str)}")
 
         if not self.llm_provider: # pragma: no cover
             logger.error("LLM provider not configured for CodeService, cannot generate component detail.")
             return None
 
         prompt = LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE.format(
-            overall_context_summary=overall_context_summary,
+            component_specific_context=component_specific_context_str,
             component_type=component_type,
-            component_name=component_name,
+            component_name=component_name_for_prompt,
             component_signature=component_signature,
             component_description=component_description,
             component_body_placeholder=component_body_placeholder,
@@ -1312,7 +1386,7 @@ class CodeService:
         if not raw_llm_output or \
            "# IMPLEMENTATION_ERROR:" in raw_llm_output or \
            len(raw_llm_output.strip()) < 5:
-            logger.warning(f"LLM did not provide a usable code snippet for component '{component_name}'. Output: {raw_llm_output}")
+            logger.warning(f"LLM did not provide a usable code snippet for component '{component_name_for_prompt}'. Output: {raw_llm_output}")
             return None
 
         cleaned_code_snippet = raw_llm_output.strip()
@@ -1323,7 +1397,7 @@ class CodeService:
 
         cleaned_code_snippet = cleaned_code_snippet.replace("\\n", "\n")
 
-        logger.info(f"Successfully generated code snippet for component '{component_name}'. Length: {len(cleaned_code_snippet)}")
+        logger.info(f"Successfully generated code snippet for component '{component_name_for_prompt}'. Length: {len(cleaned_code_snippet)}")
         return cleaned_code_snippet
 
     def _assemble_components(
@@ -1729,6 +1803,29 @@ if __name__ == '__main__': # pragma: no cover
                     })
                 return json.dumps(base_outline)
 
+            elif LLM_CODE_REVIEW_PROMPT_TEMPLATE.splitlines()[0] in prompt: # New prompt check
+                logger.info("MockLLMProvider: Matched CODE_REVIEW prompt.")
+                # Based on review_context, could return different canned responses
+                # For now, a generic response
+                review_response = {
+                    "overall_summary": "The code is generally well-structured but has a few areas for improvement.",
+                    "suggestions": [
+                        {"line_start": 5, "line_end": 5, "severity": "Minor", "comment": "Consider using a more descriptive variable name than 'x'."},
+                        {"line_start": 10, "line_end": 12, "severity": "Major", "comment": "This loop could be optimized by pre-calculating the length."}
+                    ]
+                }
+                if "code with no issues" in prompt:
+                    review_response["overall_summary"] = "The code looks good. No specific issues found."
+                    review_response["suggestions"] = []
+                elif "code with critical issue" in prompt:
+                     review_response["suggestions"].append(
+                         {"line_start": 1, "line_end": 1, "severity": "Critical", "comment": "This line will raise a ZeroDivisionError."}
+                     )
+
+                # Attempt to return as JSON string, as the prompt requests
+                return json.dumps(review_response)
+
+
             elif LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE.splitlines()[0] in prompt:
                 logger.info("MockLLMProvider: Matched COMPONENT_DETAIL prompt.")
                 if "buggy_function_bad_lint" in prompt:
@@ -1959,3 +2056,5 @@ if __name__ == '__main__': # pragma: no cover
     if os.name == 'nt': # pragma: no cover
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main_illustrative_test())
+
+[end of ai_assistant/code_services/service.py]

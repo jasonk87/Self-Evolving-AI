@@ -745,40 +745,64 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result_code, full_expected_code)
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
         prompt_arg = self.mock_llm_provider.invoke_ollama_model_async.call_args[0][0]
-        self.assertIn("my_util_func", prompt_arg)
-        self.assertIn("Return True if path exists", prompt_arg)
-        self.assertIn("import os", prompt_arg)
+        self.assertIn("my_util_func", prompt_arg) # Check component name
+        self.assertIn("Return True if path exists", prompt_arg) # Check body placeholder
+        self.assertIn("import os", prompt_arg) # Check module imports
+        # Check for sibling function context
+        self.assertIn("Other available functions in this module:", prompt_arg)
+        self.assertIn("sibling_func(s: str) -> str # A sibling utility.", prompt_arg)
+        self.assertIn("Available classes in this module:", prompt_arg)
+        self.assertIn("Class HelperClass: Helper class for utils.", prompt_arg)
+        self.assertIn("Methods: __init__(self), do_work(self)", prompt_arg)
+
 
     async def test_generate_detail_for_component_success_method(self):
-        component_def = {
-            "type": "method", "name": "process", "signature": "(self, data: dict) -> None",
-            "description": "Processes data.", "body_placeholder": "self.some_attr = data.get('key')"
+        # This component_def is for 'process_alpha'. 'original_name' is crucial.
+        component_def_alpha = {
+            "type": "method", "name": "MyProcessor.process_alpha", "original_name": "process_alpha",
+            "signature": "(self, data: dict) -> None",
+            "description": "Processes alpha data.", "body_placeholder": "self.alpha_attr = data.get('alpha_key')"
+        }
+        # This is a sibling method.
+        method_def_beta = {
+            "type": "method", "name": "process_beta", "signature": "(self, value: int) -> bool",
+            "description": "Processes beta value.", "body_placeholder": "return value > 10"
         }
         full_outline = {
             "module_name": "my_class_module.py",
+            "description": "Module containing MyProcessor.",
             "components": [{
                 "type": "class", "name": "MyProcessor",
-                "attributes": [{"name": "some_attr", "type": "Optional[Any]"}],
+                "attributes": [{"name": "alpha_attr", "type": "Optional[Any]", "description":"Alpha attribute"}],
                 "description": "A data processor class.",
-                "methods": [component_def]
+                "methods": [component_def_alpha, method_def_beta] # Both methods in the class
             }],
-            "imports": []
+            "imports": ["collections"]
         }
-        expected_code = "def process(self, data: dict) -> None:\n    self.some_attr = data.get('key')"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_code
+        expected_code_alpha = "def process_alpha(self, data: dict) -> None:\n    self.alpha_attr = data.get('alpha_key')"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_code_alpha
 
         result_code = await self.code_service._generate_detail_for_component(
-            component_definition=component_def,
+            component_definition=component_def_alpha, # Generating for process_alpha
             full_outline=full_outline,
             llm_config=None
         )
-        self.assertEqual(result_code, expected_code)
+        self.assertEqual(result_code, expected_code_alpha)
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
         prompt_arg = self.mock_llm_provider.invoke_ollama_model_async.call_args[0][0]
-        self.assertIn("class 'MyProcessor'", prompt_arg)
-        self.assertIn("self.some_attr = data.get('key')", prompt_arg)
+
+        # Check for correct context being passed for process_alpha
+        self.assertIn("Implementing method 'process_alpha' for class 'MyProcessor'", prompt_arg)
+        self.assertIn("Class Description: A data processor class.", prompt_arg)
+        self.assertIn("- alpha_attr: Optional[Any] # Alpha attribute", prompt_arg) # Attribute of MyProcessor
+        self.assertIn("Other available methods in this class:", prompt_arg)
+        self.assertIn("- process_beta(self, value: int) -> bool # Processes beta value.", prompt_arg) # Sibling method
+        self.assertIn("Overall Module Description: Module containing MyProcessor.", prompt_arg)
+        self.assertIn("import collections", prompt_arg) # Module import
 
     async def test_generate_detail_for_component_llm_returns_none(self):
+        self.mock_task_manager.reset_mock() # Though not directly used by _generate_detail, good practice for consistency
+        self.mock_task_manager.add_task.return_value = self.mock_task
         component_def = {"type": "function", "name": "test_func", "signature": "()", "description": "", "body_placeholder": ""}
         full_outline = {"imports": []}
         self.mock_llm_provider.invoke_ollama_model_async.return_value = None
