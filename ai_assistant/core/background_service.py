@@ -36,16 +36,18 @@ except ImportError as e: # pragma: no cover
 
 # Fallback for config if not defined
 try:
-    from ai_assistant.config import PROJECT_EXECUTION_INTERVAL_SECONDS
+    from ai_assistant.config import PROJECT_EXECUTION_INTERVAL_SECONDS, REFLECTION_INTERVAL_SECONDS
 except ImportError: # pragma: no cover
     PROJECT_EXECUTION_INTERVAL_SECONDS = 720 # Default to 12 minutes if not in config
+    REFLECTION_INTERVAL_SECONDS = 300 # Default to 5 minutes if not in config
+
 
 # --- Service State ---
 _background_service_active = False
 _background_task: Optional[asyncio.Task] = None
 _nm_instance_for_bg_service: Optional[NotificationManager] = None # To hold NM instance
 _tm_instance_for_bg_service: Optional['TaskManager'] = None # To hold TaskManager instance
-_polling_interval_seconds = 300  # For self-reflection (5 minutes)
+# _polling_interval_seconds = 300  # For self-reflection (5 minutes) -> Now REFLECTION_INTERVAL_SECONDS from config
 _long_task_check_interval_seconds = 60 # Check for long tasks every 1 minute
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0
@@ -151,7 +153,7 @@ async def _background_loop_async():
     _last_long_task_check_time = current_time_init
     _task_last_checkin_time = {} # Ensure it's reset if service restarts
 
-    next_reflection_run_time = current_time_init + _polling_interval_seconds
+    next_reflection_run_time = current_time_init + REFLECTION_INTERVAL_SECONDS
     next_fact_curation_run_time = current_time_init + FACT_CURATION_INTERVAL_SECONDS
     next_project_execution_run_time = current_time_init + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_long_task_check_run_time = current_time_init + _long_task_check_interval_seconds
@@ -210,8 +212,8 @@ async def _background_loop_async():
                         logger.info("--- BACKGROUND SERVICE: Self-reflection cycle did not complete or was aborted (e.g. not enough log data). ---")
             except Exception as e: # pragma: no cover
                 logger.error(f"--- BACKGROUND SERVICE: Error during self-reflection cycle: {e} ---", exc_info=True)
-            next_reflection_run_time = time.time() + _polling_interval_seconds
-            logger.info(f"--- BACKGROUND SERVICE: Self-reflection cycle finished. Next run in approx. {_polling_interval_seconds}s. ---")
+            next_reflection_run_time = time.time() + REFLECTION_INTERVAL_SECONDS
+            logger.info(f"--- BACKGROUND SERVICE: Self-reflection cycle finished. Next run in approx. {REFLECTION_INTERVAL_SECONDS}s. ---")
 
         # --- LLM-Powered Fact Curation Task ---
         if current_loop_time >= next_fact_curation_run_time:

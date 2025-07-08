@@ -137,6 +137,9 @@ def get_model_for_task(task_name: str) -> str:
     """
     return TASK_MODELS.get(task_name, DEFAULT_MODEL) or DEFAULT_MODEL
 
+# Interval for the background service to run the self-reflection cycle (in seconds)
+REFLECTION_INTERVAL_SECONDS = int(os.getenv("REFLECTION_INTERVAL_SECONDS", 300)) # Default to 5 minutes
+
 if __name__ == '__main__':
     print("--- Testing Configuration ---")
 
