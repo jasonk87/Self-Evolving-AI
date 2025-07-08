@@ -23,7 +23,7 @@ from unittest.mock import patch, AsyncMock, MagicMock # Ensure these are importe
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model 
 from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry 
-from ..memory.event_logger import log_event
+from ..memory.event_logger import log_event, get_recent_events # MODIFIED: Added get_recent_events
 from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
 from datetime import datetime, timezone, timedelta 
@@ -32,7 +32,8 @@ from .notification_manager import NotificationManager
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_ENTRIES_FOR_ANALYSIS = 5 
-DEFAULT_MAX_ENTRIES_TO_FETCH = 50    
+DEFAULT_MAX_ENTRIES_TO_FETCH = 50
+DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION = 20 # New constant
 
 IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE = """
 You are an AI assistant analyzing a summary of your own past operational reflection logs. Your task is to identify recurring failure patterns, problematic tools or goals, and other insights that could lead to self-improvement.
@@ -66,6 +67,58 @@ Example JSON Output Format:
 
 If no significant patterns are found, return an empty list for "identified_patterns".
 Focus on clear, data-driven observations based *only* on the provided log summary. Respond ONLY with the JSON object.
+"""
+
+LLM_SELF_CRITIQUE_AND_PATTERNS_PROMPT_TEMPLATE = """You are a Self-Critical AI Assistant reviewing your recent operational and conversational history to identify areas for improvement.
+Your goal is to find patterns of suboptimal performance, common mistakes you (the AI) might be making, or missed opportunities.
+
+**Input Data:**
+The following summary contains two parts:
+1.  Reflection Log Summary: Structured logs of your internal operations, tool usage, successes, and failures.
+2.  Recent Conversation Snippets: Raw exchanges between you (AI) and the user.
+
+```text
+{combined_interaction_summary}
+```
+
+**Your Task:**
+Analyze the provided input data and identify:
+
+1.  **AI Performance Gaps / Suboptimal Behavior:**
+    *   **Tool Usage:** Instances where a different tool might have been more appropriate, or a tool was used incorrectly (e.g., wrong arguments, misunderstanding its purpose based on user follow-up).
+    *   **Response Quality:** Instances where your (AI) responses were unclear, verbose, incomplete, or led to user confusion or requests for clarification.
+    *   **Missed Opportunities:** Situations where you could have offered to use a tool, provide more information, or proactively assist but didn't.
+    *   **Decision-Making Patterns:** Any recurring patterns in your decision-making (e.g., always defaulting to a specific tool even when alternatives exist, consistently struggling with a certain type of ambiguity).
+
+2.  **Common AI Mistakes / Misunderstandings:**
+    *   Patterns where you repeatedly misunderstand a specific type of user query or intent.
+    *   Consistent errors when interpreting the output of a particular tool.
+    *   Recurring incorrect assumptions you might be making.
+
+**Output Format:**
+Please provide your analysis as a single JSON object. This object must contain one key: `"performance_observations"`.
+The value of `"performance_observations"` should be a list of JSON objects, where each object represents a distinct observation and includes the following keys:
+-   `"observation_id"`: A unique identifier you generate for this observation (e.g., "OBS_001").
+-   `"type"`: A string categorizing the observation. Examples: "SUBOPTIMAL_TOOL_CHOICE", "UNCLEAR_AI_RESPONSE", "MISSED_TOOL_OPPORTUNITY", "RECURRING_MISUNDERSTANDING_OF_INTENT", "INEFFICIENT_PLANNING_PATTERN", "COMMON_TOOL_USAGE_ERROR". (Be descriptive).
+-   `"description"`: A detailed explanation of the observed issue or pattern.
+-   `"evidence"`: A list of short, relevant text snippets (1-3 snippets, max 50-70 characters each) from the input summary (either from reflection logs or conversation snippets) that support your observation. Clearly indicate if evidence is from 'Log Entry X' or 'User/AI Exchange Y'.
+-   `"context_keywords"`: A list of 3-5 keywords that best describe the context or topic of the interaction(s) where this observation occurred (e.g., ["date calculation", "file search", "api error"]).
+-   `"ai_confidence_in_observation"`: A float (0.0 to 1.0) indicating your confidence that this is a genuine area for improvement.
+-   `"potential_impact_if_addressed"`: A string describing the likely positive impact if this observation is addressed (e.g., "Improved user satisfaction", "More efficient task completion", "Reduced errors with Tool X").
+
+Example of a `performance_observation` object:
+{{
+  "observation_id": "OBS_001",
+  "type": "UNCLEAR_AI_RESPONSE",
+  "description": "AI's explanation for why a tool failed was overly technical and did not directly answer the user's follow-up question about alternatives.",
+  "evidence": ["AI Exchange 3: AI: The foobar_utility returned exit code 255.", "AI Exchange 3: User: Okay, but what can I do instead?"],
+  "context_keywords": ["foobar_utility", "tool failure", "alternatives"],
+  "ai_confidence_in_observation": 0.85,
+  "potential_impact_if_addressed": "Improved user understanding and reduced follow-up questions."
+}}
+
+If you find no significant performance gaps or common mistakes, return an empty list for `"performance_observations"`.
+Respond ONLY with the JSON object. Do not include any other text or explanations.
 """
 
 GENERATE_IMPROVEMENT_SUGGESTIONS_PROMPT_TEMPLATE = """
@@ -315,9 +368,71 @@ def get_reflection_log_summary_for_analysis(
         relevant_entry_count += 1
     
     if relevant_entry_count == 0 :
-        return "No relevant reflection log entries found for analysis based on current criteria."
+        # Still might have conversation events, so don't return "No relevant reflection log entries..." yet.
+        # Instead, let it fall through to conversation event processing.
+        # If both are empty, then we can return a more general "no data" message.
+        pass # formatted_summary_parts might be just the header if no reflection entries
 
-    return "\n\n".join(formatted_summary_parts)
+    # --- Fetch and Format Recent Conversation Events ---
+    conversation_summary_parts: List[str] = ["\n\n--- Recent Conversation Snippets (Last ~{DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION} User/AI exchanges) ---\n"]
+    recent_conv_events = get_recent_events(limit=DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION * 2) # Fetch more to filter
+
+    user_ai_pairs = []
+    temp_user_event = None
+    # Iterate in reverse to process older events first and then pair them up
+    for event in reversed(recent_conv_events):
+        event_type = event.get("event_type", "")
+        # Heuristic: USER_INPUT_RECEIVED often contains the user's direct query text in description
+        # AI_RESPONSE_GENERATED or similar would contain the AI's reply.
+        # This needs to align with how events are actually logged by the CLI or interaction handler.
+        if event_type == "USER_INPUT_RECEIVED":
+            temp_user_event = event
+        elif event_type == "AI_RESPONSE_GENERATED" and temp_user_event:
+            user_ai_pairs.append({"user": temp_user_event, "ai": event})
+            temp_user_event = None
+        elif event_type == "AI_TOOL_EXECUTION_RESPONSE" and temp_user_event: # If tool exec is the AI's response
+            user_ai_pairs.append({"user": temp_user_event, "ai": event})
+            temp_user_event = None
+
+    # Reverse again to get chronological order for the summary
+    interaction_count = 0
+    for pair in reversed(user_ai_pairs):
+        if interaction_count >= DEFAULT_MAX_CONVERSATION_EVENTS_FOR_REFLECTION:
+            break
+
+        user_event = pair["user"]
+        ai_event = pair["ai"]
+
+        user_ts = datetime.fromisoformat(user_event['timestamp']).strftime('%Y-%m-%d %H:%M') if user_event.get('timestamp') else 'Unknown Time'
+        ai_ts = datetime.fromisoformat(ai_event['timestamp']).strftime('%Y-%m-%d %H:%M') if ai_event.get('timestamp') else 'Unknown Time'
+
+        user_desc = user_event.get("description", "N/A")
+        ai_desc = ai_event.get("description", "N/A")
+
+        # For AI_TOOL_EXECUTION_RESPONSE, metadata might be more useful than raw description
+        if ai_event.get("event_type") == "AI_TOOL_EXECUTION_RESPONSE":
+            ai_meta = ai_event.get("metadata", {})
+            ai_desc = f"Tool '{ai_meta.get('tool_name', 'UnknownTool')}' executed. Result preview: {str(ai_desc)[:100]}"
+
+
+        conversation_summary_parts.append(f"Exchange {interaction_count + 1}:")
+        conversation_summary_parts.append(f"  [{user_ts}] User: {user_desc[:200]}{'...' if len(user_desc) > 200 else ''}")
+        conversation_summary_parts.append(f"  [{ai_ts}] AI:   {ai_desc[:200]}{'...' if len(ai_desc) > 200 else ''}")
+        conversation_summary_parts.append("  ---")
+        interaction_count += 1
+
+    if interaction_count == 0:
+        conversation_summary_parts.append("No recent user/AI conversation exchanges found in event logs.")
+
+    # --- Combine Summaries ---
+    final_summary_str = "\n".join(formatted_summary_parts) + "\n" + "\n".join(conversation_summary_parts)
+
+    if relevant_entry_count == 0 and interaction_count == 0:
+        logger.info("No reflection log entries or recent conversation events found for analysis.")
+        return None # Return None if truly no data
+
+    return final_summary_str.strip()
+
 
 def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     model_to_use = llm_model_name if llm_model_name is not None else get_model_for_task("reflection")
@@ -535,56 +650,112 @@ def run_self_reflection_cycle(
         min_entries_for_analysis=min_entries_for_analysis
     )
     if not log_summary:
-        logger.info("Self-Reflection Cycle: Aborted due to insufficient log data or no relevant entries found.")
+        logger.info("Self-Reflection Cycle: Aborted due to insufficient log data (neither reflection entries nor conversation events found).")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_CYCLE_ABORTED",
-            description="Self-reflection cycle aborted: Insufficient log data.",
+            description="Self-reflection cycle aborted: Insufficient data from combined summary.",
             source="autonomous_reflection.run_self_reflection_cycle",
-            metadata={"reason": "Insufficient log data from get_reflection_log_summary_for_analysis"}
+            metadata={"reason": "Insufficient data from get_reflection_log_summary_for_analysis"}
         )
         return None
 
     if is_debug_mode():
-        logger.debug(f"Reflection log summary for analysis: {log_summary}")
+        logger.debug(f"Combined interaction summary for analysis (first 1000 chars): {log_summary[:1000]}")
 
-    logger.info("Self-Reflection Cycle: Identifying failure patterns from log summary...")
+    # --- Step 1 (New): Self-Critique and Performance Pattern Identification ---
+    logger.info("Self-Reflection Cycle: Performing self-critique and identifying performance patterns...")
+    model_for_critique = llm_model_name or get_model_for_task("reflection") # Can use same model or a different one
+    critique_prompt = LLM_SELF_CRITIQUE_AND_PATTERNS_PROMPT_TEMPLATE.format(combined_interaction_summary=log_summary)
+
+    critique_llm_response_str = invoke_ollama_model(critique_prompt, model_name=model_for_critique)
+    performance_observations_list = []
+
+    if critique_llm_response_str:
+        critique_json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", critique_llm_response_str, re.DOTALL)
+        critique_cleaned_response = critique_llm_response_str.strip()
+        if critique_json_match:
+            critique_cleaned_response = critique_json_match.group(1).strip()
+        else:
+            first_brace = critique_llm_response_str.find('{')
+            last_brace = critique_llm_response_str.rfind('}')
+            if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                critique_cleaned_response = critique_llm_response_str[first_brace : last_brace+1].strip()
+
+        try:
+            critique_data = json.loads(critique_cleaned_response)
+            if isinstance(critique_data, dict) and "performance_observations" in critique_data and isinstance(critique_data["performance_observations"], list):
+                performance_observations_list = critique_data["performance_observations"]
+                logger.info(f"Self-Reflection Cycle: LLM self-critique identified {len(performance_observations_list)} performance observation(s).")
+                log_event(
+                    event_type="AUTONOMOUS_SELF_CRITIQUE_RESULTS",
+                    description=f"Self-critique process completed, found {len(performance_observations_list)} observations.",
+                    source="autonomous_reflection.run_self_reflection_cycle",
+                    metadata={"num_observations": len(performance_observations_list), "observations_preview": performance_observations_list[:3], "model_used": model_for_critique}
+                )
+            else:
+                logger.warning(f"Self-Reflection Cycle: LLM self-critique response missing 'performance_observations' list or incorrect type. Response: {critique_cleaned_response}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Self-Reflection Cycle: Error decoding JSON from LLM self-critique: {e}. Raw response snippet:\n---\n{critique_llm_response_str[:1000]}...\n---")
+    else:
+        logger.warning(f"Self-Reflection Cycle: Received no response from LLM for self-critique (model: {model_for_critique}).")
+
+    # --- Step 2 (Existing, but now uses only reflection log part of summary if needed, or could be refactored) ---
+    # For now, the existing pattern identification from structured logs will proceed.
+    # We might want to feed performance_observations_list into the suggestion generation later.
+    # The `log_summary` still contains the reflection log part.
+    # To avoid re-processing the conversation snippets with the old prompt, we could extract just the reflection log part.
+    # For simplicity in this step, we'll let it pass the full summary to the old pattern identifier,
+    # acknowledging it might not be optimal.
+
+    logger.info("Self-Reflection Cycle: Identifying failure patterns from structured reflection log summary (within combined summary)...")
+    # The existing _invoke_pattern_identification_llm uses IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE
+    # which expects {reflection_log_summary}. We are passing the combined summary.
+    # This might be okay if the LLM for that prompt can ignore the conversational part,
+    # or we might need to re-extract only the reflection log part for it.
+    # For now, let it proceed with combined_interaction_summary.
     patterns_data = _invoke_pattern_identification_llm(log_summary, llm_model_name=llm_model_name) 
     
-    if not patterns_data: 
-        logger.warning("Self-Reflection Cycle: Could not identify any significant patterns (LLM call failed or invalid format).")
+    identified_patterns_list = [] # Default to empty list
+    if patterns_data and patterns_data.get("identified_patterns") is not None:
+        identified_patterns_list = patterns_data.get("identified_patterns", [])
+        log_event(
+            event_type="AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+            description=f"Structured pattern identification complete. Found {len(identified_patterns_list)} pattern(s).",
+            source="autonomous_reflection.run_self_reflection_cycle",
+            metadata={"num_patterns": len(identified_patterns_list), "patterns_preview": identified_patterns_list[:3], "model_used": llm_model_name or get_model_for_task("reflection")}
+        )
+    else:
+        logger.warning("Self-Reflection Cycle: Could not identify any significant structured patterns from logs (LLM call failed or invalid format).")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_PATTERN_ID_FAILED",
-            description="Pattern identification failed or returned invalid format from LLM.",
+            description="Structured pattern identification failed or returned invalid format from LLM.",
             source="autonomous_reflection.run_self_reflection_cycle",
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection")}
         )
-        return None
-        
-    identified_patterns_list = patterns_data.get("identified_patterns")
-    if identified_patterns_list is None: 
-        logger.warning("Self-Reflection Cycle: 'identified_patterns' key missing in LLM response for patterns.")
-        log_event(
-            event_type="AUTONOMOUS_REFLECTION_PATTERN_ID_ERROR",
-            description="'identified_patterns' key missing in LLM response.",
-            source="autonomous_reflection.run_self_reflection_cycle",
-            metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "response_preview": str(patterns_data)[:200]}
-        )
-        return None
-    
-    log_event(
-        event_type="AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
-        description=f"Pattern identification complete. Found {len(identified_patterns_list)} pattern(s).",
-        source="autonomous_reflection.run_self_reflection_cycle",
-        metadata={"num_patterns": len(identified_patterns_list), "patterns_preview": identified_patterns_list[:3], "model_used": llm_model_name or get_model_for_task("reflection")}
-    )
+        # Don't return None yet, as we might have performance_observations.
 
     if not identified_patterns_list: 
-        logger.info("Self-Reflection Cycle: No specific patterns were identified by the LLM.")
-        pass 
+        logger.info("Self-Reflection Cycle: No specific structured patterns were identified by the LLM from logs.")
+        # Pass, because performance_observations might still lead to suggestions if we adapt the next step.
 
-    logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} pattern(s). Generating improvement suggestions...")
+    # --- Step 3 (Existing): Generate Suggestions ---
+    # This part currently only uses identified_patterns_list (from structured logs).
+    # In the future, it could be enhanced to also consider performance_observations_list.
+    if not identified_patterns_list and not performance_observations_list:
+        logger.info("Self-Reflection Cycle: No patterns from logs and no performance observations. No suggestions will be generated.")
+        # Log completion and return empty list or None, as no further processing needed for suggestions.
+        log_event(
+            event_type="AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
+            description="Self-reflection cycle finished. No patterns or observations found to generate suggestions.",
+            source="autonomous_reflection.run_self_reflection_cycle",
+            metadata={"num_suggestions_produced": 0}
+        )
+        return [] # Return empty list of suggestions
+
+    logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} structured pattern(s) and {len(performance_observations_list)} performance observation(s). Generating improvement suggestions (currently based on structured patterns only)...")
 
     try:
+        # Only pass structured patterns to the current suggestion generator
         patterns_json_list_str = json.dumps(identified_patterns_list, indent=2)
         available_tools_json_str = json.dumps(available_tools, indent=2)
     except TypeError as e:
