@@ -1645,6 +1645,206 @@ class MyCalc:
         self.assertEqual(kwargs.get("max_tokens"), custom_llm_config["max_tokens"])
         self.mock_task_manager.add_task.assert_called_once()
 
+    # --- Tests for review_code ---
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_success_with_llm_and_linter_findings(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+
+        sample_code = "def my_func(x):\n  print(x)\n  return x*2"
+        linter_findings = ["LINT: Line 2, unused variable 'y'"]
+        mock_run_linter.return_value = (linter_findings, None)
+
+        llm_review_output = {
+            "overall_summary": "Code has minor issues.",
+            "suggestions": [{"line_start": 1, "line_end": 1, "severity": "Minor", "comment": "Consider type hints."}]
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code, review_context="TEST_CONTEXT")
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
+        self.assertEqual(result["llm_suggestions"], llm_review_output["suggestions"])
+        self.assertEqual(result["linter_findings"], linter_findings)
+        self.assertIsNone(result["error"])
+
+        mock_run_linter.assert_called_once_with(sample_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        prompt_args, _ = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        self.assertIn(sample_code, prompt_args[0])
+        self.assertIn("TEST_CONTEXT", prompt_args[0]) # Check review_context in prompt
+
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ), "Expected COMPLETED_SUCCESSFULLY for review_code success."
+        )
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_llm_suggestions_no_linter_findings(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def clean_func():\n    return True"
+        mock_run_linter.return_value = ([], None) # No linter findings
+
+        llm_review_output = {
+            "overall_summary": "One minor suggestion.",
+            "suggestions": [{"line_start": 1, "line_end": 1, "severity": "Style", "comment": "Add a docstring."}]
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code)
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
+        self.assertEqual(result["llm_suggestions"], llm_review_output["suggestions"])
+        self.assertEqual(result["linter_findings"], [])
+        self.assertIsNone(result["error"])
+        mock_run_linter.assert_called_once_with(sample_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_linter_findings_no_llm_suggestions(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "x = y + 1 # unused"
+        linter_findings = ["LINT: x is unused"]
+        mock_run_linter.return_value = (linter_findings, None)
+
+        llm_review_output = {
+            "overall_summary": "Code looks generally good.",
+            "suggestions": [] # No specific suggestions from LLM
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code)
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
+        self.assertEqual(result["llm_suggestions"], [])
+        self.assertEqual(result["linter_findings"], linter_findings)
+        self.assertIsNone(result["error"])
+        mock_run_linter.assert_called_once_with(sample_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_llm_returns_non_json(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def my_func(): return 1"
+        mock_run_linter.return_value = ([], None) # Linter is fine
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "This is not JSON. Just plain text."
+
+        result = await self.code_service.review_code(sample_code)
+
+        self.assertEqual(result["status"], "ERROR_LLM_REVIEW_FAILED")
+        self.assertIsNotNone(result["error"])
+        self.assertIn("LLM review output was not valid JSON", result["error"])
+        # Check if raw output is stored as a fallback suggestion
+        self.assertTrue(len(result["llm_suggestions"]) == 1)
+        self.assertIn("LLM Raw Output (JSON Parse Failed)", result["llm_suggestions"][0]["comment"])
+        self.assertIn("This is not JSON", result["llm_suggestions"][0]["comment"])
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ), "Expected FAILED_UNKNOWN for LLM non-JSON response."
+        )
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_llm_returns_empty_response(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def my_func(): return 1"
+        mock_run_linter.return_value = ([], None)
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty response
+
+        result = await self.code_service.review_code(sample_code)
+
+        self.assertEqual(result["status"], "ERROR_LLM_REVIEW_FAILED")
+        self.assertIsNotNone(result["error"])
+        self.assertIn("LLM returned no response for review", result["error"])
+        self.assertEqual(result["llm_suggestions"], []) # No fallback suggestion for completely empty
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_linter_execution_fails(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def my_func(): return 1"
+        linter_error_message = "Ruff crashed!"
+        mock_run_linter.return_value = (["Some old message if any"], linter_error_message) # Linter execution error
+
+        # LLM part will still run
+        llm_review_output = {"overall_summary": "Code seems fine.", "suggestions": []}
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        result = await self.code_service.review_code(sample_code)
+
+        # Even if linter fails, LLM review can proceed. Status depends on LLM part in this case.
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.assertIn(f"Linter execution error: {linter_error_message}", result["logs"])
+        self.assertEqual(result["linter_findings"], ["Some old message if any"]) # Previous messages might still be there
+        self.assertEqual(result["review_summary"], llm_review_output["overall_summary"])
+        self.mock_task_manager.add_task.assert_called_once()
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_llm_provider_none(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def my_code(): pass"
+        linter_findings = ["LINT: Something from linter"]
+        mock_run_linter.return_value = (linter_findings, None)
+
+        # Use code_service_no_llm which has llm_provider=None
+        result = await self.code_service_no_llm.review_code(sample_code)
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED_LINTER_ONLY")
+        self.assertEqual(result["linter_findings"], linter_findings)
+        self.assertEqual(result["llm_suggestions"], []) # No LLM suggestions
+        self.assertIsNone(result["review_summary"])   # No LLM summary
+        self.assertIn("LLM provider missing, only linter review performed", result["error"])
+        mock_run_linter.assert_called_once_with(sample_code)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called() # Ensure LLM not called
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(
+                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
+                for call in self.mock_task_manager.update_task_status.call_args_list
+            ), "Expected COMPLETED_SUCCESSFULLY for LINTER_ONLY review."
+        )
+
+    @patch.object(CodeService, '_run_linter', new_callable=AsyncMock)
+    async def test_review_code_with_llm_config_override(self, mock_run_linter):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        sample_code = "def my_func(): pass"
+        mock_run_linter.return_value = ([], None)
+        llm_review_output = {"overall_summary": "Custom review.", "suggestions": []}
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_review_output)
+
+        custom_llm_config = {
+            "model_name": "custom_review_model",
+            "temperature": 0.88,
+            "max_tokens": 1500
+        }
+        result = await self.code_service.review_code(sample_code, llm_config=custom_llm_config)
+
+        self.assertEqual(result["status"], "SUCCESS_REVIEW_COMPLETED")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        _, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
+        self.assertEqual(kwargs.get("model_name"), custom_llm_config["model_name"])
+        self.assertEqual(kwargs.get("temperature"), custom_llm_config["temperature"])
+        self.assertEqual(kwargs.get("max_tokens"), custom_llm_config["max_tokens"])
+        self.mock_task_manager.add_task.assert_called_once()
+
+
     def test_assemble_components_empty_outline(self):
         outline = {}
         details = {}

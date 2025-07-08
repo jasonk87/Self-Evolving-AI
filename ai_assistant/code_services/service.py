@@ -10,6 +10,47 @@ from ..config import get_model_for_task, is_debug_mode
 from ..core.fs_utils import write_to_file
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added
 
+LLM_CODE_REVIEW_PROMPT_TEMPLATE = """You are an expert Python code reviewer.
+Your task is to review the provided Python code and identify areas for improvement.
+Focus on:
+- Correctness: Are there any logical errors or potential bugs?
+- Clarity: Is the code easy to read and understand? Are variable and function names descriptive?
+- Efficiency: Are there any performance bottlenecks or areas where the code could be more performant?
+- Best Practices: Does the code adhere to common Python best practices (e.g., PEP 8, idiomatic Python)?
+- Security: Are there any potential security vulnerabilities (though this is a secondary focus unless obvious)?
+- Maintainability: Is the code well-structured and easy to maintain or modify?
+
+Code to Review:
+```python
+{code_to_review}
+```
+
+Review Context (Optional): {review_context}
+(If a review context is provided, e.g., "NEW_TOOL_REVIEW", consider any specific requirements or conventions relevant to that context if known. Otherwise, perform a general Python code review.)
+
+Output Format:
+Please provide your review as a JSON object with two main keys: "overall_summary" and "suggestions".
+1.  "overall_summary": A brief (1-2 sentences) qualitative summary of the code.
+2.  "suggestions": A list of JSON objects, where each object represents a specific suggestion and includes the following keys:
+    - "line_start": The starting line number of the code segment relevant to your suggestion.
+    - "line_end": The ending line number of the code segment. (Can be the same as line_start if it's a single line).
+    - "severity": A string indicating the severity of the issue (e.g., "Critical", "Major", "Minor", "Info", "Style").
+    - "comment": A detailed explanation of the issue and your suggestion for improvement.
+
+Example of a suggestion object:
+{{
+  "line_start": 10,
+  "line_end": 12,
+  "severity": "Minor",
+  "comment": "The variable 'temp_val' could be renamed to 'user_input' for better clarity."
+}}
+
+If you find no specific issues, return an appropriate summary and an empty list for "suggestions".
+Do not include any explanations or text outside of the main JSON object in your response.
+
+JSON Review Output:
+"""
+
 logger = logging.getLogger(__name__)
 if not logger.handlers: # pragma: no cover
     if not logging.getLogger().handlers:
@@ -1338,6 +1379,159 @@ class CodeService:
 
         logger.info(f"Code assembly complete. Total length: {len(final_code)}")
         return final_code.strip()
+
+    async def review_code(
+        self,
+        code_string: str,
+        language: str = "python",
+        review_context: Optional[str] = None, # e.g., "NEW_TOOL_REVIEW", "GENERAL_PYTHON_REVIEW"
+        llm_config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        task_id: Optional[str] = None
+        logs: List[str] = []
+
+        # For now, review_context isn't heavily used beyond logging, but good for future.
+        # related_item_id could be a hash of the code_string or a more meaningful identifier if available
+        related_item_id = f"review_{review_context or 'general'}_{hash(code_string)}"
+
+        if self.task_manager:
+            task_desc = f"Review_code: Context: {review_context or 'general'}, Code snippet (first 50 chars): {code_string[:50].replace(chr(10), ' ')}..."
+            task = self.task_manager.add_task(
+                description=task_desc,
+                task_type=ActiveTaskType.CODE_REVIEW, # Assuming a new ActiveTaskType
+                related_item_id=related_item_id
+            )
+            task_id = task.task_id
+
+        logs.append(f"review_code called. Context: {review_context}, Language: {language}. Task ID: {task_id}")
+
+        if language != "python": # pragma: no cover
+            self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Unsupported language for review.")
+            return {"status": "ERROR_UNSUPPORTED_LANGUAGE", "review_summary": None, "llm_suggestions": [], "linter_findings": [], "logs": logs, "error": "Unsupported language for review."}
+
+        # Initialize return structure
+        result: Dict[str, Any] = {
+            "status": "PENDING_REVIEW",
+            "review_summary": None,
+            "llm_suggestions": [],
+            "linter_findings": [],
+            "logs": logs,
+            "error": None
+        }
+
+        # 1. Run Linter
+        self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Running linter") # Re-using status
+        try:
+            linter_messages, linter_error = await self._run_linter(code_string)
+            result["linter_findings"] = linter_messages
+            if linter_error:
+                logs.append(f"Linter execution error: {linter_error}")
+                # Potentially update status if linter error is critical, but for now, just log it.
+                # If LLM review can still proceed, we might not want to fail the whole review.
+        except Exception as e_lint: # pragma: no cover
+            logs.append(f"Unexpected error during linting: {e_lint}")
+            result["linter_findings"] = [f"Error running linter: {e_lint}"]
+            # Not necessarily fatal for the whole review process if LLM can still run
+
+        # 2. Get LLM Review (Implementation will be in the next step)
+        # This part will involve:
+        # - Formatting a prompt using a new LLM_CODE_REVIEW_PROMPT_TEMPLATE
+        # - Calling self.llm_provider.invoke_ollama_model_async
+        # - Parsing the LLM response
+        # - Populating result["review_summary"] and result["llm_suggestions"]
+        # - Updating result["status"] and result["error"] based on LLM call.
+        # For now, placeholder:
+        # logs.append("LLM review part not yet implemented.")
+        # result["status"] = "SUCCESS_REVIEW_COMPLETED_LINTER_ONLY" # Placeholder status
+
+        # 2. Get LLM Review
+        llm_review_successful = False
+        if not self.llm_provider:
+            logs.append("LLM provider not configured. Skipping LLM review part.")
+            result["error"] = "LLM provider missing, only linter review performed."
+            # Keep status based on linter, or update if linter also had issues.
+            # For now, let's assume linter_only is an acceptable partial success.
+            result["status"] = "SUCCESS_REVIEW_COMPLETED_LINTER_ONLY" if not result.get("error") else "ERROR_LINTER_ONLY_LLM_MISSING"
+        else:
+            self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Requesting LLM code review")
+            try:
+                review_model = get_model_for_task("code_review")
+                review_temp = 0.1 # Generally want reviews to be factual
+                review_max_tokens = 2048
+
+                if llm_config: # pragma: no cover
+                    review_model = llm_config.get("model_name", review_model)
+                    review_temp = llm_config.get("temperature", review_temp)
+                    review_max_tokens = llm_config.get("max_tokens", review_max_tokens)
+
+                formatted_prompt = LLM_CODE_REVIEW_PROMPT_TEMPLATE.format(
+                    code_to_review=code_string,
+                    review_context=review_context or "N/A"
+                )
+                logs.append(f"Sending code review prompt to LLM. Model: {review_model}, Temp: {review_temp}")
+
+                raw_llm_output = await self.llm_provider.invoke_ollama_model_async(
+                    formatted_prompt, model_name=review_model, temperature=review_temp, max_tokens=review_max_tokens
+                )
+
+                if raw_llm_output and raw_llm_output.strip():
+                    logs.append(f"Raw LLM review output length: {len(raw_llm_output)}")
+                    try:
+                        # Attempt to parse the entire output as JSON
+                        # Basic cleaning for common markdown issues
+                        cleaned_json_str = raw_llm_output.strip()
+                        if cleaned_json_str.startswith("```json"):
+                            cleaned_json_str = cleaned_json_str[len("```json"):].strip()
+                        if cleaned_json_str.endswith("```"):
+                            cleaned_json_str = cleaned_json_str[:-len("```")].strip()
+
+                        parsed_review = json.loads(cleaned_json_str)
+
+                        result["review_summary"] = parsed_review.get("overall_summary")
+                        result["llm_suggestions"] = parsed_review.get("suggestions", [])
+                        logs.append(f"Successfully parsed LLM review. Summary: {result['review_summary'][:50]}..., Suggestions: {len(result['llm_suggestions'])}")
+                        llm_review_successful = True
+                    except json.JSONDecodeError as e_json:
+                        logs.append(f"Failed to parse LLM review JSON: {e_json}. Raw output: {raw_llm_output[:200]}...")
+                        result["error"] = f"LLM review output was not valid JSON: {e_json}"
+                        # Store raw output as a fallback suggestion if parsing fails
+                        result["llm_suggestions"] = [{"line_start":0, "line_end":0, "severity": "Info", "comment": f"LLM Raw Output (JSON Parse Failed):\n{raw_llm_output}"}]
+                else:
+                    logs.append("LLM returned empty response for code review.")
+                    result["error"] = "LLM returned no response for review."
+
+                if llm_review_successful:
+                    result["status"] = "SUCCESS_REVIEW_COMPLETED"
+                else:
+                    result["status"] = "ERROR_LLM_REVIEW_FAILED"
+                    if not result["error"]: result["error"] = "LLM review failed for unknown reasons."
+
+
+            except Exception as e_llm_review: # pragma: no cover
+                logger.error(f"Unexpected error during LLM code review: {e_llm_review}", exc_info=True)
+                logs.append(f"LLM review exception: {e_llm_review}")
+                result["status"] = "ERROR_LLM_REVIEW_UNEXPECTED"
+                result["error"] = str(e_llm_review)
+
+        # Final status determination
+        if result["status"] == "PENDING_REVIEW": # Should have been updated by linter or LLM part
+            if result["linter_findings"] and not llm_review_successful and not self.llm_provider: # Only linter ran and LLM was missing
+                 result["status"] = "SUCCESS_REVIEW_COMPLETED_LINTER_ONLY"
+            elif not result["linter_findings"] and not llm_review_successful and not self.llm_provider:
+                 result["status"] = "SUCCESS_REVIEW_COMPLETED_LINTER_ONLY" # No findings from linter, LLM missing
+            elif result["error"]: # Some error occurred
+                 result["status"] = "ERROR_REVIEW_FAILED_PARTIALLY" # Generic partial failure
+            else: # Should not happen
+                 result["status"] = "ERROR_REVIEW_STATUS_UNCLEAR"
+
+
+        if "SUCCESS" in result["status"]:
+             self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Code review process completed.", step_desc=result["status"])
+        elif result["error"]:
+             self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Review failed"), step_desc=result["status"])
+        # else: some intermediate status or specific failure not covered by above
+
+        return result
 
 
 if __name__ == '__main__': # pragma: no cover

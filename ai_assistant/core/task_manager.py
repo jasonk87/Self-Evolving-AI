@@ -41,6 +41,7 @@ class ActiveTaskType(Enum):
     HIERARCHICAL_PROJECT_EXECUTION = auto() # For executing a plan from HierarchicalPlanner
     USER_PROJECT_CREATION = auto() # For top-level user-requested projects
     REFLECTION_DERIVED = auto() # For tasks created by post-interaction reflection
+    CODE_REVIEW = auto() # For automated code review tasks
 
 
 @dataclass
