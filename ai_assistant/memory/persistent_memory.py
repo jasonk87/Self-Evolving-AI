@@ -190,6 +190,9 @@ def load_learned_facts(filepath: str = LEARNED_FACTS_FILEPATH) -> List[Dict[str,
                 if "source" not in fact_dict:
                     fact_dict["source"] = "unknown_pre_structured_era" # Or some other default
                     needs_resave = True
+                if "data" not in fact_dict: # Add data field if missing
+                    fact_dict["data"] = {}
+                    needs_resave = True
 
 
                 processed_facts.append(fact_dict)

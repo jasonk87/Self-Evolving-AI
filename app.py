@@ -164,13 +164,30 @@ async def chat_api():
         }), 500
 
 @app.route('/api/proactive_greeting', methods=['GET'])
-def proactive_greeting():
+async def proactive_greeting(): # Make it async
     """
     Endpoint to provide a proactive greeting message.
+    This greeting can be personalized if the user's name is known,
+    or it can be a request for the user's name.
     """
-    greeting_message = "Hello! I'm Weibo, your AI assistant. How can I help you today?"
-    logger.info(f"Proactive greeting requested, sending: '{greeting_message}'")
-    return jsonify({"message": greeting_message})
+    global orchestrator
+    if orchestrator is None:
+        logger.warning("Proactive greeting endpoint: Orchestrator not initialized. Sending fallback static greeting.")
+        # Fallback to a very basic static greeting if orchestrator isn't ready
+        return jsonify({"message_type": "standard_greeting", "message": "Hello! Weibo is starting up. How can I help?"})
+
+    # For now, using the static user_id. In a real system, user_id would come from session/token.
+    user_id_for_greeting = "user_static_test_01"
+
+    try:
+        # Call the new orchestrator method
+        greeting_data = await orchestrator.prepare_proactive_greeting(user_id_for_greeting)
+        logger.info(f"Proactive greeting endpoint returning: {greeting_data}")
+        # greeting_data is expected to be like: {"message_type": "...", "message": "..."}
+        return jsonify(greeting_data)
+    except Exception as e:
+        logger.error(f"Error in /api/proactive_greeting when calling orchestrator: {e}", exc_info=True)
+        return jsonify({"message_type": "error_greeting", "message": "Sorry, I had a little trouble preparing a greeting right now."}), 500
 
 # --- API Endpoints for Status Panel Data & Analysis ---
 

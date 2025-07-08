@@ -296,6 +296,7 @@ class LearningAgent:
         category: str,
         source: str,
         user_id: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None, # New parameter
         fact_id_to_supersede: Optional[str] = None # For future use
     ) -> bool:
         """
@@ -341,6 +342,7 @@ class LearningAgent:
                 "category": category,
                 "user_id": user_id,
                 "source": source,
+                "data": data if data is not None else {}, # Include the data payload
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "confidence": 1.0, # Default confidence
@@ -353,12 +355,18 @@ class LearningAgent:
                 print(f"LearningAgent: Successfully learned and saved new fact: {new_fact['fact_id']}")
                 if self.notification_manager:
                     from ai_assistant.core.notification_manager import NotificationType # Local import
+                    # Create a serializable version of new_fact for the notification payload
+                    # as new_fact itself might contain non-serializable items if data field grows complex later
+                    # For now, data is expected to be simple dict.
+                    serializable_fact_for_notification = new_fact.copy()
+                    # No specific problematic types in 'data' expected for user_profile_name, so direct copy is okay for now.
+
                     self.notification_manager.add_notification(
                         event_type=NotificationType.NEW_FACT_LEARNED, # Assuming this type exists
                         summary_message=f"AI learned a new fact: {text[:70]}...",
                         related_item_id=new_fact['fact_id'],
                         related_item_type="learned_fact",
-                        details_payload=new_fact
+                        details_payload=serializable_fact_for_notification # Use the copy
                     )
                 return True
             else:

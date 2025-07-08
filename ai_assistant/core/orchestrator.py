@@ -60,6 +60,10 @@ class DynamicOrchestrator:
         self.last_clarification_question_sent_to_user: Optional[str] = None
         self.clarification_context: Optional[Dict[str, Any]] = None
 
+        # State variables for asking user's name
+        self.awaiting_user_name: bool = False
+        self.user_id_for_name_request: Optional[str] = None
+
         # Conversational Memory & Summarization
         self.current_conversation_summary: Optional[str] = None
         from ai_assistant.config import CONVERSATION_HISTORY_TURNS
@@ -130,6 +134,46 @@ class DynamicOrchestrator:
         """
         # Add user's prompt to history
         self.conversation_history.append({"role": "user", "content": prompt})
+
+        # --- Handle User Name Input if Awaiting ---
+        if self.awaiting_user_name and self.user_id_for_name_request == user_id:
+            user_name_provided = prompt.strip()
+            if user_name_provided: # Basic validation: not empty
+                logger.info(f"Orchestrator: Received user name '{user_name_provided}' for user_id '{user_id}'. Learning it.")
+                if self.learning_agent:
+                    # Construct fact details
+                    fact_text = f"User '{user_id}' is named '{user_name_provided}'."
+                    fact_data = {"name": user_name_provided}
+                    # Using learn_new_fact_from_reflection as it handles user_id and category
+                    await self.learning_agent.learn_new_fact_from_reflection(
+                        text=fact_text,
+                        category="user_profile_name", # Specific category
+                        source="user_interaction_name_provision",
+                        user_id=user_id, # Associate with the user
+                        data=fact_data
+                    )
+                    logger.info(f"Orchestrator: Name '{user_name_provided}' learned for user '{user_id}'.")
+
+                confirmation_message = f"Nice to meet you, {user_name_provided}! How can I help you today?"
+                self.conversation_history.append({"role": "assistant", "content": confirmation_message})
+                # Reset state
+                self.awaiting_user_name = False
+                self.user_id_for_name_request = None
+
+                analysis_context_name_learned = {
+                    "user_prompt": prompt, "ai_response": confirmation_message,
+                    "plan_details_json": "null", "tool_results_json": "null",
+                    "overall_success_status": "name_learned", "user_id": user_id
+                }
+                asyncio.create_task(self._perform_post_interaction_analysis(analysis_context_name_learned))
+                return True, {"chat_response": confirmation_message, "project_area_html": None}
+            else:
+                # User provided empty name, ask again or handle differently? For now, let's re-ask implicitly on next message.
+                self.awaiting_user_name = False # Reset to allow asking again if needed.
+                self.user_id_for_name_request = None
+                logger.info("Orchestrator: User provided an empty name. Will not store. Name request state reset.")
+                # Fall through to normal processing, which might re-trigger asking for name if logic is set up that way.
+                # Or, we could return a message like "Please provide a valid name." For now, falling through.
 
         # --- Project Intent Recognition (Step 1 of new plan) ---
         prompt_lower_for_intent = prompt.lower()
@@ -231,21 +275,59 @@ class DynamicOrchestrator:
                     relevant_facts_for_prompt = relevant_facts_for_prompt[:MAX_FACTS_FOR_PROMPT]
 
             learned_facts_section_str = ""
+            user_name_from_facts: Optional[str] = None
             if relevant_facts_for_prompt:
                 facts_str_list = []
                 for fact in relevant_facts_for_prompt:
                     prefix = ""
-                    # Check if user_id matches the current session's user_id
+                    fact_text_to_display = fact.get('text', '')
+
                     if user_id_for_fact_retrieval and fact.get("user_id") == user_id_for_fact_retrieval:
-                        prefix = f"(User Preference for you): "
-                    elif fact.get("category") == "user_preference": # General user preference template
+                        if fact.get("category") == "user_profile_name":
+                            user_name_from_facts = fact.get("data", {}).get("name")
+                            # Don't add the raw "User ... is named X" fact to the planner context if we have the name.
+                            # The planner will be told separately or can infer from personalized greeting.
+                            # Or, we can format it nicely:
+                            prefix = f"(Your Profile): "
+                            fact_text_to_display = f"Your name is {user_name_from_facts}." if user_name_from_facts else fact_text_to_display
+                        else: # Other user-specific preferences
+                            prefix = f"(User Preference for you): "
+                    elif fact.get("category") == "user_preference":
                         prefix = f"(General User Preference Tip): "
                     elif fact.get("category") == "project_context":
                          prefix = f"(Project Context): "
 
-                    facts_str_list.append(f"- {prefix}{fact.get('text', '')} (Source: {fact.get('source', 'N/A')})")
-                learned_facts_section_str = "\nRelevant Learned Facts:\n" + "\n".join(facts_str_list)
+                    # Only add non-name facts or name facts if name wasn't extracted for greeting use
+                    if fact.get("category") != "user_profile_name" or not user_name_from_facts:
+                        facts_str_list.append(f"- {prefix}{fact_text_to_display} (Source: {fact.get('source', 'N/A')})")
+                    elif user_name_from_facts and fact.get("category") == "user_profile_name": # Add the formatted name fact
+                         facts_str_list.append(f"- {prefix}{fact_text_to_display} (Source: {fact.get('source', 'N/A')})")
+
+
+                if facts_str_list:
+                    learned_facts_section_str = "\nRelevant Learned Facts:\n" + "\n".join(facts_str_list)
             # --- End Fact Retrieval ---
+
+            # --- Ask for User's Name if Unknown (and not already awaiting it from a previous turn) ---
+            if not user_name_from_facts and not self.awaiting_user_name and user_id: # user_id must exist to store name
+                # This is the first interaction where we realize we don't know the name.
+                # The very initial greeting is static from /api/proactive_greeting.
+                # This name-asking prompt will be in response to the user's first actual message.
+                logger.info(f"Orchestrator: User name for '{user_id}' is unknown. Asking for it.")
+                self.awaiting_user_name = True
+                self.user_id_for_name_request = user_id
+
+                name_request_message = "Before we continue, I don't believe I know your name yet. What should I call you?"
+                self.conversation_history.append({"role": "assistant", "content": name_request_message})
+
+                analysis_context_ask_name = {
+                    "user_prompt": prompt, "ai_response": name_request_message,
+                    "plan_details_json": "null", "tool_results_json": "null",
+                    "overall_success_status": "name_requested", "user_id": user_id
+                }
+                asyncio.create_task(self._perform_post_interaction_analysis(analysis_context_ask_name))
+                return True, {"chat_response": name_request_message, "project_area_html": None}
+            # --- End Ask for User's Name ---
 
             # --- Contextualization Phase (Simulated for Project Files) ---
             project_context_summary = None
@@ -1250,6 +1332,133 @@ Concise Summary of the above segment:"""
         Processes actions identified by the post-interaction analysis.
         """
         if not actions_list:
+            return
+
+        logger.info(f"Orchestrator: Dispatching {len(actions_list)} reflection actions...")
+        for action_item in actions_list:
+            action_type = action_item.get("action_type")
+            try:
+                if action_type == "create_task":
+                    desc = action_item.get("description")
+                    if not desc:
+                        logger.warning("Orchestrator: Skipping create_task action due to missing description.")
+                        continue
+
+                    priority_str = action_item.get("priority", "medium").lower()
+                    # Assuming TaskManager might have an enum or specific strings for priority.
+                    # For now, just passing the string. TaskManager would need to handle it.
+                    # Also assuming a default task type if not specified by LLM.
+                    from .task_manager import ActiveTaskType # Import locally or at top
+                    task_details = action_item.get("details", {})
+                    task_details["source"] = "post_interaction_reflection"
+
+                    if self.task_manager:
+                        self.task_manager.add_task(
+                            description=desc,
+                            task_type=ActiveTaskType.REFLECTION_DERIVED, # Example new task type
+                            priority=priority_str, # TaskManager would need to parse this
+                            details=task_details
+                        )
+                        logger.info(f"Orchestrator: Created task from reflection: {desc[:100]}...")
+                    else:
+                        logger.error("Orchestrator: TaskManager not available to create task from reflection.")
+
+                elif action_type == "create_suggestion":
+                    sug_desc = action_item.get("suggestion_description")
+                    sug_type = action_item.get("suggestion_type", "general_reflection")
+                    sug_source_context = action_item.get("source_context", "N/A") # make sure this is a string
+
+                    if not sug_desc:
+                        logger.warning("Orchestrator: Skipping create_suggestion action due to missing description.")
+                        continue
+
+                    # Construct a more detailed description if source_context is available
+                    full_description = f"{sug_desc}\nSource Context: {sug_source_context}"
+
+
+                    # suggestion_manager_module should be imported at the top of the file
+                    suggestion_manager_module.add_new_suggestion(
+                        type=sug_type,
+                        description=full_description, # Use the combined description
+                        source_reflection_id=f"pia_{str(uuid.uuid4())[:8]}", # Post Interaction Analysis ID
+                        notification_manager=self.notification_manager
+                    )
+                    logger.info(f"Orchestrator: Created suggestion from reflection: {sug_desc[:100]}...")
+
+                elif action_type == "learn_fact":
+                    fact_text = action_item.get("fact_text")
+                    fact_category = action_item.get("fact_category", "general_knowledge")
+                    source_summary = action_item.get("source_interaction_summary", "post_interaction_reflection")
+
+                    if not fact_text:
+                        logger.warning("Orchestrator: Skipping learn_fact action due to missing fact_text.")
+                        continue
+
+                    if self.learning_agent:
+                        await self.learning_agent.learn_new_fact_from_reflection(
+                            text=fact_text,
+                            category=fact_category,
+                            source=source_summary,
+                            user_id=original_user_id # Pass the user_id from the interaction
+                            # data payload would be passed here if LLM generated structured data for the fact
+                        )
+                        logger.info(f"Orchestrator: Learned fact from reflection: {fact_text[:100]}... for user_id: {original_user_id}")
+                    else:
+                        logger.error("Orchestrator: LearningAgent not available to learn fact from reflection.")
+
+                else:
+                    logger.warning(f"Orchestrator: Unknown action_type '{action_type}' from post-interaction analysis.")
+
+            except Exception as dispatch_ex:
+                logger.error(f"Orchestrator: Error dispatching reflection action '{action_type}': {dispatch_ex}", exc_info=True)
+
+    async def prepare_proactive_greeting(self, user_id: str) -> Dict[str, str]:
+        """
+        Prepares a greeting message. If user's name is known, it's personalized.
+        If name is unknown, it asks for the name and sets the orchestrator state
+        to await the name in the next interaction.
+        """
+        if not self.learning_agent:
+            logger.warning("Orchestrator: LearningAgent not available for prepare_proactive_greeting.")
+            return {"message_type": "standard_greeting", "message": "Hello! I'm Weibo, your AI assistant. How can I help you today?"}
+
+        user_name: Optional[str] = None
+
+        # Efficiently query for the name fact if LearningAgent supports it.
+        # For now, using load_learned_facts and filtering.
+        # This could be optimized by adding a query method to LearningAgent or PersistentMemory.
+        all_facts = load_learned_facts() # This is potentially inefficient if many facts exist
+        for fact in all_facts:
+            if fact.get("user_id") == user_id and fact.get("category") == "user_profile_name":
+                user_name = fact.get("data", {}).get("name")
+                if user_name:
+                    break
+
+        if user_name:
+            logger.info(f"Orchestrator: Found name '{user_name}' for user '{user_id}'. Preparing personalized greeting.")
+            return {
+                "message_type": "personalized_greeting",
+                "message": f"Hello, {user_name}! I'm Weibo. How can I assist you today?"
+            }
+        else:
+            # Check if we are ALREADY awaiting a name for this user to avoid re-asking immediately
+            # if the API is called multiple times before user responds.
+            # However, this specific method is for the *initial* greeting.
+            # The main `process_prompt` handles the `awaiting_user_name` for subsequent messages.
+            # This method's role is to SET that state if name is unknown during greeting prep.
+            logger.info(f"Orchestrator: Name not found for user '{user_id}'. Preparing name-asking greeting and setting state.")
+            self.awaiting_user_name = True
+            self.user_id_for_name_request = user_id
+            log_event(
+                event_type="ORCHESTRATOR_AWAITING_NAME",
+                description=f"Set state to await name for user_id: {user_id} during proactive greeting prep.",
+                source="DynamicOrchestrator.prepare_proactive_greeting",
+                metadata={"user_id": user_id}
+            )
+            return {
+                "message_type": "ask_name_greeting",
+                "message": "Hello! I'm Weibo. I don't believe I know your name yet. What should I call you?"
+            }
             return
 
         logger.info(f"Orchestrator: Dispatching {len(actions_list)} reflection actions...")
