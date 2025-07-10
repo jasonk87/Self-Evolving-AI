@@ -25,7 +25,7 @@ from ai_assistant.llm_interface.ollama_client import invoke_ollama_model
 from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry 
 from ..memory.event_logger import log_event, get_recent_events
 from ai_assistant.config import get_model_for_task, is_debug_mode
-from ai_assistant.learning.evolution import apply_code_modification
+from ai_assistant.learning.evolution import apply_code_modification, apply_internal_prompt_adjustment
 from datetime import datetime, timezone, timedelta 
 from .notification_manager import NotificationManager
 # Import suggestion_manager_module at the top level
@@ -957,7 +957,12 @@ async def select_suggestion_for_autonomous_action( # Made async
     notification_manager: Optional[NotificationManager] = None
 ) -> Optional[Dict[str, Any]]:
     if supported_action_types is None: 
-        supported_action_types = ["UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL", "MODIFY_TOOL_CODE"]
+        supported_action_types = [
+            "UPDATE_TOOL_DESCRIPTION",
+            "CREATE_NEW_TOOL",
+            "MODIFY_TOOL_CODE",
+            "ADJUST_INTERNAL_PROMPT" # Added new type
+        ]
 
     if not suggestions:
         logger.debug("No suggestions provided to select_suggestion_for_autonomous_action.")
@@ -1042,6 +1047,79 @@ async def select_suggestion_for_autonomous_action( # Made async
                     'details': action_details
                 }
                 return suggestion
+
+        elif action_type == "ADJUST_INTERNAL_PROMPT":
+            if isinstance(action_details, dict) and \
+               action_details.get("prompt_area_identifier") and isinstance(action_details.get("prompt_area_identifier"), str) and \
+               action_details.get("suggested_change_summary") and isinstance(action_details.get("suggested_change_summary"), str):
+
+                # Specific criteria for ADJUST_INTERNAL_PROMPT
+                passes_specific_criteria = (
+                    suggestion.get("reviewer_confidence", 0.0) >= 0.75 and
+                    suggestion.get("impact_score", 0) >= 3 and
+                    suggestion.get("risk_score", 5) <= 2 and
+                    suggestion.get("effort_score", 5) <= 2
+                )
+
+                if passes_specific_criteria:
+                    logger.info(f"Attempting to apply internal prompt adjustment for suggestion ID {suggestion.get('suggestion_id', 'N/A')} (Priority: {priority_score_for_log}). Details: {action_details}")
+
+                    prompt_area_identifier = action_details.get("prompt_area_identifier")
+                    suggested_change_summary = action_details.get("suggested_change_summary")
+
+                    adjustment_result = await apply_internal_prompt_adjustment(
+                        prompt_identifier=prompt_area_identifier,
+                        change_summary=suggested_change_summary,
+                        llm_model_name=get_model_for_task("prompt_refinement") # Or pass specific model if configured
+                    )
+
+                    suggestion['_action_result'] = adjustment_result # Store the full result from apply_internal_prompt_adjustment
+
+                    global_reflection_log.log_execution(
+                        goal_description=f"Self-modification attempt (prompt adjustment) for suggestion {suggestion.get('suggestion_id', 'N/A')}",
+                        plan=[{
+                            "tool_name": "apply_internal_prompt_adjustment",
+                            "args": {"prompt_identifier": prompt_area_identifier, "change_summary": suggested_change_summary},
+                            "status": "attempted"
+                        }],
+                        execution_results=[adjustment_result],
+                        overall_success=adjustment_result.get('success', False),
+                        notes=adjustment_result.get('message', 'No message from prompt adjustment execution.'),
+                        is_self_modification_attempt=True,
+                        source_suggestion_id=suggestion.get('suggestion_id'),
+                        modification_type="ADJUST_INTERNAL_PROMPT",
+                        modification_details={
+                            "prompt_identifier": prompt_area_identifier,
+                            "change_summary": suggested_change_summary,
+                            "original_prompt_preview": adjustment_result.get('original_prompt_preview'),
+                            "refined_prompt_preview": adjustment_result.get('refined_prompt_preview'),
+                            "llm_reasoning": adjustment_result.get('llm_reasoning')
+                        },
+                        # No direct test/commit for prompt adjustments in this model
+                        post_modification_test_passed=None,
+                        post_modification_test_details=None,
+                        commit_info=None
+                    )
+
+                    logger.info(f"Internal prompt adjustment attempt for suggestion {suggestion.get('suggestion_id', 'N/A')} finished. Success: {adjustment_result.get('success')}. Message: {adjustment_result.get('message')}")
+                    log_event(
+                        event_type="AUTONOMOUS_ACTION_ADJUST_PROMPT_ATTEMPT",
+                        description=adjustment_result.get('message', 'Prompt adjustment attempt executed.'),
+                        source="autonomous_reflection.select_suggestion_for_autonomous_action",
+                        metadata={
+                            "suggestion_id": suggestion.get("suggestion_id"),
+                            "prompt_identifier": prompt_area_identifier,
+                            "success": adjustment_result.get('success'),
+                            "priority_score": priority_score_for_log,
+                            "llm_model_used": adjustment_result.get("llm_model_used")
+                        }
+                    )
+                    return suggestion
+                else:
+                    logger.debug(f"Suggestion {suggestion.get('suggestion_id', 'N/A')} of type ADJUST_INTERNAL_PROMPT did not meet specific execution criteria (confidence, I/R/E). Confidence: {suggestion.get('reviewer_confidence', 0.0)}, I: {suggestion.get('impact_score', 0)}, R: {suggestion.get('risk_score', 5)}, E: {suggestion.get('effort_score', 5)}.")
+            else:
+                logger.warning(f"Skipping ADJUST_INTERNAL_PROMPT suggestion {suggestion.get('suggestion_id', 'N/A')} due to missing/invalid action_details: {action_details}")
+
 
         elif action_type == "MODIFY_TOOL_CODE":
             if isinstance(action_details, dict) and \
@@ -1167,81 +1245,236 @@ if __name__ == '__main__':
                 "function_name": "rejected_func", 
                 "suggested_code_change": "def rejected_func():\n  # risky change\n  pass"
             }
+        },
+        # Suggestion for ADJUST_INTERNAL_PROMPT
+        {
+            "suggestion_id": "AIP001", "action_type": "ADJUST_INTERNAL_PROMPT", "priority": "High",
+            "impact_score": 4, "risk_score": 1, "effort_score": 1, # Meets specific criteria
+            "review_looks_good": True, "reviewer_confidence": 0.8,
+            "action_details": {
+                "prompt_area_identifier": "general_qa_response_prompt",
+                "suggested_change_summary": "Make responses more concise."
+            }
+        },
+        {
+            "suggestion_id": "AIP002_LOW_CONFIDENCE", "action_type": "ADJUST_INTERNAL_PROMPT", "priority": "Medium",
+            "impact_score": 4, "risk_score": 1, "effort_score": 1,
+            "review_looks_good": True, "reviewer_confidence": 0.7, # Below 0.75 confidence
+            "action_details": {
+                "prompt_area_identifier": "planning_prompt",
+                "suggested_change_summary": "Consider more alternatives."
+            }
+        },
+        {
+            "suggestion_id": "AIP003_HIGH_RISK", "action_type": "ADJUST_INTERNAL_PROMPT", "priority": "Low",
+            "impact_score": 4, "risk_score": 3, "effort_score": 1, # Risk > 2
+            "review_looks_good": True, "reviewer_confidence": 0.9,
+            "action_details": {
+                "prompt_area_identifier": "tool_usage_prompt",
+                "suggested_change_summary": "Be more aggressive in tool use."
+            }
         }
     ]
 
-    async def run_select_suggestion_test1():
-        with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code:
+    async def run_select_suggestion_test_mtc_success():
+        with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code, \
+             patch('ai_assistant.core.autonomous_reflection.global_reflection_log.log_execution') as mock_log_execution, \
+             patch('ai_assistant.core.autonomous_reflection.log_event') as mock_log_event:
+
             mock_apply_code.return_value = {
-                "overall_status": True, "overall_message": "Mocked successful application",
+                "overall_status": True, "overall_message": "Mocked successful code application",
                 "edit_outcome": {"status": True, "message": "Edit success", "backup_path": "/tmp/backup.bak"},
                 "test_outcome": {"passed": True, "notes": "Tests passed"},
                 "commit_outcome": {"status": True, "commit_message_generated": "Mock commit"}
             }
-            # The following lines were mis-indented
-            test_logger = logging.getLogger('ai_assistant.core.autonomous_reflection')
-            # If using Python 3.10+, can use assertLogs context manager more easily.
-            # For now, simple check of called_once_with for apply_code_modification
-            selected_mtc = await select_suggestion_for_autonomous_action(
-                mock_suggestions_for_select_test,
-                supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"],
+
+            # Create a subset of suggestions for this test to ensure MTC001 is highest priority among valid MODIFY_TOOL_CODE
+            mtc_test_suggestions = [s for s in mock_suggestions_for_select_test if s["suggestion_id"] in ["MTC001", "UTD001", "MTC002"]]
+
+            selected_action = await select_suggestion_for_autonomous_action(
+                mtc_test_suggestions,
+                supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION"],
                 notification_manager=None
             )
             
-            if selected_mtc:
-                print(f"Selected suggestion (MTC Test): {selected_mtc.get('suggestion_id')}")
-                assert selected_mtc.get('suggestion_id') == "MTC001", f"Expected MTC001, got {selected_mtc.get('suggestion_id')}"
-                expected_call_params = {
-                    "module_path": "ai_assistant.tools.sample_tool",
-                    "function_name": "do_something",
-                    "suggested_code_change": "def do_something(new_param):\n  pass"
-                }
-                mock_apply_code.assert_called_once_with(expected_call_params)
-            else: # This else now correctly corresponds to 'if selected_mtc:'
-                print("No suggestion selected for MTC test (unexpected).")
-                assert False, "Expected MTC001 to be selected and processed."
+            assert selected_action is not None, "Expected a suggestion to be selected"
+            assert selected_action.get('suggestion_id') == "MTC001", f"Expected MTC001, got {selected_action.get('suggestion_id')}"
+            expected_call_params = {
+                "module_path": "ai_assistant.tools.sample_tool",
+                "function_name": "do_something",
+                "suggested_code_change": "def do_something(new_param):\n  pass"
+            }
+            mock_apply_code.assert_called_once_with(expected_call_params)
+            mock_log_execution.assert_called_once()
+            mock_log_event.assert_called_once()
+            assert selected_action['_action_result']['overall_status'] is True
+            print(f"run_select_suggestion_test_mtc_success: Passed. Selected: {selected_action.get('suggestion_id')}")
 
-    asyncio.run(run_select_suggestion_test1())
+    asyncio.run(run_select_suggestion_test_mtc_success())
 
-    async def run_select_suggestion_test2():
-        with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code_fail:
+    async def run_select_suggestion_test_mtc_failure():
+        with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code_fail, \
+             patch('ai_assistant.core.autonomous_reflection.global_reflection_log.log_execution') as mock_log_execution, \
+             patch('ai_assistant.core.autonomous_reflection.log_event') as mock_log_event:
+
             mock_apply_code_fail.return_value = {
                 "overall_status": False, "overall_message": "Mocked application failure",
                 "edit_outcome": {"status": True}, "test_outcome": {"passed": False, "notes": "Test failed"},
                 "revert_outcome": {"status": True, "message": "Reverted"}
             }
             
-            selected_mtc_fail = await select_suggestion_for_autonomous_action(
-                [mock_suggestions_for_select_test[0]],
+                revert_outcome": {"status": True, "message": "Reverted"}
+            }
+
+            # Test with a suggestion that would be chosen if MTC was the only type
+            mtc_failure_suggestions = [s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "MTC001"]
+
+            selected_action_fail = await select_suggestion_for_autonomous_action(
+                mtc_failure_suggestions,
                 supported_action_types=["MODIFY_TOOL_CODE"],
                 notification_manager=None
             )
-            if selected_mtc_fail:
-                print(f"Selected suggestion (MTC Fail Test): {selected_mtc_fail.get('suggestion_id')}")
-                assert selected_mtc_fail.get('suggestion_id') == "MTC001"
-                mock_apply_code_fail.assert_called_once()
-            else:
-                assert False, "Expected MTC001 to be selected even if application fails, for logging."
-    asyncio.run(run_select_suggestion_test2())
+            assert selected_action_fail is not None, "Expected a suggestion to be selected even on failure for logging"
+            assert selected_action_fail.get('suggestion_id') == "MTC001"
+            mock_apply_code_fail.assert_called_once()
+            mock_log_execution.assert_called_once()
+            mock_log_event.assert_called_once()
+            assert selected_action_fail['_action_result']['overall_status'] is False
+            print(f"run_select_suggestion_test_mtc_failure: Passed. Selected: {selected_action_fail.get('suggestion_id')}")
 
-    async def run_select_suggestion_test3():
-        with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code_rejected:
-            suggestions_for_rejected_test = [
-                 mock_suggestions_for_select_test[4],
-                 mock_suggestions_for_select_test[1]
+    asyncio.run(run_select_suggestion_test_mtc_failure())
+
+    async def run_select_suggestion_test_rejected_mtc_selects_next_best():
+         with patch('ai_assistant.learning.evolution.apply_code_modification', new_callable=AsyncMock) as mock_apply_code, \
+              patch('ai_assistant.learning.evolution.apply_internal_prompt_adjustment', new_callable=AsyncMock) as mock_apply_prompt_adj:
+
+            # MTC003_REJECTED has review_looks_good = False
+            # UTD001 is a valid UPDATE_TOOL_DESCRIPTION, should be selected.
+            # AIP001 is a valid ADJUST_INTERNAL_PROMPT, but UTD001 has higher calculated priority due to MTC003_REJECTED being filtered out first.
+            # (Assuming default scoring leads to UTD001 > AIP001 if MTC001 is not present)
+            # Let's make UTD001 have a slightly better score than AIP001
+            # UTD001: I3, R1, E1 => Score = 3 - 1 - 0.5 = 1.5
+            # AIP001: I4, R1, E1 => Score = 4 - 1 - 0.5 = 2.5
+            # So AIP001 should be selected if MTC003 is rejected.
+
+            suggestions_for_this_test = [
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "MTC003_REJECTED"), # review_looks_good = False
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "UTD001"),          # Prio = 1.5
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "AIP001")           # Prio = 2.5, should be selected
             ]
-            selected_rejected = await select_suggestion_for_autonomous_action(
-                suggestions_for_rejected_test,
-                supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION"],
+
+            mock_apply_prompt_adj.return_value = {"success": True, "message": "Prompt adjusted"}
+
+
+            selected_action = await select_suggestion_for_autonomous_action(
+                suggestions_for_this_test,
+                supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION", "ADJUST_INTERNAL_PROMPT"],
                 notification_manager=None
             )
-            if selected_rejected:
-                print(f"Selected suggestion (Rejected Test): {selected_rejected.get('suggestion_id')}")
-                assert selected_rejected.get('suggestion_id') == "UTD001", "Expected UTD001 to be selected, not the rejected MTC003."
-                mock_apply_code_rejected.assert_not_called()
-            else:
-                assert False, "Expected UTD001 to be selected in the rejected test."
-    asyncio.run(run_select_suggestion_test3())
+            assert selected_action is not None
+            assert selected_action.get('suggestion_id') == "AIP001", f"Expected AIP001, got {selected_action.get('suggestion_id')}"
+            mock_apply_code.assert_not_called() # MTC003 was rejected
+            mock_apply_prompt_adj.assert_called_once() # AIP001 was selected and actioned
+            print(f"run_select_suggestion_test_rejected_mtc_selects_next_best: Passed. Selected: {selected_action.get('suggestion_id')}")
+
+    asyncio.run(run_select_suggestion_test_rejected_mtc_selects_next_best())
+
+    async def run_select_suggestion_test_aip_success():
+        with patch('ai_assistant.learning.evolution.apply_internal_prompt_adjustment', new_callable=AsyncMock) as mock_apply_prompt_adj, \
+             patch('ai_assistant.core.autonomous_reflection.global_reflection_log.log_execution') as mock_log_execution, \
+             patch('ai_assistant.core.autonomous_reflection.log_event') as mock_log_event, \
+             patch('ai_assistant.config.get_model_for_task', return_value="test_model_refinement") as mock_get_model:
+
+            mock_apply_prompt_adj.return_value = {
+                "success": True,
+                "message": "Mocked successful prompt adjustment",
+                "original_prompt_preview": "Old prompt...",
+                "refined_prompt_preview": "New prompt...",
+                "llm_reasoning": "Because reasons.",
+                "llm_model_used": "test_model_refinement"
+            }
+
+            aip_suggestion = next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "AIP001")
+            # Ensure it's the only one to guarantee selection if valid
+            selected_action = await select_suggestion_for_autonomous_action(
+                [aip_suggestion],
+                supported_action_types=["ADJUST_INTERNAL_PROMPT"],
+                notification_manager=None
+            )
+
+            assert selected_action is not None, "Expected AIP001 to be selected"
+            assert selected_action.get('suggestion_id') == "AIP001"
+
+            mock_get_model.assert_called_with("prompt_refinement")
+            mock_apply_prompt_adj.assert_called_once_with(
+                prompt_identifier="general_qa_response_prompt",
+                change_summary="Make responses more concise.",
+                llm_model_name="test_model_refinement"
+            )
+            mock_log_execution.assert_called_once()
+            log_execution_args = mock_log_execution.call_args[1]
+            assert log_execution_args['modification_type'] == "ADJUST_INTERNAL_PROMPT"
+            assert log_execution_args['overall_success'] is True
+            assert log_execution_args['modification_details']['prompt_identifier'] == "general_qa_response_prompt"
+
+            mock_log_event.assert_called_once()
+            log_event_args = mock_log_event.call_args[1]
+            assert log_event_args['event_type'] == "AUTONOMOUS_ACTION_ADJUST_PROMPT_ATTEMPT"
+            assert log_event_args['metadata']['success'] is True
+            assert log_event_args['metadata']['prompt_identifier'] == "general_qa_response_prompt"
+
+            assert selected_action['_action_result']['success'] is True
+            print(f"run_select_suggestion_test_aip_success: Passed. Selected: {selected_action.get('suggestion_id')}")
+
+    asyncio.run(run_select_suggestion_test_aip_success())
+
+    async def run_select_suggestion_test_aip_fail_criteria():
+        with patch('ai_assistant.learning.evolution.apply_internal_prompt_adjustment', new_callable=AsyncMock) as mock_apply_prompt_adj:
+
+            # AIP002_LOW_CONFIDENCE (conf 0.7 < 0.75)
+            # AIP003_HIGH_RISK (risk 3 > 2)
+            # UTD001 (should be selected as fallback as the AIPs fail criteria)
+            suggestions_for_this_test = [
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "AIP002_LOW_CONFIDENCE"),
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "AIP003_HIGH_RISK"),
+                next(s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "UTD001")
+            ]
+            # Order them so UTD001 is last to ensure priority logic is tested if AIPs were valid
+            # AIP002 prio: 4-1-0.5 = 2.5 (but fails confidence)
+            # AIP003 prio: 4-3-0.5 = 0.5 (but fails risk)
+            # UTD001 prio: 3-1-0.5 = 1.5 (should be chosen)
+
+            # Re-sort based on how select_suggestion_for_autonomous_action would sort them by _priority_score initially
+            # This requires mock_suggestions_for_select_test to have these scores or calculate them
+            # For simplicity, let's assume the order above is what select_suggestion would process after initial sorting.
+            # The key is that AIP002 and AIP003 will be iterated first due to higher initial _priority_score
+            # but should be skipped due to specific criteria, then UTD001 should be picked.
+
+            # To make this test robust, let's ensure AIP002 would be picked if it passed criteria
+            # by making UTD001 less attractive temporarily for the sorting part of the test
+            temp_utd = next(s for s in suggestions_for_this_test if s["suggestion_id"] == "UTD001").copy()
+            temp_utd["impact_score"] = 1 # Lower its prio score significantly for sorting
+
+            # Construct the list so AIP002 (higher initial prio) comes before the modified UTD001
+            sorted_test_suggestions = [
+                 next(s for s in suggestions_for_this_test if s["suggestion_id"] == "AIP002_LOW_CONFIDENCE"), # Highest prio before criteria
+                 next(s for s in suggestions_for_this_test if s["suggestion_id"] == "AIP003_HIGH_RISK"),   # Mid prio before criteria
+                 temp_utd # Lowest prio before criteria
+            ]
+
+
+            selected_action = await select_suggestion_for_autonomous_action(
+                sorted_test_suggestions, # Use this carefully constructed order
+                supported_action_types=["ADJUST_INTERNAL_PROMPT", "UPDATE_TOOL_DESCRIPTION"],
+                notification_manager=None
+            )
+
+            assert selected_action is not None
+            assert selected_action.get('suggestion_id') == "UTD001", f"Expected UTD001, got {selected_action.get('suggestion_id')}"
+            mock_apply_prompt_adj.assert_not_called() # Both AIPs should have failed criteria
+            print(f"run_select_suggestion_test_aip_fail_criteria: Passed. Selected: {selected_action.get('suggestion_id')}")
+
+    asyncio.run(run_select_suggestion_test_aip_fail_criteria())
             
     print("\n--- select_suggestion_for_autonomous_action tests complete ---")
 

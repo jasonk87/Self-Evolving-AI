@@ -5,17 +5,44 @@ import subprocess
 import sys
 import tempfile
 from typing import Dict, Any, Optional
-from unittest.mock import patch, MagicMock, ANY, AsyncMock # Added AsyncMock
+from unittest.mock import patch, MagicMock, ANY, AsyncMock
 
 from ai_assistant.core.self_modification import edit_function_source_code
 import asyncio
 
-# Configure logger for this module
+# New imports for apply_internal_prompt_adjustment
+from ai_assistant.core import internal_prompts
+from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
+from ai_assistant.config import get_model_for_task, is_debug_mode # is_debug_mode might not be needed here directly
+
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 dummy_tool_module_name_for_test = "dummy_tool_module.py"
+
+# New Prompt Template for refining internal prompts
+LLM_PROMPT_REFINEMENT_TEMPLATE = """You are an AI assistant helping to refine one of your own internal operational prompts.
+You will be given an 'Original Prompt' and a 'Suggested Change Summary'.
+Your task is to rewrite the 'Original Prompt' to incorporate the 'Suggested Change Summary' effectively, then output *only* the complete new version of the prompt.
+Do not add any explanations, apologies, or conversational filler around your response. Output only the refined prompt text.
+
+Original Prompt:
+----------------
+{original_prompt_content}
+----------------
+
+Suggested Change Summary:
+----------------
+{suggested_change_summary}
+----------------
+
+Based on the 'Suggested Change Summary', rewrite the 'Original Prompt' to incorporate this change.
+Ensure the core purpose and placeholders (like {{variable}}) of the original prompt are maintained unless the change summary explicitly asks to modify them.
+Output *only* the new, complete prompt string.
+
+New Full Prompt Content:
+"""
 
 
 def test_modified_tool_in_sandbox(module_path: str, function_name: str, project_root: str) -> Dict[str, Any]:
@@ -363,6 +390,80 @@ async def apply_code_modification(suggestion: Dict[str, Any]) -> Dict[str, Any]:
             result["edit_outcome"]["message"] = f"Unexpected error during edit phase: {e}"
         return result
 
+async def apply_internal_prompt_adjustment(action_details: Dict[str, Any], llm_provider: Optional[Any] = None) -> Dict[str, Any]:
+    """
+    Applies an adjustment to an internal AI prompt based on a suggestion.
+    Uses an LLM to refine the prompt based on a change summary.
+    """
+    prompt_area_identifier = action_details.get("prompt_area_identifier")
+    suggested_change_summary = action_details.get("suggested_change_summary")
+
+    if not prompt_area_identifier or not isinstance(prompt_area_identifier, str):
+        return {"status": False, "message": "Missing or invalid 'prompt_area_identifier' in action_details."}
+    if not suggested_change_summary or not isinstance(suggested_change_summary, str):
+        return {"status": False, "message": "Missing or invalid 'suggested_change_summary' in action_details."}
+
+    original_prompt_content = internal_prompts.get_internal_prompt(prompt_area_identifier)
+    if original_prompt_content is None:
+        return {"status": False, "message": f"Internal prompt '{prompt_area_identifier}' not found."}
+
+    if not llm_provider: # Check if an llm_provider was passed in, otherwise try to get a default
+        from ai_assistant.llm_interface.ollama_client import OllamaProvider # Local import if needed
+        # This assumes OllamaProvider can be instantiated without args or gets them from a global config
+        # This part might need adjustment based on how OllamaProvider is typically instantiated/accessed
+        try:
+            llm_provider = OllamaProvider() # Or some globally accessible instance
+            if not hasattr(llm_provider, 'invoke_ollama_model_async'): # Basic check
+                 raise AttributeError("LLM provider does not have invoke_ollama_model_async method.")
+        except Exception as e:
+            logger.error(f"Failed to get default LLM provider for prompt adjustment: {e}")
+            return {"status": False, "message": f"LLM provider not available for prompt adjustment: {e}"}
+
+
+    logger.info(f"Attempting to refine internal prompt '{prompt_area_identifier}' based on summary: '{suggested_change_summary}'")
+
+    refinement_prompt_text = LLM_PROMPT_REFINEMENT_TEMPLATE.format(
+        original_prompt_content=original_prompt_content,
+        suggested_change_summary=suggested_change_summary
+    )
+
+    try:
+        # Use a model suitable for instruction-following and text generation/editing
+        model_for_refinement = get_model_for_task("prompt_refinement") # Add "prompt_refinement" to TASK_MODELS in config
+        if model_for_refinement is None: model_for_refinement = get_model_for_task("code_generation") # Fallback
+
+        new_prompt_content_raw = await llm_provider.invoke_ollama_model_async(
+            refinement_prompt_text,
+            model_name=model_for_refinement,
+            temperature=0.3, # Moderate temperature for creative but controlled editing
+            max_tokens=1024 # Allow for potentially lengthy prompts
+        )
+
+        if not new_prompt_content_raw or not new_prompt_content_raw.strip():
+            logger.warning(f"LLM returned empty or whitespace-only content for prompt refinement of '{prompt_area_identifier}'.")
+            return {"status": False, "message": "LLM failed to generate refined prompt content."}
+
+        new_prompt_content = new_prompt_content_raw.strip() # Basic cleaning
+
+        # (Optional but recommended) Add a validation step here:
+        # e.g., check if placeholders like {variable} are preserved if they were in original.
+        # For now, we trust the LLM based on the prompt.
+
+        if internal_prompts.update_internal_prompt(prompt_area_identifier, new_prompt_content):
+            msg = f"Internal prompt '{prompt_area_identifier}' successfully updated in memory for the current session."
+            logger.info(msg)
+            return {"status": True, "message": msg, "identifier": prompt_area_identifier, "old_prompt_preview": original_prompt_content[:100]+"...", "new_prompt_preview": new_prompt_content[:100]+"..."}
+        else:
+            # This case should ideally not be reached if get_internal_prompt succeeded earlier.
+            msg = f"Failed to update internal prompt '{prompt_area_identifier}' in registry (should not happen if get succeeded)."
+            logger.error(msg)
+            return {"status": False, "message": msg}
+
+    except Exception as e:
+        logger.error(f"Error during LLM call or processing for prompt refinement of '{prompt_area_identifier}': {e}", exc_info=True)
+        return {"status": False, "message": f"Exception during prompt refinement: {e}"}
+
+
 if __name__ == '__main__':
     from unittest.mock import MagicMock, call, AsyncMock # Ensure AsyncMock is imported
     from subprocess import CompletedProcess
@@ -522,3 +623,5 @@ if __name__ == '__main__':
                 logger.error("One or more evolution.py tests (including sandboxing placeholders) failed.")
 
     asyncio.run(main_tests_evolution())
+
+[end of ai_assistant/learning/evolution.py]
