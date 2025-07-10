@@ -307,12 +307,12 @@ Modified full function/method code:
 class CodeService:
     def __init__(self, llm_provider: Optional[Any] = None,
                  self_modification_service: Optional[Any] = None,
-                 task_manager: Optional[TaskManager] = None, # Added TaskManager
-                 notification_manager: Optional[Any] = None): # Added NotificationManager
+                 task_manager: Optional[TaskManager] = None,
+                 notification_manager: Optional[Any] = None):
         self.llm_provider = llm_provider
         self.self_modification_service = self_modification_service
         self.task_manager = task_manager
-        self.notification_manager = notification_manager # Store NotificationManager
+        self.notification_manager = notification_manager
         logger.info("CodeService initialized.")
         if is_debug_mode(): # pragma: no cover
             print(f"[DEBUG] CodeService initialized with llm_provider: {llm_provider}, self_modification_service: {self_modification_service}, task_manager: {task_manager}, notification_manager: {notification_manager}")
@@ -359,8 +359,8 @@ class CodeService:
         if self.task_manager:
             task_desc = f"Generate_code: {context}, Target: {prompt_or_description[:50]}..."
             task = self.task_manager.add_task(
-                description=task_desc, # Corrected order
-                task_type=task_type_for_manager, # Corrected order
+                description=task_desc,
+                task_type=task_type_for_manager,
                 related_item_id=related_id_for_task
             )
             task_id = task.task_id
@@ -573,7 +573,7 @@ class CodeService:
                     self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=failure_reason, step_desc=step_description)
                 return result
 
-            elif context == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
+            elif context == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL": # Logic with retry
                 high_level_description = prompt_or_description
                 logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_FULL_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
                 self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating outline via _generate_hierarchical_outline")
@@ -581,19 +581,15 @@ class CodeService:
                 outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
                 logs.extend(outline_gen_result.get("logs", []))
                 parsed_outline = outline_gen_result.get("parsed_outline")
-                current_status = outline_gen_result.get("status")
+                current_status_from_outline = outline_gen_result.get("status")
                 current_error = outline_gen_result.get("error")
 
-                if current_status != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
+                if current_status_from_outline != "SUCCESS_OUTLINE_GENERATED" or not parsed_outline:
                     logs.append("Outline generation failed or outline is empty, cannot proceed to detail generation.")
                     result = {
-                        "status": current_status or "ERROR_OUTLINE_GENERATION_FAILED",
-                        "parsed_outline": parsed_outline,
-                        "component_details": None,
-                        "code_string": None,
-                        "metadata": None,
-                        "logs": logs,
-                        "error": current_error or "Outline generation failed or outline was empty."
+                        "status": current_status_from_outline or "ERROR_OUTLINE_GENERATION_FAILED",
+                        "parsed_outline": parsed_outline, "component_details": None, "code_string": None,
+                        "metadata": None, "logs": logs, "error": current_error or "Outline generation failed or was empty."
                     }
                     self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error"), step_desc=result.get("status"))
                     return result
@@ -602,6 +598,7 @@ class CodeService:
                 component_details: Dict[str, Optional[str]] = {}
                 all_details_succeeded = True
                 any_detail_succeeded = False
+                MAX_DETAIL_GEN_ATTEMPTS = 2
 
                 components_to_generate = []
                 if parsed_outline.get("components"):
@@ -612,67 +609,65 @@ class CodeService:
                             for method_def in component_def["methods"]:
                                 method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
                                 components_to_generate.append({
-                                    **method_def,
-                                    "name": method_key,
-                                    "original_name": method_def.get("name"),
-                                    "class_context": component_def
+                                    **method_def, "name": method_key,
+                                    "original_name": method_def.get("name"), "class_context": component_def
                                 })
-
                 logs.append(f"Found {len(components_to_generate)} components for detail generation.")
 
                 for comp_def_for_detail_gen in components_to_generate:
                     current_comp_key = comp_def_for_detail_gen.get("name")
-                    logs.append(f"Generating details for component key: {current_comp_key}")
-                    detail_code = await self._generate_detail_for_component(
-                        component_definition=comp_def_for_detail_gen,
-                        full_outline=parsed_outline,
-                        llm_config=llm_config
-                    )
+                    detail_code = None
+                    for attempt in range(MAX_DETAIL_GEN_ATTEMPTS):
+                        logs.append(f"Generating details for component key: {current_comp_key}, Attempt: {attempt + 1}/{MAX_DETAIL_GEN_ATTEMPTS}")
+                        current_attempt_comp_def = comp_def_for_detail_gen.copy()
+                        if attempt > 0:
+                            original_desc = current_attempt_comp_def.get("description", "")
+                            retry_note = " (Retry attempt: Please ensure the code is complete and directly implementable, fulfilling all requirements.)"
+                            current_attempt_comp_def["description"] = original_desc + retry_note
+                            logs.append(f"  Modified description for retry: {current_attempt_comp_def['description']}")
+
+                        detail_code = await self._generate_detail_for_component(current_attempt_comp_def, parsed_outline, llm_config)
+                        if detail_code:
+                            logs.append(f"  Successfully generated details for {current_comp_key} on attempt {attempt + 1}.")
+                            break
+                        else:
+                            logs.append(f"  Failed to generate details for {current_comp_key} on attempt {attempt + 1}.")
+                            if attempt < MAX_DETAIL_GEN_ATTEMPTS - 1: await asyncio.sleep(0.5)
+
                     if detail_code:
                         component_details[current_comp_key] = detail_code
-                        logs.append(f"Successfully generated details for {current_comp_key}.")
                         any_detail_succeeded = True
                     else:
                         component_details[current_comp_key] = None
-                        logs.append(f"Failed to generate details for {current_comp_key}.")
                         all_details_succeeded = False
 
-                detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
-                if not current_error: current_error = None
-
-                if all_details_succeeded and any_detail_succeeded:
-                    detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
+                final_detail_gen_status = "ERROR_DETAIL_GENERATION_FAILED"
+                if all_details_succeeded and (any_detail_succeeded or not components_to_generate):
+                    final_detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
                 elif any_detail_succeeded:
-                    detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
-                    if not current_error: current_error = "Some component details failed generation."
-                else:
-                    if not components_to_generate:
-                        detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
-                        logs.append("No components found in outline for detail generation.")
-                    elif not current_error:
-                        current_error = "All component details failed generation."
+                    final_detail_gen_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                    if not current_error: current_error = "Some component details failed generation after retries."
+                elif components_to_generate : # All failed if there were components
+                    if not current_error: current_error = "All component details failed generation after retries."
+                else: # No components to generate, and outline was success
+                     final_detail_gen_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
 
-                logs.append(f"Detail generation phase status: {detail_gen_status}")
 
+                logs.append(f"Detail generation phase status: {final_detail_gen_status}")
                 result = {
-                    "status": detail_gen_status,
-                    "parsed_outline": parsed_outline,
-                    "component_details": component_details,
-                    "code_string": None,
-                    "metadata": None,
-                    "logs": logs,
-                    "error": current_error
+                    "status": final_detail_gen_status, "parsed_outline": parsed_outline,
+                    "component_details": component_details, "code_string": None, "metadata": None,
+                    "logs": logs, "error": current_error
                 }
-
-                if detail_gen_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
+                if final_detail_gen_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
                     self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Outline and all component details generated.")
-                elif detail_gen_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
-                    self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Partial success in generating component details."), step_desc=detail_gen_status)
-                else:
-                    self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Failed to generate component details."), step_desc=detail_gen_status)
+                elif final_detail_gen_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
+                    self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Partial success in generating component details."), step_desc=final_detail_gen_status)
+                else: # ERROR_DETAIL_GENERATION_FAILED
+                    self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error", "Failed to generate component details."), step_desc=final_detail_gen_status)
                 return result
 
-            elif context == "HIERARCHICAL_GEN_COMPLETE_TOOL":
+            elif context == "HIERARCHICAL_GEN_COMPLETE_TOOL": # Logic with retry
                 high_level_description = prompt_or_description
                 logs = [f"Context: HIERARCHICAL_GEN_COMPLETE_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
                 current_error: Optional[str] = None
@@ -681,7 +676,6 @@ class CodeService:
                 assembled_code: Optional[str] = None
                 saved_to_path_val: Optional[str] = None
 
-                # 1. Generate Outline
                 self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating hierarchical outline")
                 outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
                 logs.extend(outline_gen_result.get("logs", []))
@@ -698,10 +692,11 @@ class CodeService:
                     self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=current_error, step_desc=result["status"])
                     return result
 
-                # 2. Generate Details for Components
                 self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating details for components")
                 all_details_succeeded = True
                 any_detail_succeeded = False
+                MAX_DETAIL_GEN_ATTEMPTS_COMPLETE = 2
+
                 components_to_generate = []
                 if parsed_outline.get("components"):
                     for component_def in parsed_outline["components"]:
@@ -719,69 +714,82 @@ class CodeService:
                 if components_to_generate:
                     for comp_def_for_detail in components_to_generate:
                         comp_name_key = comp_def_for_detail.get("name")
-                        logs.append(f"Generating details for component: {comp_name_key}")
-                        detail_code = await self._generate_detail_for_component(comp_def_for_detail, parsed_outline, llm_config)
+                        detail_code = None
+                        for attempt in range(MAX_DETAIL_GEN_ATTEMPTS_COMPLETE):
+                            logs.append(f"Generating details for component: {comp_name_key}, Attempt: {attempt + 1}/{MAX_DETAIL_GEN_ATTEMPTS_COMPLETE}")
+                            current_attempt_comp_def = comp_def_for_detail.copy()
+                            if attempt > 0:
+                                original_desc = current_attempt_comp_def.get("description", "")
+                                retry_note = " (Retry attempt: Please ensure the code is complete and directly implementable, fulfilling all requirements.)"
+                                current_attempt_comp_def["description"] = original_desc + retry_note
+                                logs.append(f"  Modified description for retry: {current_attempt_comp_def['description']}")
+                            detail_code = await self._generate_detail_for_component(current_attempt_comp_def, parsed_outline, llm_config)
+                            if detail_code:
+                                logs.append(f"  Successfully generated details for {comp_name_key} on attempt {attempt + 1}.")
+                                break
+                            else:
+                                logs.append(f"  Failed to generate details for {comp_name_key} on attempt {attempt + 1}.")
+                                if attempt < MAX_DETAIL_GEN_ATTEMPTS_COMPLETE - 1: await asyncio.sleep(0.5)
+
                         if detail_code:
                             component_details[comp_name_key] = detail_code
-                            logs.append(f"Successfully generated details for {comp_name_key}.")
                             any_detail_succeeded = True
                         else:
                             component_details[comp_name_key] = None
-                            logs.append(f"Failed to generate details for {comp_name_key}.")
                             all_details_succeeded = False
                 else:
                     logs.append("No components listed in outline for detail generation.")
 
-                detail_gen_status_for_final_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
-                if not all_details_succeeded and any_detail_succeeded:
-                    detail_gen_status_for_final_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
-                    if not current_error: current_error = "Some component details failed generation."
-                elif not any_detail_succeeded and components_to_generate:
-                    detail_gen_status_for_final_status = "ERROR_DETAIL_GENERATION_FAILED"
-                    if not current_error: current_error = "All component details failed to generate."
+                detail_gen_status_for_final_status = "ERROR_DETAIL_GENERATION_FAILED"
+                if outline_gen_result.get("status") == "SUCCESS_OUTLINE_GENERATED":
+                    if all_details_succeeded and (any_detail_succeeded or not components_to_generate):
+                        detail_gen_status_for_final_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
+                    elif any_detail_succeeded:
+                        detail_gen_status_for_final_status = "PARTIAL_HIERARCHICAL_DETAILS_GENERATED"
+                        if not current_error: current_error = "Some component details failed generation after retries."
+                    elif components_to_generate:
+                        detail_gen_status_for_final_status = "ERROR_DETAIL_GENERATION_FAILED"
+                        if not current_error: current_error = "All component details failed generation after retries."
+                    else:
+                        detail_gen_status_for_final_status = "SUCCESS_HIERARCHICAL_DETAILS_GENERATED"
+                else:
+                    detail_gen_status_for_final_status = outline_gen_result.get("status", "ERROR_OUTLINE_GENERATION_FAILED")
                 logs.append(f"Detail generation phase status: {detail_gen_status_for_final_status}")
 
-
-                # 3. Assemble Components
                 self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Assembling code components")
-                try:
-                    assembled_code = self._assemble_components(parsed_outline, component_details)
-                    logs.append(f"Assembly attempt complete. Assembled code length: {len(assembled_code or '')}")
-                    if not assembled_code and (parsed_outline.get("components") or parsed_outline.get("main_execution_block")):
-                        if not current_error: current_error = "Assembly resulted in empty code despite having an outline."
-                        logs.append(current_error)
-                        # Status will be determined based on detail_gen_status later
-                except Exception as e_assemble:
-                    logger.error(f"Error during code assembly: {e_assemble}", exc_info=True)
-                    logs.append(f"Exception during assembly: {e_assemble}")
-                    current_error = f"Assembly failed: {e_assemble}"
-                    result = {
-                        "status": "ERROR_ASSEMBLY_FAILED", "parsed_outline": parsed_outline,
-                        "component_details": component_details, "code_string": None, "metadata": None,
-                        "logs": logs, "error": current_error, "saved_to_path": None
-                    }
-                    self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=current_error, step_desc=result["status"])
-                    return result
+                assembled_code: Optional[str] = None
+                assembly_status = "ERROR_ASSEMBLY_FAILED"
 
-                # 4. Determine final status based on phases
-                final_status = "ERROR_UNKNOWN_HIERARCHICAL_STATE" # Default, should be overwritten
-                if detail_gen_status_for_final_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
-                    final_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
-                elif detail_gen_status_for_final_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
-                    final_status = "PARTIAL_HIERARCHICAL_ASSEMBLED"
-                elif detail_gen_status_for_final_status == "ERROR_DETAIL_GENERATION_FAILED":
-                     final_status = "ERROR_ASSEMBLY_FAILED_DUE_TO_DETAILS" # Or similar to indicate root cause
+                if detail_gen_status_for_final_status not in ["ERROR_OUTLINE_GENERATION_FAILED", "ERROR_DETAIL_GENERATION_FAILED"] :
+                    try:
+                        assembled_code = self._assemble_components(parsed_outline, component_details)
+                        logs.append(f"Assembly attempt complete. Assembled code length: {len(assembled_code or '')}")
+                        if not assembled_code and (parsed_outline.get("components") or parsed_outline.get("main_execution_block")):
+                            assembly_status = "ERROR_ASSEMBLY_EMPTY_CODE"
+                            if not current_error: current_error = "Assembly resulted in empty code despite having an outline."
+                            logs.append(current_error)
+                        elif assembled_code:
+                            if detail_gen_status_for_final_status == "SUCCESS_HIERARCHICAL_DETAILS_GENERATED":
+                                assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
+                            elif detail_gen_status_for_final_status == "PARTIAL_HIERARCHICAL_DETAILS_GENERATED":
+                                assembly_status = "PARTIAL_HIERARCHICAL_ASSEMBLED"
+                        else:
+                            assembly_status = "SUCCESS_HIERARCHICAL_ASSEMBLED"
+                            logs.append("Assembly resulted in empty code as outline was effectively empty.")
+                    except Exception as e_assemble:
+                        logger.error(f"Error during code assembly: {e_assemble}", exc_info=True)
+                        logs.append(f"Exception during assembly: {e_assemble}")
+                        if not current_error: current_error = f"Assembly failed: {e_assemble}"
+                        assembly_status = "ERROR_ASSEMBLY_FAILED"
+                else:
+                    logs.append(f"Skipping assembly due to prior errors (status: {detail_gen_status_for_final_status}).")
+                    assembly_status = detail_gen_status_for_final_status
+                    if not current_error: current_error = "Assembly skipped due to prior errors in outline/detail generation."
+                logs.append(f"Assembly phase status: {assembly_status}")
 
-                if not assembled_code and final_status not in ["ERROR_ASSEMBLY_FAILED_DUE_TO_DETAILS"]:
-                    if (parsed_outline.get("components") or parsed_outline.get("main_execution_block")):
-                        final_status = "ERROR_ASSEMBLY_EMPTY_CODE"
-                        if not current_error: current_error = "Assembly resulted in empty code despite outline."
-                    else: # Empty outline led to empty code, this is fine.
-                        if final_status == "SUCCESS_HIERARCHICAL_ASSEMBLED": # if details were "successful" (vacuously true)
-                             logs.append("Assembly resulted in empty code as outline was effectively empty.")
+                saved_to_path_val: Optional[str] = None
+                final_status = assembly_status
 
-
-                # 5. Lint and Save Assembled Code (if generated)
                 if assembled_code:
                     self._update_task(task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Running linter on assembled code")
                     lint_messages, lint_run_error = await self._run_linter(assembled_code)
@@ -789,7 +797,6 @@ class CodeService:
                     if lint_messages:
                         logs.append("Linting issues found in assembled code:")
                         logs.extend(lint_messages)
-
                     if target_path:
                         self._update_task(task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Saving assembled code to {target_path}")
                         logs.append(f"Attempting to save assembled code to {target_path}")
@@ -801,22 +808,20 @@ class CodeService:
                             current_error = f"Failed to save assembled code to {target_path}."
                             logs.append(current_error)
                             logger.error(current_error)
-                elif target_path:
-                     logs.append(f"No assembled code to save (status: {final_status}). Error: {current_error}")
+                elif target_path :
+                     logs.append(f"No assembled code to save (status: {assembly_status}). Error: {current_error}")
 
-                # 6. Prepare and return result
                 result = {
-                    "status": final_status, "parsed_outline": parsed_outline, "component_details": component_details,
+                    "status": final_status,
+                    "parsed_outline": parsed_outline, "component_details": component_details,
                     "code_string": assembled_code, "metadata": None, "saved_to_path": saved_to_path_val,
                     "logs": logs, "error": current_error
                 }
-
                 if "SUCCESS_HIERARCHICAL_ASSEMBLED" in final_status or "PARTIAL_HIERARCHICAL_ASSEMBLED" in final_status:
                     self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Hierarchical generation and assembly complete.", step_desc=final_status)
                 else:
                     self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=current_error, step_desc=final_status)
                 return result
-
             else: # pragma: no cover
                 result = {
                     "status": "ERROR_UNSUPPORTED_CONTEXT", "code_string": None, "metadata": None,
@@ -831,7 +836,6 @@ class CodeService:
                       "logs": [f"Unexpected error in generate_code: {e_gen_code}"], "error": str(e_gen_code)}
             self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e_gen_code), step_desc="Unexpected error in generate_code")
             return result
-
 
     async def _generate_hierarchical_outline(
         self,
@@ -909,7 +913,7 @@ class CodeService:
             task_desc = f"Modify_code: {context}, Target: {module_path}.{function_name}"
             related_id = f"{module_path}.{function_name}" if module_path and function_name else "unknown_target"
             task = self.task_manager.add_task(
-                description=task_desc, # Corrected order
+                description=task_desc,
                 task_type=ActiveTaskType.AGENT_TOOL_MODIFICATION,
                 related_item_id=related_id
             )
@@ -957,13 +961,13 @@ class CodeService:
 
             prompt = ""
             if context == "SELF_FIX_TOOL":
-                if not module_path or not function_name: # Should be caught earlier if actual_existing_code was None
-                    logs.append("Missing module_path or function_name for SELF_FIX_TOOL (post-fetch check).") # Defensive
+                if not module_path or not function_name:
+                    logs.append("Missing module_path or function_name for SELF_FIX_TOOL (post-fetch check).")
                     result = {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing details for self-fix."}
                     self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
                     return result
-                if actual_existing_code is None: # Should be caught earlier
-                     logs.append("Original code is missing for SELF_FIX_TOOL (post-fetch check).") # Defensive
+                if actual_existing_code is None:
+                     logs.append("Original code is missing for SELF_FIX_TOOL (post-fetch check).")
                      result = {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Original code missing."}
                      self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
                      return result
@@ -975,12 +979,12 @@ class CodeService:
                 logs.append(f"Using SELF_FIX_TOOL. Target: {module_path}.{function_name}")
 
             elif context == "GRANULAR_CODE_REFACTOR":
-                if not module_path or not function_name: # Defensive
+                if not module_path or not function_name:
                     logs.append("Missing module_path or function_name for GRANULAR_CODE_REFACTOR (post-fetch check).")
                     result = {"status": "ERROR_MISSING_DETAILS", "modified_code_string": None, "logs": logs, "error": "Missing module_path or function_name for prompt."}
                     self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
                     return result
-                if actual_existing_code is None: # Defensive
+                if actual_existing_code is None:
                      logs.append("Original code is missing for GRANULAR_CODE_REFACTOR (post-fetch check).")
                      result = {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Original code missing."}
                      self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
@@ -1025,24 +1029,12 @@ class CodeService:
 
                 self._update_task(task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Applying AST-based code modification")
                 try:
-                    # Assuming edit_function_source_code returns True on success, False/raises on failure
-                    # The actual self_modification.edit_function_source_code might need adjustment or a wrapper
-                    # if its return/error handling isn't directly True/False.
-                    # For now, let's assume it either works or raises an exception handled by the main try-except.
-                    # If it returns False, we need to handle that.
-                    # Let's assume self_modification.edit_function_source_code raises an error on failure
-                    # or returns a more detailed status we're not yet using.
-                    # For simplicity, we'll rely on it raising an exception for now if it fails.
-
-                    # The design doc implies `self_modification.edit_function_source_code` is the target.
-                    # Let's assume it exists and works as expected or raises an error.
-                    # A more robust implementation might check a boolean return if that's what it does.
                     self.self_modification_service.edit_function_source_code(module_path, function_name, new_code_string)
                     logs.append(f"Successfully applied AST-based fix to {module_path}.{function_name}.")
                     logger.info(f"Successfully applied AST-based fix for {context} on {function_name}. Task ID: {task_id}")
                     result = {
                         "status": "SUCCESS_CODE_APPLIED_AST",
-                        "modified_code_string": new_code_string, # The code that was applied
+                        "modified_code_string": new_code_string,
                         "logs": logs,
                         "error": None
                     }
@@ -1055,15 +1047,14 @@ class CodeService:
                     self._update_task(task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=str(e_ast_apply), step_desc=result.get("status"))
                     return result
 
-            else: # This is for contexts that are not SELF_FIX_TOOL, GRANULAR_CODE_REFACTOR, or SELF_FIX_AST
+            else:
                 logs.append(f"Context '{context}' not supported for modify_code.")
                 result = {"status": "ERROR_UNSUPPORTED_CONTEXT", "modified_code_string": None, "logs": logs, "error": "Unsupported context"}
                 self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
                 return result
 
-            # LLM related block for SELF_FIX_TOOL and GRANULAR_CODE_REFACTOR
             if context in ["SELF_FIX_TOOL", "GRANULAR_CODE_REFACTOR"]:
-                if not self.llm_provider: # Should be caught earlier if context required it and it was None
+                if not self.llm_provider:
                     logger.error(f"LLM provider not configured for modify_code context {context}. Task ID: {task_id}")
                     logs.append("LLM provider not configured.")
                     result = {"status": "ERROR_LLM_PROVIDER_MISSING", "modified_code_string": None, "logs": logs, "error": "LLM provider not configured."}
@@ -1100,7 +1091,7 @@ class CodeService:
                 logger.info(f"LLM generated code suggestion for {context} on {function_name}. Length: {len(cleaned_llm_code)}. Task ID: {task_id}")
 
                 result = {
-                    "status": "SUCCESS_CODE_GENERATED", # Note: for these LLM-based contexts, code is generated, not yet applied by CodeService
+                    "status": "SUCCESS_CODE_GENERATED",
                     "modified_code_string": cleaned_llm_code,
                     "logs": logs,
                     "error": None
@@ -1108,10 +1099,7 @@ class CodeService:
                 self._update_task(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Code modification generated by LLM.", step_desc=result.get("status"))
                 return result
 
-            # If context was SELF_FIX_AST, it should have returned earlier.
-            # This part of the code should ideally not be reached if context was SELF_FIX_AST.
-            # Adding a fallback or assertion here might be good for defensive programming.
-            logger.error(f"Reached unexpected part of modify_code for context {context}. This should not happen. Task ID: {task_id}") # Should be unreachable for SELF_FIX_AST
+            logger.error(f"Reached unexpected part of modify_code for context {context}. This should not happen. Task ID: {task_id}")
             result = {"status": "ERROR_UNEXPECTED_FLOW_MODIFY_CODE", "modified_code_string": None, "logs": logs, "error": "Unexpected flow in modify_code."}
             self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error"), step_desc=result.get("status"))
             return result
@@ -1261,12 +1249,8 @@ class CodeService:
         llm_config: Optional[Dict[str, Any]]
     ) -> Optional[str]:
         component_type = component_definition.get('type', 'unknown_type')
-        # For methods, component_definition["name"] is already "ClassName.MethodName"
-        # For functions, it's "FunctionName"
         component_name_for_prompt = component_definition.get('name', 'UnnamedComponent')
-        # original_name is relevant for methods if component_name is Class.Method
         original_method_name_if_applicable = component_definition.get("original_name", component_name_for_prompt.split('.')[-1])
-
 
         component_signature = component_definition.get('signature', '')
         component_description = component_definition.get('description', '')
@@ -1275,72 +1259,45 @@ class CodeService:
         module_imports_list = full_outline.get('imports', [])
         module_imports_str = "\n".join([f"import {imp}" for imp in module_imports_list]) if module_imports_list else "# No specific module-level imports listed in outline."
 
-        # --- Enhanced Context Building ---
         context_lines = []
         module_overall_description = full_outline.get('description', 'No overall module description provided.')
 
         if component_type == "method":
             parent_class_name_found = None
             parent_class_def_found = None
-
-            # Find the parent class definition
             for class_comp_def in full_outline.get("components", []):
                 if class_comp_def.get("type") == "class":
-                    # Check if the current method (using original_method_name_if_applicable) is in this class
                     if any(m.get("name") == original_method_name_if_applicable for m in class_comp_def.get("methods", [])):
                         parent_class_def_found = class_comp_def
                         parent_class_name_found = class_comp_def.get("name", "UnknownClass")
                         break
-
             if parent_class_def_found and parent_class_name_found:
                 context_lines.append(f"Implementing method '{original_method_name_if_applicable}' for class '{parent_class_name_found}'.")
                 context_lines.append(f"  Class Description: {parent_class_def_found.get('description', 'N/A')}")
-
                 class_attrs = parent_class_def_found.get('attributes', [])
                 if class_attrs:
                     context_lines.append("  Class Attributes:")
-                    for attr in class_attrs:
-                        context_lines.append(f"    - {attr.get('name', 'N/A')}: {attr.get('type', 'Any')} # {attr.get('description', '')}")
-
+                    for attr in class_attrs: context_lines.append(f"    - {attr.get('name', 'N/A')}: {attr.get('type', 'Any')} # {attr.get('description', '')}")
                 sibling_methods_info = []
                 for method_def in parent_class_def_found.get("methods", []):
-                    if method_def.get("name") != original_method_name_if_applicable:
-                        sibling_methods_info.append(
-                            f"    - {method_def.get('name', 'N/A')}{method_def.get('signature', '()')} # {method_def.get('description', '')}"
-                        )
+                    if method_def.get("name") != original_method_name_if_applicable: sibling_methods_info.append(f"    - {method_def.get('name', 'N/A')}{method_def.get('signature', '()')} # {method_def.get('description', '')}")
                 if sibling_methods_info:
                     context_lines.append("  Other available methods in this class:")
                     context_lines.extend(sibling_methods_info)
-            else: # Fallback if class somehow not found (should ideally not happen with good outline)
-                context_lines.append(f"Implementing method '{original_method_name_if_applicable}'. Parent class context not fully identified in outline.")
+            else: context_lines.append(f"Implementing method '{original_method_name_if_applicable}'. Parent class context not fully identified in outline.")
             context_lines.append(f"Overall Module Description: {module_overall_description}")
-
-
         elif component_type == "function":
             context_lines.append(f"Implementing function '{component_name_for_prompt}'.")
             context_lines.append(f"Overall Module Description: {module_overall_description}")
-
             sibling_functions_info = []
             available_classes_info = []
             for comp_def in full_outline.get("components", []):
-                # Skip the current function itself by comparing its definition, not just name, if possible
-                # For simplicity here, we'll rely on name and type. A more robust check might involve unique IDs if outlines had them.
-                if comp_def.get("name") == component_name_for_prompt and comp_def.get("type") == "function":
-                    continue
-
-                if comp_def.get("type") == "function":
-                    sibling_functions_info.append(
-                        f"  - {comp_def.get('name', 'N/A')}{comp_def.get('signature', '()')} # {comp_def.get('description', '')}"
-                    )
+                if comp_def.get("name") == component_name_for_prompt and comp_def.get("type") == "function": continue
+                if comp_def.get("type") == "function": sibling_functions_info.append(f"  - {comp_def.get('name', 'N/A')}{comp_def.get('signature', '()')} # {comp_def.get('description', '')}")
                 elif comp_def.get("type") == "class":
-                    class_methods_summary = []
-                    for method_def in comp_def.get("methods", []):
-                        class_methods_summary.append(f"{method_def.get('name')}{method_def.get('signature', '()')}")
+                    class_methods_summary = [f"{md.get('name')}{md.get('signature', '()')}" for md in comp_def.get("methods", [])]
                     methods_str = ", ".join(class_methods_summary) if class_methods_summary else "No methods listed"
-                    available_classes_info.append(
-                        f"  - Class {comp_def.get('name', 'N/A')}: {comp_def.get('description', 'N/A')}\n      Methods: {methods_str}"
-                    )
-
+                    available_classes_info.append(f"  - Class {comp_def.get('name', 'N/A')}: {comp_def.get('description', 'N/A')}\n      Methods: {methods_str}")
             if sibling_functions_info:
                 context_lines.append("Other available functions in this module:")
                 context_lines.extend(sibling_functions_info)
@@ -1350,9 +1307,7 @@ class CodeService:
         else:
             context_lines.append(f"Implementing component '{component_name_for_prompt}' of type '{component_type}'.")
             context_lines.append(f"Overall Module Description: {module_overall_description}")
-
         component_specific_context_str = "\n".join(context_lines)
-        # --- End of Enhanced Context Building ---
 
         logger.info(f"CodeService: Generating detail for component '{component_name_for_prompt}' (type: {component_type}). Context length: {len(component_specific_context_str)}")
 

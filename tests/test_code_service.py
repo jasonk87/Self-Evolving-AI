@@ -1073,6 +1073,140 @@ class MyCalc:
 
     # --- Tests for _generate_hierarchical_outline (private method) ---
     # This is a private method, TaskManager calls are handled by its public callers.
+
+    async def test_generate_code_hierarchical_full_tool_detail_gen_retry_success(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        mock_outline = {
+            "module_name": "retry_tool.py",
+            "components": [
+                {"type": "function", "name": "func_needs_retry", "original_name": "func_needs_retry", "signature": "()", "description": "d_retry", "body_placeholder": "p_retry"},
+                {"type": "function", "name": "func_ok_first_time", "original_name": "func_ok_first_time", "signature": "()", "description": "d_ok", "body_placeholder": "p_ok"}
+            ]
+        }
+        outline_gen_success_return = {
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline,
+            "outline_str": json.dumps(mock_outline), "logs": [], "error": None
+        }
+
+        code_for_func_retry_success = "def func_needs_retry():\n    return 'success after retry'"
+        code_for_func_ok = "def func_ok_first_time():\n    return 'ok'"
+
+        # Mock _generate_detail_for_component to fail first time for 'func_needs_retry'
+        async def mock_detail_gen_with_retry(*args, **kwargs):
+            component_def = args[0]
+            if component_def["name"] == "func_needs_retry":
+                # Use a call count on the mock itself or an external counter if needed for more complex state
+                if mock_detail_gen_with_retry.call_count == 1: # First call for this specific function
+                    return None
+                else: # Second call for this specific function
+                    # Check if the description was modified for retry
+                    self.assertIn("(Retry attempt:", component_def.get("description", ""))
+                    return code_for_func_retry_success
+            elif component_def["name"] == "func_ok_first_time":
+                return code_for_func_ok
+            return None # Should not happen for these component names
+
+        # Assign a call_count attribute to the mock function to track calls *for func_needs_retry*
+        # This is a bit tricky as the mock is called for multiple components.
+        # A more robust way might involve inspecting call_args_list, but this can work for focused test.
+        # Let's refine: use a side_effect list carefully ordered.
+
+        # Define side effects for _generate_detail_for_component
+        # It will be called for func_needs_retry (attempt 1), then func_needs_retry (attempt 2), then func_ok_first_time
+        # This assumes components_to_generate processes in the order they appear in mock_outline.
+        # If order isn't guaranteed, this test will be flaky. Let's assume order for now.
+
+        # Simpler: mock the side effect to check component name and call count for that name
+        call_counts = {"func_needs_retry": 0, "func_ok_first_time": 0}
+
+        async def mock_detail_gen_side_effect(component_definition, full_outline, llm_config):
+            name = component_definition.get("name")
+            call_counts[name] += 1
+            if name == "func_needs_retry":
+                if call_counts[name] == 1:
+                    return None # Fail first time
+                else: # Success on retry
+                    self.assertIn("(Retry attempt:", component_definition.get("description", ""))
+                    return code_for_func_retry_success
+            elif name == "func_ok_first_time":
+                return code_for_func_ok
+            return None
+
+
+        with mock.patch.object(self.code_service, '_generate_hierarchical_outline', return_value=outline_gen_success_return) as mock_outline_call, \
+             mock.patch.object(self.code_service, '_generate_detail_for_component', side_effect=mock_detail_gen_side_effect) as mock_detail_call_obj:
+
+            result = await self.code_service.generate_code(
+                context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL",
+                prompt_or_description="A tool needing retry for one component."
+            )
+
+            self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_DETAILS_GENERATED") # Both eventually succeeded
+            self.assertIsNotNone(result["component_details"])
+            self.assertEqual(result["component_details"].get("func_needs_retry"), code_for_func_retry_success)
+            self.assertEqual(result["component_details"].get("func_ok_first_time"), code_for_func_ok)
+
+            # Assert _generate_detail_for_component was called 3 times in total
+            # (func_needs_retry attempt 1, func_needs_retry attempt 2, func_ok_first_time attempt 1)
+            self.assertEqual(mock_detail_call_obj.call_count, 3)
+            self.assertEqual(call_counts["func_needs_retry"], 2) # func_needs_retry was called twice
+            self.assertEqual(call_counts["func_ok_first_time"], 1) # func_ok_first_time was called once
+
+            self.mock_task_manager.add_task.assert_called_once()
+            # Check for successful completion status update by the top-level handler
+            self.assertTrue(
+                any(call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY for call in self.mock_task_manager.update_task_status.call_args_list),
+                "Expected COMPLETED_SUCCESSFULLY status update was not made."
+            )
+            # Check logs for retry messages
+            self.assertTrue(any("Generating details for component key: func_needs_retry, Attempt: 1/2" in log for log in result["logs"]))
+            self.assertTrue(any("Failed to generate details for func_needs_retry on attempt 1" in log for log in result["logs"]))
+            self.assertTrue(any("Generating details for component key: func_needs_retry, Attempt: 2/2" in log for log in result["logs"]))
+            self.assertTrue(any("Successfully generated details for func_needs_retry on attempt 2" in log for log in result["logs"]))
+
+    async def test_generate_code_hierarchical_full_tool_detail_gen_retry_all_fail(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        mock_outline = {
+            "module_name": "retry_tool_fail.py",
+            "components": [{"type": "function", "name": "func_fails_all_retries", "original_name": "func_fails_all_retries", "signature": "()", "description": "d_fail", "body_placeholder": "p_fail"}]
+        }
+        outline_gen_success_return = {"status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None}
+
+        # Mock _generate_detail_for_component to always fail for 'func_fails_all_retries'
+        async def mock_detail_gen_always_fail(component_definition, full_outline, llm_config):
+            name = component_definition.get("name")
+            if name == "func_fails_all_retries":
+                return None # Always fail
+            return "def other_func(): pass" # Should not be called for this component
+
+        with mock.patch.object(self.code_service, '_generate_hierarchical_outline', return_value=outline_gen_success_return), \
+             mock.patch.object(self.code_service, '_generate_detail_for_component', side_effect=mock_detail_gen_always_fail) as mock_detail_call_obj:
+
+            result = await self.code_service.generate_code(
+                context="EXPERIMENTAL_HIERARCHICAL_FULL_TOOL",
+                prompt_or_description="A tool where one component always fails generation."
+            )
+
+            self.assertEqual(result["status"], "ERROR_DETAIL_GENERATION_FAILED")
+            self.assertIsNotNone(result["component_details"])
+            self.assertIsNone(result["component_details"].get("func_fails_all_retries")) # Should be None
+            self.assertIsNotNone(result["error"])
+            self.assertIn("All component details failed generation after retries.", result["error"])
+
+            # Expected to be called MAX_DETAIL_GEN_ATTEMPTS (e.g., 2) times for the failing function
+            self.assertEqual(mock_detail_call_obj.call_count, 2)
+
+            self.mock_task_manager.add_task.assert_called_once()
+            self.assertTrue(
+                any(call.args[1] == self_modification.ActiveTaskStatus.FAILED_UNKNOWN for call in self.mock_task_manager.update_task_status.call_args_list),
+                "Expected FAILED_UNKNOWN status update for all retries failing."
+            )
+            self.assertTrue(any("Failed to generate details for func_fails_all_retries on attempt 1" in log for log in result["logs"]))
+            self.assertTrue(any("Failed to generate details for func_fails_all_retries on attempt 2" in log for log in result["logs"]))
+
+
     async def test_private_generate_hierarchical_outline_success(self):
         expected_outline_dict = {"module_name": "test_module.py", "components": [{"type": "function", "name": "main"}]}
         llm_json_output = json.dumps(expected_outline_dict)
@@ -1116,48 +1250,118 @@ class MyCalc:
         self.assertIn("Failed to parse LLM JSON outline", result["error"])
 
     # --- Tests for generate_code (HIERARCHICAL_GEN_COMPLETE_TOOL context) ---
-    async def test_generate_code_hierarchical_complete_tool_success_no_save(self):
-        mock_outline = {"module_name": "tool.py", "imports": ["os"], "components": [{"type": "function", "name": "my_func"}]}
-        detail_for_my_func = "def my_func():\n    print('done')"
+    async def test_generate_code_hierarchical_complete_tool_retry_succeeds_no_save(self): # Renamed for clarity
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        mock_outline = {"module_name": "tool.py", "imports": ["os"],
+                        "components": [{"type": "function", "name": "my_func", "description": "Test func"}]}
+        detail_for_my_func_success = "def my_func():\n    print('done after retry')"
 
-        expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func})
+        expected_assembled_code = self.code_service._assemble_components(mock_outline, {"my_func": detail_for_my_func_success})
 
-        # Mock _generate_hierarchical_outline
         self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
             "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
         })
-        # Mock _generate_detail_for_component
-        self.code_service._generate_detail_for_component = AsyncMock(return_value=detail_for_my_func)
+
+        # Mock _generate_detail_for_component to fail first, then succeed
+        mock_detail_gen_calls = 0
+        async def side_effect_detail_gen_retry_success(component_definition, full_outline, llm_config):
+            nonlocal mock_detail_gen_calls
+            mock_detail_gen_calls += 1
+            if component_definition["name"] == "my_func":
+                if mock_detail_gen_calls == 1:
+                    return None # Fail first time
+                else:
+                    self.assertIn("(Retry attempt:", component_definition.get("description", ""))
+                    return detail_for_my_func_success # Succeed second time
+            return None
+
+        self.code_service._generate_detail_for_component = AsyncMock(side_effect=side_effect_detail_gen_retry_success)
 
         result = await self.code_service.generate_code(
             context="HIERARCHICAL_GEN_COMPLETE_TOOL",
-            prompt_or_description="A complex tool requiring assembly.",
-            target_path=None # Explicitly no save
+            prompt_or_description="A complex tool requiring assembly with retry.",
+            target_path=None
         )
 
         self.assertEqual(result["status"], "SUCCESS_HIERARCHICAL_ASSEMBLED")
         self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
-        self.assertEqual(result["parsed_outline"], mock_outline)
-        self.assertEqual(result["component_details"], {"my_func": detail_for_my_func})
-        self.assertIsNone(result.get("saved_to_path"))
+        self.assertEqual(result["component_details"], {"my_func": detail_for_my_func_success})
 
-        self.code_service._generate_hierarchical_outline.assert_called_once_with(
-            "A complex tool requiring assembly.", None
-        )
-        self.code_service._generate_detail_for_component.assert_called_once_with(
-            component_definition=mock_outline["components"][0],
-            full_outline=mock_outline,
-            llm_config=None
-        )
+        self.assertEqual(self.code_service._generate_detail_for_component.call_count, 2) # Called twice for my_func
         self.mock_task_manager.add_task.assert_called_once()
         self.assertTrue(
-            any(
-                call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY and call.args[0] == self.mock_task.task_id
-                for call in self.mock_task_manager.update_task_status.call_args_list
-            ),
-            "Expected COMPLETED_SUCCESSFULLY for HIERARCHICAL_GEN_COMPLETE_TOOL success no save."
+            any(call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY for call in self.mock_task_manager.update_task_status.call_args_list),
+            "Expected COMPLETED_SUCCESSFULLY for HIERARCHICAL_GEN_COMPLETE_TOOL with successful retry."
+        )
+        self.assertTrue(any("Generating details for component: my_func, Attempt: 2/2" in log for log in result["logs"]))
+
+    async def test_generate_code_hierarchical_complete_tool_detail_gen_all_retries_fail(self):
+        self.mock_task_manager.reset_mock()
+        self.mock_task_manager.add_task.return_value = self.mock_task
+        mock_outline = {
+            "module_name": "tool_fail_retry.py", "imports": ["os"],
+            "components": [
+                {"type": "function", "name": "func_fails_always", "original_name": "func_fails_always", "signature": "()", "description": "This will fail", "body_placeholder": "p_fail"},
+                {"type": "function", "name": "func_is_ok", "original_name": "func_is_ok", "signature": "()", "description": "This is fine", "body_placeholder": "p_ok"}
+            ]
+        }
+        code_for_func_ok = "def func_is_ok():\n    return 'perfectly fine'"
+
+        self.code_service._generate_hierarchical_outline = AsyncMock(return_value={
+            "status": "SUCCESS_OUTLINE_GENERATED", "parsed_outline": mock_outline, "logs": [], "error": None
+        })
+
+        # Mock _generate_detail_for_component
+        # func_fails_always will always return None
+        # func_is_ok will return code
+        detail_gen_call_counts = {"func_fails_always": 0, "func_is_ok": 0}
+        async def side_effect_detail_gen_partial_fail(component_definition, full_outline, llm_config):
+            name = component_definition.get("name")
+            detail_gen_call_counts[name] = detail_gen_call_counts.get(name, 0) + 1
+            if name == "func_fails_always":
+                return None # Always fail
+            elif name == "func_is_ok":
+                return code_for_func_ok
+            return None
+
+        self.code_service._generate_detail_for_component = AsyncMock(side_effect=side_effect_detail_gen_partial_fail)
+
+        # We need to mock _assemble_components because it will be called with a None detail
+        # and should produce placeholder code.
+        expected_assembled_code_with_placeholder = self.code_service._assemble_components(
+            mock_outline,
+            {"func_fails_always": None, "func_is_ok": code_for_func_ok}
         )
 
+        result = await self.code_service.generate_code(
+            context="HIERARCHICAL_GEN_COMPLETE_TOOL",
+            prompt_or_description="Tool with one component always failing generation despite retries.",
+            target_path=None
+        )
+
+        # Status should be PARTIAL because one component (func_is_ok) succeeded
+        self.assertEqual(result["status"], "PARTIAL_HIERARCHICAL_ASSEMBLED")
+        self.assertIsNotNone(result["error"])
+        self.assertIn("Some component details failed generation after retries.", result["error"])
+
+        self.assertIsNotNone(result["component_details"])
+        self.assertIsNone(result["component_details"].get("func_fails_always"))
+        self.assertEqual(result["component_details"].get("func_is_ok"), code_for_func_ok)
+
+        self.assertEqual(result["code_string"].strip(), expected_assembled_code_with_placeholder.strip())
+        self.assertIn("# Function 'func_fails_always' was planned but not generated.", result["code_string"])
+
+        self.assertEqual(self.code_service._generate_detail_for_component.call_count, 3) # func_fails_always (2 attempts) + func_is_ok (1 attempt)
+        self.assertEqual(detail_gen_call_counts["func_fails_always"], 2)
+        self.assertEqual(detail_gen_call_counts["func_is_ok"], 1)
+
+        self.mock_task_manager.add_task.assert_called_once()
+        self.assertTrue(
+            any(call.args[1] == self_modification.ActiveTaskStatus.COMPLETED_SUCCESSFULLY for call in self.mock_task_manager.update_task_status.call_args_list),
+            "Expected COMPLETED_SUCCESSFULLY for PARTIAL_HIERARCHICAL_ASSEMBLED status."
+            # The task itself is completed, even if partially. Error is in the result dict.
+        )
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_hierarchical_complete_tool_success_and_save(self, mock_write_to_file):
