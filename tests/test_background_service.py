@@ -54,11 +54,17 @@ class TestBackgroundService(unittest.IsolatedAsyncioTestCase):
         if is_background_service_active():
             await stop_background_services()
         self.patch_config.stop()
-        self.patch_tool_system.stop()
-        self.patch_run_reflection.stop()
-        self.patch_run_curation.stop()
-        self.patch_exec_project.stop()
-        self.patch_os_path_isdir.stop()
+        if hasattr(self, 'mock_tool_system') and self.mock_tool_system.is_started: # Ensure it was started
+            self.patch_tool_system.stop()
+        if hasattr(self, 'mock_run_reflection') and self.mock_run_reflection.is_started:
+            self.patch_run_reflection.stop()
+        if hasattr(self, 'mock_run_curation') and self.mock_run_curation.is_started:
+            self.patch_run_curation.stop()
+        if hasattr(self, 'mock_exec_project') and self.mock_exec_project.is_started:
+            self.patch_exec_project.stop()
+        if hasattr(self, 'mock_os_path_isdir') and self.mock_os_path_isdir.is_started:
+            self.patch_os_path_isdir.stop()
+
 
     @patch('ai_assistant.core.background_service.suggestion_manager_module.get_suggestions', new_callable=AsyncMock)
     @patch('ai_assistant.core.background_service.select_suggestion_for_autonomous_action', new_callable=AsyncMock)
@@ -201,6 +207,136 @@ class TestBackgroundService(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.2) # Allow for another cycle
 
         self.assertGreater(mock_select_suggestion.call_count, call_count_before_second_try, "Service should have retried after error.")
+
+        await stop_background_services()
+
+    @patch('ai_assistant.core.background_service.logger')
+    @patch('ai_assistant.core.background_service.tool_system_instance.update_tool_description', new_callable=MagicMock) # Sync mock
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.update_suggestion_status', new_callable=MagicMock) # Sync mock
+    @patch('ai_assistant.core.background_service.global_reflection_log.log_execution', new_callable=MagicMock)
+    @patch('ai_assistant.core.background_service.select_suggestion_for_autonomous_action', new_callable=AsyncMock)
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.get_suggestions', new_callable=AsyncMock)
+    async def test_handle_update_tool_description_action_success(
+        self, mock_get_suggestions, mock_select_suggestion, mock_log_reflection,
+        mock_update_suggestion_status, mock_ts_update_desc, mock_logger
+    ):
+        suggestion_id = "SUG_UTD001"
+        tool_name = "test_tool"
+        new_description = "This is a new description."
+
+        mock_selected_suggestion = {
+            'suggestion_id': suggestion_id,
+            'action_type': 'UPDATE_TOOL_DESCRIPTION',
+            'action_details': {'tool_name': tool_name, 'new_description': new_description},
+            '_action_result': {'status': 'PENDING_EXECUTION', 'message': 'Pending update.'}
+        }
+        mock_get_suggestions.return_value = [mock_selected_suggestion] # Ensure it's a list
+        mock_select_suggestion.return_value = mock_selected_suggestion
+
+        mock_ts_update_desc.return_value = True # Simulate ToolSystem successfully updating
+
+        start_background_services()
+        await asyncio.sleep(0.2) # Allow one cycle to process
+
+        # Verify _handle_update_tool_description was effectively called via select_suggestion
+        # and that it called the ToolSystem's update method
+        mock_ts_update_desc.assert_called_once_with(tool_name, new_description)
+
+        # Verify suggestion status was updated to ACTIONED
+        mock_update_suggestion_status.assert_called_once_with(suggestion_id, "ACTIONED", unittest.mock.ANY)
+
+        # Verify reflection log was called
+        mock_log_reflection.assert_called_once()
+        log_args = mock_log_reflection.call_args[1]
+        self.assertEqual(log_args['source_suggestion_id'], suggestion_id)
+        self.assertEqual(log_args['modification_type'], "UPDATE_TOOL_DESCRIPTION")
+        self.assertTrue(log_args['overall_success'])
+        self.assertEqual(log_args['modification_details']['tool_name'], tool_name)
+
+        # Verify logger info for successful handling within _handle_update_tool_description
+        log_found = any(
+            f"BG_HANDLER: Tool '{tool_name}' description updated successfully." in str(call_args)
+            for call_args in mock_logger.info.call_args_list
+        )
+        self.assertTrue(log_found, "Expected success log from _handle_update_tool_description not found.")
+
+        await stop_background_services()
+
+
+    @patch('ai_assistant.core.background_service.logger')
+    @patch('ai_assistant.core.background_service.tool_system_instance.update_tool_description', new_callable=MagicMock) # Sync mock
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.update_suggestion_status', new_callable=MagicMock) # Sync mock
+    @patch('ai_assistant.core.background_service.global_reflection_log.log_execution', new_callable=MagicMock)
+    @patch('ai_assistant.core.background_service.select_suggestion_for_autonomous_action', new_callable=AsyncMock)
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.get_suggestions', new_callable=AsyncMock)
+    async def test_handle_update_tool_description_action_failure_from_toolsystem(
+        self, mock_get_suggestions, mock_select_suggestion, mock_log_reflection,
+        mock_update_suggestion_status, mock_ts_update_desc, mock_logger
+    ):
+        suggestion_id = "SUG_UTD002"
+        tool_name = "non_existent_tool"
+        new_description = "A description that won't be applied."
+
+        mock_selected_suggestion = {
+            'suggestion_id': suggestion_id,
+            'action_type': 'UPDATE_TOOL_DESCRIPTION',
+            'action_details': {'tool_name': tool_name, 'new_description': new_description},
+            '_action_result': {'status': 'PENDING_EXECUTION', 'message': 'Pending update.'}
+        }
+        mock_get_suggestions.return_value = [mock_selected_suggestion]
+        mock_select_suggestion.return_value = mock_selected_suggestion
+
+        mock_ts_update_desc.return_value = False # Simulate ToolSystem failing to update (e.g., tool not found)
+
+        start_background_services()
+        await asyncio.sleep(0.2)
+
+        mock_ts_update_desc.assert_called_once_with(tool_name, new_description)
+        mock_update_suggestion_status.assert_called_once_with(suggestion_id, "ACTION_FAILED", unittest.mock.ANY)
+
+        mock_log_reflection.assert_called_once()
+        log_args = mock_log_reflection.call_args[1]
+        self.assertEqual(log_args['source_suggestion_id'], suggestion_id)
+        self.assertFalse(log_args['overall_success'])
+
+        log_found = any(
+            f"BG_HANDLER: Tool '{tool_name}' not found or update failed in ToolSystem." in str(call_args)
+            for call_args in mock_logger.warning.call_args_list
+        )
+        self.assertTrue(log_found, "Expected warning log from _handle_update_tool_description for ToolSystem failure not found.")
+
+        await stop_background_services()
+
+    @patch('ai_assistant.core.background_service.logger')
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.update_suggestion_status', new_callable=MagicMock)
+    @patch('ai_assistant.core.background_service.select_suggestion_for_autonomous_action', new_callable=AsyncMock)
+    @patch('ai_assistant.core.background_service.suggestion_manager_module.get_suggestions', new_callable=AsyncMock)
+    async def test_handle_update_tool_description_missing_details(
+        self, mock_get_suggestions, mock_select_suggestion, mock_update_suggestion_status, mock_logger
+    ):
+        suggestion_id = "SUG_UTD003"
+        mock_selected_suggestion = {
+            'suggestion_id': suggestion_id,
+            'action_type': 'UPDATE_TOOL_DESCRIPTION',
+            'action_details': {'tool_name': 'some_tool'}, # Missing 'new_description'
+            '_action_result': {'status': 'PENDING_EXECUTION', 'message': 'Pending update.'}
+        }
+        mock_get_suggestions.return_value = [mock_selected_suggestion]
+        mock_select_suggestion.return_value = mock_selected_suggestion
+
+        start_background_services()
+        await asyncio.sleep(0.2)
+
+        # ToolSystem's update_tool_description should NOT be called if details are missing
+        # This is handled before calling _handle_update_tool_description by the calling logic in _background_loop_async
+        # So, we check that update_suggestion_status was called with ACTION_FAILED by the loop itself.
+        mock_update_suggestion_status.assert_called_once_with(suggestion_id, "ACTION_FAILED", "Missing tool_name or new_description")
+
+        log_found = any(
+            f"Cannot 'UPDATE_TOOL_DESCRIPTION' for suggestion '{suggestion_id}'. Missing 'tool_name' or 'new_description'" in str(call_args)
+            for call_args in mock_logger.warning.call_args_list
+        )
+        self.assertTrue(log_found, "Expected warning log for missing action_details not found.")
 
         await stop_background_services()
 

@@ -193,6 +193,24 @@ class ToolSystem:
             # No actual change was made, but operation is considered "successful" in terms of not erroring.
             return True
 
+    def update_tool_description(self, tool_name: str, new_description: str) -> bool:
+        """
+        Public method to update a tool's description.
+        This is a wrapper around the internal implementation.
+        Args:
+            tool_name: The name of the tool to update.
+            new_description: The new description for the tool.
+        Returns:
+            True if the description was updated and saved successfully, False otherwise.
+        """
+        if not isinstance(tool_name, str) or not tool_name:
+            print("Error (update_tool_description): tool_name must be a non-empty string.") # Or log error
+            return False
+        if not isinstance(new_description, str): # Allow empty string for description, though perhaps not ideal
+            print("Error (update_tool_description): new_description must be a string.") # Or log error
+            return False
+
+        return self._system_update_tool_metadata_impl(tool_name=tool_name, new_description=new_description)
 
     def _register_system_tools(self):
         """Registers tools that are internal to the ToolSystem or for system management."""

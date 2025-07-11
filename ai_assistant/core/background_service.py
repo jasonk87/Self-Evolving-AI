@@ -315,19 +315,40 @@ async def _background_loop_async():
                     # select_suggestion_for_autonomous_action is async
                     selected_suggestion_for_action = await select_suggestion_for_autonomous_action(
                         suggestions=all_suggestions,
-                        # supported_action_types can be omitted to use defaults, or specified if needed
-                        notification_manager=_nm_instance_for_bg_service # Pass NM instance
+                        notification_manager=_nm_instance_for_bg_service
                     )
 
                     if selected_suggestion_for_action:
+                        action_type = selected_suggestion_for_action.get('action_type')
+                        suggestion_id = selected_suggestion_for_action.get('suggestion_id', 'UNKNOWN_ID')
+                        action_details = selected_suggestion_for_action.get('action_details', {})
                         action_result = selected_suggestion_for_action.get('_action_result', {})
                         action_status = action_result.get('status', 'UNKNOWN_STATUS')
                         action_message = action_result.get('message', 'No message from action.')
-                        if action_status == 'PENDING_EXECUTION':
-                             logger.info(f"--- BACKGROUND SERVICE: Suggestion {selected_suggestion_for_action.get('suggestion_id')} selected for PENDING autonomous action: {selected_suggestion_for_action.get('action_type')}. Details: {action_message} ---")
-                        else:
-                            logger.info(f"--- BACKGROUND SERVICE: Autonomous action attempted for suggestion {selected_suggestion_for_action.get('suggestion_id')} ({selected_suggestion_for_action.get('action_type')}). Result: {action_status} - {action_message} ---")
-                        # Further handling/logging can be added here based on action_result
+
+                        if action_type == "UPDATE_TOOL_DESCRIPTION" and action_status == 'PENDING_EXECUTION':
+                            tool_name_to_update = action_details.get("tool_name")
+                            new_tool_description = action_details.get("new_description")
+                            if tool_name_to_update and new_tool_description is not None:
+                                logger.info(f"--- BACKGROUND SERVICE: Handling PENDING 'UPDATE_TOOL_DESCRIPTION' for tool '{tool_name_to_update}' from suggestion '{suggestion_id}'. ---")
+                                # Call a new async helper function to handle the update
+                                await _handle_update_tool_description(
+                                    tool_name=tool_name_to_update,
+                                    new_description=new_tool_description,
+                                    suggestion_id=suggestion_id,
+                                    suggestion_manager=suggestion_manager_module # Pass suggestion_manager
+                                )
+                            else:
+                                logger.warning(f"--- BACKGROUND SERVICE: Cannot 'UPDATE_TOOL_DESCRIPTION' for suggestion '{suggestion_id}'. Missing 'tool_name' or 'new_description' in action_details. Details: {action_details} ---")
+                                # Optionally, update suggestion status to FAILED here
+                                await asyncio.to_thread(
+                                    suggestion_manager_module.update_suggestion_status,
+                                    suggestion_id, "ACTION_FAILED", "Missing tool_name or new_description"
+                                )
+                        elif action_status == 'PENDING_EXECUTION': # For other pending types like CREATE_NEW_TOOL
+                             logger.info(f"--- BACKGROUND SERVICE: Suggestion {suggestion_id} selected for PENDING autonomous action: {action_type}. Details: {action_message} ---")
+                        else: # For directly actioned types like MODIFY_TOOL_CODE, ADJUST_INTERNAL_PROMPT
+                            logger.info(f"--- BACKGROUND SERVICE: Autonomous action attempted for suggestion {suggestion_id} ({action_type}). Result: {action_status} - {action_message} ---")
                     else:
                         logger.info("--- BACKGROUND SERVICE: No suitable suggestion was selected for autonomous action in this cycle. ---")
                 else:
@@ -425,7 +446,7 @@ def start_background_services(
 ):
     global _background_service_active, _background_task, _last_fact_curation_time
     global _last_project_execution_scan_time, _nm_instance_for_bg_service, _tm_instance_for_bg_service
-    global MONITORED_TASK_TYPES_FOR_CHECKIN, ACTIVE_STATUSES_FOR_MONITORING, _last_long_task_check_time
+    global MONITORED_TASK_TYPES_FOR_CHECKIN, ACTIVE_STATUSES_FOR_MONITORING, _last_long_task_check_time, global_reflection_log # Added global_reflection_log
 
     if notification_manager_instance:
         _nm_instance_for_bg_service = notification_manager_instance
@@ -571,4 +592,64 @@ if __name__ == '__main__': # pragma: no cover
     globals()['run_periodic_fact_store_curation_async'] = run_periodic_fact_store_curation_async_orig
 
     logger.info("--- Background Service Manual Test Finished ---")
+
+# Helper function to be implemented as part of the plan
+async def _handle_update_tool_description(
+    tool_name: str,
+    new_description: str,
+    suggestion_id: str,
+    suggestion_manager # Pass suggestion_manager module directly
+):
+    from ai_assistant.tools.tool_system import tool_system_instance # Local import
+    from ai_assistant.core.reflection import global_reflection_log # Local import for logging
+
+    logger.info(f"--- BG_HANDLER: Attempting to update description for tool '{tool_name}' (Suggestion ID: {suggestion_id}). ---")
+    success = False
+    message = ""
+
+    try:
+        # This method update_tool_description needs to be added to ToolSystem
+        update_success = await asyncio.to_thread(
+            tool_system_instance.update_tool_description,
+            tool_name,
+            new_description
+        )
+
+        if update_success:
+            success = True
+            message = f"Tool '{tool_name}' description updated successfully."
+            logger.info(f"--- BG_HANDLER: {message} ---")
+            await asyncio.to_thread(suggestion_manager.update_suggestion_status, suggestion_id, "ACTIONED", message)
+        else:
+            message = f"Tool '{tool_name}' not found or update failed in ToolSystem."
+            logger.warning(f"--- BG_HANDLER: {message} (Suggestion ID: {suggestion_id}) ---")
+            await asyncio.to_thread(suggestion_manager.update_suggestion_status, suggestion_id, "ACTION_FAILED", message)
+
+    except Exception as e:
+        message = f"Error updating tool '{tool_name}' description: {e}"
+        logger.error(f"--- BG_HANDLER: {message} (Suggestion ID: {suggestion_id}) ---", exc_info=True)
+        await asyncio.to_thread(suggestion_manager.update_suggestion_status, suggestion_id, "ACTION_FAILED", str(e))
+        success = False # Ensure success is false on exception
+
+    # Log to global reflection log
+    try:
+        global_reflection_log.log_execution(
+            goal_description=f"Autonomous action: Update tool description for '{tool_name}'.",
+            plan=[{
+                "tool_name": "_handle_update_tool_description (internal)",
+                "args": {"tool_name": tool_name, "new_description": new_description, "suggestion_id": suggestion_id},
+                "status": "ACTIONED" if success else "ACTION_FAILED"
+            }],
+            execution_results=[{"success": success, "message": message}],
+            overall_success=success,
+            notes=message,
+            is_self_modification_attempt=True,
+            source_suggestion_id=suggestion_id,
+            modification_type="UPDATE_TOOL_DESCRIPTION",
+            modification_details={"tool_name": tool_name, "new_description": new_description}
+            # No test/commit info for description updates
+        )
+    except Exception as e_log:
+        logger.error(f"--- BG_HANDLER: Failed to log execution to global_reflection_log for suggestion {suggestion_id}: {e_log} ---", exc_info=True)
+
 ### END FILE: core/background_service.py ###
