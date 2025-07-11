@@ -18,6 +18,11 @@ from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
+# Imports for autonomous action selection
+import ai_assistant.core.suggestion_manager as suggestion_manager_module
+from ai_assistant.core.autonomous_reflection import select_suggestion_for_autonomous_action
+from ai_assistant.config import AUTONOMOUS_ACTION_INTERVAL_SECONDS # Will be added to config.py
+
 # Import for project execution task
 try:
     from ai_assistant.custom_tools.file_system_tools import BASE_PROJECTS_DIR
@@ -52,6 +57,7 @@ _long_task_check_interval_seconds = 60 # Check for long tasks every 1 minute
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0
 _last_long_task_check_time: float = 0.0
+_last_autonomous_action_scan_time: float = 0.0 # For the new task
 _task_last_checkin_time: Dict[str, float] = {} # Stores task_id: timestamp of last check-in
 
 # Define these constants based on Step 1 of the plan
@@ -151,12 +157,14 @@ async def _background_loop_async():
     _last_fact_curation_time = current_time_init
     _last_project_execution_scan_time = current_time_init
     _last_long_task_check_time = current_time_init
+    _last_autonomous_action_scan_time = current_time_init # Initialize new task time
     _task_last_checkin_time = {} # Ensure it's reset if service restarts
 
     next_reflection_run_time = current_time_init + REFLECTION_INTERVAL_SECONDS
     next_fact_curation_run_time = current_time_init + FACT_CURATION_INTERVAL_SECONDS
     next_project_execution_run_time = current_time_init + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_long_task_check_run_time = current_time_init + _long_task_check_interval_seconds
+    next_autonomous_action_run_time = current_time_init + AUTONOMOUS_ACTION_INTERVAL_SECONDS # For new task
 
 
     while _background_service_active:
@@ -289,7 +297,48 @@ async def _background_loop_async():
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
+        time_until_next_autonomous_action = max(0, next_autonomous_action_run_time - time.time()) # For new task
         time_until_next_long_task_check = max(0, next_long_task_check_run_time - time.time()) if _tm_instance_for_bg_service else float('inf')
+
+        # --- Autonomous Action Selection Task ---
+        if current_loop_time >= next_autonomous_action_run_time:
+            logger.info(f"--- BACKGROUND SERVICE: Starting autonomous action selection (Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}) ---")
+            try:
+                # Fetch all suggestions (consider filtering for 'pending' or 'approved' if states are added)
+                # For now, get_suggestions() returns a list of dicts.
+                # We need to ensure these dicts match what select_suggestion_for_autonomous_action expects
+                # (which it should, as they are populated by run_self_reflection_cycle and stored by suggestion_manager)
+                all_suggestions = await asyncio.to_thread(suggestion_manager_module.get_suggestions)
+
+                if all_suggestions:
+                    logger.info(f"--- BACKGROUND SERVICE: Fetched {len(all_suggestions)} suggestions for potential autonomous action. Attempting to select one. ---")
+                    # select_suggestion_for_autonomous_action is async
+                    selected_suggestion_for_action = await select_suggestion_for_autonomous_action(
+                        suggestions=all_suggestions,
+                        # supported_action_types can be omitted to use defaults, or specified if needed
+                        notification_manager=_nm_instance_for_bg_service # Pass NM instance
+                    )
+
+                    if selected_suggestion_for_action:
+                        action_result = selected_suggestion_for_action.get('_action_result', {})
+                        action_status = action_result.get('status', 'UNKNOWN_STATUS')
+                        action_message = action_result.get('message', 'No message from action.')
+                        if action_status == 'PENDING_EXECUTION':
+                             logger.info(f"--- BACKGROUND SERVICE: Suggestion {selected_suggestion_for_action.get('suggestion_id')} selected for PENDING autonomous action: {selected_suggestion_for_action.get('action_type')}. Details: {action_message} ---")
+                        else:
+                            logger.info(f"--- BACKGROUND SERVICE: Autonomous action attempted for suggestion {selected_suggestion_for_action.get('suggestion_id')} ({selected_suggestion_for_action.get('action_type')}). Result: {action_status} - {action_message} ---")
+                        # Further handling/logging can be added here based on action_result
+                    else:
+                        logger.info("--- BACKGROUND SERVICE: No suitable suggestion was selected for autonomous action in this cycle. ---")
+                else:
+                    logger.info("--- BACKGROUND SERVICE: No suggestions found for autonomous action. ---")
+
+            except Exception as e_aa:
+                logger.error(f"--- BACKGROUND SERVICE: Error during autonomous action selection/execution: {e_aa} ---", exc_info=True)
+
+            _last_autonomous_action_scan_time = time.time()
+            next_autonomous_action_run_time = time.time() + AUTONOMOUS_ACTION_INTERVAL_SECONDS
+            logger.info(f"--- BACKGROUND SERVICE: Autonomous action selection cycle finished. Next run in approx. {AUTONOMOUS_ACTION_INTERVAL_SECONDS}s. ---")
         
         # --- Long-Running Task Check ---
         if _tm_instance_for_bg_service and current_loop_time >= next_long_task_check_run_time:
@@ -346,7 +395,14 @@ async def _background_loop_async():
             next_long_task_check_run_time = current_loop_time + _long_task_check_interval_seconds
         # --- End Long-Running Task Check ---
 
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_long_task_check, 10)
+        sleep_duration = min(
+            time_until_next_reflection,
+            time_until_next_curation,
+            time_until_next_project_exec,
+            time_until_next_autonomous_action,  # Include new task in sleep calculation
+            time_until_next_long_task_check,
+            10 # Max sleep interval to ensure responsiveness
+        )
 
         try:
             if is_debug_mode(): # pragma: no cover
