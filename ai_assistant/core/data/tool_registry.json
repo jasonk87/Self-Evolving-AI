@@ -703,5 +703,155 @@
                 ]
             ]
         }
+    },
+    "get_text_file_snippet": {
+        "tool_name": "get_text_file_snippet",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "get_text_file_snippet",
+        "description": "Reads and returns a specific snippet of text from a file. Useful for examining a portion of a file before making targeted modifications. Specify the snippet by line numbers, or by start and end patterns, or by a start pattern with surrounding context lines. Line numbers take precedence if provided.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "get_text_file_snippet",
+            "description": "Reads and returns a specific snippet of text from a file. Useful for examining a portion of a file before making targeted modifications. Specify the snippet by line numbers, or by start and end patterns, or by a start pattern with surrounding context lines. Line numbers take precedence if provided.",
+            "parameters": [
+                {
+                    "name": "filepath",
+                    "type": "str",
+                    "description": "The path to the file."
+                },
+                {
+                    "name": "line_range",
+                    "type": "Optional[Tuple[int, int]]",
+                    "description": "Optional. A tuple (start_line, end_line) (1-indexed, inclusive) to get specific lines. Takes precedence over patterns."
+                },
+                {
+                    "name": "start_pattern",
+                    "type": "Optional[str]",
+                    "description": "Optional. A string pattern marking the beginning of the snippet. Used if line_range is not given."
+                },
+                {
+                    "name": "end_pattern",
+                    "type": "Optional[str]",
+                    "description": "Optional. A string pattern marking the end of the snippet (exclusive of the line containing end_pattern). Used if start_pattern is given."
+                },
+                {
+                    "name": "context_lines_around_pattern",
+                    "type": "int",
+                    "description": "Optional. If only start_pattern is given (and not end_pattern or line_range), this many lines of context will be included before and after the line containing the start_pattern. Default is 5.",
+                    "default": 5
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "The extracted text snippet, or an error message if the operation fails (e.g., file not found, pattern not found, invalid range)."
+            }
+        }
+    },
+    "get_tools_in_module": {
+        "tool_name": "get_tools_in_module",
+        "module_path": "ai_assistant.custom_tools.ui_tools",
+        "function_name": "get_tools_in_module",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "replace_text_in_file": {
+        "tool_name": "replace_text_in_file",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "replace_text_in_file",
+        "description": "Replaces occurrences of a search pattern with replacement text in a specified file. This tool directly modifies the file on disk.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "replace_text_in_file",
+            "description": "Replaces occurrences of a search pattern with replacement text in a specified file. This tool directly modifies the file on disk.",
+            "parameters": [
+                {
+                    "name": "filepath",
+                    "type": "str",
+                    "description": "The path to the file to be modified."
+                },
+                {
+                    "name": "search_pattern",
+                    "type": "str",
+                    "description": "The text string or regular expression pattern to search for."
+                },
+                {
+                    "name": "replacement_text",
+                    "type": "str",
+                    "description": "The text that will replace the found search_pattern."
+                },
+                {
+                    "name": "Nth_occurrence",
+                    "type": "int",
+                    "description": "Optional. Specifies which occurrences to replace. Use 1 for the first match (default), or -1 for all matches. Specific Nth > 1 is not robustly supported for all cases yet.",
+                    "default": 1
+                },
+                {
+                    "name": "is_regex",
+                    "type": "bool",
+                    "description": "Optional. If True, the search_pattern is treated as a regular expression. Default is False.",
+                    "default": false
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "A message indicating success ('Text replaced and file saved.' or 'Pattern not found, no changes made.') or an error message."
+            }
+        }
+    },
+    "display_html_content_in_project_area": {
+        "tool_name": "display_html_content_in_project_area",
+        "module_path": "ai_assistant.custom_tools.ui_tools",
+        "function_name": "display_html_content_in_project_area",
+        "description": "Use this tool to render HTML content directly within the main Project Display Area of the user interface. This is for displaying rich content, web pages, or interactive elements, not for chat messages.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "display_html_content_in_project_area",
+            "description": "Use this tool to render HTML content directly within the main Project Display Area of the user interface. This is for displaying rich content, web pages, or interactive elements, not for chat messages.",
+            "parameters": [
+                {
+                    "name": "html_content",
+                    "type": "str",
+                    "description": "The raw HTML string to be rendered in the project display area."
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dictionary confirming the action, containing the HTML content. The UI will handle rendering."
+            }
+        }
+    },
+    "modify_displayed_html_content": {
+        "tool_name": "modify_displayed_html_content",
+        "module_path": "ai_assistant.custom_tools.ui_tools",
+        "function_name": "modify_displayed_html_content",
+        "description": "Use this tool to request a targeted modification (search and replace) of the HTML, CSS, or JavaScript content currently shown in the Project Display Area. This is for small, specific changes. Provide a pattern to search for and the code to replace it with. The AI should refer to the 'Currently Displayed Project Code' context to formulate the search_pattern accurately.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "modify_displayed_html_content",
+            "description": "Use this tool to request a targeted modification (search and replace) of the HTML, CSS, or JavaScript content currently shown in the Project Display Area. This is for small, specific changes. Provide a pattern to search for and the code to replace it with. The AI should refer to the 'Currently Displayed Project Code' context to formulate the search_pattern accurately.",
+            "parameters": [
+                {
+                    "name": "search_pattern",
+                    "type": "str",
+                    "description": "The exact string or a unique snippet of the code in the current display that needs to be found and replaced."
+                },
+                {
+                    "name": "replacement_code",
+                    "type": "str",
+                    "description": "The new code snippet that will replace the text matched by search_pattern."
+                },
+                {
+                    "name": "occurrence_index",
+                    "type": "int",
+                    "description": "Optional. Specifies which occurrence to replace if the search_pattern matches multiple times. Default is 0 (the first one).",
+                    "default": 0
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dictionary representing the modification request for the orchestrator to process."
+            }
+        }
     }
 }

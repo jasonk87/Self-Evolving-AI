@@ -3257,5 +3257,1017 @@
             "error": "'\\n    \"tool_name\"'",
             "goal": "how are you doing?"
         }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:54.954128+00:00",
+        "event_id": "32a4bc57813242ecb84c3dc6dec381e2",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:54.969759+00:00",
+        "event_id": "8f1af781db704b58a8a8d3592e76ef4b",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "A very complex prompt leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:54.987190+00:00",
+        "event_id": "84c4a86a740448a49fe0d14e307fcfde",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:54.996045+00:00",
+        "event_id": "95e7e5c16d61472aa2e39fc21496d56e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.013441+00:00",
+        "event_id": "557565ea39c74a47bfc08488ca0a0f4c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.022546+00:00",
+        "event_id": "228c1cccebf64ae18400b5796d75ed94",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.041350+00:00",
+        "event_id": "a134e205a4064f38a6b85f68f59f227c",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.049550+00:00",
+        "event_id": "647ad9b6568b4695aa8b23472a1cb71e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error",
+            "full_error_repr": "'Orchestrator boom'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.065200+00:00",
+        "event_id": "c04197a3a35d459480977a1598be0749",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.073120+00:00",
+        "event_id": "343e2be8da5844d2a648d69dd52f97c4",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails",
+            "full_error_repr": "'Orchestrator critical failure'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.089755+00:00",
+        "event_id": "9bbccfad88da4e10b38bc583116922e8",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.098441+00:00",
+        "event_id": "a504cfe5fb2b4601b481b16e6a967250",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.116430+00:00",
+        "event_id": "3ee9042d50714ab998dec83170df7149",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.125580+00:00",
+        "event_id": "9e9d3d7e48d9426b87a3ed84baaaf372",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure, rephraser fails",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.142823+00:00",
+        "event_id": "08802eb08da048f5b67461aa0a8a2a56",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.151837+00:00",
+        "event_id": "ef15ed6a3b69495abd2d106bcb0180b4",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for double failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.169408+00:00",
+        "event_id": "6f28e96d5499450fba57638c59479278",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.178447+00:00",
+        "event_id": "c228561bebfa4f2e89f201eb4ee86a75",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt that causes plan failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.236006+00:00",
+        "event_id": "7892eb129a4d434583b442a88f2590ee",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.244622+00:00",
+        "event_id": "5ccb3b03b2c541d4a7bcb8a03307494e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test prompt for summarizer failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.261552+00:00",
+        "event_id": "9399607cd58646bda27bcbb4742d1e31",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:20:55.269955+00:00",
+        "event_id": "7e3f95fece274180ac30a085ccb7330c",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test user prompt",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.325701+00:00",
+        "event_id": "cf419ab470f04453ac988aa7a9ba9695",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.337050+00:00",
+        "event_id": "2f4333f4f52b4626b4a7b133af0bcd45",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "A very complex prompt leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.355207+00:00",
+        "event_id": "9b84a051709f41cc939e9fb068d1a171",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.364220+00:00",
+        "event_id": "3749d34cad744582882c48cea0a56ccf",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.382395+00:00",
+        "event_id": "8abfc493bbe84774a85aa79e75a9e4d1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.391140+00:00",
+        "event_id": "2cce188a33c24c7ab9a3212e955d6ac9",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.409087+00:00",
+        "event_id": "0f78ff9550364c4c935b1c3d52e1bddc",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.418076+00:00",
+        "event_id": "02b33e8855fd455bbd7b865b18bba5d1",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error",
+            "full_error_repr": "'Orchestrator boom'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.435182+00:00",
+        "event_id": "206f3c799f4845818de0a630508a43d3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.443956+00:00",
+        "event_id": "7d81453b70404fc4a67387c38d1a4a62",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails",
+            "full_error_repr": "'Orchestrator critical failure'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.461894+00:00",
+        "event_id": "5134dfd8f1844068a3b425f00f09f311",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.471291+00:00",
+        "event_id": "cf93758f5be148d499666174b61862fa",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.490179+00:00",
+        "event_id": "3b842240b445460891887f00917ca294",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.501127+00:00",
+        "event_id": "f37984da461c434aaae03880087f8083",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure, rephraser fails",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.549698+00:00",
+        "event_id": "238c3e3bd1dd41b688836b7a7a6c0abd",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.559046+00:00",
+        "event_id": "c194f5782c584ec7970b7d952f0dc319",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for double failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.577636+00:00",
+        "event_id": "0861e35827394f13890f601bfee04a46",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.586572+00:00",
+        "event_id": "96a1d21a3ced45fd8fe10c7b2d588dfb",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt that causes plan failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.617112+00:00",
+        "event_id": "7aa643c9520548f9845d4551ef12898a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.626615+00:00",
+        "event_id": "3633c4abe3b54a0c97f41c101f1976cc",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test prompt for summarizer failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.644503+00:00",
+        "event_id": "32619926586b4266a6728b8b55d1c71a",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:34:59.653675+00:00",
+        "event_id": "9d5ddbf9a6dd43a5a0ad9a777f436acb",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test user prompt",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.525958+00:00",
+        "event_id": "159262c4cf87489aa4f78c8237f86361",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.537402+00:00",
+        "event_id": "5253191348c345b08c2cb8e105825fc7",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "A very complex prompt leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.555456+00:00",
+        "event_id": "f9b20722c5ed438696f2bcbe3dfdfdf4",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.564580+00:00",
+        "event_id": "b27f76c639664a7cbee993a6ddd395b6",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.582848+00:00",
+        "event_id": "22bcb4f8d1c84ed6ac737f12f3a116cc",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.592058+00:00",
+        "event_id": "53f33e34e50348bf8b12d634f917ce28",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.610388+00:00",
+        "event_id": "f45f9dee6f6d4aaabd14236035fbc919",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.619804+00:00",
+        "event_id": "4f2ed69e6ae74ce28326b5c300f901f4",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error",
+            "full_error_repr": "'Orchestrator boom'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.637292+00:00",
+        "event_id": "c132c62a1e404817ab6c7e2334edb1cb",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.646135+00:00",
+        "event_id": "2d3943df488b4f43834cb1691b405eb3",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails",
+            "full_error_repr": "'Orchestrator critical failure'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.663941+00:00",
+        "event_id": "fda801eb57fb41ceb60c329e780d0a65",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.674437+00:00",
+        "event_id": "a97d2d5c4fdd4b35a8d9ad85f3d555aa",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.722765+00:00",
+        "event_id": "2741476ade624a89b1e1da044b110f42",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.732186+00:00",
+        "event_id": "1f67e55b38124eda85d1d4357f1afe13",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure, rephraser fails",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.750785+00:00",
+        "event_id": "54441f71287a4394b0ee1c44d98b4e1d",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.760791+00:00",
+        "event_id": "b13bedaca6294247b040233ff4def47e",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for double failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.779331+00:00",
+        "event_id": "0da279df623b4c3ca2c508f68451c0d0",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.788758+00:00",
+        "event_id": "c4dfb34f489746de84b335dd4e0c9277",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt that causes plan failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.820710+00:00",
+        "event_id": "86404b6f22b14303b30bad32ebef9880",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.830646+00:00",
+        "event_id": "d63a24edf6584baa8e49162df4082c89",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test prompt for summarizer failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.849756+00:00",
+        "event_id": "fa6573ec4c874be8919e29193befe227",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:42:46.859962+00:00",
+        "event_id": "92a561ce47614433b4e9ef797588dd45",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test user prompt",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.323797+00:00",
+        "event_id": "3a97bd7608a04da189e6ac29a4e81a92",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.336281+00:00",
+        "event_id": "fc5a084756bc4ccd9e2db5db0c185e24",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "A very complex prompt leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.355242+00:00",
+        "event_id": "46254974c6f8489eb7a5c3f8f478bc89",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.364984+00:00",
+        "event_id": "0399f8de2df04dc1af94b45127eb835f",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.383860+00:00",
+        "event_id": "63c03cd67cb94e728e1b6814fc06d675",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.393204+00:00",
+        "event_id": "661e5edbe7d14cdca60695b10a73015b",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Goal leading to no plan",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.411125+00:00",
+        "event_id": "17c81fd9c42e4847983de003665459a1",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.420139+00:00",
+        "event_id": "b6a80821a90c42389a3b5d4d93202218",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error",
+            "full_error_repr": "'Orchestrator boom'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.437157+00:00",
+        "event_id": "5c74345b140f40f189f50438b0164674",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.447766+00:00",
+        "event_id": "0c449265924c49d6ae48d1e238633fc1",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails",
+            "full_error_repr": "'Orchestrator critical failure'"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.492003+00:00",
+        "event_id": "388788de10254ef18f384654cf3e18d0",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.501311+00:00",
+        "event_id": "74cd043e4b964f40ae49ac51ebc745f9",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.520850+00:00",
+        "event_id": "bec8140e9f87488c901da98768f668a7",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.530468+00:00",
+        "event_id": "c300daad103e4d56ab7b251079869a36",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for execution failure, rephraser fails",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.549039+00:00",
+        "event_id": "b6787666dbc64a12953882961efd21fd",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.558453+00:00",
+        "event_id": "06c1af04862f45b29ab44b433148a821",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt for double failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.576979+00:00",
+        "event_id": "2c2893740d89486db3c28ce11b0553ef",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.586384+00:00",
+        "event_id": "c1def129dc7044ed932071c5fcb25ea3",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Prompt that causes plan failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.620004+00:00",
+        "event_id": "2e8505dfaef1420c87beea00bb3766ce",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.629927+00:00",
+        "event_id": "b19d19a837574ad3a7129274b1f5421a",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test prompt for summarizer failure",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.649298+00:00",
+        "event_id": "ba7ef447fcd448aa9b9db68d7224f321",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-07-12T00:57:43.660135+00:00",
+        "event_id": "776c85776d21462c9a7656e09cffc9c6",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: AttributeError - 'list' object has no attribute 'get'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "AttributeError",
+            "error_message": "'list' object has no attribute 'get'",
+            "goal": "Test user prompt",
+            "full_error_repr": "\"'list' object has no attribute 'get'\""
+        }
     }
 ]

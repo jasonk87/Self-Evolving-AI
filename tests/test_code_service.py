@@ -887,21 +887,17 @@ if __name__ == '__main__':
         }
         result_code = self.code_service._assemble_components(outline, details)
 
-        expected_code = """import math
-
-class MyCalc:
-    """A calculator."""
-
-    # Defined attributes (from outline):
-    # pi: float # Value of PI
-
-    def __init__(self, val: float):
-        self.val = val
-
-    def add(self, x: float) -> float:
-        return self.val + x
-
-"""
+        expected_code = (
+            "import math\n\n"
+            "class MyCalc:\n"
+            "    \"\"\"A calculator.\"\"\"\n\n"
+            "    # Defined attributes (from outline):\n"
+            "    # pi: float # Value of PI\n\n"
+            "    def __init__(self, val: float):\n"
+            "        self.val = val\n\n"
+            "    def add(self, x: float) -> float:\n"
+            "        return self.val + x\n"
+        )
         self.assertEqual(result_code.strip(), expected_code.strip())
 
 
@@ -2308,3 +2304,496 @@ if __name__ == '__main__': # pragma: no cover
 
     if not sync_tests_found and not async_test_methods_names:
         print("No tests found.")
+
+[end of tests/test_code_service.py]
+
+[start of tests/test_suggestion_processor.py]
+import unittest
+from unittest.mock import AsyncMock, patch, MagicMock
+import asyncio
+import sys
+import os
+import json
+import uuid # For mocking
+
+# Ensure ai_assistant module can be imported
+try:
+    from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
+    from ai_assistant.core.execution.action_executor import ActionExecutor
+    from ai_assistant.core.code_services.service import CodeService
+    # from ai_assistant.llm_interface.ollama_client import OllamaProvider # If needed for type hinting mock
+except ImportError as e: # pragma: no cover
+    print(f"Import error in test_suggestion_processor: {e}")
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
+    from ai_assistant.core.execution.action_executor import ActionExecutor
+    from ai_assistant.core.code_services.service import CodeService
+    # from ai_assistant.llm_interface.ollama_client import OllamaProvider
+
+
+class TestSuggestionProcessor(unittest.TestCase):
+    def setUp(self):
+        self.mock_action_executor = AsyncMock(spec=ActionExecutor)
+
+        self.mock_llm_provider = AsyncMock()
+        # If CodeService or its llm_provider.invoke_ollama_model_async uses get_model_for_task,
+        # it should be patched in the module where it's called, e.g.,
+        # @patch('ai_assistant.llm_interface.ollama_client.get_model_for_task') for invoke_ollama_model_async
+        # For this test, we directly mock invoke_ollama_model_async on the provider instance.
+        # self.mock_llm_provider.get_model_for_task.return_value = "mock_model_for_processor" # If needed
+
+        self.mock_code_service = MagicMock(spec=CodeService)
+        self.mock_code_service.llm_provider = self.mock_llm_provider
+
+        self.processor = SuggestionProcessor(
+            action_executor=self.mock_action_executor,
+            code_service=self.mock_code_service
+        )
+
+        self.tool_system_patcher = patch('ai_assistant.core.suggestion_processor.tool_system_instance')
+        self.mock_tool_system_instance = self.tool_system_patcher.start()
+
+        self.list_suggestions_patcher = patch('ai_assistant.core.suggestion_processor.list_suggestions')
+        self.mock_list_suggestions = self.list_suggestions_patcher.start()
+
+        # Patch get_model_for_task used directly by _identify_target_tool_from_suggestion
+        self.get_model_patcher = patch('ai_assistant.core.suggestion_processor.get_model_for_task')
+        self.mock_get_model_for_task = self.get_model_patcher.start()
+        self.mock_get_model_for_task.return_value = "mock_planning_model"
+
+
+    def tearDown(self):
+        self.tool_system_patcher.stop()
+        self.list_suggestions_patcher.stop()
+        self.get_model_patcher.stop()
+
+    # --- Tests for _identify_target_tool_from_suggestion ---
+    async def test_identify_target_tool_success_high_confidence(self):
+        suggestion_desc = "The 'calculate_area' tool should handle negative inputs."
+        # Note: list_tools_with_sources returns Dict[str, Dict[str,str]]
+        # but _identify_target_tool_from_suggestion reformats it for the prompt.
+        # The mock below reflects the expected output of list_tools_with_sources.
+        mock_tools_output = {
+            "calculate_area_tool_key": [{ # Assuming list_tools_with_sources returns a list for each tool key
+                "module_path": "ai_assistant.custom_tools.calculator",
+                "function_name": "calculate_area",
+                "description": "Calculates area."
+            }]
+        }
+        self.mock_tool_system_instance.list_tools_with_sources.return_value = mock_tools_output
+
+        llm_response = {
+            "module_path": "ai_assistant.custom_tools.calculator",
+            "function_name": "calculate_area",
+            "confidence": "high",
+            "reasoning": "Matches tool name and context."
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_response)
+
+        target_info = await self.processor._identify_target_tool_from_suggestion(suggestion_desc)
+
+        self.assertIsNotNone(target_info)
+        self.assertEqual(target_info["module_path"], llm_response["module_path"])
+        self.assertEqual(target_info["function_name"], llm_response["function_name"])
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        # Further assert prompt contents if necessary
+
+    async def test_identify_target_tool_llm_low_confidence(self):
+        suggestion_desc = "Maybe improve the way it talks about files."
+        self.mock_tool_system_instance.list_tools_with_sources.return_value = {
+            "some_file_tool": [{"module_path": "some.module", "function_name": "file_tool", "description": "desc"}]
+        }
+        llm_response = {"module_path": None, "function_name": None, "confidence": "low", "reasoning": "Too vague."}
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = json.dumps(llm_response)
+
+        target_info = await self.processor._identify_target_tool_from_suggestion(suggestion_desc)
+        self.assertIsNone(target_info)
+
+    async def test_identify_target_tool_llm_error(self):
+        suggestion_desc = "Improve tool X."
+        self.mock_tool_system_instance.list_tools_with_sources.return_value = {
+            "tool_x": [{"module_path": "module.x", "function_name": "tool_x_func", "description": "desc"}]
+        }
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM network error")
+
+        target_info = await self.processor._identify_target_tool_from_suggestion(suggestion_desc)
+        self.assertIsNone(target_info)
+
+    async def test_identify_target_tool_no_tools_available(self):
+        suggestion_desc = "Improve tool X."
+        self.mock_tool_system_instance.list_tools_with_sources.return_value = {} # No tools
+
+        target_info = await self.processor._identify_target_tool_from_suggestion(suggestion_desc)
+        self.assertIsNone(target_info)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+
+
+    # --- Tests for process_pending_suggestions ---
+    @patch('ai_assistant.core.suggestion_processor.uuid.uuid4')
+    async def test_process_pending_suggestions_identifies_and_dispatches(self, mock_uuid_call):
+        # Mock what str(uuid.uuid4())[:8] would do
+        mock_uuid_instance = MagicMock()
+        mock_uuid_instance.__str__.return_value = "abcdef1234567890" # Ensure it's long enough
+        mock_uuid_call.return_value = mock_uuid_instance
+
+        pending_sugg1 = {
+            "suggestion_id": "sugg_id_1", "type": "tool_improvement",
+            "description": "Fix 'calc_sum' tool for big numbers.", "status": "pending",
+            "source_reflection_id": "reflect_abc"
+        }
+        self.mock_list_suggestions.return_value = [pending_sugg1]
+
+        identified_target = {
+            "module_path": "ai_assistant.custom_tools.math_tools",
+            "function_name": "calc_sum",
+            "reasoning": "Clear match."
+        }
+        # Patch the instance method _identify_target_tool_from_suggestion for this test
+        with patch.object(self.processor, '_identify_target_tool_from_suggestion', new_callable=AsyncMock, return_value=identified_target) as mock_identify:
+            self.mock_action_executor.execute_action.return_value = True
+
+            await self.processor.process_pending_suggestions(limit=1)
+
+            mock_identify.assert_called_once_with("Fix 'calc_sum' tool for big numbers.")
+            self.mock_action_executor.execute_action.assert_called_once()
+
+            call_args = self.mock_action_executor.execute_action.call_args[0][0]
+            self.assertEqual(call_args["action_type"], "PROPOSE_TOOL_MODIFICATION")
+            self.assertEqual(call_args["source_insight_id"], "sugg_id_1")
+            details = call_args["details"]
+            self.assertEqual(details["module_path"], "ai_assistant.custom_tools.math_tools")
+            self.assertEqual(details["function_name"], "calc_sum")
+            self.assertEqual(details["tool_name"], "calc_sum")
+            self.assertIsNone(details["suggested_code_change"])
+            self.assertEqual(details["suggested_change_description"], "Fix 'calc_sum' tool for big numbers.")
+            self.assertEqual(details["original_reflection_entry_id"], "reflect_abc")
+
+    async def test_process_pending_suggestions_target_not_identified(self):
+        pending_sugg1 = {"suggestion_id": "sugg_id_2", "type": "tool_improvement", "description": "Vague improvement idea.", "status": "pending"}
+        self.mock_list_suggestions.return_value = [pending_sugg1]
+
+        with patch.object(self.processor, '_identify_target_tool_from_suggestion', new_callable=AsyncMock, return_value=None) as mock_identify:
+            await self.processor.process_pending_suggestions(limit=1)
+            mock_identify.assert_called_once_with("Vague improvement idea.")
+            self.mock_action_executor.execute_action.assert_not_called()
+
+    async def test_process_pending_suggestions_no_pending_tool_improvements(self):
+        self.mock_list_suggestions.return_value = [
+            {"suggestion_id": "sugg_id_3", "type": "ui_improvement", "description": "Better colors.", "status": "pending"},
+            {"suggestion_id": "sugg_id_4", "type": "tool_improvement", "description": "Fix tool X.", "status": "approved"}
+        ]
+        await self.processor.process_pending_suggestions(limit=5)
+        # _identify_target_tool_from_suggestion should not even be called if no suitable suggestions
+        # So, no need to patch it here explicitly for this expectation.
+        self.mock_action_executor.execute_action.assert_not_called()
+
+
+# Basic async test runner
+def run_async_tests(test_case_class): # pragma: no cover
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    asyncio.set_event_loop(loop)
+    suite = unittest.TestSuite()
+
+    async_test_methods = []
+    sync_test_method_names = []
+
+    for name in dir(test_case_class):
+        if name.startswith("test_"):
+            method = getattr(test_case_class, name)
+            if asyncio.iscoroutinefunction(method):
+                async_test_methods.append(name)
+            else:
+                sync_test_method_names.append(name)
+
+    # Add synchronous tests to the suite
+    for name in sync_test_method_names:
+        suite.addTest(test_case_class(name))
+
+    if suite.countTestCases() > 0:
+        print(f"Running {suite.countTestCases()} synchronous tests for {test_case_class.__name__}...")
+        runner_sync = unittest.TextTestRunner()
+        runner_sync.run(suite)
+
+    if async_test_methods:
+        print(f"\nRunning {len(async_test_methods)} asynchronous tests for {test_case_class.__name__}...")
+        test_instance = test_case_class()
+
+        async def run_all_async_on_instance():
+            if hasattr(test_instance, 'setUp'):
+                test_instance.setUp()
+            try:
+                for name in async_test_methods:
+                    # print(f"  Running async test: {name}")
+                    await getattr(test_instance, name)()
+            finally:
+                if hasattr(test_instance, 'tearDown'):
+                    test_instance.tearDown()
+
+        try:
+            loop.run_until_complete(run_all_async_on_instance())
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+if __name__ == '__main__': # pragma: no cover
+    run_async_tests(TestSuggestionProcessor)
+
+[end of tests/test_suggestion_processor.py]
+
+[start of tests/utils/test_conversational_helpers.py]
+import unittest
+from unittest.mock import AsyncMock, MagicMock
+import json
+from typing import List, Dict, Any, Optional
+import asyncio # Required for running async tests if not using IsolatedAsyncioTestCase in some environments
+
+try:
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
+    from ai_assistant.llm_interface.ollama_client import OllamaProvider
+    from ai_assistant.config import get_model_for_task
+except ImportError: # pragma: no cover
+    import sys
+    import os
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
+    from ai_assistant.llm_interface.ollama_client import OllamaProvider
+    from ai_assistant.config import get_model_for_task
+
+
+class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
+
+    def setUp(self):
+        self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
+        self.captured_prompt = None
+        self.captured_model_name = None
+        self.captured_temperature = None
+
+        # Default side effect for invoke_ollama_model_async
+        async def default_mock_invoke_side_effect(prompt, model_name, temperature):
+            self.captured_prompt = prompt
+            self.captured_model_name = model_name
+            self.captured_temperature = temperature
+            if "User-friendly explanation:" in prompt: # Heuristic for rephrase error prompt
+                 return "Default rephrased error from mock LLM."
+            return "Default conversational summary from mock LLM."
+
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = default_mock_invoke_side_effect
+
+        # Patch get_model_for_task
+        self.get_model_patcher = patch('ai_assistant.utils.conversational_helpers.get_model_for_task')
+        self.mock_get_model_for_task = self.get_model_patcher.start()
+        # Default behavior for get_model_for_task, can be overridden per test
+        self.mock_get_model_for_task.side_effect = lambda task_type: f"mock_model_for_{task_type}"
+
+    def tearDown(self):
+        self.get_model_patcher.stop()
+
+    async def test_summarize_success_simple_result(self):
+        plan = [{"tool_name": "get_weather", "args": ("London",), "kwargs": {}}]
+        results = ["The weather in London is sunny."]
+        query = "Weather in London?"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It's sunny in London today!"
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "It's sunny in London today!")
+        self.assertIn(query, self.captured_prompt)
+        self.assertIn("Step 1: Ran tool 'get_weather' with args ('London',) and kwargs {}. Result: The weather in London is sunny.", self.captured_prompt)
+        self.assertIn("Overall outcome of the attempt: Succeeded", self.captured_prompt)
+        self.assertEqual(self.captured_temperature, 0.6) # Default temp
+
+    async def test_summarize_failure_with_exception(self):
+        plan = [{"tool_name": "divide_numbers", "args": (10, 0), "kwargs": {}}]
+        results = [ZeroDivisionError("division by zero")]
+        query = "10/0"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It looks like there was an attempt to divide by zero, which isn't possible."
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, False, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "It looks like there was an attempt to divide by zero, which isn't possible.")
+        self.assertIn("Result: Error: ZeroDivisionError: division by zero", self.captured_prompt)
+        self.assertIn("Overall outcome of the attempt: Failed", self.captured_prompt)
+
+    async def test_summarize_complex_dict_result_no_summary_str(self):
+        plan = [{"tool_name": "get_user_details", "args": ("user123",), "kwargs": {}}]
+        results = [{"id": "user123", "name": "John Doe", "email": "john@example.com", "prefs": {"theme": "dark", "notifications": "daily"}}]
+        query = "User details for user123"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "I found details for John Doe, including their email and preferences."
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "I found details for John Doe, including their email and preferences.")
+        self.assertIn("Output data (dict with 4 keys: ['id', 'name', 'email']...)", self.captured_prompt)
+
+    async def test_summarize_complex_dict_result_with_summary_str(self):
+        plan = [{"tool_name": "get_user_details_v2", "args": ("user456",), "kwargs": {}}]
+        results = [{"id": "user456", "name": "Jane Doe", "summary_str": "User Jane Doe, premium member since 2022."}]
+        query = "User details for user456"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "User Jane Doe is a premium member since 2022."
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "User Jane Doe is a premium member since 2022.")
+        self.assertIn("Result: User Jane Doe, premium member since 2022.", self.captured_prompt)
+
+
+    async def test_summarize_llm_call_fails_returns_none(self):
+        plan = [{"tool_name": "get_weather", "args": ("Paris",), "kwargs": {}}]
+        results = ["Cloudy"]
+        query = "Weather in Paris?"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = None # Simulate LLM returning None
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "I've processed your request.")
+
+    async def test_summarize_llm_call_raises_exception(self):
+        plan = [{"tool_name": "get_weather", "args": ("Berlin",), "kwargs": {}}]
+        results = ["Rainy"]
+        query = "Weather in Berlin?"
+
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM network error")
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+        self.assertEqual(summary, "I have processed your request. The detailed technical summary is available if needed.")
+
+    async def test_actions_results_formatting_long_strings_and_lists(self):
+        plan = [
+            {"tool_name": "read_long_file", "args": ("big.txt",), "kwargs": {}},
+            {"tool_name": "get_list_items", "args": (), "kwargs": {}}
+        ]
+        long_string = "abcdefghijklmnopqrstuvwxyz" * 10 # 260 chars
+        list_data = [f"item_{i}" for i in range(10)]
+        results = [long_string, list_data]
+        query = "Process long data"
+
+        await summarize_tool_result_conversationally(
+            query, plan, results, True, self.mock_llm_provider
+        )
+
+        self.assertIn(f"Result: {long_string[:147]}...", self.captured_prompt)
+        self.assertIn(f"Result: Output data (list with 10 items: {str(list_data[:3])[:100]}...)", self.captured_prompt)
+
+    async def test_no_actions_taken(self):
+        plan = []
+        results = []
+        query = "Do I exist?"
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It seems no actions were taken for your request."
+
+        summary = await summarize_tool_result_conversationally(
+            query, plan, results, False, self.mock_llm_provider # Success False if no plan can be made
+        )
+        self.assertEqual(summary, "It seems no actions were taken for your request.")
+        self.assertIn("Actions and Results:\nNo actions were taken.", self.captured_prompt)
+        self.assertIn("Overall outcome of the attempt: Failed", self.captured_prompt)
+
+    # --- Tests for rephrase_error_message_conversationally ---
+
+    async def test_rephrase_error_success(self):
+        technical_error = "Tool 'example_tool' raised ValueError: Invalid input."
+        original_query = "Run example tool with test data."
+        expected_rephrased_message = "It seems there was an issue with the 'example_tool'; it received invalid input."
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased_message
+        self.mock_get_model_for_task.return_value = "rephrase_model" # Specific model for this test
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        self.assertEqual(rephrased_message, expected_rephrased_message)
+        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
+        self.assertIn(technical_error, self.captured_prompt)
+        self.assertIn(original_query, self.captured_prompt)
+        self.assertEqual(self.captured_model_name, "rephrase_model")
+        self.assertEqual(self.captured_temperature, 0.5)
+
+    async def test_rephrase_error_llm_returns_empty_uses_fallback(self):
+        technical_error = "Database connection timeout."
+        original_query = "Fetch user data."
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # LLM returns empty
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        expected_fallback = f"I encountered an issue processing your request for '{original_query}'. The technical details are: {technical_error}"
+        self.assertEqual(rephrased_message, expected_fallback)
+
+    async def test_rephrase_error_llm_raises_exception_uses_fallback(self):
+        technical_error = "NetworkError: Unreachable host."
+        original_query = "Get external resource."
+        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM service unavailable")
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, original_query, self.mock_llm_provider
+        )
+
+        expected_fallback = f"I ran into a problem with your request for '{original_query}'. The specific technical error was: {technical_error}"
+        self.assertEqual(rephrased_message, expected_fallback)
+
+    async def test_rephrase_error_no_technical_message_returns_generic_error(self):
+        rephrased_message = await rephrase_error_message_conversationally(
+            "", "Any query", self.mock_llm_provider
+        )
+        self.assertEqual(rephrased_message, "An unexpected issue occurred, but no specific error message was available.")
+        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called() # LLM should not be called
+
+    async def test_rephrase_error_no_original_query_still_works(self):
+        technical_error = "Some error"
+        expected_rephrased = "Rephrased: Some error"
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased
+
+        rephrased_message = await rephrase_error_message_conversationally(
+            technical_error, None, self.mock_llm_provider
+        )
+        self.assertEqual(rephrased_message, expected_rephrased)
+        self.assertIn("User's original request: an unspecified task", self.captured_prompt)
+
+    async def test_rephrase_error_model_fallback_logic(self):
+        technical_error = "Test model fallback"
+        original_query = "Testing model selection"
+        expected_response = "Model fallback test successful."
+
+        # Simulate get_model_for_task returning None for "error_rephrasing" then for "conversational_response"
+        self.mock_get_model_for_task.side_effect = ["error_rephrasing_model", None, "conversational_model", None, "final_fallback_model"]
+
+        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_response
+
+        # First call, should use "error_rephrasing_model"
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "error_rephrasing_model")
+
+        # Second call, "error_rephrasing" model not found, should use "conversational_model"
+        self.mock_get_model_for_task.side_effect = [None, "conversational_model"] # Reset side_effect for this call
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "conversational_model")
+
+        # Third call, "error_rephrasing" & "conversational_response" not found, should use hardcoded "mistral"
+        self.mock_get_model_for_task.side_effect = [None, None] # Reset side_effect
+        await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
+        self.assertEqual(self.captured_model_name, "mistral") # Default hardcoded in the function
+
+
+if __name__ == '__main__': # pragma: no cover
+    unittest.main()
+```
+
+[end of tests/utils/test_conversational_helpers.py]

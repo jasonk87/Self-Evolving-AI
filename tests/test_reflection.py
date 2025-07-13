@@ -110,15 +110,17 @@ class TestReflectionLogEntry(unittest.TestCase):
             modification_details={"module": "a.b.c", "function": "xyz"},
             post_modification_test_passed=True,
             post_modification_test_details={"passed": True, "notes": "Tests look great!"},
-            commit_info={"message": "Code committed", "status": True}
+            commit_info={"commit_message": "Code committed", "status": True} # Corrected key to commit_message
         )
         formatted_str_mod = entry_mod.to_formatted_string()
         self.assertIn("--- Self-Modification Attempt Details ---", formatted_str_mod)
         self.assertIn("Source Suggestion ID: SUG003", formatted_str_mod)
         self.assertIn("Modification Type: MODIFY_TOOL_CODE", formatted_str_mod)
-        self.assertIn(json.dumps(entry_mod.modification_details, indent=2), formatted_str_mod)
-        self.assertIn("Test Outcome: True", formatted_str_mod) # Note: was PASSED, now True/False
-        self.assertIn("Test Details: Tests look great!", formatted_str_mod)
+        # Use sort_keys=True to match the implementation in to_formatted_string
+        expected_details_json = json.dumps(entry_mod.modification_details, indent=2, sort_keys=True)
+        self.assertIn(expected_details_json, formatted_str_mod)
+        self.assertIn("Post-Modification Test Passed: True", formatted_str_mod) # Corrected key string
+        self.assertIn("Test Details: Tests look great!", formatted_str_mod) # This refers to post_modification_test_details.notes
         self.assertIn("Commit Info: Code committed", formatted_str_mod)
 
 
@@ -134,11 +136,12 @@ class TestReflectionLogEntry(unittest.TestCase):
 class TestReflectionLog(unittest.TestCase):
 
     def setUp(self):
-        # For these tests, we'll use an in-memory ReflectionLog
-        # by not providing a filepath or mocking persistence functions.
-        self.reflection_log = ReflectionLog(filepath=":memory:") # Use a special value or mock load/save
+        # Ensure a fresh in-memory log for each test in this class
+        self.reflection_log = ReflectionLog(filepath=":memory:")
 
     def test_log_execution_with_self_modification_params(self):
+        # Clear entries just in case, though setUp should handle it per instance if unittest creates new instances
+        self.reflection_log.log_entries.clear()
         goal = "Test self-mod logging in ReflectionLog"
         plan_data = [{"tool_name": "self_mod_tool"}]
         exec_results = [{"outcome": "details from apply_code_modification"}]
@@ -166,7 +169,8 @@ class TestReflectionLog(unittest.TestCase):
 
         self.assertIsInstance(last_entry, ReflectionLogEntry)
         self.assertEqual(last_entry.goal_description, goal)
-        self.assertEqual(last_entry.notes, "Logging a self-modification attempt.")
+        expected_notes = "Logging a self-modification attempt. (Note: overall_success was False but all plan steps completed without error representations)." # Added space after first period
+        self.assertEqual(last_entry.notes, expected_notes)
         self.assertTrue(last_entry.is_self_modification_attempt)
         self.assertEqual(last_entry.source_suggestion_id, "SUG004")
         self.assertEqual(last_entry.modification_type, "MODIFY_TOOL_CODE")

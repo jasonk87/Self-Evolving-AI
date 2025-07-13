@@ -3,6 +3,10 @@ from typing import Optional, Dict, Any, List
 from enum import Enum, auto
 import uuid
 from datetime import datetime, timezone
+import logging # Added logging import
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 class ActiveTaskStatus(Enum):
     INITIALIZING = auto()
@@ -258,7 +262,7 @@ class TaskManager:
         )
         self._active_tasks[new_task.task_id] = new_task
         self._save_active_tasks()
-        log_msg = f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})"
+        log_msg = f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})" # Changed task_type['name'] to task_type.name
         print(log_msg)
         logger.info(log_msg) # Also log to standard logger
 
@@ -361,7 +365,7 @@ class TaskManager:
             ]
 
             # Progress Notification for Projects
-            if task.task_type in [ActiveTaskType.USER_PROJECT_CREATION, ActiveTaskType.HIERARCHICAL_PLAN_EXECUTION] \
+            if task.task_type in [ActiveTaskType.USER_PROJECT_CREATION, ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION] \
                and new_status == ActiveTaskStatus.EXECUTING_PROJECT_PLAN \
                and resume_data and resume_data.get("plan_step_update") \
                and self.notification_manager:

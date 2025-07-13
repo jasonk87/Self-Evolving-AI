@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
+import asyncio # Added import for asyncio.sleep
 
 # Adjust path to import from the ai_assistant directory
 # This assumes 'tests' is at the same level as 'ai_assistant'
@@ -124,15 +125,20 @@ class TestNotificationManager(unittest.TestCase):
         self.assertEqual(notification.summary_message, truncated_summary)
 
     def test_get_notifications_filters_and_limits_and_sorts(self):
-        # Timestamps are important for sorting
-        time_now = datetime.now(timezone.utc)
-        n1 = self.manager.add_notification(NotificationType.GENERAL_INFO, "Info Unread", timestamp=time_now - timedelta(seconds=30))
-        n2 = self.manager.add_notification(NotificationType.WARNING, "Warn Unread", timestamp=time_now - timedelta(seconds=20))
-        n3 = self.manager.add_notification(NotificationType.GENERAL_INFO, "Info Read", timestamp=time_now - timedelta(seconds=10))
-        n4 = self.manager.add_notification(NotificationType.ERROR, "Error Archived", timestamp=time_now)
+        # Timestamps are important for sorting. Order of addition will determine initial timestamp.
+        # We will rely on status updates to modify timestamps for sorting tests.
+        n1 = self.manager.add_notification(NotificationType.GENERAL_INFO, "Info Unread 1 (oldest unread)")
+        asyncio.run(asyncio.sleep(0.01)) # Ensure slight time difference for sorting
+        n2 = self.manager.add_notification(NotificationType.WARNING, "Warn Unread 2 (middle unread)")
+        asyncio.run(asyncio.sleep(0.01))
+        n3 = self.manager.add_notification(NotificationType.GENERAL_INFO, "Info ToBeRead 3")
+        asyncio.run(asyncio.sleep(0.01))
+        n4 = self.manager.add_notification(NotificationType.ERROR, "Error ToBeArchived 4 (newest overall)")
 
-        self.manager.mark_as_read([n3.notification_id])
-        self.manager.mark_as_archived([n4.notification_id])
+        # Now update statuses, which also updates timestamps
+        self.manager.mark_as_read([n3.notification_id]) # n3 becomes read, its timestamp updated
+        asyncio.run(asyncio.sleep(0.01)) # Ensure n4's archive timestamp is newest
+        self.manager.mark_as_archived([n4.notification_id]) # n4 becomes archived, its timestamp updated (newest)
 
         # Default: UNREAD, limit 10
         unread_notifications = self.manager.get_notifications()
@@ -160,13 +166,15 @@ class TestNotificationManager(unittest.TestCase):
         self.assertEqual(len(limited_unread), 1)
         self.assertEqual(limited_unread[0].notification_id, n2.notification_id) # Newest unread
 
-        # All (status_filter=None), sorted by timestamp (newest from add_notification)
+        # All (status_filter=None), sorted by timestamp (newest from add_notification or status update)
         all_notifications = self.manager.get_notifications(status_filter=None, limit=4)
         self.assertEqual(len(all_notifications), 4)
-        # Order after status updates and their timestamp changes: n4 (archived, newest), n3 (read, newer), n2 (unread), n1 (unread, oldest)
+        # Order after status updates and their timestamp changes:
+        # n4 (archived, newest timestamp), n3 (read, timestamp updated after n2), n2 (unread), n1 (unread, oldest timestamp)
         self.assertEqual(all_notifications[0].notification_id, n4.notification_id)
-        self.assertEqual(all_loaded[1].notification_id, n3.notification_id) # Using all_loaded from test_save_load_cycle
-        self.assertEqual(all_loaded[2].notification_id, n2.notification_id)
+        self.assertEqual(all_notifications[1].notification_id, n3.notification_id)
+        self.assertEqual(all_notifications[2].notification_id, n2.notification_id)
+        self.assertEqual(all_notifications[3].notification_id, n1.notification_id)
 
 
     def test_mark_as_read_updates_status_and_saves(self):
@@ -218,21 +226,24 @@ class TestNotificationManager(unittest.TestCase):
         t1 = datetime.now(timezone.utc) - timedelta(days=1)
         t2 = datetime.now(timezone.utc)
 
-        n1_orig = Notification(NotificationType.TASK_COMPLETED_SUCCESSFULLY, "Task A done", "id_task_a", t1, NotificationStatus.READ, "taskA", "task", {"detail1": "value1"})
-        n2_orig = Notification(NotificationType.NEW_SUGGESTION_AI, "Suggest B", "id_sugg_b", t2, NotificationStatus.UNREAD, "suggB", "suggestion")
+        n1_orig = Notification(event_type=NotificationType.TASK_COMPLETED_SUCCESSFULLY, summary_message="Task A done", related_item_id="id_task_a", timestamp=t1, status=NotificationStatus.READ, related_item_type="task", details_payload={"detail1": "value1"})
+        n2_orig = Notification(event_type=NotificationType.NEW_SUGGESTION_CREATED_AI, summary_message="Suggest B", related_item_id="id_sugg_b", timestamp=t2, status=NotificationStatus.UNREAD, related_item_type="suggestion")
 
         # Manually add to manager's list to control timestamps precisely for this test
-        self.manager.notifications = [n2_orig, n1_orig] # n2 is newer
+        # Order here matters for _save_notifications initial state if it doesn't re-sort before serializing.
+        # The _save_notifications method *does* sort by timestamp desc.
+        self.manager.notifications = [n2_orig, n1_orig]
         self.manager._save_notifications() # This will sort them: n2, n1
 
         # Capture what was written
-        # mock_open().write() is called within json.dump, so we check the first call to open('w')
-        # and its arguments. The actual content is on the handler.
-        # Ensure the path is correct.
         self.mocked_open_function.assert_called_with(self.test_filepath, 'w', encoding='utf-8')
-        written_content = self.mocked_open_function().write.call_args[0][0]
+
+        # Consolidate all data passed to write calls by json.dump
+        all_written_parts = [call_args[0][0] for call_args in self.mocked_open_function().write.call_args_list]
+        written_content = "".join(all_written_parts)
 
         # Setup for load: new manager, mock 'open' to read the captured content
+        # Important: reset the main mock for 'open' so it can be configured for reading
         self.mocked_open_function.reset_mock()
         mock_read_handler = mock_open(read_data=written_content)
         self.mocked_open_function.side_effect = mock_read_handler # Use side_effect for subsequent calls

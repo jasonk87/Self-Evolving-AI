@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch # Added patch
 import json
 from typing import List, Dict, Any, Optional
 import asyncio # Required for running async tests if not using IsolatedAsyncioTestCase in some environments
@@ -249,4 +249,3 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__': # pragma: no cover
     unittest.main()
-```

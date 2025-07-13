@@ -7,6 +7,7 @@ import sys
 import uuid
 import datetime
 from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any # Added Optional, List, Dict, Any
 
 try:
     from ai_assistant.execution.action_executor import ActionExecutor

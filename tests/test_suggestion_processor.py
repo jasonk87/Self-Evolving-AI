@@ -229,4 +229,3 @@ def run_async_tests(test_case_class): # pragma: no cover
 
 if __name__ == '__main__': # pragma: no cover
     run_async_tests(TestSuggestionProcessor)
-```

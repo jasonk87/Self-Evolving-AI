@@ -3,7 +3,7 @@ import requests
 import json
 from typing import Optional, Dict, Union, Tuple, Any, List
 import asyncio
-import aiohttp
+import aiohttp # Verified import
 import os
 
 from ai_assistant.config import (

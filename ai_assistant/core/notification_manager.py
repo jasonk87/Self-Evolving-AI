@@ -27,6 +27,7 @@ class NotificationStatus(Enum):
 
 class NotificationType(Enum):
     # Task related
+    TASK_CREATED = auto() # Added to track task creation events
     TASK_COMPLETED_SUCCESSFULLY = auto()
     TASK_FAILED_PRE_REVIEW = auto()
     TASK_FAILED_CRITIC_REVIEW = auto()

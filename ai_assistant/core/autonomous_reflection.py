@@ -1323,9 +1323,6 @@ if __name__ == '__main__':
                 "revert_outcome": {"status": True, "message": "Reverted"}
             }
             
-                revert_outcome": {"status": True, "message": "Reverted"}
-            }
-
             # Test with a suggestion that would be chosen if MTC was the only type
             mtc_failure_suggestions = [s for s in mock_suggestions_for_select_test if s["suggestion_id"] == "MTC001"]
 
@@ -1477,5 +1474,3 @@ if __name__ == '__main__':
     asyncio.run(run_select_suggestion_test_aip_fail_criteria())
             
     print("\n--- select_suggestion_for_autonomous_action tests complete ---")
-
-[end of ai_assistant/core/autonomous_reflection.py]

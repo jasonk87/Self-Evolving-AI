@@ -63,7 +63,7 @@ class TestTaskManagerPersistence(unittest.TestCase):
 
     def test_02_add_task_saves_to_file(self):
         tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
-        task = tm.add_task(ActiveTaskType.AGENT_TOOL_CREATION, "Test add task")
+        task = tm.add_task(description="Test add task", task_type=ActiveTaskType.AGENT_TOOL_CREATION)
 
         self.assertTrue(os.path.exists(self.active_tasks_filepath))
         saved_data = self._read_json_file(self.active_tasks_filepath)
@@ -74,7 +74,7 @@ class TestTaskManagerPersistence(unittest.TestCase):
 
     def test_03_update_task_status_saves_to_file(self):
         tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
-        task = tm.add_task(ActiveTaskType.AGENT_TOOL_MODIFICATION, "Test update task")
+        task = tm.add_task(description="Test update task", task_type=ActiveTaskType.AGENT_TOOL_MODIFICATION)
 
         tm.update_task_status(
             task.task_id, ActiveTaskStatus.PLANNING,
@@ -106,8 +106,8 @@ class TestTaskManagerPersistence(unittest.TestCase):
 
     def test_04_archive_task_updates_active_tasks_file(self):
         tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
-        task1 = tm.add_task(ActiveTaskType.LEARNING_NEW_FACT, "Task to be archived")
-        task2 = tm.add_task(ActiveTaskType.MISC_CODE_GENERATION, "Task to remain active")
+        task1 = tm.add_task(description="Task to be archived", task_type=ActiveTaskType.LEARNING_NEW_FACT)
+        task2 = tm.add_task(description="Task to remain active", task_type=ActiveTaskType.MISC_CODE_GENERATION)
 
         # Trigger archiving for task1
         tm.update_task_status(task1.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY)
@@ -213,7 +213,7 @@ class TestTaskManagerPersistence(unittest.TestCase):
 
     def test_08_clear_all_tasks_saves_empty_list(self):
         tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
-        tm.add_task(ActiveTaskType.AGENT_TOOL_CREATION, "Task to be cleared")
+        tm.add_task(description="Task to be cleared", task_type=ActiveTaskType.AGENT_TOOL_CREATION)
 
         saved_data_before_clear = self._read_json_file(self.active_tasks_filepath)
         self.assertEqual(len(saved_data_before_clear), 1)
@@ -282,7 +282,7 @@ if __name__ == '__main__': # pragma: no cover
         user_goal = "Test hierarchical updates"
         project_plan = self._get_sample_project_plan(num_steps)
         details = {"user_goal": user_goal, "project_plan": project_plan}
-        return tm.add_task(ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION, "Hierarchical Update Task", details=details)
+        return tm.add_task(description="Hierarchical Update Task", task_type=ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION, details=details)
 
     def test_update_hierarchical_task_step_success_ongoing(self):
         tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
