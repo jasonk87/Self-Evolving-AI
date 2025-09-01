@@ -98,6 +98,58 @@ class PlannerAgent:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         displayed_code_content: Optional[str] = None
     ) -> Dict[str, Any]: # New return type
+        # Hard-coded plan to show the dashboard
+        if goal_description == "Show the system status dashboard":
+            print("PlannerAgent: Detected special prompt for showing dashboard. Generating hard-coded plan.")
+            show_dashboard_plan = [
+                {
+                    "tool_name": "get_dashboard_html",
+                    "args": [],
+                    "kwargs": {},
+                    "description": "Get the HTML for the system status dashboard.",
+                    "reasoning": "This tool provides the UI content for the dashboard."
+                },
+                {
+                    "tool_name": "display_html_content_in_project_area",
+                    "args": ["[[step_1_output]]"],
+                    "kwargs": {},
+                    "description": "Display the dashboard HTML in the UI.",
+                    "reasoning": "This renders the dashboard UI for the user."
+                }
+            ]
+            return {"plan": show_dashboard_plan, "clarification_question": None, "error_message": None}
+
+        # Hard-coded plan for the interactive dashboard feature
+        if goal_description == "Update system status dashboard":
+            print("PlannerAgent: Detected special prompt for dashboard update. Generating hard-coded plan.")
+            dashboard_plan = [
+                {
+                    "tool_name": "get_system_status",
+                    "args": [],
+                    "kwargs": {},
+                    "description": "Get the latest system status.",
+                    "reasoning": "Initial step to fetch the data for the dashboard."
+                },
+                {
+                    "tool_name": "format_status_as_html",
+                    "args": ["[[step_1_output]]"],
+                    "kwargs": {},
+                    "description": "Format the status data into HTML.",
+                    "reasoning": "The status data needs to be in HTML format to be displayed."
+                },
+                {
+                    "tool_name": "modify_displayed_html_content",
+                    "args": [
+                        "<p><i>Requesting status from AI...</i></p>",
+                        "[[step_2_output]]"
+                    ],
+                    "kwargs": {},
+                    "description": "Update the dashboard with the new status HTML.",
+                    "reasoning": "This replaces the temporary 'loading' message with the actual status information."
+                }
+            ]
+            return {"plan": dashboard_plan, "clarification_question": None, "error_message": None}
+
         import json
 
         MAX_CORRECTION_ATTEMPTS = 1
