@@ -6,7 +6,7 @@ import json
 import os # Added
 import re
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from .notification_manager import NotificationManager # Added import
 from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle

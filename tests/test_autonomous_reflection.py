@@ -1,6 +1,7 @@
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call, AsyncMock
 import json
+import asyncio
 
 # Assuming the module structure allows this import path
 from ai_assistant.core.autonomous_reflection import (
@@ -48,57 +49,69 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         }
 
     @patch('ai_assistant.core.reflection.global_reflection_log.log_execution')
-    @patch('ai_assistant.learning.evolution.apply_code_modification')
+    @patch('ai_assistant.core.autonomous_reflection.apply_code_modification', new_callable=AsyncMock)
     def test_select_suggestion_logs_self_modification_details_on_success(self, mock_apply_code, mock_log_exec):
-        mock_apply_return = {
-            "overall_status": True, "overall_message": "All good, code modified and committed.",
-            "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
-            "test_outcome": {"passed": True, "stdout": "All tests passed.", "stderr": "", "notes": "Tests ran successfully."},
-            "revert_outcome": None,
-            "commit_outcome": {"status": True, "commit_message_generated": "AI Autocommit: Modified sample_tool_function...", "error_message": None}
-        }
-        mock_apply_code.return_value = mock_apply_return
+        async def run_test():
+            mock_apply_return = {
+                "overall_status": True, "overall_message": "All good, code modified and committed.",
+                "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
+                "test_outcome": {"passed": True, "stdout": "All tests passed.", "stderr": "", "notes": "Tests ran successfully."},
+                "revert_outcome": None,
+                "commit_outcome": {"status": True, "commit_message_generated": "AI Autocommit: Modified sample_tool_function...", "error_message": None}
+            }
+            mock_apply_code.return_value = mock_apply_return
 
-        select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
+            await select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
+
+            mock_log_exec.assert_called_once()
+            call_kwargs = mock_log_exec.call_args[1]
+
+            self.assertTrue(call_kwargs['is_self_modification_attempt'])
+            self.assertEqual(call_kwargs['source_suggestion_id'], self.sample_suggestion_for_modify['suggestion_id'])
+            self.assertEqual(call_kwargs['modification_type'], "MODIFY_TOOL_CODE")
+            self.assertEqual(call_kwargs['post_modification_test_passed'], True)
+            self.assertEqual(call_kwargs['post_modification_test_details'], mock_apply_return['test_outcome'])
         
-        mock_log_exec.assert_called_once()
-        call_kwargs = mock_log_exec.call_args[1]
+            # Check commit_info by reconstructing the expected transformed dict
+            expected_commit_info = {
+                "message": mock_apply_return['commit_outcome']['commit_message_generated'],
+                "status": mock_apply_return['commit_outcome']['status'],
+                "error": mock_apply_return['commit_outcome']['error_message']
+            }
+            self.assertEqual(call_kwargs['commit_info'], expected_commit_info)
 
-        self.assertTrue(call_kwargs['is_self_modification_attempt'])
-        self.assertEqual(call_kwargs['source_suggestion_id'], self.sample_suggestion_for_modify['suggestion_id'])
-        self.assertEqual(call_kwargs['modification_type'], "MODIFY_TOOL_CODE")
-        self.assertEqual(call_kwargs['post_modification_test_passed'], True)
-        self.assertEqual(call_kwargs['post_modification_test_details'], mock_apply_return['test_outcome'])
-        self.assertEqual(call_kwargs['commit_info'], mock_apply_return['commit_outcome'])
-        self.assertTrue(call_kwargs['overall_success']) # Based on mock_apply_return['overall_status']
-        self.assertIn("Self-modification attempt for suggestion SUG_MODIFY_001", call_kwargs['goal_description'])
-        self.assertEqual(call_kwargs['notes'], mock_apply_return['overall_message'])
-        self.assertEqual(call_kwargs['modification_details']['module'], self.sample_suggestion_for_modify['action_details']['module_path'])
+            self.assertTrue(call_kwargs['overall_success']) # Based on mock_apply_return['overall_status']
+            self.assertIn("Self-modification attempt for suggestion SUG_MODIFY_001", call_kwargs['goal_description'])
+            self.assertEqual(call_kwargs['notes'], mock_apply_return['overall_message'])
+            self.assertEqual(call_kwargs['modification_details']['module'], self.sample_suggestion_for_modify['action_details']['module_path'])
+        asyncio.run(run_test())
 
     @patch('ai_assistant.core.reflection.global_reflection_log.log_execution')
-    @patch('ai_assistant.learning.evolution.apply_code_modification')
+    @patch('ai_assistant.core.autonomous_reflection.apply_code_modification', new_callable=AsyncMock)
     def test_select_suggestion_logs_self_modification_details_on_test_failure(self, mock_apply_code, mock_log_exec):
-        mock_apply_return_test_fail = {
-            "overall_status": False, "overall_message": "Tests failed, reverted.",
-            "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
-            "test_outcome": {"passed": False, "stdout": "", "stderr": "AssertionError: 1 != 2", "notes": "Test failed."},
-            "revert_outcome": {"status": True, "message": "Reverted successfully."},
-            "commit_outcome": None 
-        }
-        mock_apply_code.return_value = mock_apply_return_test_fail
+        async def run_test():
+            mock_apply_return_test_fail = {
+                "overall_status": False, "overall_message": "Tests failed, reverted.",
+                "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
+                "test_outcome": {"passed": False, "stdout": "", "stderr": "AssertionError: 1 != 2", "notes": "Test failed."},
+                "revert_outcome": {"status": True, "message": "Reverted successfully."},
+                "commit_outcome": None
+            }
+            mock_apply_code.return_value = mock_apply_return_test_fail
 
-        select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
-        
-        mock_log_exec.assert_called_once()
-        call_kwargs = mock_log_exec.call_args[1]
+            await select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
 
-        self.assertTrue(call_kwargs['is_self_modification_attempt'])
-        self.assertEqual(call_kwargs['source_suggestion_id'], self.sample_suggestion_for_modify['suggestion_id'])
-        self.assertEqual(call_kwargs['post_modification_test_passed'], False)
-        self.assertEqual(call_kwargs['post_modification_test_details'], mock_apply_return_test_fail['test_outcome'])
-        self.assertIsNone(call_kwargs['commit_info']) # No commit if tests fail
-        self.assertFalse(call_kwargs['overall_success'])
-        self.assertEqual(call_kwargs['notes'], mock_apply_return_test_fail['overall_message'])
+            mock_log_exec.assert_called_once()
+            call_kwargs = mock_log_exec.call_args[1]
+
+            self.assertTrue(call_kwargs['is_self_modification_attempt'])
+            self.assertEqual(call_kwargs['source_suggestion_id'], self.sample_suggestion_for_modify['suggestion_id'])
+            self.assertEqual(call_kwargs['post_modification_test_passed'], False)
+            self.assertEqual(call_kwargs['post_modification_test_details'], mock_apply_return_test_fail['test_outcome'])
+            self.assertIsNone(call_kwargs['commit_info']) # No commit if tests fail
+            self.assertFalse(call_kwargs['overall_success'])
+            self.assertEqual(call_kwargs['notes'], mock_apply_return_test_fail['overall_message'])
+        asyncio.run(run_test())
 
     @patch('ai_assistant.core.reflection.global_reflection_log.get_entries')
     def test_get_summary_includes_self_modification(self, mock_get_entries):
@@ -144,6 +157,7 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         from ai_assistant.core.autonomous_reflection import _invoke_suggestion_generation_llm
         _invoke_suggestion_generation_llm(
             identified_patterns_json_list_str=json.dumps(sample_patterns),
+            performance_observations_json_list_str='[]',
             available_tools_json_str=json.dumps(sample_tools),
             llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST
         )
@@ -152,13 +166,13 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         prompt_arg = mock_invoke_ollama.call_args[0][0]
 
         # Check for key phrases from the updated MODIFY_TOOL_CODE example in the prompt
-        self.assertIn('"module_path": "path.to.your.module"', prompt_arg)
-        self.assertIn('"function_name": "function_to_modify"', prompt_arg)
-        self.assertIn('"suggested_code_change": "def function_to_modify(param1, param2):', prompt_arg)
-        self.assertIn("New, complete function code here", prompt_arg)
-        self.assertIn('"original_code_snippet": "(Optional) Few lines of the original code for context', prompt_arg)
-        self.assertIn('"suggested_change_description": "Detailed textual description of what was changed and why, suitable for a commit message body."', prompt_arg)
-        self.assertIn("For MODIFY_TOOL_CODE, 'module_path', 'function_name', and 'suggested_code_change' (the new complete function source code) are mandatory.", prompt_arg)
+        self.assertIn('"module_path": "path.to.module"', prompt_arg)
+        self.assertIn('"function_name": "func_name"', prompt_arg)
+        self.assertIn('"suggested_code_change": "full new code for function"', prompt_arg)
+        self.assertIn('"original_code_snippet": "(optional)"', prompt_arg)
+        self.assertIn('"suggested_change_description": "commit message body"', prompt_arg)
+        # The following assertion is from a different, older prompt template. It's no longer relevant.
+        # self.assertIn("For MODIFY_TOOL_CODE, 'module_path', 'function_name', and 'suggested_code_change' (the new complete function source code) are mandatory.", prompt_arg)
 
 
 class TestInvokeSuggestionScoringLLM(unittest.TestCase):
@@ -183,38 +197,41 @@ class TestInvokeSuggestionScoringLLM(unittest.TestCase):
         mock_invoke_ollama.assert_called_once()
         # You could add more assertions here to check the prompt contents if needed, by inspecting mock_invoke_ollama.call_args
 
+    @patch('ai_assistant.core.autonomous_reflection.logger.error')
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_invalid_json(self, mock_print, mock_invoke_ollama):
+    def test_llm_returns_invalid_json(self, mock_invoke_ollama, mock_logger_error):
         mock_invoke_ollama.return_value = "This is not JSON"
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Error decoding JSON from suggestion scoring LLM: Expecting value: line 1 column 1 (char 0). Response: This is not JSON")
+        mock_logger_error.assert_called_once()
+        self.assertIn("Error decoding JSON from suggestion scoring LLM", mock_logger_error.call_args[0][0])
 
+    @patch('ai_assistant.core.autonomous_reflection.logger.warning')
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_json_with_missing_keys(self, mock_print, mock_invoke_ollama):
+    def test_llm_returns_json_with_missing_keys(self, mock_invoke_ollama, mock_logger_warning):
         mock_invoke_ollama.return_value = '{ "impact_score": 4, "risk_score": 2 }' # Missing "effort_score"
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Warning: LLM response for suggestion scoring missing key 'effort_score'. Response: { \"impact_score\": 4, \"risk_score\": 2 }")
+        expected_log_msg = "LLM response for suggestion scoring missing key 'effort_score'. Response: { \"impact_score\": 4, \"risk_score\": 2 }"
+        mock_logger_warning.assert_called_once_with(expected_log_msg)
 
+    @patch('ai_assistant.core.autonomous_reflection.logger.warning')
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_json_with_non_integer_scores(self, mock_print, mock_invoke_ollama):
+    def test_llm_returns_json_with_non_integer_scores(self, mock_invoke_ollama, mock_logger_warning):
         mock_invoke_ollama.return_value = '{ "impact_score": "high", "risk_score": 2, "effort_score": 3 }'
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Warning: LLM response for suggestion scoring key 'impact_score' is not an integer. Value: high. Response: { \"impact_score\": \"high\", \"risk_score\": 2, \"effort_score\": 3 }")
+        expected_log_msg = "LLM response for suggestion scoring key 'impact_score' is not an integer. Value: high. Response: { \"impact_score\": \"high\", \"risk_score\": 2, \"effort_score\": 3 }"
+        mock_logger_warning.assert_called_once_with(expected_log_msg)
 
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
     def test_handling_action_details_present_and_absent(self, mock_invoke_ollama):
@@ -228,26 +245,25 @@ class TestInvokeSuggestionScoringLLM(unittest.TestCase):
         result_with_details = _invoke_suggestion_scoring_llm(suggestion_with_details, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         self.assertIsNotNone(result_with_details)
         
-        # Check if prompt formatting for action_details was as expected (stringified JSON)
         args_with_details, _ = mock_invoke_ollama.call_args
         prompt_with_details = args_with_details[0]
-        self.assertIn('"action_details": {"tool_name": "some_tool", "change": "critical"}', prompt_with_details.replace("\\", "")) # Handle potential escapes
+        expected_details_str = json.dumps(suggestion_with_details['action_details'])
+        self.assertIn(f"Action Details (JSON): {expected_details_str}", prompt_with_details)
 
-        mock_invoke_ollama.reset_mock() # Reset for the next call
+        mock_invoke_ollama.reset_mock()
 
         # Test without action_details (should default to "{}")
         mock_invoke_ollama.return_value = '{ "impact_score": 2, "risk_score": 2, "effort_score": 2 }'
         suggestion_without_details = {
             "suggestion_text": "Test without details", 
             "action_type": "MANUAL_REVIEW_NEEDED"
-            # "action_details": None is implied
         }
         result_without_details = _invoke_suggestion_scoring_llm(suggestion_without_details, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         self.assertIsNotNone(result_without_details)
         
         args_without_details, _ = mock_invoke_ollama.call_args
         prompt_without_details = args_without_details[0]
-        self.assertIn('"action_details_json_str": "{}"', prompt_without_details.replace(" ", "").replace("\\n", "")) # Check for empty JSON object in prompt
+        self.assertIn("Action Details (JSON): {}", prompt_without_details)
 
 
 class TestRunSelfReflectionCycleScoring(unittest.TestCase):
@@ -478,5 +494,74 @@ class TestSelectSuggestionForAutonomousAction(unittest.TestCase):
         self.assertIn(selected["suggestion_id"], ["S1_equal_priority", "S2_equal_priority"])
 
 
+# Basic async test runner
+def run_async_tests(test_case_class): # pragma: no cover
+    # Import asyncio inside the runner function to avoid making it a top-level dependency for the whole file
+    import asyncio
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    suite = unittest.TestSuite()
+
+    async_test_methods = []
+    sync_test_method_names = []
+
+    # Use unittest.loader to find tests, which is more robust
+    loader = unittest.TestLoader()
+    for name in loader.getTestCaseNames(test_case_class):
+        # We need to get the actual method from the class, not an instance
+        method = getattr(test_case_class, name)
+        if asyncio.iscoroutinefunction(method):
+            async_test_methods.append(name)
+        else:
+            sync_test_method_names.append(name)
+
+    # Add synchronous tests to the suite
+    if sync_test_method_names:
+        suite.addTests(test_case_class(name) for name in sync_test_method_names)
+
+    if suite.countTestCases() > 0:
+        print(f"--- Running {suite.countTestCases()} synchronous tests for {test_case_class.__name__} ---")
+        runner_sync = unittest.TextTestRunner()
+        runner_sync.run(suite)
+
+    if async_test_methods:
+        print(f"\n--- Running {len(async_test_methods)} asynchronous tests for {test_case_class.__name__} ---")
+
+        async def run_all_async_tests():
+            # Create a new instance for each test method to ensure isolation, similar to how unittest works
+            for name in async_test_methods:
+                test_instance = test_case_class(name)
+                # Manually call setUp and tearDown for each test
+                if hasattr(test_instance, 'setUp'):
+                    test_instance.setUp()
+                try:
+                    await getattr(test_instance, name)()
+                    # Report success for the async test
+                    sys.stdout.write(f"{name} ... ok\n")
+                except Exception as e:
+                    # Report failure for the async test
+                    sys.stdout.write(f"{name} ... FAIL\n")
+                    # Optionally print traceback
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    if hasattr(test_instance, 'tearDown'):
+                        test_instance.tearDown()
+
+        try:
+            loop.run_until_complete(run_all_async_tests())
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
 if __name__ == '__main__':
-    unittest.main()
+    # Import here as it's only needed for running the script directly
+    import asyncio
+    import sys
+
+    # Run tests for all TestCase classes defined in this file
+    run_async_tests(TestAutonomousReflectionEnhancements)
+    run_async_tests(TestInvokeSuggestionScoringLLM)
+    run_async_tests(TestRunSelfReflectionCycleScoring)
+    run_async_tests(TestSelectSuggestionForAutonomousAction)

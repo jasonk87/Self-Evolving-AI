@@ -20,7 +20,7 @@ from ..utils.conversational_helpers import summarize_tool_result_conversationall
 from ..llm_interface.ollama_client import OllamaProvider
 from ..planning.hierarchical_planner import HierarchicalPlanner
 import ai_assistant.core.suggestion_manager as suggestion_manager_module # For adding suggestions
-from ai_assistant.config import get_model_for_task # For getting reflection model
+from ai_assistant.config import get_model_for_task
 import uuid
 import logging
 import json # Added import for json.dumps
@@ -450,9 +450,18 @@ class DynamicOrchestrator:
                 displayed_code_content=planner_input_displayed_code
             )
 
-            self.current_plan = planner_response.get("plan") # This might be None, a list, or an empty list
-            clarification_question_from_planner = planner_response.get("clarification_question")
-            planner_error_message = planner_response.get("error_message")
+            if isinstance(planner_response, dict):
+                self.current_plan = planner_response.get("plan")
+                clarification_question_from_planner = planner_response.get("clarification_question")
+                planner_error_message = planner_response.get("error_message")
+            elif isinstance(planner_response, list):
+                self.current_plan = planner_response
+                clarification_question_from_planner = None
+                planner_error_message = None
+            else:
+                self.current_plan = None
+                clarification_question_from_planner = None
+                planner_error_message = None
 
             if clarification_question_from_planner:
                 logger.info(f"Orchestrator: Planner requested clarification: '{clarification_question_from_planner}'")
@@ -515,7 +524,7 @@ class DynamicOrchestrator:
 
                 generated_project_plan = await self.hierarchical_planner.generate_full_project_plan(
                     user_goal=prompt,
-                    project_context=final_context_for_planner
+                    project_context=planner_input_context_summary
                 )
 
                 if generated_project_plan:
@@ -531,7 +540,7 @@ class DynamicOrchestrator:
                         project_task_description = f"Project: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
 
                         # Determine task type based on original intent
-                        task_type_for_hp = ActiveTaskType.USER_PROJECT_CREATION if is_project_creation_intent else ActiveTaskType.HIERARCHICAL_PLAN_EXECUTION
+                        task_type_for_hp = ActiveTaskType.USER_PROJECT_CREATION if is_project_creation_intent else ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION
 
                         parent_task = self.task_manager.add_task(
                             description=project_task_description,
@@ -608,7 +617,6 @@ class DynamicOrchestrator:
                         # The llm_provider is the ollama_client module itself
                         llm_module = self.action_executor.code_service.llm_provider
                         # We need get_model_for_task from config
-                        from ai_assistant.config import get_model_for_task
                         model = get_model_for_task("conversational_response")
 
                         # New system message style prompt for conversational fallback
@@ -638,44 +646,35 @@ class DynamicOrchestrator:
                                 metadata={"response": conversational_response}
                             )
                             response_message_for_history = conversational_response
-                            # Return True since we successfully handled the prompt conversationally
-                            return True, response_message_for_history
+                            self.conversation_history.append({"role": "assistant", "content": response_message_for_history})
+                            return True, {"chat_response": response_message_for_history, "project_area_html": None}
                         else:
-                            # Raise an error to be caught by the outer Exception or specific handling
                             logger.warning(f"Conversational model returned empty/None for '{prompt}'. Falling through.")
-                            # No specific error to raise that would become last_error_info directly,
-                            # so the generic message will be used.
-                            # To make it more specific, we could set self.context['last_error_info'] here.
                             self.context['last_error_info'] = "Conversational model returned an empty response."
-
 
                     except Exception as e_conv:
                         logger.error(f"Failed to generate conversational fallback for '{prompt}': {e_conv}", exc_info=True)
-                        # Fallthrough to the original error handling logic below if conversational response fails
-                        # Store the conversational error to potentially make the error message more informative
                         self.context['last_error_info'] = f"Conversational fallback attempt failed: {str(e_conv)}"
 
-                # This block now serves as the fallback if the conversational attempt fails or was not possible.
                 technical_error_msg = self.context.get('last_error_info', "I couldn't create a plan for your request, and I was also unable to generate a conversational response.")
-                user_friendly_response_final = technical_error_msg # Default to technical message
-                summary_for_no_plan = self._generate_execution_summary(self.current_plan, []) # current_plan is None here
+                user_friendly_response_final = technical_error_msg
+                summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
 
-                # Attempt to rephrase this final error message
                 if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
                     try:
                         rephrased_content = await rephrase_error_message_conversationally(
-                            technical_error_message=technical_error_msg, # Use the potentially updated technical_error_msg
+                            technical_error_message=technical_error_msg,
                             original_user_query=prompt,
                             llm_provider=self.action_executor.code_service.llm_provider
                         )
-                        if rephrased_content: # Only use if rephrasing returned something non-empty
+                        if rephrased_content:
                             user_friendly_response_final = rephrased_content
-                    except Exception as e_rephrase: # pragma: no cover
+                    except Exception as e_rephrase:
                         logger.error(f"Error rephrasing final plan-creation failure: {e_rephrase}", exc_info=True)
-                        # user_friendly_response_final remains as it was
 
-                response_message_for_history = user_friendly_response_final + summary_for_no_plan # Assign before return
-                return False, response_message_for_history
+                final_response_str = user_friendly_response_final + summary_for_no_plan
+                self.conversation_history.append({"role": "assistant", "content": final_response_str})
+                return False, {"chat_response": final_response_str, "project_area_html": None}
 
             if is_debug_mode():
                 print(f"DynamicOrchestrator: Executing plan with {len(self.current_plan)} steps")
@@ -921,8 +920,8 @@ class DynamicOrchestrator:
                                 if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
                                     technical_error_detail = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
                                     break
-                                if res_item.get("error") or res_item.get("ran_successfully") is False:
-                                    err_detail = res_item.get("stderr", res_item.get("error", "Unknown error from tool"))
+                                if res_item.get("error") or res_item.get("ran_successfully") is False or res_item.get("overall_status") == "failed":
+                                    err_detail = res_item.get("stderr", res_item.get("error", res_item.get("error_message", "Unknown error from tool")))
                                     technical_error_detail = f"A tool reported an error: {str(err_detail)}"
                                     break
 
@@ -1029,7 +1028,7 @@ class DynamicOrchestrator:
                 analysis_context = {
                     "user_prompt": prompt,
                     "ai_response": response, # The final textual response to the user
-                    "plan_details_json": json.dumps(self.current_plan) if self.current_plan else "null",
+                    "plan_details_json": json.dumps(self._serialize_plan_for_logging(self.current_plan)) if self.current_plan else "null",
                     "tool_results_json": json.dumps(self._serialize_execution_results(self.context.get('last_results', []))) if self.context.get('last_results') else "null",
                     "overall_success_status": str(overall_success_of_plan),
                     "user_id": user_id # Pass along the user_id from the original prompt
@@ -1107,11 +1106,12 @@ class DynamicOrchestrator:
                 logger.warning("LLM provider not available for error rephrasing in top-level exception handler.")
 
             # Defensive check: Ensure a string is always returned for the message
-            if user_friendly_response is None: # Should not happen if technical_error_msg is the default
+            if user_friendly_response is None:
                 logger.error(f"Orchestrator's user_friendly_response was None unexpectedly. Defaulting. Original error: {str(e)}")
                 user_friendly_response = technical_error_msg
 
-            return False, user_friendly_response
+            self.conversation_history.append({"role": "assistant", "content": user_friendly_response})
+            return False, {"chat_response": user_friendly_response, "project_area_html": None}
 
     async def get_current_progress(self) -> Dict[str, Any]:
         """Get the current progress and context of task execution."""
@@ -1121,6 +1121,25 @@ class DynamicOrchestrator:
             'context': self.context,
             'last_success': self.context.get('last_success')
         }
+
+    def _serialize_plan_for_logging(self, plan: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+        """Creates a deep copy of a plan and serializes non-JSON-compatible objects within it."""
+        if not plan:
+            return None
+
+        serializable_plan = []
+        for step in plan:
+            serializable_step = {}
+            for key, value in step.items():
+                try:
+                    # This is inefficient but safe. We don't use the result of the dump.
+                    json.dumps(value)
+                    serializable_step[key] = value
+                except (TypeError, OverflowError):
+                    serializable_step[key] = f"__NON_SERIALIZABLE_VALUE__:{str(value)}"
+            serializable_plan.append(serializable_step)
+
+        return serializable_plan
 
     def _serialize_execution_results(self, results: List[Any]) -> List[Any]:
         """Converts execution results, especially custom error objects, into a JSON-serializable format."""
@@ -1400,7 +1419,6 @@ Concise Summary of the above segment:"""
                             category=fact_category,
                             source=source_summary,
                             user_id=original_user_id # Pass the user_id from the interaction
-                            # data payload would be passed here if LLM generated structured data for the fact
                         )
                         logger.info(f"Orchestrator: Learned fact from reflection: {fact_text[:100]}... for user_id: {original_user_id}")
                     else:

@@ -623,5 +623,3 @@ if __name__ == '__main__':
                 logger.error("One or more evolution.py tests (including sandboxing placeholders) failed.")
 
     asyncio.run(main_tests_evolution())
-
-[end of ai_assistant/learning/evolution.py]

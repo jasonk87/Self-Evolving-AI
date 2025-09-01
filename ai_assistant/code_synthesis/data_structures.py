@@ -4,6 +4,14 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 import uuid
 
+class CodeReviewSeverity(Enum):
+    """Defines the severity levels for code review feedback."""
+    CRITICAL = "Critical"
+    MAJOR = "Major"
+    MINOR = "Minor"
+    STYLE = "Style"
+    INFO = "Info"
+
 class CodeTaskType(Enum):
     """
     Defines the different types of code tasks the system can handle.

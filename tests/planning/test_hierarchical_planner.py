@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch, MagicMock
 import os
 import sys
+import json
 from typing import List
 
 # Add project root to sys.path

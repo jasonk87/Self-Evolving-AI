@@ -65,10 +65,6 @@ def execute_sandboxed_python_script(
                 except IOError as e: # pragma: no cover
                     return {"status": "error", "error_message": f"Failed to write input file '{filename}': {e}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
 
-        stdout_val = ""
-        stderr_val = ""
-        error_msg_val = None
-
         try:
             process_result = subprocess.run(
                 [interpreter, "-I", "-s", "-S", script_filename],
@@ -76,32 +72,33 @@ def execute_sandboxed_python_script(
                 text=True,
                 timeout=timeout_seconds,
                 cwd=temp_dir_path,
-                check=False
+                check=False # Do not raise exception on non-zero exit
             )
+            status = "success" if process_result.returncode == 0 else "error"
+            return_code = process_result.returncode
             stdout_val = process_result.stdout
             stderr_val = process_result.stderr
-            return_code = process_result.returncode
-            status = "success" if return_code == 0 else "error"
-            if status == "error" and not stderr_val: # Some errors might not produce stderr but still have non-zero exit
-                 error_msg_val = f"Script exited with code {return_code} but no stderr."
-            elif stderr_val: # If there's stderr, it's likely the error message or part of it
-                 error_msg_val = stderr_val
+            error_msg_val = process_result.stderr if process_result.stderr else None
+            if status == "error" and not error_msg_val:
+                error_msg_val = f"Script exited with return code {return_code} and no stderr."
 
-
-        except subprocess.TimeoutExpired: # pragma: no cover
+        except subprocess.TimeoutExpired:
             status = "timeout"
             return_code = -1
+            stdout_val = ""
             stderr_val = f"Script execution timed out after {timeout_seconds} seconds."
             error_msg_val = stderr_val
-        except FileNotFoundError: # pragma: no cover
+        except FileNotFoundError:
             status = "error"
             return_code = -1
-            stderr_val = f"Python interpreter '{interpreter}' not found. Please ensure it's in PATH or specify full path."
+            stdout_val = ""
+            stderr_val = f"Python interpreter '{interpreter}' not found. Please ensure it's in PATH or specify the full path."
             error_msg_val = stderr_val
-        except Exception as e: # pragma: no cover
+        except Exception as e:
             status = "error"
             return_code = -1
-            stderr_val = f"An unexpected error occurred during script execution: {str(e)}"
+            stdout_val = ""
+            stderr_val = f"An unexpected error occurred: {e}"
             error_msg_val = stderr_val
 
         collected_output_files = {}

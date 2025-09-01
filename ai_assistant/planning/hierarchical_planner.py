@@ -1,9 +1,9 @@
 # ai_assistant/planning/hierarchical_planner.py
 import re
-import json # Added for __main__ printing
-from typing import List, Any, Optional, Dict # Added Dict
-# Assuming a generic LLM service interface or a specific one like OllamaProvider
+import json
+from typing import List, Any, Optional, Dict
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ..config import get_model_for_task
 # For __main__ example, we'll mock this.
 
 # TypedDict for ProjectPlanStep can be formally defined if preferred,
@@ -143,12 +143,7 @@ class HierarchicalPlanner:
             # Assuming invoke_ollama_model_async is the method to call for text completion
             # and it's available on the llm_provider instance.
             # Adjust model, temperature, max_tokens as needed for this task.
-            # For outline generation, a slightly creative but focused model might be good.
-            # Using a generic model from get_model_for_task or a specific one.
-            from ai_assistant.config import get_model_for_task # Local import for this specific call
             model_name = get_model_for_task("hierarchical_planning_outline")
-
-
             response_text = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
@@ -197,7 +192,7 @@ class HierarchicalPlanner:
             A list of strings, where each string is a detailed sub-task.
             Returns an empty list if generation fails or parsing yields no items.
         """
-        if not outline_item or not user_goal:
+        if not outline_item:
             return []
 
         project_context_section = ""
@@ -211,9 +206,7 @@ class HierarchicalPlanner:
         )
 
         try:
-            from ai_assistant.config import get_model_for_task # Local import
             model_name = get_model_for_task("hierarchical_planning_tasks")
-
             response_text = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
@@ -273,9 +266,7 @@ class HierarchicalPlanner:
         )
 
         try:
-            from ai_assistant.config import get_model_for_task # Local import
             model_name = get_model_for_task("hierarchical_planning_step_elaboration")
-
             response_text = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,

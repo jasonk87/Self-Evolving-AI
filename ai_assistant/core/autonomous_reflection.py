@@ -1140,6 +1140,10 @@ async def select_suggestion_for_autonomous_action( # Made async
                 code_mod_result = await apply_code_modification(code_mod_params)
                 suggestion['_action_result'] = code_mod_result # Store the result
                 
+                if code_mod_result is None:
+                    logger.error(f"apply_code_modification returned None for suggestion {suggestion.get('suggestion_id', 'N/A')}. Cannot log detailed outcome.")
+                    return suggestion
+
                 overall_success_from_apply = code_mod_result['overall_status']
                 detailed_message_from_apply = code_mod_result['overall_message']
                 
@@ -1193,7 +1197,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                         "overall_outcome_success": overall_success_from_apply,
                         "edit_status": code_mod_result.get("edit_outcome", {}).get("status"),
                         "test_status": test_passed_for_log,
-                        "revert_status": code_mod_result.get("revert_outcome", {}).get("status"),
+                        "revert_status": (code_mod_result.get("revert_outcome") or {}).get("status"),
                         "commit_status": commit_info_for_log.get("status") if commit_info_for_log else None,
                         "priority_score": priority_score_for_log
                     }

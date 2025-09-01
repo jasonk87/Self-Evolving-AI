@@ -33,7 +33,8 @@ from ai_assistant.utils.display_utils import (
     format_status, draw_separator
 )
 from ai_assistant.core.refinement import RefinementAgent
-from ai_assistant.code_services.service import CodeService, CodeReviewSeverity
+from ai_assistant.code_services.service import CodeService
+from ai_assistant.code_synthesis.data_structures import CodeReviewSeverity
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core import project_manager

@@ -198,14 +198,17 @@ class ActionExecutor:
         module_path: str,
         function_name: str,
         code_to_apply: str,
-        original_description: str, # This is the change_description for edit_function_source_code
-        source_insight_id: str,   # This will be the related_item_id for the task
-        action_task_id: Optional[str], # This is the parent_task_id for edit_function_source_code
-    ) -> bool: # Return just success/failure
+        original_description: str,
+        source_insight_id: str,
+        action_task_id: Optional[str],
+        proposed_action: Dict[str, Any]
+    ) -> bool:
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
 
-        original_reflection_id_for_test: Optional[str] = None
+        # This was the bug. It was not being assigned from the details dict.
+        original_reflection_id_for_test: Optional[str] = proposed_action.get("details", {}).get("original_reflection_entry_id")
+
 
         log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
         modification_type_ast = "MODIFY_TOOL_CODE_LLM_AST" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST"
@@ -249,7 +252,7 @@ class ActionExecutor:
                         try:
                             revert_msg = await self_modification.edit_function_source_code(
                                 module_path, function_name,
-                                original_code_from_backup,
+                                new_code_string=original_code_from_backup,
                                 project_root_path=project_root,
                                 change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test.",
                                 task_manager=self.task_manager,
@@ -416,7 +419,6 @@ class ActionExecutor:
         action_type = proposed_action.get("action_type")
         details = proposed_action.get("details", {})
         source_insight_id = proposed_action.get("source_insight_id", f"action_{uuid.uuid4().hex[:8]}")
-        log_notes_prefix = f"Action for insight {source_insight_id}: "
 
         action_task_id: Optional[str] = None
         edit_success: bool = False
@@ -478,6 +480,13 @@ class ActionExecutor:
                 if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
                     suggested_code_or_llm_generated_code = code_service_result.get("modified_code_string")
                     logger.info(f"CodeService generated code for {function_name}. Length: {len(suggested_code_or_llm_generated_code) if suggested_code_or_llm_generated_code else 0}. Task ID: {action_task_id}")
+                    global_reflection_log.log_execution(
+                        goal_description=f"CodeService code generation for insight {source_insight_id}",
+                        plan=[{"action_type": "CODE_SERVICE_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
+                        execution_results=[f"Successfully generated code of length {len(suggested_code_or_llm_generated_code) if suggested_code_or_llm_generated_code else '0'}"],
+                        overall_success=True,
+                        status_override="CODE_SERVICE_GEN_SUCCESS"
+                    )
                 else:
                     err_msg = f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}"
                     logger.error(f"{err_msg}. Task ID: {action_task_id}")
@@ -494,7 +503,8 @@ class ActionExecutor:
                     module_path, function_name, suggested_code_or_llm_generated_code,
                     original_description,
                     str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
-                    action_task_id=action_task_id
+                    action_task_id=action_task_id,
+                    proposed_action=proposed_action
                 )
                 if edit_success:
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")

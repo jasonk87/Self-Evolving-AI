@@ -292,7 +292,7 @@ def execute_project_plan(
     overall_success = True
     execution_log = [f"Starting execution of project plan for: {project_name or 'Unnamed Project'}"]
 
-    for i, step in enumerate(project_plan):
+    for i, step in enumerate(project_plan_steps):
         step_id = step.get("step_id", f"step_{i+1}")
         description = step.get("description", "No description")
         step_type = step.get("type", "unknown")
@@ -423,7 +423,7 @@ def execute_project_plan(
                 execution_log.append(f"Stopping plan execution due to failure in step {step_id} ('{description}'). Status: {current_step_result['status']}")
                 break
 
-    if not project_plan and not step_results:
+    if not project_plan_steps and not step_results:
         final_overall_status = "error"
     elif not overall_success:
         final_overall_status = "failed"

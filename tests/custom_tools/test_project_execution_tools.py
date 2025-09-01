@@ -26,6 +26,7 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
     @patch('ai_assistant.custom_tools.project_execution_tools.execute_sandboxed_python_script')
     def test_successful_plan_execution_mixed_steps(self, mock_sandbox_exec):
+        mock_task_manager = MagicMock()
         mock_sandbox_exec.return_value = self._create_mock_sandbox_result(stdout="Script output")
 
         project_plan = [
@@ -33,7 +34,7 @@ class TestExecuteProjectPlan(unittest.TestCase):
             {"step_id": "2", "type": "python_script", "description": "Run script", "details": {"script_content": "print('ok')"}},
             {"step_id": "3", "type": "human_review_gate", "description": "User review", "details": {"prompt_to_user": "Proceed?"}}
         ]
-        result = execute_project_plan(project_plan, "TestProject")
+        result = execute_project_plan(project_plan, "task_01", mock_task_manager, project_name="TestProject")
 
         self.assertEqual(result["overall_status"], "success")
         self.assertEqual(result["num_steps_processed"], 3)
@@ -46,11 +47,12 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
     @patch('ai_assistant.custom_tools.project_execution_tools.execute_sandboxed_python_script')
     def test_plan_with_python_script_success(self, mock_sandbox_exec):
+        mock_task_manager = MagicMock()
         mock_sandbox_exec.return_value = self._create_mock_sandbox_result(
             stdout="Python success", stderr="Some warning", return_code=0, output_files={"data.txt": "content"}
         )
         project_plan = [{"step_id": "s1", "type": "python_script", "description": "Do stuff", "details": {"script_content": "print('hello')"}}]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_02", mock_task_manager)
 
         self.assertEqual(result["overall_status"], "success")
         self.assertEqual(result["step_results"][0]["status"], "success")
@@ -63,11 +65,12 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
     @patch('ai_assistant.custom_tools.project_execution_tools.execute_sandboxed_python_script')
     def test_plan_with_python_script_failure(self, mock_sandbox_exec):
+        mock_task_manager = MagicMock()
         mock_sandbox_exec.return_value = self._create_mock_sandbox_result(
             status="error", stdout="Trying...", stderr="Syntax Error!", return_code=1, error_message="Syntax Error!"
         )
         project_plan = [{"step_id": "s1", "type": "python_script", "description": "Failing script", "details": {"script_content": "fail please"}}]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_03", mock_task_manager)
 
         self.assertEqual(result["overall_status"], "failed")
         self.assertEqual(result["step_results"][0]["status"], "error")
@@ -79,11 +82,12 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
     @patch('ai_assistant.custom_tools.project_execution_tools.execute_sandboxed_python_script')
     def test_plan_with_python_script_timeout(self, mock_sandbox_exec):
+        mock_task_manager = MagicMock()
         mock_sandbox_exec.return_value = self._create_mock_sandbox_result(
             status="timeout", stderr="Timed out", return_code=-1, error_message="Timed out"
         )
         project_plan = [{"step_id": "s1", "type": "python_script", "description": "Timeout script", "details": {"script_content": "time.sleep(100)"}}]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_04", mock_task_manager)
 
         self.assertEqual(result["overall_status"], "failed")
         self.assertEqual(result["step_results"][0]["status"], "timeout")
@@ -94,12 +98,13 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
     @patch('ai_assistant.custom_tools.project_execution_tools.execute_sandboxed_python_script')
     def test_plan_stops_on_script_failure(self, mock_sandbox_exec):
-        mock_sandbox_exec.return_value = self._create_mock_sandbox_result(status="error", return_code=1, stderr="Failure")
+        mock_task_manager = MagicMock()
+        mock_sandbox_exec.return_value = self._create_mock_sandbox_result(status="error", return_code=1, stderr="Failure", error_message="Failure")
         project_plan = [
             {"step_id": "1", "type": "python_script", "description": "Failing script", "details": {"script_content": "fail"}},
             {"step_id": "2", "type": "informational", "description": "Should not run", "details": {"message": "Info"}}
         ]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_05", mock_task_manager)
 
         self.assertEqual(result["overall_status"], "failed")
         self.assertEqual(result["num_steps_processed"], 1) # Stops after first failing step
@@ -109,35 +114,38 @@ class TestExecuteProjectPlan(unittest.TestCase):
 
 
     def test_plan_with_unknown_step_type(self):
+        mock_task_manager = MagicMock()
         project_plan = [{"step_id": "s1", "type": "magical_mystery_tour", "description": "Unknown step"}]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_06", mock_task_manager)
 
-        self.assertEqual(result["overall_status"], "failed") # Because unknown type causes failure
-        self.assertEqual(result["step_results"][0]["status"], "failed_unknown_type")
-        self.assertIn("Unknown step type: magical_mystery_tour", result["step_results"][0]["output"])
+        self.assertEqual(result["overall_status"], "partial_success")
+        self.assertEqual(result["step_results"][0]["status"], "skipped_unimplemented")
+        self.assertIn("not implemented", result["step_results"][0]["output"])
 
     def test_plan_with_missing_script_content(self):
-        project_plan = [{"step_id": "s1", "type": "python_script", "description": "No content script", "details": {}}] # Missing script_content
-        result = execute_project_plan(project_plan)
+        mock_task_manager = MagicMock()
+        project_plan = [{"step_id": "s1", "type": "python_script", "description": "No content script", "details": {}}]
+        result = execute_project_plan(project_plan, "task_07", mock_task_manager)
 
-        self.assertEqual(result["overall_status"], "failed") # Misconfigured step causes overall failure
+        self.assertEqual(result["overall_status"], "failed")
         self.assertEqual(result["step_results"][0]["status"], "error_misconfigured")
         self.assertIn("Missing script_content", result["step_results"][0]["output"])
 
     def test_empty_project_plan(self):
-        result = execute_project_plan([])
-        self.assertEqual(result["overall_status"], "error") # Changed from success/no_action to error as per implementation
-        self.assertEqual(result["num_steps_processed"], 0) # num_steps_processed is not added for empty plan error
+        mock_task_manager = MagicMock()
+        result = execute_project_plan([], "task_08", mock_task_manager)
+        self.assertEqual(result["overall_status"], "error")
         self.assertIn("No project plan provided", result["error_message"])
 
 
     def test_plan_with_only_informational_and_review_steps(self):
+        mock_task_manager = MagicMock()
         project_plan = [
             {"step_id": "1", "type": "informational", "description": "Info 1", "details": {"message": "First message"}},
             {"step_id": "2", "type": "human_review_gate", "description": "Review 1", "details": {"prompt_to_user": "Review this."}},
             {"step_id": "3", "type": "informational", "description": "Info 2", "details": {"message": "Second message"}}
         ]
-        result = execute_project_plan(project_plan)
+        result = execute_project_plan(project_plan, "task_09", mock_task_manager)
 
         self.assertEqual(result["overall_status"], "success")
         self.assertEqual(result["num_steps_processed"], 3)

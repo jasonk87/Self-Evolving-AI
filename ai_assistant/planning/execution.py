@@ -451,7 +451,7 @@ if __name__ == '__main__':
         mock_ts_test1 = MockToolSystemForExecutionTest()
         mock_planner_test1 = MockPlannerAgentForExecutionTest() # Won't be called
         plan1 = [{"tool_name": "greet_user", "args": ("Alice",), "kwargs": {}}, {"tool_name": "add_numbers", "args": ("5", "3"), "kwargs": {}}]
-        results1 = await executor_test.execute_plan(
+        final_plan1, results1 = await executor_test.execute_plan(
             "Test Goal 1", 
             plan1, 
             mock_ts_test1, 
@@ -471,7 +471,7 @@ if __name__ == '__main__':
         mock_planner_test2 = MockPlannerAgentForExecutionTest(new_plan_on_replan=successful_replan)
         
         plan2_initial = [{"tool_name": "faulty_tool", "args": (), "kwargs": {}}] # This will fail
-        results2 = await executor_test.execute_plan(
+        final_plan2, results2 = await executor_test.execute_plan(
             "Test Goal 2", 
             plan2_initial, 
             mock_ts_test2, 
@@ -493,7 +493,7 @@ if __name__ == '__main__':
         mock_planner_test3 = MockPlannerAgentForExecutionTest(new_plan_on_replan=failing_replan)
         
         plan3_initial = [{"tool_name": "faulty_tool", "args": (), "kwargs": {}}]
-        results3 = await executor_test.execute_plan(
+        final_plan3, results3 = await executor_test.execute_plan(
             "Test Goal 3", 
             plan3_initial, 
             mock_ts_test3, 
@@ -514,7 +514,7 @@ if __name__ == '__main__':
         mock_planner_test4 = MockPlannerAgentForExecutionTest(fail_replan=True) # Simulate planner returning []
         
         plan4_initial = [{"tool_name": "faulty_tool", "args": (), "kwargs": {}}]
-        results4 = await executor_test.execute_plan(
+        final_plan4, results4 = await executor_test.execute_plan(
             "Test Goal 4", 
             plan4_initial, 
             mock_ts_test4, 
@@ -534,7 +534,7 @@ if __name__ == '__main__':
         mock_ts_test5 = MockToolSystemForExecutionTest()
         mock_planner_test5 = MockPlannerAgentForExecutionTest()
         plan5_empty = []
-        results5 = await executor_test.execute_plan(
+        final_plan5, results5 = await executor_test.execute_plan(
             "Test Goal 5", 
             plan5_empty, 
             mock_ts_test5, 
@@ -554,7 +554,7 @@ if __name__ == '__main__':
         mock_planner_test6 = MockPlannerAgentForExecutionTest(new_plan_on_replan=failing_replan_again)
         
         plan6_initial = [{"tool_name": "faulty_tool", "args": ("attempt_1_fail",), "kwargs": {}}]
-        results6 = await executor_test.execute_plan(
+        final_plan6, results6 = await executor_test.execute_plan(
             "Test Goal 6", 
             plan6_initial, 
             mock_ts_test6, 

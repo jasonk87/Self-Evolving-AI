@@ -44,7 +44,7 @@ Only return a module_path and function_name if confidence is "high" or "medium".
 
 Example 1 (Confident Match):
 Suggestion: "The 'file_writer' tool should have an option to append."
-Available Tools (excerpt): { "ai_assistant.custom_tools.file_system_tools.file_writer": "Writes text to a file." }
+Available Tools (excerpt): {{ "ai_assistant.custom_tools.file_system_tools.file_writer": "Writes text to a file." }}
 Expected JSON Response:
 {{
   "module_path": "ai_assistant.custom_tools.file_system_tools",
