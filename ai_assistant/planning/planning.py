@@ -262,22 +262,22 @@ Each step dictionary *MUST* contain the following keys:
   Your plan might look like this (conceptual - actual tool names for generation may vary):
   ```json
   [
-    {
+    {{
       "tool_name": "generate_html_code_for_game", // Hypothetical tool that returns large HTML
       "args": ["super_complex_game_type"],
-      "kwargs": {}
-    },
-    {
+      "kwargs": {{}}
+    }},
+    {{
       "tool_name": "save_large_content",
       "args": ["[[step_1_output]]"], // Takes the large HTML from the previous step
-      "kwargs": {}
-      // This step will return a placeholder like "{{AI_CONTENT_REF::generated_id_123}}"
-    },
-    {
+      "kwargs": {{}}
+      // This step will return a placeholder like "{{{{AI_CONTENT_REF::generated_id_123}}}}"
+    }},
+    {{
       "tool_name": "display_html_content_in_project_area",
       "args": ["[[step_2_output]]"], // Uses the placeholder returned by save_large_content
-      "kwargs": {}
-    }
+      "kwargs": {{}}
+    }}
   ]
   ```
 - **Important:** Only use `save_large_content` if the content is genuinely expected to be large. For smaller content (under 10,000 characters), provide it directly as a string argument, ensuring it's correctly JSON escaped (e.g., `\n` for newlines, `\"` for quotes within the string).
