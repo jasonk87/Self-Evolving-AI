@@ -37,10 +37,11 @@ logger.info("--- DIAGNOSTIC: app.py (root) - Imported DynamicOrchestrator ---")
 from ai_assistant.core.startup_services import initialize_core_services
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported initialize_core_services ---")
 # TaskManager and NotificationManager might still be needed for type hints or direct use if any
-from ai_assistant.core.task_manager import TaskManager
+from ai_assistant.core.task_manager import TaskManager, ActiveTaskStatus
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported TaskManager ---")
 from ai_assistant.core.notification_manager import NotificationManager
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
+from ai_assistant.custom_tools.file_system_tools import sanitize_project_name
 import ai_assistant.core.suggestion_manager as suggestion_manager_module # Import the module
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported suggestion_manager_module ---")
 

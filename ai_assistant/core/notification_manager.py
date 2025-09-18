@@ -37,6 +37,11 @@ class NotificationType(Enum):
     TASK_FAILED_UNKNOWN = auto()
     TASK_CANCELLED = auto()
     TASK_INTERRUPTED = auto() # Added to handle interrupted tasks
+    TASK_PROGRESS_UPDATE = auto()
+
+    # Learning related
+    NEW_FACT_LEARNED = auto()
+    FACT_LEARNED = auto()
 
     # Suggestion related
     NEW_SUGGESTION_CREATED_AI = auto()
@@ -54,6 +59,7 @@ class NotificationType(Enum):
     GENERAL_INFO = auto()
     WARNING = auto()
     ERROR = auto()
+    SYSTEM_ALERT = auto()
 
     # Proactive AI Messages
     PROACTIVE_TASK_CHECKIN = auto() # For long-running task updates
