@@ -130,7 +130,20 @@
                     <li data-command="/toggle_project_display" title="Show/Hide the Project Display Area">Toggle Project Display</li>
                 </ul>
             </div>
-             <!-- Add /tools, /projects later if needed -->
+            <div class="help-menu-category">
+                <span class="category-title">Tools</span>
+                <ul class="help-menu-items">
+                    <li data-command="/tools list" title="List all available tools">List Tools</li>
+                    <li data-command="/tools" title="Get a summary of tool capabilities">Tool Summary</li>
+                </ul>
+            </div>
+            <div class="help-menu-category">
+                <span class="category-title">Projects</span>
+                <ul class="help-menu-items">
+                    <li data-command="/projects list" title="List all projects">List Projects</li>
+                    <li data-command="/project load " data-placeholder="<project_name>" title="Load a project's output: /project load <project_name>">Load Project...</li>
+                </ul>
+            </div>
         </div>
     </div>
 

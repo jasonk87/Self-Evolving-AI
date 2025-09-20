@@ -41,9 +41,9 @@ from ai_assistant.core.task_manager import TaskManager, ActiveTaskStatus
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported TaskManager ---")
 from ai_assistant.core.notification_manager import NotificationManager
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported NotificationManager ---")
-from ai_assistant.custom_tools.file_system_tools import sanitize_project_name
 import ai_assistant.core.suggestion_manager as suggestion_manager_module # Import the module
 logger.info("--- DIAGNOSTIC: app.py (root) - Imported suggestion_manager_module ---")
+from ai_assistant.custom_tools.file_system_tools import sanitize_project_name
 
 
 # Global variables for AI services

@@ -285,54 +285,6 @@ class TaskManager:
     def get_task(self, task_id: str) -> Optional[ActiveTask]:
         return self._active_tasks.get(task_id)
 
-    def get_task_by_id(self, task_id: str) -> Optional[ActiveTask]:
-        """Alias for get_task."""
-        return self.get_task(task_id)
-
-    def mark_task_status_as_completed(self, task_id: str, reason: Optional[str] = None) -> bool:
-        """Helper to mark a task as completed successfully."""
-        task = self.get_task(task_id)
-        if not task:
-            return False
-        self.update_task_status(
-            task_id=task_id,
-            new_status=ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
-            reason=reason or "Task marked as completed.",
-            progress=100
-        )
-        return True
-
-    def archive_task_by_id(self, task_id: str, reason: Optional[str] = None) -> bool:
-        """Public method to archive a task."""
-        task = self.get_task(task_id)
-        if not task:
-            # Maybe it's already archived, which is not an error in this context.
-            # Or maybe it never existed. For the API, returning True might be acceptable.
-            # Let's check the archive.
-            if any(t.task_id == task_id for t in self._completed_tasks_archive):
-                return True
-            return False
-
-        # If the task is not in a terminal state, update it before archiving.
-        terminal_statuses = [
-            ActiveTaskStatus.COMPLETED_SUCCESSFULLY, ActiveTaskStatus.FAILED_PRE_REVIEW,
-            ActiveTaskStatus.FAILED_DURING_APPLY, ActiveTaskStatus.FAILED_UNKNOWN,
-            ActiveTaskStatus.USER_CANCELLED, ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
-            ActiveTaskStatus.POST_MOD_TEST_FAILED, ActiveTaskStatus.FAILED_CODE_GENERATION,
-            ActiveTaskStatus.FAILED_INTERRUPTED, ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP
-        ]
-        if task.status not in terminal_statuses:
-            self.update_task_status(
-                task_id,
-                ActiveTaskStatus.USER_CANCELLED, # A safe terminal status
-                reason=reason or "Archived via direct API call."
-            )
-        else:
-            # If it's already in a terminal state, just ensure it gets archived.
-            self._archive_task(task_id)
-
-        return True
-
     def update_task_status(self,
                            task_id: str,
                            new_status: ActiveTaskStatus,
@@ -495,6 +447,43 @@ class TaskManager:
 
     def list_archived_tasks(self, limit: int = 20) -> List[ActiveTask]:
         return sorted(self._completed_tasks_archive, key=lambda t: t.last_updated_at, reverse=True)[:limit]
+
+    # --- Public API Methods for External Callers (e.g., Flask API) ---
+
+    def get_task_by_id(self, task_id: str) -> Optional[ActiveTask]:
+        """Public-facing method to get a task by its ID."""
+        return self.get_task(task_id)
+
+    def mark_task_status_as_completed(self, task_id: str, reason: Optional[str] = "Completed via API") -> bool:
+        """Public-facing method to mark a task as completed."""
+        task = self.get_task(task_id)
+        if not task:
+            return False
+        self.update_task_status(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason=reason)
+        return True
+
+    def archive_task_by_id(self, task_id: str, reason: Optional[str] = "Archived via API") -> bool:
+        """
+        Public-facing method to archive a task.
+        If the task is active, it's moved to a terminal state which triggers archiving.
+        If the task is already archived, it returns True.
+        If the task does not exist, it returns False.
+        """
+        # First, check if the task is active
+        task = self.get_task(task_id)
+        if task:
+            # If the task is active, move it to a terminal state.
+            # This will trigger the _archive_task method from within update_task_status.
+            # USER_CANCELLED is a safe, generic terminal state for a manual archive request.
+            self.update_task_status(task_id, ActiveTaskStatus.USER_CANCELLED, reason=reason)
+            return True
+
+        # If not active, check if it's already in the archive
+        if any(t.task_id == task_id for t in self._completed_tasks_archive):
+            return True # It's already archived, so the goal is met.
+
+        # If it's not active and not in the archive, it doesn't exist.
+        return False
 
 
     def clear_all_tasks(self, clear_archive: bool = False):
