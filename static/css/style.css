@@ -1,34 +1,31 @@
-/* Sci-Fi UI - Initial Styling */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;700&family=Roboto+Mono&display=swap');
 
 :root {
-    --primary-bg-color: #0a0f18; /* Deep space blue/black */
-    --secondary-bg-color: #101828; /* Slightly lighter panel background */
-    --accent-color: #00ffff; /* Cyan/Aqua accent */
-    --text-color: #e0e6f0; /* Light grey/blue text */
-    --text-secondary-color: #a0a8b0;
-    --border-color: #008c9e; /* Darker cyan for borders */
-    --glow-color: rgba(0, 255, 255, 0.5); /* Glow effect for accent */
-    --input-bg-color: #182030;
-    --button-hover-bg-color: #00b8d4;
-    --matrix-green: #00ff41; /* Classic Matrix green */
+    --font-primary: 'Manrope', sans-serif;
+    --font-monospace: 'Roboto Mono', monospace;
 
-    --font-primary: 'Orbitron', sans-serif; /* Sci-fi display font */
-    --font-secondary: 'Roboto', sans-serif; /* Readable content font */
-    --font-matrix: 'Courier New', Courier, monospace;
+    /* Green Theme */
+    --primary-bg-color: #1a201c;
+    --secondary-bg-color: #242c28;
+    --accent-color: #32de84;
+    --text-color: #e0e6f0;
+    --text-secondary-color: #a0a8b0;
+    --border-color: #3a4a42;
+    --button-hover-bg-color: #28a745;
+    --input-bg-color: #2c3632;
 }
 
 body, html {
     margin: 0;
     padding: 0;
     height: 100%;
-    font-family: var(--font-secondary);
-    color: var(--text-color);
+    font-family: var(--font-primary);
     background-color: var(--primary-bg-color);
+    color: var(--text-color);
     overflow: hidden;
 }
 
-.sci-fi-container {
+.app-container {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -38,22 +35,123 @@ body, html {
 
 header {
     background-color: var(--secondary-bg-color);
-    color: var(--accent-color);
     padding: 10px 20px;
-    text-align: center;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    text-align: center;
 }
 
 header h1 {
     margin: 0;
     font-family: var(--font-primary);
     font-size: 1.8em;
-    text-transform: uppercase;
-    letter-spacing: 3px;
+    letter-spacing: 1px;
     font-weight: 700;
-    text-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--accent-color);
+    color: var(--accent-color);
+}
+
+.main-layout {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 350px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-color);
+}
+
+.chat-log-area {
+    flex-grow: 1;
+    background-color: var(--primary-bg-color);
+    padding: 15px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-log-area .message {
+    margin-bottom: 12px;
+    padding: 10px 15px;
+    border-radius: 18px;
+    max-width: 85%;
+    word-wrap: break-word;
+    line-height: 1.5;
+    font-size: 0.95em;
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.chat-log-area .user-message {
+    background-color: var(--accent-color);
+    color: #000000;
+    align-self: flex-end;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+
+.chat-log-area .ai-message {
+    background-color: var(--secondary-bg-color);
+    align-self: flex-start;
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+}
+
+.input-area-sci-fi {
+    position: relative;
+    display: flex;
+    padding: 15px;
+    background-color: var(--secondary-bg-color);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+#userInput {
+    flex-grow: 1;
+    padding: 12px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    margin-right: 10px;
+    background-color: var(--input-bg-color);
+    color: var(--text-color);
+    font-family: var(--font-primary);
+    font-size: 1.05em;
+    outline: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#userInput:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.3);
+}
+
+#sendButton {
+    padding: 12px 25px;
+    background-color: var(--accent-color);
+    color: #000000;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 1em;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+}
+
+#sendButton:hover {
+    background-color: var(--button-hover-bg-color);
 }
 
 .main-content {
@@ -66,1287 +164,22 @@ header h1 {
 }
 
 #projectDisplayArea {
-    flex-basis: 40%; /* Initially take 40% of main content height */
-    min-height: 150px; /* Minimum space for it */
-    background-color: var(--input-bg-color); /* Slightly different from secondary for distinction */
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
-    box-sizing: border-box;
-    overflow: auto; /* Allow scrolling for project content */
-    color: var(--text-secondary-color);
-    /* display: flex; /* To center placeholder text - will be set by JS when shown */
-    /* align-items: center; /* Will be set by JS when shown */
-    /* justify-content: center; /* Will be set by JS when shown */
-    /* text-align: center; /* Will be set by JS when shown */
-    display: none; /* Hidden by default */
-}
-#projectDisplayArea.visible { /* New class to make it visible */
-    display: flex; /* Or block, depending on desired layout when visible */
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-#projectDisplayArea p {
-    margin: 0;
-    font-style: italic;
-}
-
-
-.ai-core-display {
-    position: relative;
-    flex-basis: 30%; /* Adjusted to make space for project area */
-    min-height: 120px; /* Adjusted min height */
-    background: radial-gradient(ellipse at center, rgba(16, 24, 40, 0.8) 0%, rgba(10,15,24,0.9) 100%);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 20px;
-    box-sizing: border-box;
-    box-shadow: inset 0 0 15px rgba(0,0,0,0.5), 0 0 10px var(--glow-color);
-    transition: box-shadow 0.3s ease-in-out;
-    overflow: hidden;
-}
-.ai-core-display p#aiCoreStatusText {
-    font-family: var(--font-secondary);
-    font-size: 1.0em;
-    color: var(--text-secondary-color);
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
-    background-color: rgba(10, 15, 24, 0.85);
-    padding: 3px 10px;
-    border-radius: 4px;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
-}
-
-.processing-indicator {
-    position: absolute;
-    width: 80px;
-    height: 80px;
-    transition: opacity 0.3s ease-in-out, transform 0.5s ease-in-out, width 0.5s ease-in-out, height 0.5s ease-in-out, top 0.5s ease-in-out, left 0.5s ease-in-out, bottom 0.5s ease-in-out, right 0.5s ease-in-out;
-    top: 0px;
-    left: 0px;
-    transform-origin: center center;
-    z-index: 50;
-    transform: scale(0.8);
-}
-
-.processing-indicator.idle,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) {
-    width: 80px;
-    height: 80px;
-    top: auto;
-    right: auto;
-    bottom: 20px;
-    left: 20px;
-    transform: scale(0.8);
-}
-
-@keyframes subtle-pulse {
-    0%, 100% { transform: scale(1); box-shadow: 0 0 8px var(--glow-color), 0 0 15px var(--accent-color); }
-    50% { transform: scale(1.05); box-shadow: 0 0 12px var(--glow-color), 0 0 25px var(--accent-color); }
-}
-
-@keyframes satellite-orbit-idle {
-    0% { transform: rotate(0deg) translateX(30px) rotate(0deg); }
-    100% { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
-}
-
-.orb {
-    background-color: var(--accent-color);
-    border-radius: 50%;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 8px var(--glow-color), 0 0 15px var(--accent-color);
-    transition: width 0.5s ease-in-out, height 0.5s ease-in-out, background-color 0.3s ease;
-}
-
-.main-orb {
-    width: 30px;
-    height: 30px;
-    z-index: 10;
-    animation: subtle-pulse 3s infinite ease-in-out;
-}
-
-.satellite-orb {
-    width: 10px;
-    height: 10px;
-    z-index: 5;
-}
-
-.processing-indicator.idle .s1,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s1 {
-    animation: satellite-orbit-idle 6s linear infinite;
-}
-.processing-indicator.idle .s2,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s2 { animation: satellite-orbit-idle 6s linear infinite 0.5s; }
-.processing-indicator.idle .s3,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s3 { animation: satellite-orbit-idle 6s linear infinite 1s; }
-.processing-indicator.idle .s4,
-.processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .s4 { animation: satellite-orbit-idle 6s linear infinite 1.5s; }
-
-.processing-indicator.weibo-working-idle .orb {
-    box-shadow: 0 0 12px rgba(255, 165, 0, 0.7), 0 0 25px rgba(255, 165, 0, 0.5);
-}
-.processing-indicator.weibo-working-idle .main-orb {
-    animation-name: subtle-pulse, working-glow-pulse;
-}
-
-@keyframes working-glow-pulse {
-    0%, 100% { box-shadow: 0 0 12px rgba(255, 165, 0, 0.7), 0 0 25px rgba(255, 165, 0, 0.5); }
-    50% { box-shadow: 0 0 18px rgba(255, 165, 0, 0.9), 0 0 35px rgba(255, 165, 0, 0.7); }
-}
-
-@keyframes thinking-pulse {
-    0%, 100% { transform: scale(1); opacity: 0.8; }
-    50% { transform: scale(1.2); opacity: 1; }
-}
-
-@keyframes thinking-satellites-spin {
-    0% { transform: rotate(0deg) translateX(65px) scale(1.2) rotate(0deg); }
-    100% { transform: rotate(720deg) translateX(65px) scale(1.2) rotate(-720deg); }
-}
-
-.processing-indicator.weibo-thinking {
-    width: 180px;
-    height: 180px;
-    top: 45%;
-    left: 50%;
-    bottom: auto !important;
-    right: auto !important;
-    transform: translate(-50%, -50%) scale(1) !important;
-}
-
-.processing-indicator.weibo-thinking .main-orb {
-    width: 70px;
-    height: 70px;
-    background-color: var(--accent-color);
-    animation: thinking-pulse 1s infinite ease-in-out;
-    box-shadow: 0 0 15px var(--glow-color), 0 0 30px var(--accent-color);
-}
-
-.processing-indicator.weibo-thinking .satellite-orb {
-    width: 25px;
-    height: 25px;
-    background-color: var(--accent-color);
-    transform-origin: center;
-}
-.processing-indicator.weibo-thinking .s1 { animation: thinking-satellites-spin 2s linear infinite; }
-.processing-indicator.weibo-thinking .s2 { animation: thinking-satellites-spin 2s linear infinite 0.2s; }
-.processing-indicator.weibo-thinking .s3 { animation: thinking-satellites-spin 2s linear infinite 0.4s; }
-.processing-indicator.weibo-thinking .s4 { animation: thinking-satellites-spin 2s linear infinite 0.6s; }
-
-@keyframes talking-main-orb-flare {
-    0%, 100% { box-shadow: 0 0 15px var(--glow-color), 0 0 30px var(--accent-color), inset 0 0 5px var(--accent-color); opacity: 0.9; }
-    50% { box-shadow: 0 0 25px var(--glow-color), 0 0 45px var(--accent-color), inset 0 0 10px var(--accent-color); opacity: 1; }
-}
-
-@keyframes talking-satellites-dance {
-    0% { transform: translateY(0px) scale(1.2); }
-    25% { transform: translateY(-5px) translateX(2px) scale(1.25) rotate(15deg); }
-    50% { transform: translateY(0px) scale(1.15); }
-    75% { transform: translateY(5px) translateX(-2px) scale(1.25) rotate(-15deg); }
-    100% { transform: translateY(0px) scale(1.2); }
-}
-
-.processing-indicator.weibo-talking {
-    top: 45%;
-    left: 50%;
-    bottom: auto !important;
-    right: auto !important;
-    transform: translate(-50%, -50%) scale(1) !important;
-}
-
-.processing-indicator.weibo-in-work-zone {
-    width: 60px;
-    height: 60px;
-    top: 15px;
-    right: 15px;
-    left: auto;
-    bottom: auto;
-    transform: scale(0.75);
-}
-.processing-indicator.weibo-in-work-zone .main-orb {
-    width: 20px;
-    height: 20px;
-    animation: subtle-pulse 4s infinite ease-in-out;
-}
-.processing-indicator.weibo-in-work-zone .satellite-orb {
-    width: 7px;
-    height: 7px;
-    animation: none;
-}
-
-.processing-indicator.weibo-talking .main-orb {
-    background-color: var(--accent-color);
-    animation: talking-main-orb-flare 0.8s infinite ease-in-out;
-}
-
-.processing-indicator.weibo-talking .satellite-orb {
-    background-color: var(--accent-color);
-}
-.processing-indicator.weibo-talking .s1 { animation: talking-satellites-dance 1.5s ease-in-out infinite; transform-origin: center; }
-.processing-indicator.weibo-talking .s2 { animation: talking-satellites-dance 1.5s ease-in-out infinite 0.15s; transform-origin: center; }
-.processing-indicator.weibo-talking .s3 { animation: talking-satellites-dance 1.5s ease-in-out infinite 0.3s; transform-origin: center; }
-.processing-indicator.weibo-talking .s4 { animation: talking-satellites-dance 1.5s ease-in-out infinite 0.45s; transform-origin: center; }
-
-.chat-log-area {
-    flex-grow: 1; /* Adjusted to take remaining space after project and AI core */
-    /* flex-basis: 30%; */ /* Example if we want to give it a specific portion initially */
-    min-height: 100px; /* Ensure it's always somewhat visible */
+    flex-basis: 60%;
+    min-height: 200px;
     background-color: var(--secondary-bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
-    overflow-y: auto;
-    box-sizing: border-box;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
-    display: flex;
-    flex-direction: column;
-}
-.chat-log-area .message {
-    margin-bottom: 12px;
-    padding: 10px 15px;
-    border-radius: 6px;
-    max-width: 75%;
-    word-wrap: break-word;
-    line-height: 1.5;
-    font-size: 0.95em;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-.chat-log-area .user-message {
-    background-color: #005f7a;
-    color: var(--text-color);
-    align-self: flex-end;
-    margin-left: auto;
-}
-.chat-log-area .ai-message {
-    background-color: var(--input-bg-color);
-    color: var(--text-color);
-    border-left: 3px solid var(--accent-color);
-    align-self: flex-start;
-    margin-right: auto;
-}
-.chat-log-area .system-help-message { /* New style for system-help messages */
-    background-color: #1c2a38; /* A slightly different, neutral background */
-    color: var(--text-secondary-color);
-    align-self: center; /* Center it, or flex-start */
-    max-width: 85%;
-    border-left: 3px solid #4a5568; /* A muted border color */
-    font-style: italic;
-    font-size: 0.9em;
-}
-
-.input-area-sci-fi {
-    position: relative;
-    display: flex;
-    padding: 15px;
-    background-color: var(--secondary-bg-color);
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
-}
-
-#helpButton {
-    background-color: var(--secondary-bg-color);
-    color: var(--accent-color);
-    border: 1px solid var(--border-color);
-    border-radius: 50%;
-    width: 38px;
-    height: 38px;
-    font-size: 1.2em;
-    font-weight: bold;
-    cursor: pointer;
-    margin-right: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-    flex-shrink: 0;
-}
-
-#helpButton:hover {
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-    box-shadow: 0 0 8px var(--glow-color);
-}
-
-.help-menu-popup {
-    position: fixed;
-    bottom: 70px;
-    left: 20px;
-    width: 300px;
-    max-height: 400px;
-    background-color: var(--secondary-bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2), 0 0 30px rgba(0,0,0,0.5);
-    z-index: 1000;
-    padding: 10px;
-    overflow-y: auto;
-    color: var(--text-color);
-}
-
-.help-menu-header {
-    font-family: var(--font-primary);
-    font-size: 1.2em;
-    color: var(--accent-color);
-    text-align: center;
-    padding-bottom: 8px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.help-menu-category .category-title {
-    display: block;
-    font-weight: bold;
-    margin-top: 10px;
-    margin-bottom: 5px;
-    color: var(--text-secondary-color);
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-.help-menu-category .category-title:first-child {
-    margin-top: 0;
-}
-
-.help-menu-items {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.help-menu-items li {
-    padding: 8px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.95em;
-    transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.help-menu-items li:hover {
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-}
-
-.help-menu-items li::after {
-    content: attr(data-placeholder);
-    font-style: italic;
-    font-size: 0.8em;
-    color: var(--text-secondary-color);
-    margin-left: 8px;
-    opacity: 0.7;
-}
-.help-menu-items li:hover::after {
-    color: var(--primary-bg-color);
-    opacity: 0.8;
-}
-
-#userInput {
-    flex-grow: 1;
-    padding: 12px 18px;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    margin-right: 10px;
-    background-color: var(--input-bg-color);
-    color: var(--text-color);
-    font-family: var(--font-secondary);
-    font-size: 1.05em;
-    outline: none;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-#userInput:focus {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 8px var(--glow-color);
-}
-
-#sendButton {
-    padding: 12px 25px;
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-family: var(--font-primary);
-    font-weight: 700;
-    font-size: 1em;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    transition: background-color 0.3s ease, transform 0.1s ease;
-    box-shadow: 0 0 5px var(--glow-color);
-}
-#sendButton:hover {
-    background-color: var(--button-hover-bg-color);
-    box-shadow: 0 0 10px var(--glow-color), 0 0 15px var(--accent-color);
-}
-#sendButton:active {
-    transform: translateY(1px);
-}
-
-.chat-log-area::-webkit-scrollbar {
-    width: 8px;
-}
-.chat-log-area::-webkit-scrollbar-track {
-    background: var(--secondary-bg-color);
-    border-radius: 4px;
-}
-.chat-log-area::-webkit-scrollbar-thumb {
-    background-color: var(--border-color);
-    border-radius: 4px;
-    border: 2px solid var(--secondary-bg-color);
-}
-.chat-log-area::-webkit-scrollbar-thumb:hover {
-    background-color: var(--accent-color);
-}
-
-.status-panel {
-    /* Future styles for status panel will go here */
-}
-
-/* Matrix Scroll Effect Styles */
-#matrixScrollEffect {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(10, 20, 30, 0.1);
-    overflow: hidden;
-    z-index: 5;
-    border-radius: inherit;
-    pointer-events: none;
-}
-
-.matrix-column {
-    position: absolute;
-    font-family: var(--font-matrix);
-    color: var(--matrix-green);
-    font-size: 10px;
-    line-height: 12px;
-    user-select: none;
-    opacity: 0;
-}
-
-.matrix-column span {
-    display: block;
-    text-align: center;
-}
-.matrix-column span.matrix-highlight {
-    color: #c0ffc0;
-    text-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14;
-}
-
-/* Typing Cursor for AI Messages */
-.ai-message-content {
-    display: inline;
-}
-
-.ai-message.typing .ai-message-content::after {
-    content: '|';
-    display: inline-block;
-    animation: blink-cursor 0.7s infinite;
-    color: var(--accent-color);
-    margin-left: 2px;
-}
-
-@keyframes blink-cursor {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-}
-
-/* Status Panel Styles */
-.status-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 320px;
-    height: 100%;
-    background-color: var(--secondary-bg-color);
-    border-left: 1px solid var(--border-color);
-    box-shadow: -5px 0px 15px rgba(0,0,0,0.3);
-    z-index: 900;
-    transform: translateX(100%);
-    transition: transform 0.4s ease-in-out;
-    display: flex;
-    flex-direction: column;
-}
-
-.status-panel:not(.collapsed) {
-    transform: translateX(0%);
-}
-
-.status-panel-toggle {
-    position: absolute;
-    left: -40px;
-    top: 70px; /* Moved down from 20px */
-    width: 40px;
-    height: 40px;
-    background-color: var(--secondary-bg-color);
-    color: var(--accent-color);
-    border: 1px solid var(--border-color);
-    border-right: none;
-    border-radius: 5px 0 0 5px;
-    cursor: pointer;
-    font-size: 1.5em;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 901;
-    transition: background-color 0.3s ease, color 0.3s ease;
-}
-.status-panel-toggle:hover {
-    background-color: var(--accent-color);
-    color: var(--primary-bg-color);
-}
-
-.status-panel.collapsed .status-panel-toggle {
-}
-
-
-.status-panel-content {
-    padding: 15px;
-    overflow-y: auto;
-    flex-grow: 1;
-}
-
-.status-panel .status-section {
-    margin-bottom: 20px;
-}
-
-.status-panel .status-section h4 {
-    font-family: var(--font-primary);
-    color: var(--accent-color);
-    margin-top: 0;
-    margin-bottom: 8px;
-    font-size: 1.1em;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 5px;
-}
-
-.status-panel .status-section ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 0.9em;
-    color: var(--text-secondary-color);
-}
-
-.status-panel .status-section li {
-    padding: 3px 0;
-    border-bottom: 1px dotted rgba(0, 140, 158, 0.2);
-}
-.status-panel .status-section li:last-child {
-    border-bottom: none;
-}
-
-.refresh-btn {
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    font-size: 0.9em;
-    padding: 0 5px;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
-    vertical-align: middle;
-}
-.refresh-btn:hover {
-    opacity: 1;
-}
-
-
-/* Basic Responsiveness */
-@media (max-width: 768px) {
-    header h1 {
-        font-size: 1.4em;
-        letter-spacing: 2px;
-    }
-
-    .main-content {
-        padding: 10px;
-        gap: 10px;
-    }
-
-    /* Adjust layout for Project Display Area */
-    #projectDisplayArea {
-        flex-basis: 35%; /* Project area gets a bit less on tablet */
-        min-height: 120px;
-    }
-    .ai-core-display {
-        flex-basis: 25%; /* AI core gets less */
-        min-height: 100px;
-        padding: 10px;
-    }
-    .chat-log-area {
-        flex-basis: 40%; /* Chat gets more */
-        min-height: 100px;
-    }
-
-    .ai-core-display p#aiCoreStatusText {
-        font-size: 0.9em;
-        bottom: 5px;
-    }
-
-    .processing-indicator.weibo-thinking,
-    .processing-indicator.weibo-talking {
-        width: 120px;
-        height: 120px;
-    }
-    .processing-indicator.weibo-thinking .main-orb,
-    .processing-indicator.weibo-talking .main-orb {
-        width: 50px;
-        height: 50px;
-    }
-    .processing-indicator.weibo-thinking .satellite-orb,
-    .processing-indicator.weibo-talking .satellite-orb {
-        width: 18px;
-        height: 18px;
-    }
-
-    @keyframes thinking-satellites-spin {
-        0% { transform: rotate(0deg) translateX(45px) scale(1.1) rotate(0deg); }
-        100% { transform: rotate(720deg) translateX(45px) scale(1.1) rotate(-720deg); }
-    }
-
-    .processing-indicator.weibo-in-work-zone {
-        width: 50px;
-        height: 50px;
-        top: 10px;
-        right: 10px;
-        transform: scale(0.7);
-    }
-    .processing-indicator.weibo-in-work-zone .main-orb {
-        width: 25px; height: 25px;
-    }
-    .processing-indicator.weibo-in-work-zone .satellite-orb {
-        width: 8px; height: 8px;
-    }
-
-    @keyframes satellite-orbit-idle {
-        0% { transform: rotate(0deg) translateX(18px) rotate(0deg); }
-        100% { transform: rotate(360deg) translateX(18px) rotate(-360deg); }
-    }
-
-
-    .chat-log-area .message {
-        padding: 8px 12px;
-        font-size: 0.9em;
-        max-width: 85%;
-    }
-
-    .input-area-sci-fi {
-        padding: 10px;
-        flex-direction: column;
-        gap: 8px;
-    }
-    #userInput {
-        font-size: 1em;
-        padding: 10px 15px;
-        margin-right: 0;
-    }
-    #sendButton {
-        font-size: 0.9em;
-        padding: 10px 15px;
-    }
-
-    .help-menu-popup {
-        width: 90%;
-        max-width: 320px;
-        left: 50%;
-        transform: translateX(-50%);
-        bottom: 65px;
-    }
-    #matrixScrollEffect {
-    }
-     .matrix-column {
-        font-size: 9px;
-        line-height: 11px;
-    }
-
-    .status-panel {
-        width: 280px;
-    }
-    .status-panel-toggle {
-        left: -35px;
-        width: 35px;
-        height: 35px;
-        font-size: 1.3em;
-    }
-}
-
-@media (max-width: 480px) {
-    header h1 {
-        font-size: 1.2em;
-    }
-
-    /* Adjust layout for Project Display Area on phone */
-    #projectDisplayArea {
-        flex-basis: 30%;
-        min-height: 100px;
-    }
-    .ai-core-display {
-        flex-basis: 20%; /* Even less for AI core on small phone */
-        min-height: 80px;
-    }
-    .chat-log-area {
-        flex-basis: 50%; /* Chat gets the most */
-        min-height: 100px;
-    }
-
-     .processing-indicator.weibo-thinking,
-    .processing-indicator.weibo-talking {
-        width: 100px;
-        height: 100px;
-    }
-    .processing-indicator.weibo-thinking .main-orb,
-    .processing-indicator.weibo-talking .main-orb {
-        width: 40px;
-        height: 40px;
-    }
-    .processing-indicator.weibo-thinking .satellite-orb,
-    .processing-indicator.weibo-talking .satellite-orb {
-        width: 15px;
-        height: 15px;
-    }
-
-    @keyframes thinking-satellites-spin {
-        0% { transform: rotate(0deg) translateX(35px) scale(1) rotate(0deg); }
-        100% { transform: rotate(720deg) translateX(35px) scale(1) rotate(-720deg); }
-    }
-
-    .processing-indicator.idle,
-    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) {
-        width: 60px;
-        height: 60px;
-        transform: scale(0.7);
-        bottom: 15px;
-        left: 15px;
-    }
-    .processing-indicator.idle .main-orb,
-    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .main-orb {
-        width: 25px;
-        height: 25px;
-    }
-    .processing-indicator.idle .satellite-orb,
-    .processing-indicator.weibo-working-idle:not(.weibo-in-work-zone) .satellite-orb {
-        width: 8px;
-        height: 8px;
-    }
-    @keyframes satellite-orbit-idle {
-        0% { transform: rotate(0deg) translateX(22px) rotate(0deg); }
-        100% { transform: rotate(360deg) translateX(22px) rotate(-360deg); }
-    }
-
-
-    .help-menu-popup {
-        bottom: 60px;
-    }
-     .matrix-column {
-        font-size: 8px;
-        line-height: 10px;
-    }
-
-    .status-panel {
-        width: 100%;
-        height: calc(100% - 50px);
-        top: 50px;
-        border-left: none;
-        transform: translateX(100%);
-    }
-    .status-panel:not(.collapsed) {
-        transform: translateX(0%);
-    }
-    .status-panel-toggle {
-        top: 5px;
-        left: auto;
-        right: 5px;
-        border-radius: 5px;
-        border-right: 1px solid var(--border-color);
-        border-left: 1px solid var(--border-color);
-        width: 30px;
-        height: 30px;
-        font-size: 1.1em;
-    }
-    .status-panel.collapsed .status-panel-toggle {
-        left: auto;
-        right: 5px;
-        transform: translateX(calc(100% + 5px));
-    }
-     .status-panel:not(.collapsed) .status-panel-toggle {
-        transform: translateX(0);
-    }
-}
-
-/* === Project Display Area & Fullscreen Button === */
-
-/* Default state for projectDisplayArea */
-#projectDisplayArea {
-    /* ... existing styles from before ... */
-    flex-basis: 40%;
-    min-height: 150px;
-    background-color: var(--input-bg-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 15px;
     box-sizing: border-box;
     overflow: auto;
     color: var(--text-secondary-color);
-    /* display: flex; -- handled by .visible or project-mode-active */
-    /* align-items: center; -- handled by .visible or project-mode-active */
-    /* justify-content: center; -- handled by .visible or project-mode-active */
-    /* text-align: center; -- handled by .visible or project-mode-active */
-    display: none; /* Hidden by default */
-    opacity: 0;
-    transition: flex-basis 0.5s ease-in-out, min-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
-    position: relative; /* For positioning loading indicator and controls */
-    flex-direction: column; /* To stack header, iframe, etc. */
 }
 
-/* projectDisplayArea when it's simply made visible (old logic, might remove if new logic covers all) */
-#projectDisplayArea.visible {
-    display: flex; /* This should be flex, and if it's for placeholder, then align/justify center */
-    /* flex-direction: column; /* Moved to base style */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    opacity: 1;
-    /* flex-basis might still be its original 40% here */
-}
-
-
-/* When project mode is active (body has .project-mode-active class) */
-body.project-mode-active .main-content {
-    /* Optional: Adjust main content layout if needed */
-}
-
-body.project-mode-active #projectDisplayArea {
-    display: flex !important; /* Ensure it's shown */
-    align-items: stretch; /* Stretch children like iframe */
-    justify-content: stretch;
-    text-align: left; /* Reset from centered placeholder */
-    flex-basis: 70% !important; /* Takes significant space */
-    min-height: 300px !important; /* Ensure it's large enough */
-    opacity: 1 !important;
-    border: 2px solid var(--accent-color); /* More prominent border */
-    box-shadow: inset 0 0 8px rgba(0,0,0,0.6); /* Inset shadow for depth */
-}
-
-.project-display-header {
-    background-color: var(--secondary-bg-color); /* Or a slightly darker var(--input-bg-color) */
-    color: var(--accent-color);
-    padding: 6px 12px; /* Adjusted padding */
-    font-family: var(--font-primary);
-    font-size: 0.9em; /* Slightly smaller header text */
-    border-bottom: 1px solid var(--border-color);
-    text-align: center; /* Center the header text */
-    flex-shrink: 0; /* Prevent header from shrinking */
-}
-
-#projectDisplayArea iframe { /* Ensure iframe takes remaining space after header */
-    flex-grow: 1;
-    width: 100%;
-    border: none; /* Already had this inline, but good to ensure */
-}
-
-
-.loading-indicator-container {
-    position: absolute;
-    top: 0; /* Cover entire area, or adjust if header should be visible */
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(16, 24, 40, 0.85); /* Match var(--secondary-bg-color) but with alpha */
-    display: flex; /* Hidden by default via inline style, JS will toggle to flex */
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 50; /* Above iframe, below project-controls */
-    color: var(--text-color);
-    border-radius: इन्हेरिट; /* Inherit parent's border radius if any part shows */
-}
-
-.loading-indicator-container .spinner {
-    border: 4px solid rgba(224, 230, 240, 0.3); /* var(--text-color) with alpha */
-    border-left-color: var(--accent-color);
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-}
-
-.loading-indicator-container p {
-    margin-top: 15px;
-    font-size: 0.9em;
-    color: var(--text-secondary-color);
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-
-body.project-mode-active .ai-core-display {
-    display: none !important; /* Hide AI Core display (Weibo's original box) */
-}
-
-/* Weibo's corner mode - to be applied by JS when body.project-mode-active */
-.processing-indicator.weibo-project-corner {
-    width: 70px !important; /* Slightly larger for better visibility in corner */
-    height: 70px !important;
-    position: absolute !important; /* Positioned relative to its new parent (#projectDisplayArea) */
-    bottom: 10px !important;
-    left: 10px !important;
-    top: auto !important;
-    right: auto !important;
-    transform: scale(1) !important; /* Reset scale from other modes if any, or use a fixed small scale */
-    z-index: 1050; /* Above projectDisplayArea content, but below fullscreen controls if they are higher */
-}
-.processing-indicator.weibo-project-corner .main-orb {
-    width: 25px !important;
-    height: 25px !important;
-    animation: subtle-pulse 3s infinite ease-in-out !important;
-}
-.processing-indicator.weibo-project-corner .satellite-orb {
-    display: none !important; /* Hide satellites for simplicity in corner mode */
-}
-/* Ensure that thinking/talking animations don't override corner mode's fixed position/size */
-.processing-indicator.weibo-project-corner.weibo-thinking,
-.processing-indicator.weibo-project-corner.weibo-talking {
-    /* The .weibo-project-corner class uses !important for positioning and size,
-       so it should override the general weibo-thinking/talking styles.
-       We might only need to ensure animations are compatible or simplified.
-       The main orb animation is already set above. Satellites are hidden.
-    */
-}
-
-
-.project-controls {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    display: flex;
-    gap: 8px;
-    z-index: 100; /* Ensure controls are above iframe content */
-}
-
-.project-controls button {
-    background-color: rgba(30, 40, 60, 0.7);
-    color: var(--text-color-light, var(--accent-color));
+.ai-core-display {
+    flex-basis: 40%;
+    background-color: var(--secondary-bg-color);
     border: 1px solid var(--border-color);
-    border-radius: 5px;
-    padding: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
-    line-height: 0; /* Helps align SVG icons */
-}
-
-.project-controls button:hover:not(:disabled) {
-    background-color: rgba(45, 55, 80, 0.9);
-    box-shadow: 0 0 5px var(--glow-color);
-}
-
-.project-controls button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.project-controls button svg {
-    display: block;
-    width: 18px;
-    height: 18px;
-}
-
-
-/* Specific button for fullscreen, if it's part of .project-controls */
-#fullscreenToggleBtn {
-    /* position, top, right are handled by .project-controls if it's a direct child */
-    /* If #fullscreenToggleBtn is still positioned independently, its existing styles are fine */
-    /* For this example, assuming it's now part of .project-controls so removing explicit pos. */
-    /* position: absolute; */
-    /* top: 10px; */
-    /* right: 10px; */
-    background-color: rgba(30, 40, 60, 0.7);
-    color: var(--text-color-light, var(--accent-color)); /* Fallback for text-color-light */
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    padding: 6px; /* Slightly more padding for better click area */
-    cursor: pointer;
-    z-index: 100; /* Ensure it's above the iframe content */
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
-    line-height: 0; /* Helps align SVG icon if it has extra space */
-}
-
-#fullscreenToggleBtn:hover {
-    background-color: rgba(45, 55, 80, 0.9);
-    box-shadow: 0 0 5px var(--glow-color);
-}
-
-#fullscreenToggleBtn svg {
-    display: block; /* Ensures SVG takes up its own line if needed, good for sizing */
-    width: 18px; /* Consistent sizing */
-    height: 18px;
-}
-
-/* Fullscreen Mode for Project Display Area */
-#projectDisplayArea.fullscreen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw !important;  /* Use !important to override inline styles or other specific rules if necessary */
-    height: 100vh !important; /* Use !important */
-    z-index: 2000; /* Very high z-index to cover everything */
-    padding: 0; /* No padding in fullscreen */
-    margin: 0; /* No margin in fullscreen */
-    border-radius: 0; /* No rounded corners in fullscreen */
-    border: none; /* No border in fullscreen */
-    /* Ensure flex properties from default state are overridden or managed if they conflict */
-    display: block; /* Override flex if it causes issues, iframe will fill */
-}
-
-#projectDisplayArea.fullscreen #projectDisplayIframe {
-    width: 100%;
-    height: 100%;
-}
-
-#projectDisplayArea.fullscreen #fullscreenToggleBtn {
-    top: 15px; /* Reposition button in fullscreen */
-    right: 15px;
-    background-color: rgba(10, 15, 24, 0.8); /* Darker background for better visibility on varied content */
-}
-
-/* Optional: Hide other major UI elements when project area is fullscreen for a cleaner view */
-/* This is better handled by adding a class to a common parent like .sci-fi-container or body */
-/* For now, the high z-index of .fullscreen should suffice to visually cover them. */
-/* If direct hiding is needed:
-body.project-fullscreen-active > header,
-body.project-fullscreen-active > .main-content > :not(.project-display-area),
-body.project-fullscreen-active > .input-area-sci-fi,
-body.project-fullscreen-active > .status-panel {
-    display: none;
-}
-*/
-
-/* === Interactive Suggestion List Styles === */
-.ai-message.interactive-list {
-    /* Use full width or align-self: stretch if parent is flex column */
-    align-self: stretch;
-    max-width: 100%; /* Override default max-width for AI messages if needed */
-    border-left: 3px solid var(--button-hover-bg-color); /* Distinct border for interactive lists */
-}
-
-.suggestions-list-container {
-    padding: 10px;
-    border: 1px solid rgba(var(--border-color), 0.5);
-    border-radius: 6px;
-    background-color: rgba(var(--input-bg-color), 0.5); /* Slightly transparent */
-}
-
-.suggestions-header {
-    font-family: var(--font-primary);
-    color: var(--accent-color);
-    font-size: 1.1em;
-    margin-bottom: 10px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.suggestion-item {
-    background-color: rgba(var(--secondary-bg-color), 0.7);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-}
-.suggestion-item:last-child {
-    margin-bottom: 0;
-}
-
-.suggestion-id {
-    font-size: 0.8em;
-    color: var(--text-secondary-color);
-    margin-bottom: 3px;
-}
-
-.suggestion-title {
-    font-weight: bold;
-    color: var(--text-color);
-    margin-bottom: 5px;
-}
-
-.suggestion-description {
-    margin-bottom: 5px;
-    line-height: 1.4;
-}
-
-.suggestion-status {
-    margin-bottom: 5px;
-    font-style: italic;
-}
-.suggestion-status .status-value {
-    font-weight: bold;
-    color: var(--accent-color); /* Highlight status */
-}
-
-.suggestion-reason {
-    font-size: 0.85em;
-    color: var(--text-secondary-color);
-    margin-top: 3px;
-    padding-left: 10px;
-    border-left: 2px solid rgba(var(--border-color), 0.5);
-}
-
-.suggestion-actions {
-    margin-top: 10px;
-    display: flex;
-    gap: 10px;
-}
-
-.suggestion-actions button {
-    font-family: var(--font-secondary);
-    font-size: 0.85em;
-    padding: 5px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-    border: 1px solid var(--border-color);
-}
-
-.approve-suggestion-btn {
-    background-color: #00695c; /* Tealish green */
-    color: #e0f2f1;
-}
-.approve-suggestion-btn:hover {
-    background-color: #00897b;
-    box-shadow: 0 0 5px #00897b;
-}
-
-.deny-suggestion-btn {
-    background-color: #b71c1c; /* Reddish */
-    color: #ffebee;
-}
-.deny-suggestion-btn:hover {
-    background-color: #d32f2f;
-    box-shadow: 0 0 5px #d32f2f;
-}
-
-/* === Interactive Task List Styles === */
-/* .ai-message.interactive-list is already defined from suggestions */
-
-.tasks-list-container { /* Similar to suggestions-list-container */
-    padding: 10px;
-    border: 1px solid rgba(var(--border-color), 0.5);
-    border-radius: 6px;
-    background-color: rgba(var(--input-bg-color), 0.5);
-}
-
-.tasks-header { /* Similar to suggestions-header */
-    font-family: var(--font-primary);
-    color: var(--accent-color);
-    font-size: 1.1em;
-    margin-bottom: 10px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.task-item { /* Similar to suggestion-item */
-    background-color: rgba(var(--secondary-bg-color), 0.7);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-}
-.task-item:last-child {
-    margin-bottom: 0;
-}
-
-.task-id, .task-type {
-    font-size: 0.8em;
-    color: var(--text-secondary-color);
-    margin-bottom: 3px;
-}
-
-.task-description { /* Similar to suggestion-description */
-    margin-bottom: 5px;
-    line-height: 1.4;
-}
-
-.task-status { /* Similar to suggestion-status */
-    margin-bottom: 5px;
-    font-style: italic;
-}
-.task-status .status-value { /* Shared with suggestion-status */
-    font-weight: bold;
-    color: var(--accent-color);
-}
-
-.task-current-step, .task-reason { /* Similar to suggestion-reason */
-    font-size: 0.85em;
-    color: var(--text-secondary-color);
-    margin-top: 3px;
-    padding-left: 10px;
-    border-left: 2px solid rgba(var(--border-color), 0.5);
-}
-
-.task-actions { /* Similar to suggestion-actions */
-    margin-top: 10px;
-    display: flex;
-    flex-wrap: wrap; /* Allow buttons to wrap if many */
-    gap: 8px;
-}
-
-.task-actions button { /* Shared base style with suggestion-actions button */
-    font-family: var(--font-secondary);
-    font-size: 0.85em;
-    padding: 5px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-    border: 1px solid var(--border-color);
-}
-
-/* Specific button styles for tasks if needed, or they can share with suggestions */
-.view-task-plan-btn {
-    background-color: #0277bd; /* Blueish */
-    color: #e1f5fe;
-}
-.view-task-plan-btn:hover {
-    background-color: #039be5;
-    box-shadow: 0 0 5px #039be5;
-}
-
-.complete-task-btn { /* Can share with approve-suggestion-btn if desired */
-    background-color: #00695c; /* Tealish green */
-    color: #e0f2f1;
-}
-.complete-task-btn:hover {
-    background-color: #00897b;
-    box-shadow: 0 0 5px #00897b;
-}
-
-.archive-task-btn {
-    background-color: #455a64; /* Bluish-grey */
-    color: #eceff1;
-}
-.archive-task-btn:hover {
-    background-color: #607d8b;
-    box-shadow: 0 0 5px #607d8b;
-}
-
-.task-action-finalized {
-    font-style: italic;
-    color: var(--text-secondary-color);
-    font-size: 0.9em;
+    border-radius: 8px;
+    padding: 20px;
+    box-sizing: border-box;
 }

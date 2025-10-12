@@ -989,22 +989,6 @@ async function markNotificationAsActioned(notificationId) {
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    const themeSwitch = document.getElementById('checkbox');
-
-    // Load saved theme from local storage
-    if (localStorage.getItem('theme') === 'dark') {
-        document.body.classList.add('dark-theme');
-        themeSwitch.checked = true;
-    }
-
-    themeSwitch.addEventListener('change', () => {
-        document.body.classList.toggle('dark-theme');
-        if (document.body.classList.contains('dark-theme')) {
-            localStorage.setItem('theme', 'dark');
-        } else {
-            localStorage.removeItem('theme');
-        }
-    });
     console.log("DOM fully loaded and parsed. Initializing script logic.");
 
     chatLogArea = document.getElementById('chatLogArea');
