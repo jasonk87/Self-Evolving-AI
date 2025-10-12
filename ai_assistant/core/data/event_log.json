@@ -12152,5 +12152,446 @@
             ],
             "model_used": "test_model"
         }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.776554+00:00",
+        "event_id": "56dfdcffb69a44dcbebd4405a5c406b8",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: A very complex prompt leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "A very complex prompt leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.801230+00:00",
+        "event_id": "082e8d4e13b64b12ae54df29359ec7c0",
+        "event_type": "ORCHESTRATOR_CONVERSATIONAL_FALLBACK",
+        "description": "No plan for 'A very complex prompt leading to no plan', generated direct response.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "response": "Default mock LLM response"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.838550+00:00",
+        "event_id": "79e40c70da0f47cbbbc0afdd900a0a52",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.874265+00:00",
+        "event_id": "f5dc0bb3205f4723a2261b8cb0a5d7ed",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Goal leading to no plan",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Goal leading to no plan"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.909520+00:00",
+        "event_id": "071e873edf0044529cd3e1abb8824d50",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.935636+00:00",
+        "event_id": "c917b6224a074fd4b4612450f87a9a62",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator boom",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator boom",
+            "goal": "Prompt causing orchestrator error",
+            "full_error_repr": "'Orchestrator boom'"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.973254+00:00",
+        "event_id": "4ab52296052349bda1902e820746d276",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt causing orchestrator error, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt causing orchestrator error, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:56.999516+00:00",
+        "event_id": "30f68009ca904c8b81ceed4a4a492026",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Caught top-level exception: Exception - Orchestrator critical failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error_type": "Exception",
+            "error_message": "Orchestrator critical failure",
+            "goal": "Prompt causing orchestrator error, rephraser fails",
+            "full_error_repr": "'Orchestrator critical failure'"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.038495+00:00",
+        "event_id": "430625544c6140fbb560953896573838",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.065509+00:00",
+        "event_id": "fb1e4a969a914fd48659cc3b72c81de0",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "failing_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.090603+00:00",
+        "event_id": "10d7529a508940a6a015e17c459eb9d1",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.128929+00:00",
+        "event_id": "41d813caa9244d2c8cc9e92aa51fd313",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.154057+00:00",
+        "event_id": "8b4319369e814937a4d22b08ec6c7499",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "failing_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.178909+00:00",
+        "event_id": "38ee17bba8074b7ba8c49fdadc55780d",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for execution failure, rephraser fails",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for execution failure, rephraser fails",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.216436+00:00",
+        "event_id": "f90246ef4aab49b084226e2c2d197872",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.241614+00:00",
+        "event_id": "28cdf61fd5754e73ae9ab8f7d4d35cf6",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "another_failing_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.266531+00:00",
+        "event_id": "f174c6b7ee704c70b7f20a66e1e9a083",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt for double failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt for double failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.303916+00:00",
+        "event_id": "90ebf481b1e94b2d9fd2544d60ea37fe",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.330350+00:00",
+        "event_id": "9517f5480d754c738cc27aa9811f604b",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "failing_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.355271+00:00",
+        "event_id": "120c977bd8a947b786615ba04c4798f7",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Prompt that causes plan failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Prompt that causes plan failure",
+            "success": false,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.405170+00:00",
+        "event_id": "9830333b454c4c35b2ff6af3fbbb9c60",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.430262+00:00",
+        "event_id": "a97ac19a065541658fed15bd02328e45",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "another_mock_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.455118+00:00",
+        "event_id": "20df1a3ca0e346fb887891e06c7e53a0",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test prompt for summarizer failure",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test prompt for summarizer failure",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.492263+00:00",
+        "event_id": "bc10592b6f24409ebccb5e5bfcaab2d7",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.517779+00:00",
+        "event_id": "6eaa18667676454292c035143bf02b1f",
+        "event_type": "ORCHESTRATOR_LARGE_CONTENT_STORE_INIT",
+        "description": "Initialized large content store for current plan execution.",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "plan_id": "mock_tool"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.543018+00:00",
+        "event_id": "150eb2d8a2804d5f8f11282c481d7504",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: Test user prompt",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "Test user prompt",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.901641+00:00",
+        "event_id": "dd3f651eae8c4f638505907a86e9eadb",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "some_other_tool",
+                "request_user_clarification"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.939202+00:00",
+        "event_id": "a3b5a5eb563d45c787f057cbb27e9351",
+        "event_type": "AUTONOMOUS_ACTION_MODIFY_TOOL_CODE_ATTEMPT",
+        "description": "All good, code modified and committed.",
+        "source": "autonomous_reflection.select_suggestion_for_autonomous_action",
+        "metadata": {
+            "suggestion_id": "SUG_MODIFY_001",
+            "tool_name": "sample_tool_function",
+            "module_path": "ai_assistant.dummy_modules.dummy_tool_module",
+            "overall_outcome_success": true,
+            "edit_status": true,
+            "test_status": true,
+            "revert_status": null,
+            "commit_status": true,
+            "priority_score": 2.0
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:57.967395+00:00",
+        "event_id": "986bf44102a2405c801286043d30e473",
+        "event_type": "AUTONOMOUS_ACTION_MODIFY_TOOL_CODE_ATTEMPT",
+        "description": "Tests failed, reverted.",
+        "source": "autonomous_reflection.select_suggestion_for_autonomous_action",
+        "metadata": {
+            "suggestion_id": "SUG_MODIFY_001",
+            "tool_name": "sample_tool_function",
+            "module_path": "ai_assistant.dummy_modules.dummy_tool_module",
+            "overall_outcome_success": false,
+            "edit_status": true,
+            "test_status": false,
+            "revert_status": true,
+            "commit_status": null,
+            "priority_score": 2.0
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:39:58.005752+00:00",
+        "event_id": "2b024ace52b84651bb68e130d00bcf32",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:42:11.921703+00:00",
+        "event_id": "38ed8561ca8c467286b96200c5972289",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Structured pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:42:11.949412+00:00",
+        "event_id": "ae996befea9342019ee37f76ddeb67f1",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
+        "description": "Suggestion generation complete. Generated 0 suggestion(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions": 0,
+            "suggestions_preview": [],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:42:11.978578+00:00",
+        "event_id": "d2c291aca65a4a4caf5bd2059f919749",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_COMPLETED",
+        "description": "Self-reflection cycle finished. Produced 0 suggestions, attempted scoring, review, and saving.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions_produced": 0,
+            "num_suggestions_saved": 0
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:42:12.047635+00:00",
+        "event_id": "59806bad666d43919a9599fe6a422fbb",
+        "event_type": "AUTONOMOUS_REFLECTION_CYCLE_STARTED",
+        "description": "Self-reflection cycle initiated.",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "max_log_entries": 50,
+            "min_entries_for_analysis": 5
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:44:27.089344+00:00",
+        "event_id": "ffe47120a8da4888a860332fa2cd8e7b",
+        "event_type": "AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
+        "description": "Structured pattern identification complete. Found 1 pattern(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_patterns": 1,
+            "patterns_preview": [
+                {
+                    "pattern_type": "Test Pattern"
+                }
+            ],
+            "model_used": "test_model"
+        }
+    },
+    {
+        "timestamp": "2025-10-12T18:44:27.117078+00:00",
+        "event_id": "8f488dad9d984569871f038511f0d6e7",
+        "event_type": "AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
+        "description": "Suggestion generation complete. Generated 2 suggestion(s).",
+        "source": "autonomous_reflection.run_self_reflection_cycle",
+        "metadata": {
+            "num_suggestions": 2,
+            "suggestions_preview": [
+                {
+                    "suggestion_id": "SUG_001",
+                    "suggestion_text": "Suggestion 1",
+                    "action_type": "TYPE_A"
+                },
+                {
+                    "suggestion_id": "SUG_002",
+                    "suggestion_text": "Suggestion 2",
+                    "action_type": "TYPE_B"
+                }
+            ],
+            "model_used": "test_model"
+        }
     }
 ]
