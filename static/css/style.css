@@ -4,15 +4,15 @@
     --font-primary: 'Manrope', sans-serif;
     --font-monospace: 'Roboto Mono', monospace;
 
-    /* Green Theme */
-    --primary-bg-color: #1a201c;
-    --secondary-bg-color: #242c28;
-    --accent-color: #32de84;
-    --text-color: #e0e6f0;
-    --text-secondary-color: #a0a8b0;
-    --border-color: #3a4a42;
-    --button-hover-bg-color: #28a745;
-    --input-bg-color: #2c3632;
+    /* Lighter Green Theme */
+    --primary-bg-color: #f0f4f0;
+    --secondary-bg-color: #e4e8e4;
+    --accent-color: #4CAF50;
+    --text-color: #1a1a1a;
+    --text-secondary-color: #555;
+    --border-color: #ccc;
+    --button-hover-bg-color: #45a049;
+    --input-bg-color: #fff;
 }
 
 body, html {
@@ -54,7 +54,7 @@ body, html {
     width: 100%;
     padding: 10px;
     background-color: var(--accent-color);
-    color: #000000;
+    color: #fff;
     border: none;
     border-radius: 5px;
     font-family: var(--font-primary);
@@ -107,4 +107,73 @@ body, html {
 
 #sendButton {
     display: none; /* Hidden as per the image */
+}
+
+/* Restored components */
+#projectDisplayArea {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%;
+    height: 80%;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    z-index: 1000;
+}
+
+.ai-core-display {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 200px;
+    height: 100px;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.status-panel {
+    position: fixed;
+    top: 0;
+    right: -320px;
+    width: 320px;
+    height: 100%;
+    background-color: var(--secondary-bg-color);
+    border-left: 1px solid var(--border-color);
+    transition: right 0.3s ease-in-out;
+}
+
+.status-panel:not(.collapsed) {
+    right: 0;
+}
+
+.status-panel-toggle {
+    position: absolute;
+    top: 50%;
+    left: -30px;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 100px;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-right: none;
+    border-radius: 5px 0 0 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.help-menu-popup {
+    position: fixed;
+    bottom: 70px;
+    left: 20px;
+    width: 300px;
+    max-height: 400px;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    z-index: 1000;
 }
