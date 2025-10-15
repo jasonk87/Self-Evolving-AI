@@ -64,6 +64,10 @@ class NotificationType(Enum):
     # Proactive AI Messages
     PROACTIVE_TASK_CHECKIN = auto() # For long-running task updates
 
+    # Custom notifications
+    FILE_SAVED = auto()
+    PROJECT_COMPLETED = auto()
+
 
 @dataclass
 class Notification:

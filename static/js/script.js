@@ -1010,6 +1010,22 @@ document.addEventListener('DOMContentLoaded', () => {
     projectDisplayLoadingIndicator = document.querySelector('#projectDisplayArea .loading-indicator-container');
     reloadBtn = document.getElementById('reloadBtn'); // Assign reload button
     const toggleProjectDisplayBtn = document.getElementById('toggleProjectDisplayBtn');
+    const controlPanelToggle = document.getElementById('controlPanelToggle');
+    const controlPanel = document.querySelector('.control-panel');
+
+    if (controlPanelToggle && controlPanel) {
+        controlPanelToggle.addEventListener('click', () => {
+            controlPanel.classList.toggle('expanded');
+        });
+    }
+
+    if (toggleProjectDisplayBtn) {
+        toggleProjectDisplayBtn.addEventListener('click', () => {
+            if (projectDisplayArea) {
+                projectDisplayArea.style.display = projectDisplayArea.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    }
 
 
     if (aiCoreDisplay) {

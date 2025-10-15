@@ -69,7 +69,7 @@ def create_project_directory(project_name: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while creating project directory '{full_path}': {e}"
 
-def write_text_to_file(full_filepath: str, content: str) -> str:
+def write_text_to_file(full_filepath: str, content: str, notification_manager: Optional[Any] = None) -> str:
     """
     Writes the given text content to the specified file.
     Ensures the directory for the file exists before writing.
@@ -77,6 +77,7 @@ def write_text_to_file(full_filepath: str, content: str) -> str:
     Args:
         full_filepath: The absolute or relative path to the file.
         content: The string content to write to the file.
+        notification_manager: An optional NotificationManager instance.
 
     Returns:
         A string indicating success or an error message.
@@ -93,6 +94,14 @@ def write_text_to_file(full_filepath: str, content: str) -> str:
         
         with open(full_filepath, 'w', encoding='utf-8') as f:
             f.write(content)
+
+        if notification_manager:
+            notification_manager.add_notification(
+                event_type="FILE_SAVED",
+                summary_message=f"File saved: {os.path.basename(full_filepath)}",
+                details_payload={"filepath": full_filepath}
+            )
+
         return f"Success: Content written to '{full_filepath}'."
     except OSError as e:
         return f"Error writing to file '{full_filepath}': {e}"

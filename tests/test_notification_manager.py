@@ -272,5 +272,29 @@ class TestNotificationManager(unittest.TestCase):
         self.assertEqual(loaded_n1.related_item_type, n1_orig.related_item_type)
         self.assertEqual(loaded_n1.details_payload, n1_orig.details_payload)
 
+    def test_file_saved_notification(self):
+        self.manager.add_notification(
+            event_type=NotificationType.FILE_SAVED,
+            summary_message="File 'test.txt' was saved.",
+            related_item_id="test.txt",
+            related_item_type="file"
+        )
+        notifications = self.manager.get_notifications(status_filter=NotificationStatus.UNREAD)
+        self.assertEqual(len(notifications), 1)
+        self.assertEqual(notifications[0].event_type, NotificationType.FILE_SAVED)
+        self.assertEqual(notifications[0].summary_message, "File 'test.txt' was saved.")
+
+    def test_project_completed_notification(self):
+        self.manager.add_notification(
+            event_type=NotificationType.PROJECT_COMPLETED,
+            summary_message="Project 'My Project' was completed.",
+            related_item_id="proj_123",
+            related_item_type="project"
+        )
+        notifications = self.manager.get_notifications(status_filter=NotificationStatus.UNREAD)
+        self.assertEqual(len(notifications), 1)
+        self.assertEqual(notifications[0].event_type, NotificationType.PROJECT_COMPLETED)
+        self.assertEqual(notifications[0].summary_message, "Project 'My Project' was completed.")
+
 if __name__ == '__main__': # pragma: no cover
     unittest.main()

@@ -460,6 +460,14 @@ class TaskManager:
         if not task:
             return False
         self.update_task_status(task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason=reason)
+        if self.notification_manager and task.task_type == ActiveTaskType.USER_PROJECT_CREATION:
+            self.notification_manager.add_notification(
+                event_type=NotificationType.PROJECT_COMPLETED,
+                summary_message=f"Project '{task.description}' has been completed.",
+                related_item_id=task.task_id,
+                related_item_type="project",
+                details_payload=task.to_dict()
+            )
         return True
 
     def archive_task_by_id(self, task_id: str, reason: Optional[str] = "Archived via API") -> bool:

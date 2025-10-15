@@ -515,5 +515,43 @@
         "post_modification_test_passed": null,
         "post_modification_test_details": null,
         "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "28dd7d15-6d38-49be-91e3-35872cfc96af",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-10-15T00:38:48.009953+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
     }
 ]
