@@ -130,3 +130,39 @@ body, html {
 #sendButton {
     display: none; /* Hidden as per the image */
 }
+
+#suggestionsList {
+    list-style-type: none;
+    padding: 0;
+}
+
+.suggestion-item {
+    background-color: var(--input-bg-color);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.suggestion-item h5 {
+    margin: 0 0 5px 0;
+    color: var(--accent-color);
+}
+
+.suggestion-item p {
+    margin: 0 0 10px 0;
+    font-size: 0.9em;
+}
+
+.suggestion-buttons button {
+    background-color: var(--accent-color);
+    color: #000;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-right: 5px;
+}
+
+.suggestion-buttons button:hover {
+    background-color: var(--button-hover-bg-color);
+}
