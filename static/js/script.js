@@ -4,6 +4,8 @@ let chatLogArea = null;
 let userInput = null;
 let sendButton = null;
 let suggestionsList = null;
+let activeTasksList = null;
+let reflectionsList = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM fully loaded and parsed. Initializing script logic.");
@@ -12,12 +14,19 @@ document.addEventListener('DOMContentLoaded', () => {
     userInput = document.getElementById('userInput');
     sendButton = document.getElementById('sendButton');
     suggestionsList = document.getElementById('suggestionsList');
+    activeTasksList = document.getElementById('activeTasksList');
+    reflectionsList = document.getElementById('reflectionsList');
     const controlPanelToggle = document.getElementById('controlPanelToggle');
     const controlPanel = document.querySelector('.control-panel');
 
     if (controlPanelToggle && controlPanel) {
         controlPanelToggle.addEventListener('click', () => {
             controlPanel.classList.toggle('expanded');
+            if (controlPanel.classList.contains('expanded')) {
+                fetchAndDisplaySuggestions();
+                fetchAndDisplayActiveTasks();
+                fetchAndDisplayReflections();
+            }
         });
     }
 
@@ -30,8 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    fetchAndDisplaySuggestions();
 });
 
 async function fetchAndDisplaySuggestions() {
@@ -96,6 +103,60 @@ async function handleSuggestionAction(suggestionId, action) {
     } catch (error) {
         console.error(`Failed to ${action} suggestion:`, error);
     }
+}
+
+async function fetchAndDisplayActiveTasks() {
+    try {
+        const response = await fetch('/api/status/active_tasks');
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        }
+        const tasks = await response.json();
+        renderActiveTasks(tasks);
+    } catch (error) {
+        console.error("Failed to fetch active tasks:", error);
+    }
+}
+
+function renderActiveTasks(tasks) {
+    if (!activeTasksList) return;
+    activeTasksList.innerHTML = '';
+    tasks.forEach(task => {
+        const listItem = document.createElement('li');
+        listItem.className = 'task-item';
+        listItem.innerHTML = `
+            <h5>${task.description}</h5>
+            <p>Status: ${task.status}</p>
+        `;
+        activeTasksList.appendChild(listItem);
+    });
+}
+
+async function fetchAndDisplayReflections() {
+    try {
+        const response = await fetch('/api/reflections');
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        }
+        const reflections = await response.json();
+        renderReflections(reflections);
+    } catch (error) {
+        console.error("Failed to fetch reflections:", error);
+    }
+}
+
+function renderReflections(reflections) {
+    if (!reflectionsList) return;
+    reflectionsList.innerHTML = '';
+    reflections.forEach(reflection => {
+        const listItem = document.createElement('li');
+        listItem.className = 'reflection-item';
+        listItem.innerHTML = `
+            <h5>${reflection.goal_description}</h5>
+            <p>Status: ${reflection.status}</p>
+        `;
+        reflectionsList.appendChild(listItem);
+    });
 }
 
 function appendToChatLog(text, sender) {

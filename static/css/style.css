@@ -166,3 +166,25 @@ body, html {
 .suggestion-buttons button:hover {
     background-color: var(--button-hover-bg-color);
 }
+
+#activeTasksList, #reflectionsList {
+    list-style-type: none;
+    padding: 0;
+}
+
+.task-item, .reflection-item {
+    background-color: var(--input-bg-color);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.task-item h5, .reflection-item h5 {
+    margin: 0 0 5px 0;
+    color: var(--accent-color);
+}
+
+.task-item p, .reflection-item p {
+    margin: 0 0 10px 0;
+    font-size: 0.9em;
+}
