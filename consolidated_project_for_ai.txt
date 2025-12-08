@@ -10384,7 +10384,7 @@ def search_google_custom_search(query: str, num_results: Union[int, str] = 5) ->
         str: A JSON string representing a list of search results, each with
              'title', 'href' (URL), and 'body' (snippet). Returns '[]' on error.
     """
-    api_key = os.environ.get("GOOGLE_API_KEY") or CFG_GOOGLE_API_KEY
+    api_key = "AIzaSyDfPzWLeoLjseupGzZ7YzZUBwaa8M9QDIU"
     cse_id = os.environ.get("GOOGLE_CSE_ID") or CFG_GOOGLE_CSE_ID
 
     if not api_key:

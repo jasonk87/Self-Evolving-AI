@@ -124,6 +124,31 @@ GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {
 }
 
 
+def get_self_awareness_info_and_converse(
+    task_manager: Optional[TaskManager] = None,
+    notification_manager: Optional[NotificationManager] = None
+) -> str:
+    """
+    Retrieves a comprehensive summary of the AI's current state, including active tasks,
+    notifications, and general system health, formatted for a conversational response.
+    """
+    status_summary = get_system_status_summary(
+        task_manager=task_manager,
+        notification_manager=notification_manager,
+        active_limit=5,
+        unread_notifications_limit=5
+    )
+    
+    return f"Self-Awareness Report:\n{status_summary}\n\n(Use this information to answer the user's question about how you are doing.)"
+
+GET_SELF_AWARENESS_INFO_AND_CONVERSE_SCHEMA = {
+    "name": "get_self_awareness_info_and_converse",
+    "description": "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.",
+    "parameters": [],
+    "returns": {"type": "str", "description": "A detailed text report of internal status."}
+}
+
+
 class ItemTypeForDetails(Enum):
     TASK = "task"
     SUGGESTION = "suggestion"

@@ -14,12 +14,15 @@ from ai_assistant.config import (
     ENABLE_CHAIN_OF_THOUGHT,
     DEFAULT_TEMPERATURE_THINKING,
     DEFAULT_TEMPERATURE_RESPONSE,
-    THINKING_CONFIG
+    THINKING_CONFIG,
+    LLM_PROVIDER
 )
 from ai_assistant.debugging.resilience import retry_with_backoff
+import ai_assistant.llm_interface.gemini_client as gemini_client
 
-OLLAMA_API_ENDPOINT = "http://192.168.86.30:11434/api/generate"
-OLLAMA_CHAT_API_ENDPOINT = "http://192.168.86.30:11434/api/chat"
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
+OLLAMA_CHAT_API_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 DEFAULT_OLLAMA_MODEL = CFG_DEFAULT_MODEL
 
 THINKING_PROMPT_TEMPLATE = """You are a highly capable AI assistant with strong analytical and problem-solving abilities. Let's solve this problem step by step.
@@ -73,6 +76,10 @@ def invoke_ollama_model(
     temperature: float = 0.7,
     max_tokens: int = 1500
 ) -> Optional[str]:
+
+    if LLM_PROVIDER == "gemini":
+        return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens)
+
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
     enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
     use_chat_api = enable_thinking
@@ -181,6 +188,10 @@ async def invoke_ollama_model_async_internal(
     max_tokens: int = 1500,
     api_endpoint_override: Optional[str] = None
 ) -> Optional[str]:
+
+    if LLM_PROVIDER == "gemini":
+        return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
+
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
     enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
     use_chat_api = enable_thinking

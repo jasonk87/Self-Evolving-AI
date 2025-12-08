@@ -1,7 +1,9 @@
 # ai_assistant/config.py
 
 # Default model to be used by the Ollama client if no specific model is requested for a task.
-DEFAULT_MODEL = "qwen3:8B"  # Example default model, can be changed as needed
+# Options: "gemini", "ollama"
+LLM_PROVIDER = "gemini" 
+DEFAULT_MODEL = "gemini-2.0-flash-exp"  # Default model for Gemini
 import os
 from typing import Optional, Dict, List
 
@@ -9,7 +11,8 @@ from typing import Optional, Dict, List
 THINKING_SUPPORTED_MODELS: List[str] = [
     "qwen3:latest",
     "deepseek-r1:latest",
-    "qwen3:8B"
+    "qwen3:8B",
+    "gemini-2.0-flash-exp"
 ]
 
 # Enable or disable thinking capability globally (overrides per-model settings)
@@ -86,7 +89,7 @@ DEBUG_MODE = True
 # export GOOGLE_CSE_ID="your_actual_cse_id"
 #
 # Load Google API Key from environment variable GOOGLE_API_KEY
-GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
+GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY', "")
 # Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 

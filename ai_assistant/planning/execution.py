@@ -71,8 +71,10 @@ class ExecutionAgent:
             }
             
             plan_failed_critically = False
+            should_continue_with_replan = False
 
             for i, step in enumerate(current_plan):
+
                 tool_name = step.get("tool_name")
                 args = step.get("args", ())
                 kwargs = step.get("kwargs", {})
@@ -202,8 +204,9 @@ class ExecutionAgent:
                             if new_plan:
                                 print(f"ExecutionAgent: Successfully re-planned. New plan has {len(new_plan)} steps. Resetting and retrying.")
                                 current_plan = new_plan
-                                replan_attempts += 1 # Increment before breaking to restart loop
-                                break # Break from step loop to restart with new plan in the outer while loop
+                                replan_attempts += 1 
+                                should_continue_with_replan = True
+                                break 
                             else:
                                 print("ExecutionAgent: Re-planning attempt failed to produce a new plan. Proceeding with original failure.")
                                 # Fall through to normal failure handling outside the step loop as plan_failed_critically is True
@@ -215,6 +218,10 @@ class ExecutionAgent:
                         # Fall through
                     
                     break # Break from step loop (current plan execution stops due to critical error)
+
+            if should_continue_with_replan:
+                continue
+
 
             # After iterating through all steps of the current_plan or breaking due to critical failure
             if not plan_failed_critically: # Plan completed all steps without critical error
@@ -252,9 +259,21 @@ class ExecutionAgent:
                 )
                 return current_plan, plan_results # MODIFIED: Return successful plan and its results
 
-            # If plan_failed_critically is True and we are here, it means either re-planning didn't happen,
-            # or re-planning failed to produce a new plan, or re-plan limit was reached.
+            # If plan_failed_critically is True and we are here, execution of the current plan failed.
+            # If we successfully re-planned (indicated by break in inner loop and current_plan update),
+            # we should have restarted the outer loop.
+            # However, if 'replan_attempts' was incremented, we need to ensure we don't fall into the failure block immediately
+            # if we just reached the limit but haven't run the new plan yet.
+            
+            # Use 'should_retry_with_new_plan' flag logic from inner loop? 
+            # Actually, checking if (replan_attempts > 0 and plan_failed_critically and new_plan) is complex because variables might be stale.
+            # Better approach: initialize `should_retry_from_replan` at start of loop.
+
+            # If we are here, it implies we did NOT break for a retry (or the logic fell through).
+            # The only way to break cleanly for retry is if we hit "break" in the inner loop.
+            
             if replan_attempts >= self.MAX_REPLAN_ATTEMPTS or not new_plan: # Check if we should stop trying
+
                 if plan_failed_critically : # ensure this is only if the last attempt also failed.
                     print(f"ExecutionAgent: Plan execution failed for goal '{goal_description}' after {replan_attempts} re-plan attempt(s).")
                     # The final failure was already logged by global_reflection_log inside the loop.

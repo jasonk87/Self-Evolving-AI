@@ -350,11 +350,11 @@ Example:
 User goal: "That idea about improving the calculator (sugg_calc123) is great, approve it."
 Plan:
 [
-  {
+  {{
     "tool_name": "manage_suggestion_status",
     "args": ["sugg_calc123", "approve", "User stated it's a great idea."],
-    "kwargs": {}
-  }
+    "kwargs": {{}}
+  }}
 ]
 
 **Guidance for Iterating on User Projects (Based on Feedback):**
@@ -376,75 +376,13 @@ If the user provides feedback on a project they are working on (e.g., "My 'WebAp
     *   Plan to use a tool named `propose_project_file_update`. This tool handles backup, diff generation, critical review, and then applies the change if approved.
     *   Key arguments for `propose_project_file_update`:
         *   `absolute_target_filepath: str` (This would come from `get_project_file_content` if editing, e.g., `[[step_1_output.file_path]]`, or be constructed from `project_root_path` + `relative_file_path` if creating a new file).
-        *   `new_file_content: str` (From the `CodeService` output, e.g., `[[step_2_output.modified_code_string]]`).
-        *   `change_description: str` (User's original feedback or a summary, for review context. E.g., "User request: Fix bug in handle_request...").
-
-Conceptual Schema for `propose_project_file_update` (for your understanding when planning):
-```json
-// "propose_project_file_update": {
-//   "description": "Proposes changes to a user's project file. Initiates a backup, diff generation, and a two-critic review process. Changes are only applied if approved.",
-//   "parameters": [
-//     {"name": "absolute_target_filepath", "type": "str", "description": "The full, absolute path to the file to be modified or created."},
-//     {"name": "new_file_content", "type": "str", "description": "The complete new content for the file."},
-//     {"name": "change_description", "type": "str", "description": "A description of why this change is being proposed (e.g., user's request, bug fix details). This is used for the review context."}
-//   ],
-//   "returns": {"type": "dict", "description": "{'status': 'success'/'error'/'rejected', 'message': str}"}
-// }
-```
-
-Example for Iterating on a User Project:
-User goal: "In my 'WebAppX' project, the `handle_request` function in `api/routes.py` has a bug when the input is empty. Fix it to return a 400 error."
-Assumed Plan (tool names are illustrative; ensure they match available tools):
-[
-  {
-    "tool_name": "get_project_file_content",
-    "args": ["WebAppX", "api/routes.py"],
-    "kwargs": {}
-  },
-  {
-    "tool_name": "call_code_service_modify_code",
-    "args": [
-        null, // module_path (can be null if full file content is provided as existing_code)
-        "handle_request", // function_name (if applicable, or null)
-        "[[step_1_output.content]]", // existing_code (full content of api/routes.py)
-        "Fix the handle_request function to return a 400 error when input is empty.", // modification_instruction
-        "SELF_FIX_TOOL" // context for CodeService
-    ],
-    "kwargs": {}
-  },
-  {
-    "tool_name": "propose_project_file_update",
-    "args": [
-        "[[step_1_output.file_path]]",
-        "[[step_2_output.modified_code_string]]",
-        "User request: Fix bug in handle_request in api/routes.py for WebAppX project regarding empty input."
-    ],
-    "kwargs": {}
-  }
-]
-Note: The `propose_project_file_update` tool initiates a process that includes backing up the original file (if it exists), generating a diff of the changes, subjecting the changes to a two-critic review, and only applying the changes if unanimously approved. This ensures safety and quality for modifications to user project files. The `[[step_1_output.file_path]]` from `get_project_file_content` provides the absolute path, suitable for `propose_project_file_update`.
-
-**Guidance for System Status Queries:**
-If the user asks about the system's current activities, overall status, or what you are working on:
-- Plan to use the `get_system_status_summary` tool. You can optionally specify `active_limit` and `archived_limit` as kwargs if the user asks for more or less detail.
-
-If the user asks for the status or details of a *specific* item (task, suggestion, or project) and provides an ID:
-- Plan to use the `get_item_details_by_id` tool.
-- `item_id`: The ID provided by the user.
-- `item_type`: Must be one of "task", "suggestion", or "project". Infer this from the user's query.
-
-Example 1 (Overall Status):
-User goal: "What are you working on?"
-Plan:
-[
-  {{"tool_name": "get_system_status_summary", "args": [], "kwargs": {{"active_limit": "5", "archived_limit": "3"}}}}
 ]
 
 Example 2 (Specific Task Status):
 User goal: "Tell me about task task_abc123."
 Plan:
 [
-  {{"tool_name": "get_item_details_by_id", "args": ["task_abc123", "task"], "kwargs": {}}}
+  {{"tool_name": "get_item_details_by_id", "args": ["task_abc123", "task"], "kwargs": {{}}}}
 ]
 
 Example 3 (Specific Project by Name - requires ID lookup first if tool expects ID):

@@ -3257,5 +3257,513 @@
             "error": "'\\n    \"tool_name\"'",
             "goal": "how are you doing?"
         }
+    },
+    {
+        "timestamp": "2025-12-08T00:57:17.693259+00:00",
+        "event_id": "ae10666438de4a31b939db4a0a41f026",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "how are you doing?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 18
+        }
+    },
+    {
+        "timestamp": "2025-12-08T00:57:17.713319+00:00",
+        "event_id": "e7b85277699441f9920c4c899b379372",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: how are you doing?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T00:57:17.736509+00:00",
+        "event_id": "4bc0c79a867d42bdb862d882073884f2",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: '\\n    \"tool_name\"'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "'\\n    \"tool_name\"'",
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T00:59:24.747577+00:00",
+        "event_id": "2c7a1bcfadbb4edb86ea1298b446f7b5",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "how are you doing?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 18
+        }
+    },
+    {
+        "timestamp": "2025-12-08T00:59:24.769558+00:00",
+        "event_id": "854cff9407e14c5697a45379060bfd79",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: how are you doing?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T00:59:24.792513+00:00",
+        "event_id": "2710e33808484a919cda170335830d19",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: '\\n    \"tool_name\"'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "'\\n    \"tool_name\"'",
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:06:15.349321+00:00",
+        "event_id": "351f8da8ad1e47cfb27f466b008e4f51",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "how are you doing?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 18
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:06:15.372059+00:00",
+        "event_id": "68e96469cb9645cb8b44afc8f66a9094",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: how are you doing?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:06:15.393836+00:00",
+        "event_id": "47fb148e46e5482b8f8379398baf18cb",
+        "event_type": "ORCHESTRATOR_ERROR",
+        "description": "Error during orchestration: '\\n    \"tool_name\"'",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "error": "'\\n    \"tool_name\"'",
+            "goal": "how are you doing?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:16:05.588073+00:00",
+        "event_id": "24549b590d87424591ad9a7a5da6ab93",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "how are you doing today?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 24
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:16:05.619133+00:00",
+        "event_id": "63293f227093440b9e43531e148bd415",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: how are you doing today?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing today?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:16:12.111628+00:00",
+        "event_id": "2c7707b6634f4e9fa1debb43bc86c899",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution failed for: how are you doing today?",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "how are you doing today?",
+            "last_attempted_plan_summary": [
+                {
+                    "tool": "get_system_status_summary",
+                    "args_preview": "()"
+                },
+                {
+                    "tool": "process_search_results",
+                    "args_preview": "()"
+                }
+            ],
+            "overall_success": false,
+            "num_steps_in_last_plan": 2,
+            "tools_used_in_last_plan": [
+                "get_system_status_summary",
+                "process_search_results"
+            ],
+            "replan_attempts_made": 1,
+            "first_error_type_in_last_plan": "ToolExecutionError",
+            "first_error_message_in_last_plan": "Could not load function for tool 'get_self_awareness_info_and_converse': Function 'get_self_awareness_info_and_converse' not found in 'ai_assistant.custom_tools.awareness_tools'."
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:16:12.154816+00:00",
+        "event_id": "c6cc55d8bca945db9e56eb3023eb33f1",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: how are you doing today?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing today?",
+            "success": false,
+            "num_steps": 2
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:24.540405+00:00",
+        "event_id": "cadcd085d00742f2872abbb5450138ad",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "how are you doing today?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 24
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:24.576023+00:00",
+        "event_id": "526dc9e72ba442b3b54589416699a082",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: how are you doing today?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing today?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:25.377867+00:00",
+        "event_id": "10ce9ddefbf34cfcb1cb21a1f1dd0077",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: how are you doing today? (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "how are you doing today?",
+            "final_plan_summary": [
+                {
+                    "tool": "get_self_awareness_info_and_converse",
+                    "args_preview": "()"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 1,
+            "tools_used_in_final_plan": [
+                "get_self_awareness_info_and_converse"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:25.412911+00:00",
+        "event_id": "649df90bf34d4f1a9172d05d8448bddc",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: how are you doing today?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "how are you doing today?",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:46.498706+00:00",
+        "event_id": "26ada66600324713a71878cb1b0e156a",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "who won the championship this year?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 35
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:46.538218+00:00",
+        "event_id": "f55875fb3b364bf7ab7d3da68043b8eb",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: who won the championship this year?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "who won the championship this year?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:48.932648+00:00",
+        "event_id": "5a7cdd3d959d43f181dc6ac72f116ef6",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: who won the championship this year? (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "who won the championship this year?",
+            "final_plan_summary": [
+                {
+                    "tool": "search_duckduckgo",
+                    "args_preview": "('who won the championship this year',)"
+                },
+                {
+                    "tool": "process_search_results",
+                    "args_preview": "('who won the championship this year', '[[step_1_o"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "process_search_results",
+                "search_duckduckgo"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:19:48.968087+00:00",
+        "event_id": "e06f603c28dd42ba9649cf5dad2b7096",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: who won the championship this year?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "who won the championship this year?",
+            "success": true,
+            "num_steps": 2
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:13.060689+00:00",
+        "event_id": "d0852689fa5e42d78af72e822f400495",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "nba, we will go last year, 2025",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 31
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:13.098348+00:00",
+        "event_id": "305905872a63451daf102044d7f344e3",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: nba, we will go last year, 2025",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "nba, we will go last year, 2025"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:16.333734+00:00",
+        "event_id": "36ae3dad13264ef9a919a6bc5ed5360d",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: nba, we will go last year, 2025 (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "nba, we will go last year, 2025",
+            "final_plan_summary": [
+                {
+                    "tool": "search_duckduckgo",
+                    "args_preview": "('NBA season 2025',)"
+                },
+                {
+                    "tool": "process_search_results",
+                    "args_preview": "('NBA season 2025', '[[step_1_output]]')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "process_search_results",
+                "search_duckduckgo"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:16.354781+00:00",
+        "event_id": "513ca850ab8442e19787ce08a3bd7bea",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: nba, we will go last year, 2025",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "nba, we will go last year, 2025",
+            "success": true,
+            "num_steps": 2
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:46.220082+00:00",
+        "event_id": "54b5bc08a801474a8b3d110995a7fecd",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "do you know my name?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 20
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:46.249209+00:00",
+        "event_id": "738cadbc96d34c789d57e771dee8231f",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: do you know my name?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "do you know my name?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:47.208065+00:00",
+        "event_id": "b2585daea23e411aae16ee9263f031ee",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: do you know my name? (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "do you know my name?",
+            "final_plan_summary": [
+                {
+                    "tool": "get_self_awareness_info_and_converse",
+                    "args_preview": "()"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 1,
+            "tools_used_in_final_plan": [
+                "get_self_awareness_info_and_converse"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:47.241523+00:00",
+        "event_id": "7fe7c091853842a78f4effb2e1d8493c",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: do you know my name?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "do you know my name?",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:57.175604+00:00",
+        "event_id": "71d4b3d345d3492698af0cc643404adc",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "My name is Jason Kinslow",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 24
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:57.209866+00:00",
+        "event_id": "ca2a155c4c1044a594213a8108438080",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: My name is Jason Kinslow",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "My name is Jason Kinslow"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:57.968677+00:00",
+        "event_id": "750f77bfe74e4461991706c344f4b7cc",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: My name is Jason Kinslow (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "My name is Jason Kinslow",
+            "final_plan_summary": [
+                {
+                    "tool": "greet_user",
+                    "args_preview": "('Jason Kinslow',)"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 1,
+            "tools_used_in_final_plan": [
+                "greet_user"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:20:58.001111+00:00",
+        "event_id": "bd05283192ad4140b13ec515270093a1",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: My name is Jason Kinslow",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "My name is Jason Kinslow",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:21:29.040301+00:00",
+        "event_id": "dadf99b8ebf84b18aa004396bd2402c5",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "do you have any active processes going on right now?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 52
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:21:29.075931+00:00",
+        "event_id": "69c0d61a649d4ca4a163e3a44a8e30f0",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: do you have any active processes going on right now?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "do you have any active processes going on right now?"
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:21:29.891740+00:00",
+        "event_id": "8d8aab055ede48c886055cf76f952aab",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: do you have any active processes going on right now? (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "do you have any active processes going on right now?",
+            "final_plan_summary": [
+                {
+                    "tool": "get_system_status_summary",
+                    "args_preview": "()"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 1,
+            "tools_used_in_final_plan": [
+                "get_system_status_summary"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:21:29.917443+00:00",
+        "event_id": "bbe2a72d9af0422f87b93030112ec5c7",
+        "event_type": "ORCHESTRATOR_COMPLETE_PROCESSING",
+        "description": "Completed processing prompt: do you have any active processes going on right now?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "do you have any active processes going on right now?",
+            "success": true,
+            "num_steps": 1
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:22:18.858374+00:00",
+        "event_id": "09ec52d171fa49d097f73aa365134971",
+        "event_type": "USER_INPUT_RECEIVED",
+        "description": "can you make a snake game in python?",
+        "source": "cli.start_cli",
+        "metadata": {
+            "length": 36
+        }
+    },
+    {
+        "timestamp": "2025-12-08T01:22:18.891671+00:00",
+        "event_id": "b568e922b38142cea8f41a3748ae3d2b",
+        "event_type": "ORCHESTRATOR_START_PROCESSING",
+        "description": "Starting to process prompt: can you make a snake game in python?",
+        "source": "DynamicOrchestrator.process_prompt",
+        "metadata": {
+            "goal": "can you make a snake game in python?"
+        }
     }
 ]
