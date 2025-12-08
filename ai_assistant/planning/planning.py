@@ -475,8 +475,31 @@ JSON Plan:
             # Updated to strip "JSON Output:" as well
             json_str_to_parse = re.sub(r"^\s*JSON (?:Plan|Output):?\s*", "", json_str_to_parse.strip(), flags=re.IGNORECASE).strip()
 
+            # Explicitly reset parsed_data at start of parsing logic to be safe
+            parsed_data = None
+
+            # --- Safety for naked JSON objects or missing braces ---
+            if json_str_to_parse and not (json_str_to_parse.startswith("{") or json_str_to_parse.startswith("[")):
+                # If it looks like content of a dict (e.g. "key": "value"), try wrapping in {}
+                if ":" in json_str_to_parse and '"' in json_str_to_parse:
+                    # Heuristic: try wrapping in braces
+                    try:
+                        temp_parsed = json.loads("{" + json_str_to_parse + "}")
+                        # Check if it looks like a single step without list brackets
+                        if "tool_name" in temp_parsed:
+                             print("PlannerAgent (LLM): Successfully parsed JSON by wrapping in {} and identified as single step. Wrapping in [].")
+                             parsed_data = [temp_parsed] # Wrap in list to be a valid plan
+                             json_str_to_parse = "[" + json.dumps(temp_parsed) + "]" # Update for consistent logging
+                        else:
+                             parsed_data = temp_parsed
+                             print("PlannerAgent (LLM): Successfully parsed JSON by wrapping in {}.")
+                             json_str_to_parse = "{" + json_str_to_parse + "}"
+                    except json.JSONDecodeError:
+                        pass # Fall through to standard try/except
+
             try:
-                parsed_data = json.loads(json_str_to_parse) # Changed variable name
+                if parsed_data is None: # Only parse if not already recovered above
+                    parsed_data = json.loads(json_str_to_parse) # Changed variable name
             except json.JSONDecodeError as e:
                 # Enhanced error reporting for JSONDecodeError
                 error_line_num = e.lineno

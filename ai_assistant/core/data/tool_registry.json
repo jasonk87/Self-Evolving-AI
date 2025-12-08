@@ -749,9 +749,9 @@
     },
     "get_tools_in_module": {
         "tool_name": "get_tools_in_module",
-        "module_path": "ai_assistant.custom_tools.ui_tools",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
         "function_name": "get_tools_in_module",
-        "description": "No description available.",
+        "description": "Returns a list of tool functions and their schemas from this module.",
         "type": "custom_discovered",
         "schema_details": null
     },
