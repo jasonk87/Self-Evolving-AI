@@ -117,14 +117,36 @@ async def summarize_tool_result_conversationally(
                 else:
                     result_summary = f"Output data (dict with {len(res)} keys: {list(res.keys())[:3]}{'...' if len(res.keys()) > 3 else ''})"
             elif isinstance(res, list):
-                result_summary = f"Output data (list with {len(res)} items: {str(res[:3])[:100]}{'...' if len(res) > 3 or len(str(res[:3])) > 100 else ''})"
+                # IMPROVED TRUNCATION:
+                # 1. Increase limit significantly (4000 chars) to allow context window to work.
+                # 2. If list of dicts, try to inspect them for 'text' or 'summary' fields for cleaner output, 
+                #    but fallback to raw dump if needed.
+                list_sample = res[:20] # Inspect first 20 items (upped from 3)
+                
+                # Check directly if it looks like a list of learned facts (contain 'text' and 'fact_id')
+                if list_sample and isinstance(list_sample[0], dict) and "text" in list_sample[0]:
+                    # Format nicely for the LLM
+                     formatted_items = [f"- {item.get('text', '')}" for item in list_sample]
+                     list_str = "\n".join(formatted_items)
+                     if len(res) > 20:
+                         list_str += f"\n... ({len(res) - 20} more items)"
+                     result_summary = f"List of Facts:\n{list_str}"
+                else:
+                    # Generic handling
+                    list_str = str(list_sample)
+                    if len(list_str) > 4000:
+                        list_str = list_str[:4000] + "... (truncated)"
+                    result_summary = f"Output data (list with {len(res)} items): {list_str}"
+
             elif isinstance(res, (str, int, float, bool)):
                 result_summary = str(res)
             else:
                 result_summary = f"Output of type {type(res).__name__}."
 
-            if len(result_summary) > 150:
-                result_summary = result_summary[:147] + "..."
+            # Relax generic char limit for the FINAL result_summary string too, 
+            # to prevent the outer check from nuking our work above.
+            if len(result_summary) > 5000:
+                result_summary = result_summary[:4900] + "..."
 
         actions_summary_parts.append(
             f"Step {i+1}: Ran tool '{tool_name}' with args {args} and kwargs {kwargs}. Result: {result_summary}"
@@ -286,15 +308,25 @@ if __name__ == '__main__': # pragma: no cover
 
         error2 = "Some obscure internal error: NullPointerException at Java.Lang.System.InternalError"
         query2 = "Do complex task"
-        original_side_effect = mock_llm_provider_instance.invoke_ollama_model_async
-        mock_llm_provider_instance.invoke_ollama_model_async = AsyncMock(return_value=None)
+        
+        # Override the instance method directly for this test case
+        async def mock_return_none(*args, **kwargs):
+            return None
+        
+        original_method = mock_llm_provider_instance.invoke_ollama_model_async
+        mock_llm_provider_instance.invoke_ollama_model_async = mock_return_none
 
         rephrased2 = await rephrase_error_message_conversationally(error2, query2, mock_llm_provider_instance)
         logger.info(f"Original Error 2: {error2}\nRephrased 2 (LLM fail/None): {rephrased2}\n")
         assert error2 in rephrased2
         assert query2 in rephrased2
 
-        mock_llm_provider_instance.invoke_ollama_model_async.side_effect = Exception("Network connection to LLM failed")
+        # Test Exception
+        async def mock_raise_exception(*args, **kwargs):
+            raise Exception("Network connection to LLM failed")
+        
+        mock_llm_provider_instance.invoke_ollama_model_async = mock_raise_exception
+        
         error3 = "Database timeout"
         query3 = "Fetch all user records"
         rephrased3 = await rephrase_error_message_conversationally(error3, query3, mock_llm_provider_instance)
@@ -302,7 +334,8 @@ if __name__ == '__main__': # pragma: no cover
         assert error3 in rephrased3
         assert query3 in rephrased3
 
-        mock_llm_provider_instance.invoke_ollama_model_async = original_side_effect
+        # Restore
+        mock_llm_provider_instance.invoke_ollama_model_async = original_method
 
 
     async def main_tests():

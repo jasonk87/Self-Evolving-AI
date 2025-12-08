@@ -109,12 +109,28 @@ async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool
             return False
         
         updated_facts_list = parsed_response["updated_facts"]
-        if not isinstance(updated_facts_list, list) or not all(isinstance(fact, str) for fact in updated_facts_list):
-            print(f"Error (_curate_and_update_fact_store): 'updated_facts' from LLM is not a list of strings. Response: {parsed_response}")
-            return False
+        
+        # Robust handling: LLM might return list of strings or list of objects (dicts)
+        final_facts_to_save: List[str] = []
+        
+        if isinstance(updated_facts_list, list):
+            for item in updated_facts_list:
+                if isinstance(item, str):
+                    final_facts_to_save.append(item)
+                elif isinstance(item, dict) and "text" in item:
+                    final_facts_to_save.append(item["text"])
+                else:
+                    # Skip items that don't match expected structure
+                    pass
+        else:
+             print(f"Error (_curate_and_update_fact_store): 'updated_facts' from LLM is not a list. Response: {parsed_response}")
+             return False
 
-        if save_learned_facts(updated_facts_list): # Save to persistent_memory.py
-            print(f"Info (_curate_and_update_fact_store): Fact store updated and saved. Total facts: {len(updated_facts_list)}.")
+        if not final_facts_to_save and updated_facts_list: # Warning if we dropped everything but list wasn't empty
+             print(f"Warning (_curate_and_update_fact_store): parsed 'updated_facts' but extracted 0 strings. Check LLM output format. Response: {parsed_response}")
+
+        if save_learned_facts(final_facts_to_save): # Save to persistent_memory.py
+            print(f"Info (_curate_and_update_fact_store): Fact store updated and saved. Total facts: {len(final_facts_to_save)}.")
             return True
         else:
             print("Error (_curate_and_update_fact_store): Failed to save curated facts.")

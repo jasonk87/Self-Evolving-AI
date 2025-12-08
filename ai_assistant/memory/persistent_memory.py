@@ -3,6 +3,7 @@ import json
 import os
 from typing import Dict, Any, List
 import datetime # Added for __main__ tests for ActionableInsights
+import uuid # Added missing import
 
 from ai_assistant.config import get_data_dir # Import the centralized function
 

@@ -8,8 +8,10 @@ from dataclasses import asdict
 
 # Assuming direct import from module for simplicity in tool definition
 # In a real setup, these might be part of a service layer accessible via context
-from ai_assistant.core.suggestion_manager import find_suggestion, list_suggestions # Added list_suggestions
+from ai_assistant.core.suggestion_manager import find_suggestion, list_suggestions 
 from ai_assistant.core.project_manager import find_project
+from ai_assistant.memory.persistent_memory import load_learned_facts
+
 
 
 def get_system_status_summary(
@@ -125,12 +127,19 @@ GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {
 
 
 def get_self_awareness_info_and_converse(
+    context: Optional[str] = None,
+    *,
     task_manager: Optional[TaskManager] = None,
     notification_manager: Optional[NotificationManager] = None
 ) -> str:
     """
     Retrieves a comprehensive summary of the AI's current state, including active tasks,
     notifications, and general system health, formatted for a conversational response.
+    
+    Args:
+        context: Optional context or reason for the check (often provided by the planner).
+        task_manager: Injected TaskManager.
+        notification_manager: Injected NotificationManager.
     """
     status_summary = get_system_status_summary(
         task_manager=task_manager,
@@ -138,13 +147,39 @@ def get_self_awareness_info_and_converse(
         active_limit=5,
         unread_notifications_limit=5
     )
-    
-    return f"Self-Awareness Report:\n{status_summary}\n\n(Use this information to answer the user's question about how you are doing.)"
+
+    # Add learned facts to the report
+    facts = load_learned_facts()
+    facts_summary = "\nLearned Facts:\n"
+    if not facts:
+        facts_summary += "  No specific facts learned yet."
+    else:
+        # If facts are strings
+        if isinstance(facts[0], str):
+             for f in facts[:10]: # Limit to 10 for brevity in conversational context
+                facts_summary += f"  - {f}\n"
+             if len(facts) > 10:
+                facts_summary += f"  ... and {len(facts) - 10} more."
+        # If facts are dicts (new format)
+        elif isinstance(facts[0], dict):
+             for f in facts[:10]:
+                text = f.get("text", "Unknown fact")
+                facts_summary += f"  - {text}\n"
+             if len(facts) > 10:
+                facts_summary += f"  ... and {len(facts) - 10} more."
+
+    response = f"Self-Awareness Report:\n"
+    if context:
+        response += f"(Context: {context})\n"
+    response += f"{status_summary}\n{facts_summary}\n\n(Use this information to answer the user's question about how you are doing.)"
+    return response
 
 GET_SELF_AWARENESS_INFO_AND_CONVERSE_SCHEMA = {
     "name": "get_self_awareness_info_and_converse",
     "description": "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.",
-    "parameters": [],
+    "parameters": [
+        {"name": "context", "type": "str", "description": "Optional. A brief explanation of why self-awareness is being checked or what specific information is being sought."}
+    ],
     "returns": {"type": "str", "description": "A detailed text report of internal status."}
 }
 

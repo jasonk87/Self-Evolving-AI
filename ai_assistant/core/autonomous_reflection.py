@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional
 import re
 import logging
 import asyncio # Ensure asyncio is imported for __main__
+import uuid # Added missing import
 from unittest.mock import patch, AsyncMock, MagicMock # Ensure these are imported for __main__
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model 
