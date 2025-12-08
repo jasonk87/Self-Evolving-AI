@@ -1,15 +1,22 @@
 # ai_assistant/config.py
 
-# Default model to be used by the Ollama client if no specific model is requested for a task.
-DEFAULT_MODEL = "qwen3:8B"  # Example default model, can be changed as needed
 import os
 from typing import Optional, Dict, List
+
+# API Keys
+# Gemini API Key - Set this to your key
+GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
+
+# Default model to be used if no specific model is requested for a task.
+DEFAULT_MODEL = "gemini-2.0-flash-exp"
+OLLAMA_MODEL_FALLBACK = "qwen3:8B" # Kept for reference or fallback
 
 # Define models that support native thinking
 THINKING_SUPPORTED_MODELS: List[str] = [
     "qwen3:latest",
     "deepseek-r1:latest",
-    "qwen3:8B"
+    "qwen3:8B",
+    "gemini-2.0-flash-exp"
 ]
 
 # Enable or disable thinking capability globally (overrides per-model settings)
