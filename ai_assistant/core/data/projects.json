@@ -1,0 +1,22 @@
+[
+    {
+        "project_id": "8ed7ee16-6a07-419c-b10a-8245592909c6",
+        "name": "TelemetryTestProject",
+        "description": "Testing telemetry",
+        "status": "planning",
+        "root_path": null,
+        "created_at": "2025-12-08T19:37:02.094698+00:00",
+        "updated_at": "2025-12-08T19:37:02.094734+00:00",
+        "tasks": []
+    },
+    {
+        "project_id": "d8107bbb-4840-4a19-89d1-7ba6726e5087",
+        "name": "UI_Verification_Project",
+        "description": "Testing UI Telemetry",
+        "status": "planning",
+        "root_path": null,
+        "created_at": "2025-12-08T19:39:53.689987+00:00",
+        "updated_at": "2025-12-08T19:39:53.690008+00:00",
+        "tasks": []
+    }
+]
