@@ -558,6 +558,70 @@ async def generate_conversational_response(user_input: str, conversation_history
     return cleaned_response
 
 
+PROJECT_STATE_CHANGE_PROMPT_TEMPLATE = """
+The project '{project_name}' just updated its state to: {telemetry_data}.
+The user has not said anything.
+
+Recent Conversation History:
+{recent_history}
+
+Based on the recent history, should I provide a commentary, a warning, or remain silent?
+If commentary, keep it short and in character.
+
+Instructions:
+- If the update is minor or expected, and no comment is needed, respond with "NO_COMMENT".
+- If something significant happened (success, failure, status change), provide a short, proactive message.
+
+Response:
+"""
+
+async def analyze_project_state_change(project_name: str, telemetry_data: Dict[str, Any], recent_history: str) -> Optional[str]:
+    """
+    Analyzes a project state change to decide if the AI should proactively comment.
+    Returns the message string or None if silent.
+    """
+    if not project_name or not telemetry_data:
+        return None
+
+    # Format telemetry data safely
+    try:
+        telemetry_str = json.dumps(telemetry_data, indent=2)
+    except Exception:
+        telemetry_str = str(telemetry_data)
+
+    prompt = PROJECT_STATE_CHANGE_PROMPT_TEMPLATE.format(
+        project_name=project_name,
+        telemetry_data=telemetry_str,
+        recent_history=recent_history if recent_history else "No recent history."
+    )
+
+    if is_debug_mode():
+        print(f"[DEBUG CONV_INTEL] Project State Change Prompt:\n{prompt[:500]}...")
+
+    model_to_use = get_model_for_task("conversation_intelligence")
+    llm_response = await invoke_ollama_model_async(prompt, model_name=model_to_use)
+
+    if not llm_response or not llm_response.strip():
+        return None
+
+    cleaned_response = llm_response.strip()
+
+    # Check for "NO_COMMENT" or similar variations
+    if "NO_COMMENT" in cleaned_response.upper():
+        if is_debug_mode():
+            print(f"[DEBUG CONV_INTEL] AI decided to stay silent (NO_COMMENT).")
+        return None
+
+    # If it's just quotes, strip them
+    if cleaned_response.startswith('"') and cleaned_response.endswith('"'):
+        cleaned_response = cleaned_response[1:-1]
+
+    if is_debug_mode():
+        print(f"[DEBUG CONV_INTEL] Proactive commentary generated: {cleaned_response}")
+
+    return cleaned_response
+
+
 if __name__ == '__main__': # pragma: no cover
     async def run_conv_intel_tests():
         print("--- Testing Conversation Intelligence Module (with Mocks & Broader Name/Fact Usage) ---")

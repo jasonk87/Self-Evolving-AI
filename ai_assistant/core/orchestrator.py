@@ -20,8 +20,11 @@ from .notification_manager import NotificationManager
 from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
 from ..llm_interface.ollama_client import OllamaProvider
 from ..planning.hierarchical_planner import HierarchicalPlanner
+from .conversation_intelligence import analyze_project_state_change, CONVERSATION_HISTORY_TURNS
+from ..memory.event_logger import get_recent_events
 import uuid
 import logging
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,8 @@ class DynamicOrchestrator:
                  action_executor: ActionExecutor,
                  task_manager: Optional[TaskManager] = None,
                  notification_manager: Optional[NotificationManager] = None,
-                 hierarchical_planner: Optional[HierarchicalPlanner] = None):
+                 hierarchical_planner: Optional[HierarchicalPlanner] = None,
+                 frontend_emitter: Optional[Callable[[str, Any], None]] = None):
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
@@ -46,9 +50,51 @@ class DynamicOrchestrator:
         self.task_manager = task_manager
         self.notification_manager = notification_manager
         self.hierarchical_planner = hierarchical_planner
+        self.frontend_emitter = frontend_emitter
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
+
+    async def handle_project_event(self, project_name: str, event_data: dict):
+        """
+        Handles an external project event (e.g., telemetry update).
+        Analyzes if a proactive AI response is needed and emits it.
+        """
+        log_event(
+            event_type="PROJECT_EVENT_RECEIVED",
+            description=f"Received event for project '{project_name}'.",
+            source="DynamicOrchestrator.handle_project_event",
+            metadata={"project_name": project_name, "event_data": event_data}
+        )
+
+        # Get recent history for context
+        recent_events = get_recent_events(limit=CONVERSATION_HISTORY_TURNS * 2)
+        formatted_history_lines = []
+        for event in reversed(recent_events):
+            if event.get("event_type") == "USER_INPUT_RECEIVED":
+                formatted_history_lines.append(f"User: {event.get('description', '')}")
+            elif event.get("event_type") in ["AI_CONVERSATIONAL_RESPONSE", "WEEBO_RESPONSE", "AI_PROACTIVE_MESSAGE"]:
+                formatted_history_lines.append(f"AI: {event.get('description', '')}")
+
+        recent_history = "\n".join(reversed(formatted_history_lines))
+
+        # Analyze
+        ai_message = await analyze_project_state_change(project_name, event_data, recent_history)
+
+        if ai_message:
+            log_event(
+                event_type="AI_PROACTIVE_MESSAGE",
+                description=ai_message,
+                source="DynamicOrchestrator.handle_project_event",
+                metadata={"project_name": project_name}
+            )
+
+            if self.frontend_emitter:
+                # Emit to frontend as a chat message
+                # Using 'ai_message' event or similar that the frontend expects
+                self.frontend_emitter('ai_message', {'message': ai_message, 'type': 'proactive'})
+            else:
+                logger.warning("DynamicOrchestrator generated a proactive message but no frontend_emitter is configured.")
 
     def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
         if not plan:
