@@ -99,7 +99,8 @@ async def init_orchestrator():
         action_executor=action_executor,
         task_manager=task_manager,
         notification_manager=notification_manager,
-        hierarchical_planner=hierarchical_planner
+        hierarchical_planner=hierarchical_planner,
+        frontend_emitter=socketio.emit
     )
     logger.info("Orchestrator initialized successfully.")
 
@@ -198,6 +199,22 @@ def telemetry_watcher():
                                     'telemetry': content
                                 })
                                 logger.info(f"Telemetry updated for project: {project_name}")
+
+                                # Trigger proactive AI analysis
+                                if orchestrator:
+                                    # Since we are in a background task (maybe greenlet), we need to handle async call to orchestrator.
+                                    # orchestrator.handle_project_event is async.
+                                    # We can use asyncio.run if not in an existing loop, or schedule it.
+                                    try:
+                                        # Creating a new loop for the async call if needed, or using existing if compatible.
+                                        # Ideally, we should schedule this on the main loop if possible, or run it here.
+                                        # For simplicity and robustness in this mixed env:
+                                        loop = asyncio.new_event_loop()
+                                        asyncio.set_event_loop(loop)
+                                        loop.run_until_complete(orchestrator.handle_project_event(project_name, content))
+                                        loop.close()
+                                    except Exception as e_ai:
+                                        logger.error(f"Error triggering AI proactive analysis: {e_ai}")
 
                         except Exception as e:
                             logger.error(f"Error reading telemetry file {filepath}: {e}")
