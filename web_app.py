@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, emit
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.dirname(__file__))
@@ -27,6 +28,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Initialize SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global Orchestrator instance
 orchestrator = None
@@ -139,5 +142,21 @@ async def chat():
         # or 500 if it's a server crash.
         return jsonify({"error": str(e), "success": False}), 500
 
+# SocketIO Event Handlers
+@socketio.on('connect')
+def handle_connect():
+    logger.info('Client connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info('Client disconnected')
+
+def handle_log_event(data):
+    """
+    Broadcasts log messages to connected clients.
+    Expected data format: {'message': 'Log content here', 'level': 'INFO'}
+    """
+    socketio.emit('log_event', data)
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
