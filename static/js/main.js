@@ -28,6 +28,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    socket.on('project_update', (data) => {
+        console.log('Project Update:', data);
+        // Find or create the telemetry view in the context panel
+        let telemetryView = document.querySelector('#tab-telemetry .telemetry-view');
+        if (!telemetryView) {
+             // If tab-telemetry content doesn't exist, we might need to handle it or it's handled by HTML structure
+             // Assuming I will add the HTML structure in the next step.
+             const tabContent = document.getElementById('tab-telemetry');
+             if (tabContent) {
+                 telemetryView = document.createElement('div');
+                 telemetryView.classList.add('telemetry-view');
+                 tabContent.innerHTML = ''; // Clear empty state
+                 tabContent.appendChild(telemetryView);
+             }
+        }
+
+        if (telemetryView) {
+            // Update the view with the new data
+            // We can format it nicely
+            const projectBlock = document.getElementById(`telemetry-${data.project}`);
+            let htmlContent = `<h3>${data.project}</h3>`;
+            htmlContent += `<pre>${JSON.stringify(data.telemetry, null, 2)}</pre>`;
+
+            if (projectBlock) {
+                projectBlock.innerHTML = htmlContent;
+            } else {
+                const newBlock = document.createElement('div');
+                newBlock.id = `telemetry-${data.project}`;
+                newBlock.classList.add('telemetry-block');
+                newBlock.innerHTML = htmlContent;
+                telemetryView.appendChild(newBlock);
+            }
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('Disconnected from WebSocket server');
         appendSystemMessage('Disconnected from event stream.');

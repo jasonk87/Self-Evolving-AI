@@ -4,13 +4,21 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Union
 
-from ai_assistant.config import get_data_dir
+from ai_assistant.config import get_data_dir, get_projects_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text # For potential direct use or consistency
 
 PROJECTS_FILE_NAME = "projects.json"
 
 def get_projects_file_path() -> str:
     return os.path.join(get_data_dir(), PROJECTS_FILE_NAME)
+
+def get_project_telemetry_path(project_name: str) -> str:
+    """Returns the path to the telemetry.json file for a given project."""
+    # Assuming project folders are stored in data/projects/{project_name}
+    # We use the project name as the folder name for simplicity here,
+    # but strictly we should probably use project_id or manage the mapping.
+    # Based on requirements: "data/projects/{project_name}/telemetry.json"
+    return os.path.join(get_projects_dir(), project_name, "telemetry.json")
 
 def _load_projects() -> List[Dict[str, Any]]:
     """Loads projects from the JSON file."""
@@ -218,6 +226,21 @@ def get_all_projects_summary_status() -> str:
     for status, count in status_counts.items():
         summary_lines.append(f"  - {status.capitalize()}: {count}")
     return "\n".join(summary_lines)
+
+def update_project_telemetry(project_name: str, data: Dict[str, Any]) -> bool:
+    """
+    Writes a dictionary to data/projects/{project_name}/telemetry.json.
+    This allows the AI to report status.
+    """
+    filepath = get_project_telemetry_path(project_name)
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        return True
+    except IOError as e:
+        print(color_text(f"Error saving telemetry for project '{project_name}': {e}", CLIColors.ERROR_MESSAGE))
+        return False
 
 # Conceptual Schema for set_project_root_path tool
 # SET_PROJECT_ROOT_PATH_SCHEMA = {

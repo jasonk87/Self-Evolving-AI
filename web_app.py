@@ -5,6 +5,8 @@ import logging
 import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+import time
+import json
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.dirname(__file__))
@@ -22,6 +24,7 @@ from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
 from ai_assistant.core.startup_services import resume_interrupted_tasks
+from ai_assistant.config import get_projects_dir
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -158,5 +161,52 @@ def handle_log_event(data):
     """
     socketio.emit('log_event', data)
 
+def telemetry_watcher():
+    """
+    Watches for changes in telemetry.json files in any subfolder of data/projects/.
+    Emits project_update event when changes are detected.
+    """
+    projects_dir = get_projects_dir()
+    file_states = {}  # Map filepath -> last_modified_time
+
+    while True:
+        try:
+            # Walk through the projects directory
+            if os.path.exists(projects_dir):
+                for root, dirs, files in os.walk(projects_dir):
+                    if 'telemetry.json' in files:
+                        filepath = os.path.join(root, 'telemetry.json')
+                        try:
+                            mtime = os.path.getmtime(filepath)
+
+                            # Check if file is new or modified
+                            if filepath not in file_states or file_states[filepath] != mtime:
+                                file_states[filepath] = mtime
+
+                                # Read content
+                                with open(filepath, 'r', encoding='utf-8') as f:
+                                    content = json.load(f)
+
+                                # Determine project name from path
+                                # Assuming structure: data/projects/{project_name}/telemetry.json
+                                # root is .../data/projects/{project_name}
+                                project_name = os.path.basename(root)
+
+                                # Emit event
+                                socketio.emit('project_update', {
+                                    'project': project_name,
+                                    'telemetry': content
+                                })
+                                logger.info(f"Telemetry updated for project: {project_name}")
+
+                        except Exception as e:
+                            logger.error(f"Error reading telemetry file {filepath}: {e}")
+
+            socketio.sleep(1) # Use socketio.sleep for compatibility with greenlets if used
+        except Exception as e:
+            logger.error(f"Error in telemetry watcher: {e}")
+            socketio.sleep(5)
+
 if __name__ == '__main__':
+    socketio.start_background_task(telemetry_watcher)
     socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
