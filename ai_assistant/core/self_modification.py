@@ -64,9 +64,10 @@ def get_function_source_code(module_path: str, function_name: str) -> Optional[s
         print(f"Error getting source code for '{function_name}' in '{module_path}': {e}")
         return None
 
-def _update_parent_task(tm: Optional[TaskManager], p_task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None):
+def _update_parent_task(tm: Optional[TaskManager], p_task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None, step_desc: Optional[str] = None):
+    actual_step_desc = step_desc if step_desc else step
     if tm and p_task_id:
-        tm.update_task_status(p_task_id, status, reason=reason, step_desc=step)
+        tm.update_task_status(p_task_id, status, reason=reason, step_desc=actual_step_desc)
 
 async def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str, change_description: str, task_manager: Optional[TaskManager] = None, parent_task_id: Optional[str] = None) -> str:
     """

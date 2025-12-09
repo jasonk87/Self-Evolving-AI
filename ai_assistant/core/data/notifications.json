@@ -1,5 +1,418 @@
 [
     {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_1464c66c85",
+        "timestamp": "2025-12-09T00:49:53.617141+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: LLM returned empty response during assessment.",
+        "notification_id": "notify_f916030e6d",
+        "timestamp": "2025-12-09T00:49:53.614392+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2ce3779e",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_090bfb1e15",
+        "timestamp": "2025-12-09T00:49:53.610583+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: LLM returned empty response during assessment.",
+        "notification_id": "notify_ccf0a6f67d",
+        "timestamp": "2025-12-09T00:49:53.607564+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a97c8a49",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_5cc56bcca5",
+        "timestamp": "2025-12-09T00:49:53.601476+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f5c6e456",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_562b23fd8d",
+        "timestamp": "2025-12-09T00:45:44.141857+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: LLM returned empty response during assessment.",
+        "notification_id": "notify_72a69aed4c",
+        "timestamp": "2025-12-09T00:45:44.139304+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8734db50",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_fe405d3b55",
+        "timestamp": "2025-12-09T00:45:44.135477+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: LLM returned empty response during assessment.",
+        "notification_id": "notify_02ac70b3d8",
+        "timestamp": "2025-12-09T00:45:44.132856+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e6872a7f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_ea27899cf3",
+        "timestamp": "2025-12-09T00:45:44.128147+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d7b34466",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_d789e81c1e",
+        "timestamp": "2025-12-09T00:45:19.920986+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'DEFAULT_MODEL'",
+        "notification_id": "notify_f39a822dd6",
+        "timestamp": "2025-12-09T00:45:19.918971+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d4c6a861",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_71f3638a45",
+        "timestamp": "2025-12-09T00:45:19.914837+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'DEFAULT_MODEL'",
+        "notification_id": "notify_c319c2b145",
+        "timestamp": "2025-12-09T00:45:19.912618+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_71645602",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_1f2e38d4ad",
+        "timestamp": "2025-12-09T00:45:19.907322+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d6c49318",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_6f522e8157",
+        "timestamp": "2025-12-09T00:45:02.173970+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_5eecc83402",
+        "timestamp": "2025-12-09T00:45:02.172228+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_64e6ae56",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_8f83fc19f0",
+        "timestamp": "2025-12-09T00:45:02.168747+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_d0c7d90f49",
+        "timestamp": "2025-12-09T00:45:02.167048+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6ed9b725",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_98a4ed07d0",
+        "timestamp": "2025-12-09T00:45:02.162076+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_37eb05f5",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_8c26bd4efc",
+        "timestamp": "2025-12-09T00:44:48.413717+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_28fffa6b26",
+        "timestamp": "2025-12-09T00:44:48.411902+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_c852def0",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_64128befa3",
+        "timestamp": "2025-12-09T00:44:48.408265+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_56f6f2f2a4",
+        "timestamp": "2025-12-09T00:44:48.406686+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_eb9da296",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_5126101d15",
+        "timestamp": "2025-12-09T00:44:48.401777+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5db94806",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_37b6cddfd8",
+        "timestamp": "2025-12-09T00:44:05.673753+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_80e10febd3",
+        "timestamp": "2025-12-09T00:44:05.672380+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ca3b3add",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_089da7f06f",
+        "timestamp": "2025-12-09T00:44:05.668572+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_61465a168b",
+        "timestamp": "2025-12-09T00:44:05.667340+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_95eed4d2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CRITIC_REVIEW",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' CRITIC_REVIEW_REJECTED. Reason: Change to function 'subtract_numbers' in module 'ai_assistant.custom_tools.my_extra_tools' rejected by critical review. No modifications will be applied. Reviews: Critic 1 (error): LLM returned an empty response. | Critic 2 (error): LLM returned an empty response.",
+        "notification_id": "notify_500cee3f9f",
+        "timestamp": "2025-12-09T00:44:05.662794+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d96a33de",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_1277aa7f85",
+        "timestamp": "2025-12-09T00:43:34.680894+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_002",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_dced8a83fc",
+        "timestamp": "2025-12-09T00:43:34.679883+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0d30225f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_002"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
+        "notification_id": "notify_8d761b74dc",
+        "timestamp": "2025-12-09T00:43:34.677453+00:00",
+        "status": "UNREAD",
+        "related_item_id": "insight_add_fact_001",
+        "related_item_type": "suggestion_leading_to_fact_assessment",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: insigh...' COMPLETED_SUCCESSFULLY. Reason: Fact not valuable: Unexpected error during assessment: module 'ai_assistant.llm_interface.ollama_client' has no attribute 'model'",
+        "notification_id": "notify_55ade20539",
+        "timestamp": "2025-12-09T00:43:34.676538+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_25c38c91",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: insight_add_fact_001"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' FAILED_UNKNOWN. Reason: Tool modification process failed at some stage.",
+        "notification_id": "notify_3334ce9afe",
+        "timestamp": "2025-12-09T00:43:34.672374+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_81896cc4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: insight_tool_mod_001"
+        }
+    },
+    {
         "event_type": "TASK_COMPLETED_SUCCESSFULLY",
         "summary_message": "Task 'Test task 2, completed....' COMPLETED_SUCCESSFULLY. Reason: All done.",
         "notification_id": "notify_b0117b5e25",

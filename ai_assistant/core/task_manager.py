@@ -39,6 +39,7 @@ class ActiveTaskType(Enum):
     MISC_CODE_GENERATION = auto() # For tasks like scaffold generation, or detail generation not part of a larger flow
     PLANNING_CODE_STRUCTURE = auto() # For outline generation
     HIERARCHICAL_PROJECT_EXECUTION = auto() # For executing a plan from HierarchicalPlanner
+    EPHEMERAL_AGENT_TASK = auto() # For running short-lived ephemeral agents
 
 @dataclass
 class ActiveTask:
