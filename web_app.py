@@ -1,3 +1,4 @@
+from typing import Dict, Any
 import eventlet
 eventlet.monkey_patch()
 
@@ -29,6 +30,7 @@ from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
 from ai_assistant.core.startup_services import resume_interrupted_tasks
 from ai_assistant.core.project_manager import list_projects
 from ai_assistant.custom_tools.file_system_tools import list_project_files, get_project_file_content, save_project_file_content
+from ai_assistant.core.events import EventEmitter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -283,6 +285,13 @@ def handle_log_event(data):
     Expected data format: {'message': 'Log content here', 'level': 'INFO'}
     """
     socketio.emit('log_event', data)
+
+def bridge_system_events(event_name: str, data: Dict[str, Any]):
+    """Bridges internal system events to SocketIO."""
+    socketio.emit(event_name, data)
+
+# Register the bridge
+EventEmitter.register_listener(bridge_system_events)
 
 def watch_telemetry():
     """Background task to watch for telemetry updates."""

@@ -38,6 +38,65 @@ document.addEventListener('DOMContentLoaded', () => {
         appendSystemMessage('Disconnected from event stream.');
     });
 
+    // --- Council / Review Visualization ---
+    const councilView = document.getElementById('council-view');
+    let currentReviewSession = null;
+
+    function createCouncilEvent(type, data) {
+        if (!councilView) return;
+
+        if (councilView.querySelector('.empty-state')) {
+            councilView.innerHTML = '';
+        }
+
+        const eventDiv = document.createElement('div');
+        eventDiv.className = `council-event ${type}`;
+
+        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+
+        if (type === 'stage_start') {
+            eventDiv.innerHTML = `<div class="event-header"><strong>${data.message}</strong> <span class="time">${time}</span></div>`;
+        } else if (type === 'critic_thinking') {
+            eventDiv.innerHTML = `<div class="critic-thinking">
+                <span class="critic-icon">🤔</span>
+                <span class="critic-name">${data.critic}</span> is thinking...
+            </div>`;
+        } else if (type === 'critic_verdict') {
+            const statusClass = data.status === 'approved' ? 'status-approved' :
+                               (data.status === 'rejected' ? 'status-rejected' : 'status-changes');
+            const icon = data.status === 'approved' ? '✅' : (data.status === 'rejected' ? '❌' : '⚠️');
+
+            eventDiv.innerHTML = `
+                <div class="critic-verdict ${statusClass}">
+                    <div class="verdict-header">
+                        <span class="critic-name">${data.critic}</span>
+                        <span class="verdict-badge">${icon} ${data.status.toUpperCase()}</span>
+                    </div>
+                    <div class="verdict-comments">${data.comments}</div>
+                    ${data.suggestions ? `<div class="verdict-suggestions"><strong>Suggestions:</strong> ${data.suggestions}</div>` : ''}
+                </div>`;
+        } else if (type === 'round_complete') {
+            eventDiv.innerHTML = `<div class="round-summary">
+                Round Complete. Approved: ${data.approved_count}/${data.total_critics}.
+                Result: <strong>${data.unanimous_approval ? 'UNANIMOUS APPROVAL' : 'REFINEMENT REQUIRED'}</strong>
+            </div>`;
+        } else if (type === 'refinement') {
+            eventDiv.innerHTML = `<div class="refinement-action">
+                <span class="icon">🔧</span> <strong>Refinement Agent</strong>
+                <div class="refinement-detail">${data.message}</div>
+            </div>`;
+        }
+
+        councilView.appendChild(eventDiv);
+        councilView.scrollTop = councilView.scrollHeight;
+    }
+
+    socket.on('review_stage_started', (data) => createCouncilEvent('stage_start', data));
+    socket.on('critic_thinking', (data) => createCouncilEvent('critic_thinking', data));
+    socket.on('critic_verdict', (data) => createCouncilEvent('critic_verdict', data));
+    socket.on('review_round_completed', (data) => createCouncilEvent('round_complete', data));
+    socket.on('refinement_started', (data) => createCouncilEvent('refinement', data));
+
     // Auto-resize textarea
     userInput.addEventListener('input', function() {
         this.style.height = 'auto';

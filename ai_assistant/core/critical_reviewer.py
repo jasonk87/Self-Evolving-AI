@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Tuple, Optional
 # Attempt to import ReviewerAgent with fallback for different execution contexts
 try:
     from ai_assistant.core.reviewer import ReviewerAgent
+    from ai_assistant.core.events import emit_system_event
 except ImportError: # pragma: no cover
     # This fallback might be needed if running this file directly for testing
     # or if PYTHONPATH is not perfectly set up in some environments.
@@ -14,6 +15,8 @@ except ImportError: # pragma: no cover
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     from ai_assistant.core.reviewer import ReviewerAgent
+    # Mock emitter if fallback
+    def emit_system_event(*args, **kwargs): pass
 
 
 class CriticalReviewCoordinator:
@@ -51,21 +54,34 @@ class CriticalReviewCoordinator:
             A tuple: (unanimous_approval: bool, reviews: List[Dict[str, Any]]).
             'reviews' contains the review dictionaries from both critics.
         """
-        review_tasks = [
-            self.critic1.review_code(
-                code_to_review=new_code_string, # Critics review the proposed new code
-                original_requirements=original_requirements,
-                related_tests=related_tests,
-                code_diff=code_diff,
-                attempt_number=1 # Assuming first attempt for critical review
-            ),
-            self.critic2.review_code(
+
+        emit_system_event("review_stage_started", {
+            "stage": "critical_review",
+            "message": "Initializing critical review session with Council of Critics."
+        })
+
+        # Launch reviews in parallel
+        # We wrap them to capture individual completion events
+        async def review_wrapper(critic_name, critic_agent):
+            emit_system_event("critic_thinking", {"critic": critic_name, "message": "Analyzing code..."})
+            review = await critic_agent.review_code(
                 code_to_review=new_code_string,
                 original_requirements=original_requirements,
                 related_tests=related_tests,
                 code_diff=code_diff,
-                attempt_number=1 # Assuming first attempt for critical review
+                attempt_number=1
             )
+            emit_system_event("critic_verdict", {
+                "critic": critic_name,
+                "status": review.get("status"),
+                "comments": review.get("comments"),
+                "suggestions": review.get("suggestions")
+            })
+            return review
+
+        review_tasks = [
+            review_wrapper("Critic 1", self.critic1),
+            review_wrapper("Critic 2", self.critic2)
         ]
 
         collected_reviews: List[Dict[str, Any]] = await asyncio.gather(*review_tasks)
@@ -84,6 +100,12 @@ class CriticalReviewCoordinator:
 
         # Unanimous approval means both critics approved and neither had an internal error
         unanimous_approval = all_reviews_valid and (approved_count == 2)
+
+        emit_system_event("review_round_completed", {
+            "unanimous_approval": unanimous_approval,
+            "approved_count": approved_count,
+            "total_critics": 2
+        })
 
         return unanimous_approval, collected_reviews
 
