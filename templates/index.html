@@ -25,7 +25,7 @@
         </nav>
 
         <!-- Center Panel: Chat Interface -->
-        <main class="chat-interface glass-panel">
+        <main class="chat-interface glass-panel" id="chat-panel">
             <header class="chat-header">
                 <h1>Command Center</h1>
                 <div class="status-indicator online">Online</div>
@@ -46,6 +46,20 @@
             </div>
         </main>
 
+        <!-- Center Panel: Code Editor (Initially Hidden) -->
+        <main class="editor-interface glass-panel hidden" id="editor-panel">
+            <header class="editor-header">
+                <h1 id="editor-filename">filename.py</h1>
+                <div class="editor-actions">
+                    <button id="close-editor-btn" class="secondary-btn">Close</button>
+                    <button id="save-file-btn" class="primary-btn">Save</button>
+                </div>
+            </header>
+            <div class="editor-container">
+                <textarea id="file-editor" spellcheck="false"></textarea>
+            </div>
+        </main>
+
         <!-- Right Panel: Context Panel (Collapsible) -->
         <aside class="context-panel glass-panel" id="context-panel">
             <div class="panel-header">
@@ -58,7 +72,10 @@
                 <button class="tab-btn" data-tab="memory">Memory</button>
             </div>
             <div class="tab-content" id="tab-files">
-                <div class="empty-state">No active files</div>
+                <div id="file-tree" class="file-tree">
+                    <!-- File tree will be rendered here -->
+                    <div class="loading">Loading projects...</div>
+                </div>
             </div>
             <div class="tab-content hidden" id="tab-terminal">
                 <div class="terminal-view">

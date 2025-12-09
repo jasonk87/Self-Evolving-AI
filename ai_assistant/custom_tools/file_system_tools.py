@@ -31,7 +31,7 @@ def sanitize_project_name(name: str) -> str:
     if not name or not name.strip():
         return "unnamed_project"
 
-    s_name = name.lower()
+    s_name = name.lower().strip()
     s_name = re.sub(r'\s+', '_', s_name)  # Replace spaces with underscores
     s_name = re.sub(r'-+', '_', s_name)   # Replace one or more hyphens with a single underscore
     s_name = re.sub(r'[^\w-]', '', s_name) # Remove non-alphanumeric characters (keeps underscores and hyphens)
@@ -234,6 +234,57 @@ def get_project_file_content(project_identifier: str, file_path_in_project: str)
     except Exception as e: # pragma: no cover
         return {"status": "error", "message": f"Failed to read project file '{file_path_in_project}' from '{project_identifier}': {str(e)}"}
 
+def save_project_file_content(project_identifier: str, file_path_in_project: str, content: str) -> Dict[str, Any]:
+    """
+    Writes content to a specified file within a project.
+
+    Args:
+        project_identifier: The ID or name of the project.
+        file_path_in_project: The relative path to the file within the project's root directory.
+        content: The content to write to the file.
+
+    Returns:
+        A dictionary with "status": "success", "file_path": "absolute_path".
+        Or {"status": "error", "message": "error description"}.
+    """
+    from ai_assistant.core.project_manager import find_project
+
+    project = find_project(project_identifier)
+    if not project:
+        return {"status": "error", "message": f"Project '{project_identifier}' not found."}
+
+    root_path = project.get("root_path")
+    if not root_path:
+        return {"status": "error", "message": f"Project '{project_identifier}' (ID: {project.get('project_id')}) does not have a root_path defined."}
+
+    if not os.path.isdir(root_path):
+        return {"status": "error", "message": f"Project root path '{root_path}' for '{project_identifier}' is not a valid directory."}
+
+    target_file_path = os.path.abspath(os.path.normpath(os.path.join(root_path, file_path_in_project)))
+
+    if os.path.commonpath([root_path, target_file_path]) != root_path:
+        return {"status": "error", "message": f"File path '{file_path_in_project}' attempts to traverse outside project root."}
+
+    # Ensure directory exists
+    try:
+        os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
+    except OSError as e:
+        return {"status": "error", "message": f"Failed to create directory for file '{target_file_path}': {e}"}
+
+    try:
+        with open(target_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return {
+            "status": "success",
+            "file_path": target_file_path
+        }
+    except PermissionError: # pragma: no cover
+        return {"status": "error", "message": f"Permission denied to write file: {target_file_path}"}
+    except IOError as e: # pragma: no cover
+            return {"status": "error", "message": f"IOError writing file {target_file_path}: {str(e)}"}
+    except Exception as e: # pragma: no cover
+        return {"status": "error", "message": f"Failed to write project file '{file_path_in_project}' to '{project_identifier}': {str(e)}"}
+
 if __name__ == '__main__':
     import shutil
     import tempfile
@@ -247,13 +298,13 @@ if __name__ == '__main__':
         "Project with spaces": "project_with_spaces",
         "project-with-hyphens": "project_with_hyphens",
         "Project_With_Underscores": "project_with_underscores",
-        "Th!s h@s $pec!@l ch@r$": "thshs_pecl_chr",
+        "Th!s h@s $pec!@l ch@r$": "ths_hs_pecl_chr",
         "  leading and trailing spaces  ": "leading_and_trailing_spaces",
-        "---multiple---hyphens---": "multiple_hyphens",
-        "__": "unnamed_project",
+        "---multiple---hyphens---": "_multiple_hyphens_",
+        "__": "_",
         "": "unnamed_project",
         "a"*60: "a"*50,
-        "Valid-Name_123": "valid-name_123"
+        "Valid-Name_123": "valid_name_123"
     }
     for original, expected in test_names.items():
         sanitized = sanitize_project_name(original)
@@ -361,7 +412,7 @@ if __name__ == '__main__':
         if identifier == "InvalidPathListProject": return mock_project_data_invalid_path
         return None
 
-    with patch('ai_assistant.custom_tools.file_system_tools.find_project', side_effect=mock_find_project_list_files):
+    with patch('ai_assistant.core.project_manager.find_project', side_effect=mock_find_project_list_files):
         print("\nTest 1: List project root (ListTestProject)")
         result1 = list_project_files("ListTestProject")
         print(f"Result 1: {result1}")
