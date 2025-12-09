@@ -257,11 +257,10 @@ class ActionExecutor:
         original_description: str, # This is the change_description for edit_function_source_code
         source_insight_id: str,   # This will be the related_item_id for the task
         action_task_id: Optional[str], # This is the parent_task_id for edit_function_source_code
+        original_reflection_id_for_test: Optional[str] = None # Added parameter
     ) -> bool: # Return just success/failure
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
-
-        original_reflection_id_for_test: Optional[str] = None
 
         log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
         modification_type_ast = "MODIFY_TOOL_CODE_LLM_AST" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST"
@@ -304,8 +303,9 @@ class ActionExecutor:
                     if original_code_from_backup:
                         try:
                             revert_msg = await self_modification.edit_function_source_code(
-                                module_path, function_name,
-                                original_code_from_backup,
+                                module_path=module_path,
+                                function_name=function_name,
+                                new_code_string=original_code_from_backup,
                                 project_root_path=project_root,
                                 change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test.",
                                 task_manager=self.task_manager,
@@ -564,7 +564,8 @@ class ActionExecutor:
                     module_path, function_name, suggested_code_or_llm_generated_code,
                     original_description,
                     str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
-                    action_task_id=action_task_id
+                    action_task_id=action_task_id,
+                    original_reflection_id_for_test=details.get("original_reflection_entry_id")
                 )
                 if edit_success:
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")
