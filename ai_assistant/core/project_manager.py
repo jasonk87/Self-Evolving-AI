@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Union
 
-from ai_assistant.config import get_data_dir
+from ai_assistant.config import get_data_dir, get_projects_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text # For potential direct use or consistency
 
 PROJECTS_FILE_NAME = "projects.json"
@@ -218,6 +218,29 @@ def get_all_projects_summary_status() -> str:
     for status, count in status_counts.items():
         summary_lines.append(f"  - {status.capitalize()}: {count}")
     return "\n".join(summary_lines)
+
+def update_project_telemetry(project_name: str, data: Dict[str, Any]) -> bool:
+    """Updates the telemetry.json for a specific project.
+
+    Args:
+        project_name (str): The name of the project.
+        data (Dict[str, Any]): The telemetry data to write.
+
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    projects_dir = get_projects_dir()
+    project_dir = os.path.join(projects_dir, project_name)
+
+    try:
+        os.makedirs(project_dir, exist_ok=True)
+        telemetry_path = os.path.join(project_dir, "telemetry.json")
+        with open(telemetry_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        return True
+    except IOError as e:
+        print(color_text(f"Error updating telemetry for project '{project_name}': {e}", CLIColors.ERROR_MESSAGE))
+        return False
 
 # Conceptual Schema for set_project_root_path tool
 # SET_PROJECT_ROOT_PATH_SCHEMA = {
