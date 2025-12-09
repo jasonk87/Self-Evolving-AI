@@ -29,6 +29,8 @@ You are an AI assistant helping to plan a new software project.
 Project Description:
 {project_description}
 
+Every project MUST include a mechanism to write its current state (e.g., game board, progress bar, logs) to a file named `telemetry.json` in the project root after every significant action.
+
 Based on this description, break the project down into a list of essential code files.
 For each file, provide:
 - "filename" (e.g., "main.py", "utils/helper.js")
@@ -236,6 +238,7 @@ Based on the project description, the file's purpose, its key components, and it
 - Ensure the code is functional and adheres to common best practices for the inferred language (assume Python if not specified).
 - Only output the raw code for the file. Do not include any explanations, comments that are not part of the code itself, or markdown formatting like ```python ... ```.
 - If the file description implies it needs to interact with other planned files, write the code assuming those other files will exist and provide the described functionality.
+- If this file is responsible for state management or main execution logic, ensure it imports `json` and writes the state dictionary to `telemetry.json` whenever it changes.
 """
 
 async def generate_code_for_project_file(project_name: str, filename: str) -> str:

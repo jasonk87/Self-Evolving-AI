@@ -137,6 +137,61 @@ class ActionExecutor:
                 event_type, summary_message, related_item_id, related_item_type, details_payload
             )
 
+    async def handle_telemetry_update(self, project_name: str, telemetry_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Analyzes telemetry updates from a running project and decides if a proactive response is needed.
+        """
+        if not self.code_service or not self.code_service.llm_provider:
+             logger.warning("LLM Provider not available for telemetry analysis.")
+             return None
+
+        prompt = f"""
+        You are watching the project '{project_name}' run.
+        The current state is: {json.dumps(telemetry_data)}
+
+        Decide if you should make a brief, helpful, or encouraging comment to the user.
+        - If the state is boring or unchanged, say nothing.
+        - If something interesting happened (e.g., a move in a game, a task completed), comment on it.
+        - Keep it very short (1 sentence).
+
+        Respond with a JSON object:
+        {{
+            "should_comment": boolean,
+            "comment": "string or null"
+        }}
+        """
+
+        try:
+            model_name = "gemini-2.0-flash-exp" # Default fallback
+            if hasattr(self.code_service.llm_provider, 'model'):
+                model_name = self.code_service.llm_provider.model
+            elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
+                model_name = self.code_service.llm_provider.DEFAULT_MODEL
+            elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
+                 model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
+
+            llm_response = await self.code_service.llm_provider.invoke_ollama_model_async(
+                prompt, model_name=model_name, temperature=0.5
+            )
+
+            if not llm_response:
+                return None
+
+            cleaned_response = llm_response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:-3].strip()
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:-3].strip()
+
+            result = json.loads(cleaned_response)
+            if result.get("should_comment") and result.get("comment"):
+                return result["comment"]
+
+        except Exception as e:
+            logger.error(f"Error handling telemetry update: {e}")
+
+        return None
+
     def _find_original_reflection_entry(self, entry_id: str) -> Optional[ReflectionLogEntry]:
         """
         Finds the original ReflectionLogEntry based on its unique entry_id.

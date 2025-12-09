@@ -630,7 +630,8 @@ async def insert_code_block(
     if project_root_path:
         if not os.path.isabs(project_root_path):
              project_root_path = os.path.abspath(project_root_path)
-        if module_path.endswith('.py') or '/' in module_path or '\\' in module_path:
+        # Check if it has an extension or path separators
+        if '.' in os.path.basename(module_path) or '/' in module_path or '\\' in module_path:
              file_path = os.path.join(project_root_path, module_path)
         else:
              file_path = os.path.join(project_root_path, os.path.join(*module_path.split('.')) + ".py")

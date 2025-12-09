@@ -314,6 +314,35 @@ def watch_telemetry():
                                         }
                                         socketio.emit('project_update', payload)
                                         logger.info(f"Emitted project_update for {project_name}")
+
+                                        # Proactive Hearing: Notify ActionExecutor
+                                        if orchestrator and orchestrator.action_executor:
+                                            # We need to run this async method. Since we are in a thread (watch_telemetry is threaded via start_background_task),
+                                            # and handle_telemetry_update is async, we need a way to run it.
+                                            # In Flask-SocketIO eventlet mode, greenlets are used.
+                                            # However, handle_telemetry_update uses await.
+                                            # We can't easily await here.
+                                            # We can spawn a greenlet? Or run sync if we can?
+                                            # Orchestrator uses async/await everywhere.
+                                            # Let's try to run it in a new event loop or use socketio.start_background_task with a wrapper.
+                                            # Actually, since we are already in a background task, maybe we can just call a wrapper that runs the async function.
+
+                                            def _run_proactive_check():
+                                                # Use asyncio.run() to execute the async task in a fresh event loop.
+                                                # This is safe because OllamaProvider creates a new aiohttp.ClientSession for each request,
+                                                # so it is not bound to a specific event loop from initialization.
+                                                try:
+                                                    response = asyncio.run(
+                                                        orchestrator.action_executor.handle_telemetry_update(project_name, data)
+                                                    )
+                                                    if response:
+                                                        socketio.emit('log_event', {'message': f"AI: {response}", 'level': 'INFO'})
+                                                        socketio.emit('chat_response', {'response': f"(Proactive) {response}", 'success': True})
+                                                except Exception as e:
+                                                    logger.error(f"Error in proactive check: {e}")
+
+                                            socketio.start_background_task(_run_proactive_check)
+
                                 except Exception as e:
                                     logger.error(f"Error reading telemetry for {project_name}: {e}")
 
