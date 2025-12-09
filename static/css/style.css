@@ -360,6 +360,24 @@ button#send-btn:hover {
     color: #10b981;
 }
 
+#terminal-container {
+    height: 150px;
+    background-color: #000;
+    color: #10b981;
+    padding: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    overflow-y: auto;
+    border-top: 1px solid #334155;
+    margin-top: 0; /* Attach to editor */
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+#terminal-output {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
     width: 8px;

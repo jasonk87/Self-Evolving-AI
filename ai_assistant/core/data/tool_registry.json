@@ -727,5 +727,13 @@
         "description": "Submits a report from the agent and terminates the agent (deletes workspace).",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "save_project_file_content": {
+        "tool_name": "save_project_file_content",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "save_project_file_content",
+        "description": "Writes content to a specified file within a project.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

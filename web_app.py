@@ -215,6 +215,59 @@ def save_file():
         logger.error(f"Error saving file {path} for project {project_name}: {e}")
         return jsonify({"error": str(e), "success": False}), 500
 
+@app.route('/api/run', methods=['POST'])
+def run_script():
+    """Executes a Python script."""
+    data = request.json
+    path = data.get('path')
+
+    if not path or not path.startswith('projects/'):
+        return jsonify({"error": "Invalid path format. Must start with 'projects/'", "success": False}), 400
+
+    try:
+        projects_dir = get_projects_dir()
+        # Remove 'projects/' prefix to get the relative path inside projects directory
+        relative_path = path[len('projects/'):]
+
+        # Construct the full path
+        full_path = os.path.abspath(os.path.join(projects_dir, relative_path))
+
+        # Security check: ensure the full path is within the projects directory
+        if not full_path.startswith(os.path.abspath(projects_dir)):
+            return jsonify({"error": "Access denied: Path is outside of projects directory", "success": False}), 403
+
+        if not os.path.exists(full_path):
+            return jsonify({"error": "File not found", "success": False}), 404
+
+        # Determine the working directory (the script's directory)
+        cwd = os.path.dirname(full_path)
+
+        # Execute the script
+        result = subprocess.run(
+            [sys.executable, full_path],
+            capture_output=True,
+            text=True,
+            timeout=10,  # 10 second timeout
+            cwd=cwd
+        )
+
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            output += result.stderr
+
+        if not output:
+             output = "Script finished with no output."
+
+        return jsonify({"output": output, "success": True})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"output": "Error: Execution timed out (limit: 10s)", "success": False}), 200 # Return 200 so frontend displays the output text
+    except Exception as e:
+        logger.error(f"Error executing script {path}: {e}")
+        return jsonify({"output": f"Error: {str(e)}", "success": False}), 500
+
 # SocketIO Event Handlers
 @socketio.on('connect')
 def handle_connect():
