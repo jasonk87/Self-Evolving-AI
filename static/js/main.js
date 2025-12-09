@@ -28,6 +28,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    socket.on('project_update', (data) => {
+        console.log('Project Update:', data);
+        updateTelemetryUI(data);
+    });
+
     socket.on('disconnect', () => {
         console.log('Disconnected from WebSocket server');
         appendSystemMessage('Disconnected from event stream.');
@@ -143,4 +148,82 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    function updateTelemetryUI(payload) {
+        // Payload: { project: "ProjectName", data: { ... } }
+        // We will display this in a dedicated section in the right sidebar.
+        // If "Telemetry" tab doesn't exist, we can add it or repurpose an existing one.
+        // For now, let's update the "Memory" tab or create a new "Telemetry" tab dynamically if possible,
+        // or just append to a specific container if we update the HTML.
+        // But since we can't easily change HTML structure from here without being invasive,
+        // let's try to find a container or create one.
+
+        // Let's use the 'tab-memory' for Telemetry/Game State for now, or add a new tab if we want to follow requirements strictly.
+        // Requirement: "Update a new "Game State" or "Telemetry" section in the Right Sidebar"
+
+        let telemetryTabBtn = document.querySelector('.tab-btn[data-tab="telemetry"]');
+        if (!telemetryTabBtn) {
+            // Create Telemetry Tab Button
+            const tabsContainer = document.querySelector('.tabs');
+            telemetryTabBtn = document.createElement('button');
+            telemetryTabBtn.classList.add('tab-btn');
+            telemetryTabBtn.dataset.tab = 'telemetry';
+            telemetryTabBtn.textContent = 'Telemetry';
+            telemetryTabBtn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+                telemetryTabBtn.classList.add('active');
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                document.getElementById('tab-telemetry').classList.remove('hidden');
+            });
+            tabsContainer.appendChild(telemetryTabBtn);
+
+            // Create Telemetry Tab Content
+            const contextPanel = document.getElementById('context-panel');
+            const telemetryContent = document.createElement('div');
+            telemetryContent.id = 'tab-telemetry';
+            telemetryContent.classList.add('tab-content', 'hidden');
+
+            const header = document.createElement('h3');
+            header.textContent = 'Live Project Telemetry';
+            telemetryContent.appendChild(header);
+
+            const contentArea = document.createElement('div');
+            contentArea.id = 'telemetry-data-area';
+            telemetryContent.appendChild(contentArea);
+
+            contextPanel.appendChild(telemetryContent);
+        }
+
+        // Update Content
+        const contentArea = document.getElementById('telemetry-data-area');
+        if (contentArea) {
+            // simple JSON pretty print for now, or formatted key-values
+            contentArea.innerHTML = '';
+
+            const projectHeader = document.createElement('div');
+            projectHeader.style.fontWeight = 'bold';
+            projectHeader.style.marginBottom = '10px';
+            projectHeader.textContent = `Project: ${payload.project}`;
+            contentArea.appendChild(projectHeader);
+
+            const dataList = document.createElement('ul');
+            dataList.style.listStyle = 'none';
+            dataList.style.padding = '0';
+
+            for (const [key, value] of Object.entries(payload.data)) {
+                const li = document.createElement('li');
+                li.style.marginBottom = '5px';
+                li.innerHTML = `<span style="opacity: 0.7;">${key}:</span> <strong>${value}</strong>`;
+                dataList.appendChild(li);
+            }
+            contentArea.appendChild(dataList);
+
+            // Flash effect to show update
+            contentArea.style.transition = 'background-color 0.2s';
+            contentArea.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            setTimeout(() => {
+                contentArea.style.backgroundColor = 'transparent';
+            }, 200);
+        }
+    }
 });

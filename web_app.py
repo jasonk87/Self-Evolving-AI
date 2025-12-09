@@ -1,5 +1,9 @@
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import sys
+import json
 import asyncio
 import logging
 import threading
@@ -12,6 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Import AI Assistant components
+from ai_assistant.config import get_projects_dir
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.learning.learning import LearningAgent
@@ -158,5 +163,44 @@ def handle_log_event(data):
     """
     socketio.emit('log_event', data)
 
+def watch_telemetry():
+    """Background task to watch for telemetry updates."""
+    projects_dir = get_projects_dir()
+    last_modified_times = {}
+    logger.info(f"Starting telemetry watcher on {projects_dir}")
+
+    while True:
+        try:
+            if os.path.exists(projects_dir):
+                # Iterate over subdirectories in projects_dir
+                for project_name in os.listdir(projects_dir):
+                    project_path = os.path.join(projects_dir, project_name)
+                    if os.path.isdir(project_path):
+                        telemetry_path = os.path.join(project_path, "telemetry.json")
+                        if os.path.exists(telemetry_path):
+                            mtime = os.path.getmtime(telemetry_path)
+
+                            # Check if file is modified
+                            if telemetry_path not in last_modified_times or last_modified_times[telemetry_path] < mtime:
+                                last_modified_times[telemetry_path] = mtime
+                                try:
+                                    with open(telemetry_path, 'r', encoding='utf-8') as f:
+                                        data = json.load(f)
+                                        # Add project name to data if not present, or wrap it
+                                        payload = {
+                                            "project": project_name,
+                                            "data": data
+                                        }
+                                        socketio.emit('project_update', payload)
+                                        logger.info(f"Emitted project_update for {project_name}")
+                                except Exception as e:
+                                    logger.error(f"Error reading telemetry for {project_name}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in watch_telemetry: {e}")
+
+        socketio.sleep(1)
+
 if __name__ == '__main__':
+    socketio.start_background_task(watch_telemetry)
     socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
