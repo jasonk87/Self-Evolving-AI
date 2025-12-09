@@ -1,0 +1,107 @@
+import os
+import subprocess
+import sys
+from typing import List, Dict, Any, Optional
+from ai_assistant.core.agent_manager import AgentManager
+from ai_assistant.core.notification_manager import NotificationManager, NotificationType
+
+# Initialize AgentManager singleton-like or instantiate per call?
+# Instantiate per call or hold a reference. Since it manages file paths, it's lightweight.
+agent_manager = AgentManager()
+
+def spawn_ephemeral_agent(task_description: str) -> Dict[str, str]:
+    """
+    Spawns a new ephemeral agent with a dedicated workspace.
+
+    Args:
+        task_description (str): A description of the task the agent is intended to perform.
+
+    Returns:
+        dict: Contains 'agent_id' and 'workspace_path'.
+    """
+    agent_id = agent_manager.create_workspace(task_description)
+    workspace_path = agent_manager.get_workspace_path(agent_id)
+    return {
+        "agent_id": agent_id,
+        "workspace_path": workspace_path
+    }
+
+def run_agent_code(agent_id: str, filename: str, code: str, cmd_args: List[str] = None) -> Dict[str, str]:
+    """
+    Writes code to a file in the agent's workspace and executes it.
+
+    Args:
+        agent_id (str): The ID of the agent.
+        filename (str): The name of the file to create (e.g., 'script.py').
+        code (str): The source code to write to the file.
+        cmd_args (list, optional): Additional command line arguments to pass to the script.
+
+    Returns:
+        dict: Contains 'stdout', 'stderr', and 'return_code'.
+    """
+    workspace_path = agent_manager.get_workspace_path(agent_id)
+    if not os.path.exists(workspace_path):
+        return {"error": f"Workspace for agent {agent_id} does not exist."}
+
+    file_path = os.path.join(workspace_path, filename)
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(code)
+    except IOError as e:
+        return {"error": f"Failed to write code to file: {e}"}
+
+    command = [sys.executable, filename]
+    if cmd_args:
+        command.extend(cmd_args)
+
+    try:
+        result = subprocess.run(
+            command,
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=60 # Set a timeout to prevent infinite loops
+        )
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "return_code": str(result.returncode)
+        }
+    except subprocess.TimeoutExpired:
+        return {"error": "Execution timed out."}
+    except Exception as e:
+        return {"error": f"Execution failed: {e}"}
+
+def submit_agent_report(agent_id: str, report_content: str, notification_manager: Optional[NotificationManager] = None) -> str:
+    """
+    Submits a report from the agent and terminates the agent (deletes workspace).
+
+    Args:
+        agent_id (str): The ID of the agent.
+        report_content (str): The final report or result from the agent.
+        notification_manager (NotificationManager, optional): Injected notification manager to deliver the report.
+
+    Returns:
+        str: Confirmation message.
+    """
+
+    # Deliver the report
+    message = f"Agent {agent_id} Report:\n{report_content}"
+
+    if notification_manager:
+        notification_manager.add_notification(
+            event_type=NotificationType.TASK_COMPLETED_SUCCESSFULLY, # Or GENERAL_INFO
+            summary_message=f"Ephemeral Agent {agent_id} finished.",
+            details_payload={"report": report_content}
+        )
+    else:
+        # Fallback logging if NotificationManager is not available
+        print(f"--- [Ephemeral Agent {agent_id} Report] ---\n{report_content}\n---------------------------------------")
+
+    # Terminate the agent
+    try:
+        agent_manager.terminate_agent(agent_id)
+        return f"Report submitted and agent {agent_id} terminated successfully."
+    except Exception as e:
+        return f"Report submitted, but failed to terminate agent {agent_id}: {e}"
