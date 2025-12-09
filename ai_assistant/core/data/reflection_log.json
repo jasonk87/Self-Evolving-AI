@@ -71,5 +71,195 @@
             "notes": "Test not run as code edit failed."
         },
         "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "9051ffd5-20f8-429d-bd9c-a8ff8b585963",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-09T13:24:37.789259+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "8476233d-aca9-47ab-b822-f6e174f45bdb",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-09T16:39:14.664444+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "32576b8a-fead-4e85-86e1-6db0b8c13550",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-09T16:42:09.773229+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "7cc13d06-fdae-4162-a092-37d3c1fea124",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-09T16:54:23.908765+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "Test goal using clarification",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "What is your preferred filename?"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "some_other_tool",
+                "args": [
+                    "[[step_1_output]]",
+                    "static_value"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "my_preferred_file.txt",
+            "Mock success for some_other_tool"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "5944caa5-9bad-4314-8f97-c4869cb2c524",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-09T17:25:59.652848+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
     }
 ]

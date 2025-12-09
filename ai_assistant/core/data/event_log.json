@@ -5691,5 +5691,140 @@
             "llm_model_name": "test_model",
             "num_patterns_input": 1
         }
+    },
+    {
+        "timestamp": "2025-12-09T13:24:37.790125+00:00",
+        "event_id": "f2642818d85c41ed8c2dda97bf1ad407",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "request_user_clarification",
+                "some_other_tool"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-09T16:39:14.666496+00:00",
+        "event_id": "f8324c86fec24d5e811c3d6699ef0264",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "request_user_clarification",
+                "some_other_tool"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-09T16:42:09.774232+00:00",
+        "event_id": "825971f1f6904ab09ce98ef6f9783c75",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "request_user_clarification",
+                "some_other_tool"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-09T16:54:23.914952+00:00",
+        "event_id": "e0cef6d40c35430cb3471eb8bc51057a",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "some_other_tool",
+                "request_user_clarification"
+            ],
+            "replan_attempts_made": 0
+        }
+    },
+    {
+        "timestamp": "2025-12-09T17:25:59.656452+00:00",
+        "event_id": "d2f9cf8729d34b14ab9e12cd6aa1e339",
+        "event_type": "GOAL_EXECUTION_COMPLETED",
+        "description": "Goal execution completed successfully for: Test goal using clarification (possibly after re-planning).",
+        "source": "ExecutionAgent.execute_plan",
+        "metadata": {
+            "goal_description": "Test goal using clarification",
+            "final_plan_summary": [
+                {
+                    "tool": "request_user_clarification",
+                    "args_preview": "('What is your preferred filename?',)"
+                },
+                {
+                    "tool": "some_other_tool",
+                    "args_preview": "('[[step_1_output]]', 'static_value')"
+                }
+            ],
+            "overall_success": true,
+            "num_steps_in_final_plan": 2,
+            "tools_used_in_final_plan": [
+                "request_user_clarification",
+                "some_other_tool"
+            ],
+            "replan_attempts_made": 0
+        }
     }
 ]
