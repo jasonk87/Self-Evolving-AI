@@ -146,8 +146,218 @@ document.addEventListener('DOMContentLoaded', () => {
             if (target) {
                 target.classList.remove('hidden');
             }
+
+            // Load files if Files tab is selected
+            if (tabName === 'files') {
+                loadProjectsAndFiles();
+            }
         });
     });
+
+    // File Tree & Editor Logic
+    const fileTreeContainer = document.getElementById('file-tree');
+    const editorPanel = document.getElementById('editor-panel');
+    const chatPanel = document.getElementById('chat-panel');
+    const fileEditor = document.getElementById('file-editor');
+    const editorFilename = document.getElementById('editor-filename');
+    const closeEditorBtn = document.getElementById('close-editor-btn');
+    const saveFileBtn = document.getElementById('save-file-btn');
+
+    let currentProject = null;
+    let currentFilePath = null;
+
+    async function loadProjectsAndFiles() {
+        if (!fileTreeContainer) return;
+        fileTreeContainer.innerHTML = '<div class="loading">Loading projects...</div>';
+
+        try {
+            const response = await fetch('/api/projects');
+            const data = await response.json();
+
+            if (data.success && data.projects) {
+                fileTreeContainer.innerHTML = '';
+                if (data.projects.length === 0) {
+                    fileTreeContainer.innerHTML = '<div class="empty-state">No projects found.</div>';
+                    return;
+                }
+
+                const projectsList = document.createElement('ul');
+                projectsList.className = 'file-tree-list';
+
+                for (const project of data.projects) {
+                    const li = document.createElement('li');
+                    li.className = 'project-item';
+
+                    const projectLabel = document.createElement('div');
+                    projectLabel.className = 'tree-label project-label';
+                    projectLabel.innerHTML = `<span class="icon">📁</span> ${project.name}`;
+                    projectLabel.onclick = (e) => toggleProject(e, project.name, li);
+
+                    li.appendChild(projectLabel);
+                    projectsList.appendChild(li);
+                }
+                fileTreeContainer.appendChild(projectsList);
+            } else {
+                fileTreeContainer.innerHTML = '<div class="error-state">Failed to load projects.</div>';
+            }
+        } catch (error) {
+            console.error('Error loading projects:', error);
+            fileTreeContainer.innerHTML = '<div class="error-state">Error loading projects.</div>';
+        }
+    }
+
+    async function toggleProject(event, projectName, parentLi) {
+        event.stopPropagation();
+        const existingList = parentLi.querySelector('ul');
+        if (existingList) {
+            existingList.remove(); // Collapse
+            parentLi.classList.remove('expanded');
+            return;
+        }
+
+        // Expand
+        parentLi.classList.add('expanded');
+        // Fetch files for project root
+        await fetchAndRenderFiles(projectName, '', parentLi);
+    }
+
+    async function fetchAndRenderFiles(projectName, path, parentContainer) {
+        // Add loading indicator?
+
+        try {
+            const url = `/api/files/list?project_name=${encodeURIComponent(projectName)}&path=${encodeURIComponent(path)}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success) {
+                const ul = document.createElement('ul');
+                ul.className = 'file-tree-sublist';
+
+                // Directories
+                data.directories.forEach(dir => {
+                    const li = document.createElement('li');
+                    li.className = 'dir-item';
+                    const dirLabel = document.createElement('div');
+                    dirLabel.className = 'tree-label dir-label';
+                    dirLabel.innerHTML = `<span class="icon">📂</span> ${dir}`;
+                    const dirPath = path ? `${path}/${dir}` : dir;
+
+                    dirLabel.onclick = (e) => toggleDirectory(e, projectName, dirPath, li);
+
+                    li.appendChild(dirLabel);
+                    ul.appendChild(li);
+                });
+
+                // Files
+                data.files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.className = 'file-item';
+                    const fileLabel = document.createElement('div');
+                    fileLabel.className = 'tree-label file-label';
+                    fileLabel.innerHTML = `<span class="icon">📄</span> ${file}`;
+                    const filePath = path ? `${path}/${file}` : file;
+
+                    fileLabel.onclick = (e) => openFileInEditor(projectName, filePath);
+
+                    li.appendChild(fileLabel);
+                    ul.appendChild(li);
+                });
+
+                parentContainer.appendChild(ul);
+            } else {
+                console.error('Failed to list files:', data.error);
+            }
+        } catch (error) {
+            console.error('Error fetching files:', error);
+        }
+    }
+
+    async function toggleDirectory(event, projectName, dirPath, parentLi) {
+        event.stopPropagation();
+        const existingList = parentLi.querySelector('ul');
+        if (existingList) {
+            existingList.remove();
+            parentLi.classList.remove('expanded');
+            return;
+        }
+        parentLi.classList.add('expanded');
+        await fetchAndRenderFiles(projectName, dirPath, parentLi);
+    }
+
+    async function openFileInEditor(projectName, filePath) {
+        try {
+            const url = `/api/files/read?project_name=${encodeURIComponent(projectName)}&path=${encodeURIComponent(filePath)}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success) {
+                currentProject = projectName;
+                currentFilePath = filePath;
+                editorFilename.textContent = `${projectName}/${filePath}`;
+                fileEditor.value = data.content;
+
+                // Show editor, hide chat
+                chatPanel.classList.add('hidden');
+                editorPanel.classList.remove('hidden');
+            } else {
+                alert(`Error opening file: ${data.error}`);
+            }
+        } catch (error) {
+            console.error('Error reading file:', error);
+            alert('Error reading file.');
+        }
+    }
+
+    if (closeEditorBtn) {
+        closeEditorBtn.addEventListener('click', () => {
+            editorPanel.classList.add('hidden');
+            chatPanel.classList.remove('hidden');
+            currentProject = null;
+            currentFilePath = null;
+        });
+    }
+
+    if (saveFileBtn) {
+        saveFileBtn.addEventListener('click', async () => {
+            if (!currentProject || !currentFilePath) return;
+
+            const content = fileEditor.value;
+            const originalBtnText = saveFileBtn.textContent;
+            saveFileBtn.textContent = 'Saving...';
+            saveFileBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/files/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_name: currentProject,
+                        path: currentFilePath,
+                        content: content
+                    })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    // Feedback
+                    saveFileBtn.textContent = 'Saved!';
+                    setTimeout(() => {
+                        saveFileBtn.textContent = originalBtnText;
+                        saveFileBtn.disabled = false;
+                    }, 1500);
+                } else {
+                    alert(`Error saving file: ${data.error}`);
+                    saveFileBtn.textContent = originalBtnText;
+                    saveFileBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error saving file:', error);
+                alert('Error saving file.');
+                saveFileBtn.textContent = originalBtnText;
+                saveFileBtn.disabled = false;
+            }
+        });
+    }
 
     function updateTelemetryUI(payload) {
         // Payload: { project: "ProjectName", data: { ... } }
