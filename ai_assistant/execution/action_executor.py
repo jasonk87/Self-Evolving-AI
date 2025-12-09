@@ -499,6 +499,9 @@ class ActionExecutor:
             elif action_type == "EXECUTE_EPHEMERAL_AGENT":
                 task_type = ActiveTaskType.EPHEMERAL_AGENT_TASK
                 related_item = details.get("task_description", "Unknown agent task")[:70]
+            elif action_type in ["PROPOSE_CLASS_METHOD_MODIFICATION", "UPSERT_IMPORT", "INSERT_CODE_BLOCK"]:
+                task_type = ActiveTaskType.AGENT_TOOL_MODIFICATION
+                related_item = details.get("module_path", "unknown_module")
 
             action_task = self.task_manager.add_task(
                 description=task_description, # Corrected order
@@ -645,6 +648,65 @@ class ActionExecutor:
                 return False
         elif action_type == "EXECUTE_EPHEMERAL_AGENT":
             return await self._execute_ephemeral_agent_task(details, action_task_id)
+
+        elif action_type == "PROPOSE_CLASS_METHOD_MODIFICATION":
+            module_path = details.get("module_path")
+            class_name = details.get("class_name")
+            method_name = details.get("method_name")
+            new_code = details.get("new_code")
+            change_description = details.get("change_description", "No description provided.")
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+            if not all([module_path, class_name, method_name, new_code]):
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing required arguments", step_desc="Validation failed")
+                return False
+
+            result = await self_modification.edit_class_method(
+                module_path, class_name, method_name, new_code, project_root, change_description, self.task_manager, action_task_id
+            )
+            success = "updated successfully" in result.lower()
+            status = ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_UNKNOWN
+            self._update_task_if_manager(action_task_id, status, reason=result, step_desc="Execution complete")
+            return success
+
+        elif action_type == "UPSERT_IMPORT":
+            module_path = details.get("module_path")
+            import_statement = details.get("import_statement")
+            change_description = details.get("change_description", "No description provided.")
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+            if not all([module_path, import_statement]):
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing required arguments", step_desc="Validation failed")
+                 return False
+
+            result = await self_modification.upsert_import(
+                module_path, import_statement, project_root, change_description, self.task_manager, action_task_id
+            )
+            # upsert_import returns simple success message or error
+            success = "successfully" in result.lower() or "already exists" in result.lower()
+            status = ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_UNKNOWN
+            self._update_task_if_manager(action_task_id, status, reason=result, step_desc="Execution complete")
+            return success
+
+        elif action_type == "INSERT_CODE_BLOCK":
+            module_path = details.get("module_path") # Used as file path often
+            anchor_code = details.get("anchor_code")
+            new_code = details.get("new_code")
+            position = details.get("position", "after")
+            change_description = details.get("change_description", "No description provided.")
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+            if not all([module_path, anchor_code, new_code]):
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing required arguments", step_desc="Validation failed")
+                 return False
+
+            result = await self_modification.insert_code_block(
+                module_path, anchor_code, new_code, position, project_root, change_description, self.task_manager, action_task_id
+            )
+            success = "successfully" in result.lower()
+            status = ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_UNKNOWN
+            self._update_task_if_manager(action_task_id, status, reason=result, step_desc="Execution complete")
+            return success
 
         else: # pragma: no cover
             log_msg = f"ActionExecutor: Unknown or unsupported action_type: {action_type}"
