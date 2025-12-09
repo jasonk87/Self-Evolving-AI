@@ -51,12 +51,16 @@
             <header class="editor-header">
                 <h1 id="editor-filename">filename.py</h1>
                 <div class="editor-actions">
-                    <button id="close-editor-btn" class="secondary-btn">Close</button>
+                    <button id="run-file-btn" class="primary-btn run-btn">Run</button>
                     <button id="save-file-btn" class="primary-btn">Save</button>
+                    <button id="close-editor-btn" class="secondary-btn">Close</button>
                 </div>
             </header>
             <div class="editor-container">
                 <textarea id="file-editor" spellcheck="false"></textarea>
+                <div id="terminal-container">
+                    <div id="terminal-output"></div>
+                </div>
             </div>
         </main>
 

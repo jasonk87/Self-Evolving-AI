@@ -1,0 +1,105 @@
+/app/web_app.py:1: DeprecationWarning:
+Eventlet is deprecated. It is currently being maintained in bugfix mode, and
+we strongly recommend against using it for new projects.
+
+If you are already using Eventlet, we recommend migrating to a different
+framework.  For more detail see
+https://eventlet.readthedocs.io/en/latest/asyncio/migration.html
+
+  import eventlet
+2025-12-09 02:45:19,441 - INFO - ai_assistant.code_services.service - CodeService initialized.
+2025-12-09 02:45:19,442 - INFO - ai_assistant.code_services.service - CodeService initialized.
+2025-12-09 02:45:19,442 - INFO - __main__ - Orchestrator initialized successfully.
+2025-12-09 02:45:19,452 - INFO - werkzeug -  * Restarting with stat
+2025-12-09 02:45:19,453 - INFO - __main__ - Starting telemetry watcher on /app/ai_assistant/core/data/projects
+/app/web_app.py:1: DeprecationWarning:
+Eventlet is deprecated. It is currently being maintained in bugfix mode, and
+we strongly recommend against using it for new projects.
+
+If you are already using Eventlet, we recommend migrating to a different
+framework.  For more detail see
+https://eventlet.readthedocs.io/en/latest/asyncio/migration.html
+
+  import eventlet
+2025-12-09 02:45:20,396 - INFO - ai_assistant.code_services.service - CodeService initialized.
+2025-12-09 02:45:20,397 - INFO - ai_assistant.code_services.service - CodeService initialized.
+2025-12-09 02:45:20,397 - INFO - __main__ - Orchestrator initialized successfully.
+2025-12-09 02:45:20,407 - WARNING - werkzeug -  * Debugger is active!
+2025-12-09 02:45:20,407 - INFO - werkzeug -  * Debugger PIN: 142-521-337
+2025-12-09 02:45:20,412 - INFO - __main__ - Starting telemetry watcher on /app/ai_assistant/core/data/projects
+(5371) wsgi starting up on http://127.0.0.1:5000
+(5371) accepted ('127.0.0.1', 36926)
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET / HTTP/1.1" 200 4374 0.006432
+(5371) accepted ('127.0.0.1', 36928)
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /static/css/style.css HTTP/1.1" 200 8099 0.006356
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /static/js/main.js HTTP/1.1" 200 17709 0.000843
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /socket.io/?EIO=4&transport=polling&t=Pi0__ek HTTP/1.1" 200 300 0.000485
+2025-12-09 02:45:34,425 - INFO - __main__ - Client connected
+127.0.0.1 - - [09/Dec/2025 02:45:34] "POST /socket.io/?EIO=4&transport=polling&t=Pi0__fI&sid=wKMCITadVTp9nQDKAAAA HTTP/1.1" 200 219 0.001451
+(5371) accepted ('127.0.0.1', 36938)
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /socket.io/?EIO=4&transport=polling&t=Pi0__fO&sid=wKMCITadVTp9nQDKAAAA HTTP/1.1" 200 213 0.000275
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /socket.io/?EIO=4&transport=polling&t=Pi0__fl&sid=wKMCITadVTp9nQDKAAAA HTTP/1.1" 200 181 0.000235
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /api/projects HTTP/1.1" 200 485 0.001036
+127.0.0.1 - - [09/Dec/2025 02:45:34] "GET /api/files/list?project_name=TestProject&path= HTTP/1.1" 400 279 0.000892
+2025-12-09 02:45:44,882 - INFO - __main__ - Client disconnected
+127.0.0.1 - - [09/Dec/2025 02:45:44] "GET /socket.io/?EIO=4&transport=websocket&sid=wKMCITadVTp9nQDKAAAA HTTP/1.1" 200 0 10.446192
+ReflectionLog: Loading log from '/app/ai_assistant/core/data/reflection_log.json'...
+ReflectionLog: Loaded 2 entries from '/app/ai_assistant/core/data/reflection_log.json'.
+ToolSystem: Initializing with registry file: /app/ai_assistant/core/data/tool_registry.json
+ToolSystem: Loading persisted tools from '/app/ai_assistant/core/data/tool_registry.json'...
+[DEBUG LOAD TOOL_SYSTEM] Loaded 'get_self_awareness_info_and_converse' with module_path: ai_assistant.custom_tools.awareness_tools
+ToolSystem: Successfully processed 52 persisted tools from file.
+ToolSystem: System tools registered.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.my_extra_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.my_extra_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.awareness_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.awareness_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.config_management_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.config_management_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.conversational_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.conversational_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.project_management_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.project_management_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.project_execution_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.project_execution_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.code_execution_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.code_execution_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.file_system_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.file_system_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.git_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.git_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.knowledge_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.knowledge_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.meta_programming_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.meta_programming_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.suggestion_management_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.suggestion_management_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.agent_tools
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.agent_tools'. No new tools were registered in this pass.
+ToolSystem: Discovering custom tools from module: ai_assistant.custom_tools.generated
+ToolSystem: Finished discovery for 'ai_assistant.custom_tools.generated'. No new tools were registered in this pass.
+ToolSystem: Tool 'greet_user' is being re-registered/updated. Description: 'Greets the user. Args: name (str)'
+ToolSystem: Tool 'add_numbers' is being re-registered/updated. Description: 'Adds two integers. Args: a (int), b (int)'
+ToolSystem: Tool 'multiply_numbers' is being re-registered/updated. Description: 'Multiplies two floats. Args: x (float), y (float)'
+ToolSystem: Tool 'no_op_tool' is being re-registered/updated. Description: 'Does nothing, useful for default plans.'
+ToolSystem: Tool 'view_function_code' is being re-registered/updated. Description: 'Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).'
+ToolSystem: Tool 'simulate_edit_function_code' is being re-registered/updated. Description: 'Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).'
+ToolSystem: Tool 'maybe_fail_tool' is being re-registered/updated. Description: 'A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.'
+ToolSystem: Example tools registration attempt finished.
+ToolSystem: Initialization complete. 53 tools registered.
+StartupServices: Checking for interrupted tasks...
+StartupServices: No potentially interrupted tasks found.
+[DEBUG] Initializing ActionExecutor...
+ActionExecutor initialized.
+[DEBUG] CodeService initialized with llm_provider: <module 'ai_assistant.llm_interface.ollama_client' from '/app/ai_assistant/llm_interface/ollama_client.py'>, self_modification_service: <module 'ai_assistant.core.self_modification' from '/app/ai_assistant/core/self_modification.py'>, task_manager: <ai_assistant.core.task_manager.TaskManager object at 0x7f4aede14ec0>, notification_manager: <ai_assistant.core.notification_manager.NotificationManager object at 0x7f4aee55bb30>
+[DEBUG] CodeService instance in ActionExecutor: <ai_assistant.code_services.service.CodeService object at 0x7f4aede419a0>
+[DEBUG] TaskManager instance in ActionExecutor: <ai_assistant.core.task_manager.TaskManager object at 0x7f4aede14ec0>
+[DEBUG] NotificationManager instance in ActionExecutor: <ai_assistant.core.notification_manager.NotificationManager object at 0x7f4aee55bb30>
+LearningAgent: Loading insights from '/home/jules/.ai_assistant/actionable_insights.json'...
+LearningAgent: Loaded 0 actionable insights from '/home/jules/.ai_assistant/actionable_insights.json'.
+[DEBUG] Initializing ActionExecutor...
+ActionExecutor initialized.
+[DEBUG] CodeService initialized with llm_provider: <module 'ai_assistant.llm_interface.ollama_client' from '/app/ai_assistant/llm_interface/ollama_client.py'>, self_modification_service: <module 'ai_assistant.core.self_modification' from '/app/ai_assistant/core/self_modification.py'>, task_manager: <ai_assistant.core.task_manager.TaskManager object at 0x7f4aede14ec0>, notification_manager: <ai_assistant.core.notification_manager.NotificationManager object at 0x7f4aee55bb30>
+[DEBUG] CodeService instance in ActionExecutor: <ai_assistant.code_services.service.CodeService object at 0x7f4aede419d0>
+[DEBUG] TaskManager instance in ActionExecutor: <ai_assistant.core.task_manager.TaskManager object at 0x7f4aede14ec0>
+[DEBUG] NotificationManager instance in ActionExecutor: <ai_assistant.core.notification_manager.NotificationManager object at 0x7f4aee55bb30>

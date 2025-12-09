@@ -162,6 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorFilename = document.getElementById('editor-filename');
     const closeEditorBtn = document.getElementById('close-editor-btn');
     const saveFileBtn = document.getElementById('save-file-btn');
+    const runFileBtn = document.getElementById('run-file-btn');
+    const terminalOutput = document.getElementById('terminal-output');
 
     let currentProject = null;
     let currentFilePath = null;
@@ -357,6 +359,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveFileBtn.disabled = false;
             }
         });
+    }
+
+    if (runFileBtn) {
+        runFileBtn.addEventListener('click', runFile);
+    }
+
+    async function runFile() {
+        if (!currentProject || !currentFilePath) return;
+
+        if (!terminalOutput) {
+            console.error("Terminal output element not found");
+            return;
+        }
+
+        // Clear previous output
+        terminalOutput.textContent = 'Running...';
+
+        const path = `projects/${currentProject}/${currentFilePath}`;
+
+        try {
+            const response = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+            });
+
+            const data = await response.json();
+
+            // Display output
+            if (data.success) {
+                terminalOutput.textContent = data.output;
+            } else {
+                terminalOutput.textContent = data.output || data.error || 'Unknown error occurred.';
+            }
+
+        } catch (error) {
+            console.error('Error running file:', error);
+            terminalOutput.textContent = 'Error: Failed to connect to server.';
+        }
     }
 
     function updateTelemetryUI(payload) {
