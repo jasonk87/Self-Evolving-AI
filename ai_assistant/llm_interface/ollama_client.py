@@ -288,14 +288,22 @@ class OllamaProvider:
     A provider class for interacting with an Ollama service.
     This class wraps the model invocation functions.
     """
+    # Expose defaults as class attributes if needed by external users
+    DEFAULT_MODEL = DEFAULT_OLLAMA_MODEL
+
     def __init__(self, model_name: str = DEFAULT_OLLAMA_MODEL, base_url: Optional[str] = None):
         self.model = model_name
         # Ensure os is imported if you use os.path.join here
         # For now, assuming OLLAMA_API_ENDPOINT is a full URL and we derive base_url
         self.base_url = base_url or OLLAMA_API_ENDPOINT.rsplit('/api/', 1)[0]
-        self.generate_endpoint = os.path.join(self.base_url, "api/generate")
-        self.chat_endpoint = os.path.join(self.base_url, "api/chat")
+        self.generate_endpoint = f"{self.base_url}/api/generate"
+        self.chat_endpoint = f"{self.base_url}/api/chat"
 
+    async def generate_code_async(self, prompt: str) -> Optional[str]:
+        """
+        Generates code using the LLM. Convenience wrapper around invoke_ollama_model_async.
+        """
+        return await self.invoke_ollama_model_async(prompt, temperature=0.2)
 
     async def invoke_ollama_model_async(
         self,

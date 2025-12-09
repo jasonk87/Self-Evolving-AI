@@ -51,13 +51,26 @@ If the user's statement relates to starting, developing, or running a software p
     * `timeout_seconds` (the fourth argument) should be a string representing an integer (e.g., "60").
     * Example (no script arguments, 30s timeout): `"tool_name": "execute_python_script_in_project", "args": ["game_project", "main.py", [], "30"], "kwargs": {{}}`
     * Example (with script arguments, 60s timeout): `"tool_name": "execute_python_script_in_project", "args": ["data_project", "process.py", ["--input", "data.csv", "--output", "out.txt"], "60"], "kwargs": {{}}`
+5. `spawn_ephemeral_agent(task_description: str)`:
+    * Use to spin up a temporary, isolated agent to perform a specific calculation, analysis, data retrieval, or one-off coding task that does NOT require a persistent project structure.
+    * `task_description` should be a clear description of what the agent needs to do (e.g., "Calculate the 100th Fibonacci number", "Fetch the latest news on AI").
 
-**Important Decision-Making Rules for Project-Related Tasks:**
-1.  **Project Continuation/Updates**: If the user asks to 'update the game', 'continue the project', 'work on the project', 'do it', 'proceed', 'get the project started' or similar, and a specific project (e.g., "hangman", "snake") was recently discussed or initiated (check conversation history and learned facts), interpret this as a request to continue work on that project. The most appropriate tool is likely `execute_project_coding_plan` with the identified `project_name`.
-2.  **Project Initiation vs. File Generation**: If the user expresses intent to create a new game, application, or any new software entity (e.g., "create the game X"), and it's not clear that a project for this entity has already been initiated in the conversation or known facts, you **MUST** prioritize suggesting or using the `initiate_ai_project` tool first. Do not suggest `generate_code_for_project_file` for a project that has not been explicitly initiated.
-3.  **Argument Format**: The "args" field in your JSON response **MUST be a LIST**. Each element in this list corresponds to a positional argument for the tool.
+**Important Decision-Making Rules:**
+
+1.  **Creation/Maintenance (Projects)**: If the user wants to build software, a game, a website, or maintain an existing project -> Suggest `initiate_ai_project` (for new) or project maintenance tools (for existing).
+    *   **Project Initiation**: If the user expresses intent to create a new game, application, or any new software entity (e.g., "create the game X"), and it's not clear that a project for this entity has already been initiated, you **MUST** prioritize suggesting `initiate_ai_project`.
+    *   **Project Continuation**: If the user asks to 'update the game', 'continue the project', 'work on the project', etc., suggest `execute_project_coding_plan` or `execute_python_script_in_project`.
+
+2.  **Information/Calculation (Agents)**: If the user wants to calculate something, fetch data, scrape the web, perform a one-off analysis, or run a quick script without building a full application -> Suggest `spawn_ephemeral_agent`.
+    *   Example: "Calculate the 100th Fibonacci number" -> `spawn_ephemeral_agent`.
+    *   Example: "What is the current stock price of AAPL?" -> `spawn_ephemeral_agent`.
+    *   Example: "Analyze this text and give me a summary" -> `spawn_ephemeral_agent`.
+
+3.  **Questions about Existing Projects**: If the user asks a question about an existing project (e.g., "Run the game", "Test the project"), route to `execute_python_script_in_project` as before.
+
+**Argument Format**: The "args" field in your JSON response **MUST be a LIST**. Each element in this list corresponds to a positional argument for the tool.
     *   If a positional argument is expected to be a simple type (string, number, boolean), provide its string representation (e.g., `"value1"`, `"123"`, `"true"`).
-    *   If a positional argument is *itself* expected to be a list (like the `args_for_the_script` parameter of `execute_python_script_in_project`), provide it as a JSON list within the main "args" list (e.g., `["project_name", "script.py", ["script_arg1", "script_arg2"], "60"]`). If this list argument is empty, use `[]`.
+    *   If a positional argument is *itself* expected to be a list, provide it as a JSON list within the main "args" list.
     The "kwargs" field **MUST be a dictionary**, e.g., `{{"key1": "valueA"}}`. If no keyword arguments are needed, use an empty dictionary `{{}}`.
  
 **Clarified Rules for Continuing Project Work:**
@@ -116,7 +129,8 @@ async def detect_missed_tool_opportunity(
     executor: ExecutionAgent,
     tool_system_instance: ToolSystem,
     learning_agent: LearningAgent, # Add LearningAgent
-    llm_model_name: Optional[str] = None # Keep this last for compatibility if not all callers update immediately
+    llm_model_name: Optional[str] = None, # Keep this last for compatibility if not all callers update immediately
+    action_executor: Optional[Any] = None # Added optional ActionExecutor
 ) -> Optional[Dict[str, Any]]:
     """
     Detects if a user's statement could have been addressed by an available tool,
@@ -336,23 +350,48 @@ async def detect_missed_tool_opportunity(
                     "reasoning": parsed_response.get("reasoning", "N/A")
                 }
             )
-            single_step_plan_auto = [{"tool_name": tool_name_detected, "args": inferred_args_tuple, "kwargs": inferred_kwargs_dict}]
-            goal_for_auto_execution = f"Autonomously execute tool '{tool_name_detected}' based on user statement: {user_statement}"
 
             execution_results_auto_str = "No result or error during execution."
+            execution_results_auto = None
+
             try:
-                if is_debug_mode(): # pragma: no cover
-                    print(f"[DEBUG CONV_INTEL] Calling executor.execute_plan for autonomous execution. Goal: '{goal_for_auto_execution}'")
-                from ai_assistant.planning.planning import PlannerAgent 
-                temp_planner = PlannerAgent()
-                execution_results_auto = await executor.execute_plan(
-                    goal_description=goal_for_auto_execution,
-                    initial_plan=single_step_plan_auto,
-                    tool_system=tool_system_instance,
-                    planner_agent=temp_planner,
-                    learning_agent=learning_agent # Pass learning_agent
-                )
-                execution_results_auto_str = str(execution_results_auto)
+                # Intercept 'spawn_ephemeral_agent' to route to ActionExecutor if available
+                if tool_name_detected == "spawn_ephemeral_agent" and action_executor:
+                    task_desc_arg = inferred_args_tuple[0] if inferred_args_tuple else "Perform task"
+                    if is_debug_mode():
+                        print(f"[DEBUG CONV_INTEL] Intercepting 'spawn_ephemeral_agent' and delegating to ActionExecutor. Task: {task_desc_arg}")
+
+                    action_details = {"task_description": task_desc_arg}
+                    ephemeral_action = {
+                        "action_type": "EXECUTE_EPHEMERAL_AGENT",
+                        "details": action_details,
+                        "source_insight_id": f"auto_ephemeral_{os.urandom(4).hex()}"
+                    }
+
+                    success = await action_executor.execute_action(ephemeral_action)
+                    if success:
+                         execution_results_auto = ["Ephemeral agent task completed successfully. Check notifications/reports for details."]
+                         execution_results_auto_str = "Ephemeral Agent Task Executed Successfully."
+                    else:
+                         execution_results_auto = ["Ephemeral agent task failed."]
+                         execution_results_auto_str = "Ephemeral Agent Task Failed."
+                else:
+                    # Default path: Execute tool via ExecutionAgent
+                    single_step_plan_auto = [{"tool_name": tool_name_detected, "args": inferred_args_tuple, "kwargs": inferred_kwargs_dict}]
+                    goal_for_auto_execution = f"Autonomously execute tool '{tool_name_detected}' based on user statement: {user_statement}"
+
+                    if is_debug_mode(): # pragma: no cover
+                        print(f"[DEBUG CONV_INTEL] Calling executor.execute_plan for autonomous execution. Goal: '{goal_for_auto_execution}'")
+                    from ai_assistant.planning.planning import PlannerAgent
+                    temp_planner = PlannerAgent()
+                    execution_results_auto = await executor.execute_plan(
+                        goal_description=goal_for_auto_execution,
+                        initial_plan=single_step_plan_auto,
+                        tool_system=tool_system_instance,
+                        planner_agent=temp_planner,
+                        learning_agent=learning_agent # Pass learning_agent
+                    )
+                    execution_results_auto_str = str(execution_results_auto)
 
                 if is_debug_mode(): # pragma: no cover
                     print(f"[DEBUG CONV_INTEL] Autonomous execution result: {execution_results_auto_str}")
