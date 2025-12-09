@@ -703,5 +703,29 @@
                 ]
             ]
         }
+    },
+    "run_agent_code": {
+        "tool_name": "run_agent_code",
+        "module_path": "ai_assistant.custom_tools.agent_tools",
+        "function_name": "run_agent_code",
+        "description": "Writes code to a file in the agent's workspace and executes it.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "spawn_ephemeral_agent": {
+        "tool_name": "spawn_ephemeral_agent",
+        "module_path": "ai_assistant.custom_tools.agent_tools",
+        "function_name": "spawn_ephemeral_agent",
+        "description": "Spawns a new ephemeral agent with a dedicated workspace.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "submit_agent_report": {
+        "tool_name": "submit_agent_report",
+        "module_path": "ai_assistant.custom_tools.agent_tools",
+        "function_name": "submit_agent_report",
+        "description": "Submits a report from the agent and terminates the agent (deletes workspace).",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }
