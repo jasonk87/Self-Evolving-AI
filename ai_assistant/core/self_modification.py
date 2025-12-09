@@ -10,6 +10,7 @@ import sys
 from .diff_utils import generate_diff
 from .critical_reviewer import CriticalReviewCoordinator
 from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
+from .refinement import RefinementAgent # Added import for refinement
 import asyncio # For running the async review process
 from unittest.mock import patch, AsyncMock # For __main__ block mocking
 from typing import Optional, Dict, Any # Ensure Optional, Dict, Any are imported for type hints
@@ -114,40 +115,91 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Code identical, no changes applied.", step_desc="Diff generation found no changes")
             return f"No changes detected for function '{function_name}' in module '{module_path}'. Code is identical."
 
-        # --- Critical Review Step ---
+        # --- Critical Review Loop with Refinement ---
         critic1 = ReviewerAgent()
         critic2 = ReviewerAgent()
         coordinator = CriticalReviewCoordinator(critic1, critic2)
+        refinement_agent = RefinementAgent()
 
-        logger.info(f"Requesting critical review for changes to '{function_name}' in '{module_path}'...")
-        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review for {function_name}")
-        try:
-            unanimous_approval, reviews = await coordinator.request_critical_review(
-                original_code=original_function_code_for_diff,
-                new_code_string=new_code_string,
-                code_diff=code_diff,
-                original_requirements=change_description,
-                related_tests=None
-            )
-        except Exception as e_review:
-            err_msg = f"Error during critical review process for '{function_name}': {e_review}"
-            logger.error(err_msg, exc_info=True)
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
-            return err_msg
+        max_refinement_attempts = 3
+        current_new_code = new_code_string
+        current_code_diff = code_diff
+
+        for attempt in range(max_refinement_attempts + 1):
+            logger.info(f"Requesting critical review for '{function_name}' in '{module_path}' (Attempt {attempt+1}/{max_refinement_attempts+1})...")
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review (Attempt {attempt+1})")
+
+            try:
+                unanimous_approval, reviews = await coordinator.request_critical_review(
+                    original_code=original_function_code_for_diff,
+                    new_code_string=current_new_code,
+                    code_diff=current_code_diff,
+                    original_requirements=change_description,
+                    related_tests=None
+                )
+            except Exception as e_review:
+                err_msg = f"Error during critical review process: {e_review}"
+                logger.error(err_msg, exc_info=True)
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
+                return err_msg
+
+            if unanimous_approval:
+                logger.info(f"Change to function '{function_name}' approved by critical review.")
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Critical review approved")
+                break # Proceed to apply changes
+
+            # If not approved, check if we can refine
+            if attempt < max_refinement_attempts:
+                logger.info(f"Change to '{function_name}' NOT approved. Attempting refinement ({attempt+1})...")
+
+                # Aggregate feedback
+                aggregated_comments = []
+                aggregated_suggestions = []
+                for i, r in enumerate(reviews):
+                    status = r.get('status', 'unknown')
+                    comments = r.get('comments', 'No comments')
+                    suggestions = r.get('suggestions', '')
+                    aggregated_comments.append(f"Critic {i+1} ({status}): {comments}")
+                    if suggestions:
+                        aggregated_suggestions.append(f"Critic {i+1} Suggestions: {suggestions}")
+
+                combined_feedback = {
+                    "status": "requires_changes", # Force status for refiner
+                    "comments": "\n\n".join(aggregated_comments),
+                    "suggestions": "\n\n".join(aggregated_suggestions)
+                }
+
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.REFINING_PLAN, step_desc=f"Refining code based on feedback (Attempt {attempt+1})")
+
+                refined_code = await refinement_agent.refine_code(
+                    original_code=current_new_code,
+                    requirements=change_description,
+                    review_feedback=combined_feedback
+                )
+
+                if refined_code and refined_code.strip():
+                     current_new_code = refined_code
+                     # Regenerate diff for next review
+                     current_code_diff = generate_diff(original_function_code_for_diff, current_new_code, file_name=f"{module_path}/{function_name}")
+                else:
+                    logger.warning("Refinement failed to produce code. Stopping retry loop.")
+                    break
+            else:
+                 logger.warning("Max refinement attempts reached. Change rejected.")
 
         if not unanimous_approval:
-            review_summaries = []
-            for i, r in enumerate(reviews):
+             review_summaries = []
+             for i, r in enumerate(reviews):
                 review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
-            err_msg = (f"Change to function '{function_name}' in module '{module_path}' rejected by critical review. "
-                       f"No modifications will be applied. Reviews: {' | '.join(review_summaries)}")
-            logger.warning(err_msg)
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected")
-            return err_msg
-        else:
-            logger.info(f"Change to function '{function_name}' in '{module_path}' approved by critical review. Proceeding with file modification.")
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Critical review approved")
+             err_msg = (f"Change to function '{function_name}' rejected after {max_refinement_attempts+1} attempts. "
+                        f"Reviews: {' | '.join(review_summaries)}")
+             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected final")
+             return err_msg
+
         # --- End Critical Review Step ---
+
+        # Proceed with applying changes using current_new_code (which might be refined)
+        new_code_string = current_new_code
 
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Validating file path for modification")
         if not os.path.exists(file_path):
@@ -357,40 +409,89 @@ async def edit_project_file(
     _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step="Generating diff for review")
     file_diff = generate_diff(original_content, new_content, file_name=os.path.basename(absolute_file_path))
 
-    # --- Critical Review Step ---
+    # --- Critical Review Loop with Refinement ---
     critic1 = ReviewerAgent()
     critic2 = ReviewerAgent()
     coordinator = CriticalReviewCoordinator(critic1, critic2)
+    refinement_agent = RefinementAgent()
 
-    logger.info(f"Requesting critical review for changes to project file '{absolute_file_path}'...")
-    _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review for file: {os.path.basename(absolute_file_path)}")
-    try:
-        unanimous_approval, reviews = await coordinator.request_critical_review(
-            original_code=original_content,  # Use original_content here
-            new_code_string=new_content,    # Use new_content here
-            code_diff=file_diff,
-            original_requirements=change_description,
-            related_tests=None # Or determine if tests are relevant for arbitrary files
-        )
-    except Exception as e_review: # pragma: no cover
-        err_msg = f"Error during critical review process for project file '{absolute_file_path}': {e_review}"
-        logger.error(err_msg, exc_info=True)
-        _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
-        return err_msg
+    max_refinement_attempts = 3
+    current_new_content = new_content
+    current_file_diff = file_diff
+
+    for attempt in range(max_refinement_attempts + 1):
+        logger.info(f"Requesting critical review for project file '{absolute_file_path}' (Attempt {attempt+1})...")
+        _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review for file (Attempt {attempt+1})")
+
+        try:
+            unanimous_approval, reviews = await coordinator.request_critical_review(
+                original_code=original_content,  # Use original_content here
+                new_code_string=current_new_content,    # Use new_content here
+                code_diff=current_file_diff,
+                original_requirements=change_description,
+                related_tests=None # Or determine if tests are relevant for arbitrary files
+            )
+        except Exception as e_review: # pragma: no cover
+            err_msg = f"Error during critical review process for project file '{absolute_file_path}': {e_review}"
+            logger.error(err_msg, exc_info=True)
+            _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
+            return err_msg
+
+        if unanimous_approval:
+             logger.info(f"Change to project file '{absolute_file_path}' approved by critical review.")
+             _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc=f"Review approved for file: {os.path.basename(absolute_file_path)}")
+             break
+
+        if attempt < max_refinement_attempts:
+             logger.info(f"Change to '{absolute_file_path}' NOT approved. Attempting refinement ({attempt+1})...")
+
+             aggregated_comments = []
+             aggregated_suggestions = []
+             for i, r in enumerate(reviews):
+                status = r.get('status', 'unknown')
+                comments = r.get('comments', 'No comments')
+                suggestions = r.get('suggestions', '')
+                aggregated_comments.append(f"Critic {i+1} ({status}): {comments}")
+                if suggestions:
+                    aggregated_suggestions.append(f"Critic {i+1} Suggestions: {suggestions}")
+
+             combined_feedback = {
+                "status": "requires_changes",
+                "comments": "\n\n".join(aggregated_comments),
+                "suggestions": "\n\n".join(aggregated_suggestions)
+             }
+
+             _update_p_task(ActiveTaskStatus.REFINING_PLAN, step_desc=f"Refining file content (Attempt {attempt+1})")
+
+             refined_content = await refinement_agent.refine_code(
+                original_code=current_new_content,
+                requirements=change_description,
+                review_feedback=combined_feedback
+             )
+
+             if refined_content and refined_content.strip():
+                 current_new_content = refined_content
+                 current_file_diff = generate_diff(original_content, current_new_content, file_name=os.path.basename(absolute_file_path))
+             else:
+                 logger.warning("Refinement failed to produce content. Stopping retry loop.")
+                 break
+        else:
+             logger.warning("Max refinement attempts reached for file. Change rejected.")
 
     if not unanimous_approval:
         review_summaries = []
         for i, r in enumerate(reviews):
             review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
-        err_msg = (f"Change to project file '{absolute_file_path}' rejected by critical review. "
+        err_msg = (f"Change to project file '{absolute_file_path}' rejected after attempts. "
                    f"No modifications will be applied. Reviews: {' | '.join(review_summaries)}")
         logger.warning(err_msg)
-        _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected")
+        _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=err_msg, step_desc="Critical review rejected final")
         return err_msg
-    else:
-        logger.info(f"Change to project file '{absolute_file_path}' approved by critical review.")
-        _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc=f"Review approved for file: {os.path.basename(absolute_file_path)}")
+
     # --- End Critical Review Step ---
+
+    # Proceed with current_new_content
+    new_content = current_new_content
 
     parent_dir = os.path.dirname(absolute_file_path)
     if parent_dir and not os.path.exists(parent_dir): # pragma: no branch
@@ -507,25 +608,56 @@ async def edit_class_method(
     critic1 = ReviewerAgent()
     critic2 = ReviewerAgent()
     coordinator = CriticalReviewCoordinator(critic1, critic2)
+    refinement_agent = RefinementAgent()
 
     _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Reviewing changes for {class_name}.{method_name}")
 
-    try:
-        approved, reviews = await coordinator.request_critical_review(
-            original_code=original_source,
-            new_code_string=new_file_source,
-            code_diff=file_diff,
-            original_requirements=change_description
-        )
-    except Exception as e:
-         return f"Error during review: {e}"
+    max_refinement_attempts = 3
+    current_new_source = new_file_source
+    current_file_diff = file_diff
+    approved = False
+
+    for attempt in range(max_refinement_attempts + 1):
+        try:
+            approved, reviews = await coordinator.request_critical_review(
+                original_code=original_source,
+                new_code_string=current_new_source,
+                code_diff=current_file_diff,
+                original_requirements=change_description
+            )
+        except Exception as e:
+             return f"Error during review: {e}"
+
+        if approved:
+            break
+
+        if attempt < max_refinement_attempts:
+            # Refine
+            aggregated_comments = "\n".join([f"{r['status']}: {r['comments']} {r.get('suggestions','')}" for r in reviews])
+            combined_feedback = {"status": "requires_changes", "comments": aggregated_comments, "suggestions": ""}
+
+            # Note: refining the WHOLE file might be too much context for LLM if large.
+            # Ideally we'd refine just the method, but here we have the whole file string.
+            # RefinementAgent expects 'original_code'.
+            refined_file_source = await refinement_agent.refine_code(
+                original_code=current_new_source,
+                requirements=change_description,
+                review_feedback=combined_feedback
+            )
+            if refined_file_source:
+                current_new_source = refined_file_source
+                current_file_diff = generate_diff(original_source, current_new_source, file_name=relative_module_file_path)
+            else:
+                break
+        else:
+            break
 
     if not approved:
         return "Change rejected by critical review."
 
     shutil.copy2(file_path, file_path + ".bak")
     with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(new_file_source)
+        f.write(current_new_source)
 
     _update_p_task(ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Method updated.")
     return f"Method '{class_name}.{method_name}' updated successfully."
@@ -826,9 +958,11 @@ if __name__ == '__main__': # pragma: no cover
                 mock_review_proj_main.return_value = (False, mock_reviews_project_file_reject_main)
                 result_p3_main = await edit_project_file(test_proj_file_path_main, "This content should be rejected.", "Trying a rejected update for test.", None, None)
                 print(f"Test EPF.3 Result: {result_p3_main}")
-                assert "rejected by critical review" in result_p3_main.lower()
+                # Update expectation to include "attempts" which is part of the new reject message format
+                assert "rejected after" in result_p3_main.lower() or "rejected by critical review" in result_p3_main.lower()
                 with open(test_proj_file_path_main, 'r') as f: assert f.read() == "Updated project content."
-                mock_review_proj_main.assert_called_once()
+                # It should be called multiple times now due to loop (max_refinement_attempts + 1)
+                assert mock_review_proj_main.call_count >= 1
 
                 # Test 4: Content identical
                 print("\nTest EPF.4: Content identical")

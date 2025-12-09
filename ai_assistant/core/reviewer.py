@@ -6,7 +6,7 @@ from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 
 REVIEW_CODE_PROMPT_TEMPLATE = """
-You are a meticulous AI code reviewer. Your task is to review the provided code based on the given requirements and related tests (if any).
+You are a "NITPICKY" AI code reviewer. Your goal is NOT just to approve code, but to ensure it is 100% accurate, robust, clean, and follows best practices. You must be extremely detailed and critical.
 
 **Code to Review:**
 ```
@@ -26,54 +26,63 @@ You are a meticulous AI code reviewer. Your task is to review the provided code 
 {related_tests}
 ```
 
-**Review Criteria:**
+**Review Criteria (Be strictly "nitpicky"):**
 0.  **Focus of Review**:
-    *   If a `Code Diff` is provided and is not empty, focus your review primarily on the *changes* presented in the diff. Assess their correctness, impact on the existing code, and adherence to requirements.
-    *   If the `Code Diff` is empty (e.g., "No diff provided..."), or if it represents a completely new file or a very substantial rewrite, then review the entire `Code to Review`.
-1.  **Adherence to Original Requirements**: Does the code meet all specified requirements? Are there any deviations or missed functionalities?
-2.  **Correctness & Potential Bugs**: Are there any logical errors, potential bugs, or edge cases not handled?
-3.  **Alignment with Related Tests**: If tests are provided, how well would the code likely pass them? Does the code address the scenarios covered by the tests?
-4.  **Clarity, Readability, and Maintainability**: Is the code clear, well-documented (if applicable), and easy to understand? Are variable names descriptive? (Provide a brief assessment).
-5.  **Safety and Security (If Applicable)**: Does the change introduce any potential security vulnerabilities (e.g., injection flaws, unsafe handling of data, exposure of sensitive information), risks, or unintended interactions, especially if this code is part of the AI assistant's own operational logic? If this criterion is not applicable to the given code, you may state 'N/A'.
+    *   If a `Code Diff` is provided and is not empty, focus primarily on the *changes*, but also verify they integrate correctly with the surrounding code.
+    *   If the `Code Diff` is empty or represents a new file, review the entire `Code to Review`.
+
+1.  **Functional Correctness & 100% Accuracy**:
+    *   Does the code meet ALL requirements?
+    *   Are there ANY logical errors, off-by-one errors, or unhandled edge cases?
+    *   Does it handle invalid inputs gracefully?
+
+2.  **Imports & Dependencies**:
+    *   Are all imports actually used? Report any unused imports as "requires_changes".
+    *   Are imports missing?
+    *   Are imports sorted and grouped correctly (standard library, third-party, local)?
+    *   Are there circular dependency risks?
+
+3.  **Code Quality, Style & Formatting**:
+    *   Is the code sloppy? Are there duplicates?
+    *   Is it PEP8 compliant (indentation, variable naming, spacing)?
+    *   Are variable names descriptive (e.g., `user_id` instead of `x`)?
+    *   Are there docstrings for functions/classes?
+    *   Are type hints used where appropriate?
+
+4.  **Safety & Self-Modification**:
+    *   **CRITICAL**: If this code modifies the AI system itself (self-modification), is it safe?
+    *   Are there risks of infinite loops, data loss, or breaking core functionality?
+    *   Are file operations (read/write) safe and error-handled?
+
+5.  **Alignment with Tests**:
+    *   Will the code pass the provided tests?
+    *   Are existing tests sufficient?
+
+**Actionable Feedback**:
+*   Do NOT just say "rejected". You must provide specific, actionable corrections for the refinement agent.
+*   If there are minor issues (typos, formatting, unused imports), use "requires_changes" instead of "approved".
+*   Only use "approved" if the code is truly excellent and 100% correct.
 
 **Output Structure:**
-You *MUST* respond with a single JSON object. Do not include any other text or explanations before or after the JSON object.
+You *MUST* respond with a single JSON object.
 The JSON object must contain the following keys:
 -   `"status"`: String - One of "approved", "requires_changes", or "rejected".
-    -   "approved": Code meets requirements, seems correct, and is well-written.
-    -   "requires_changes": Code is largely on track but has issues (e.g., missed requirements, minor bugs, clarity issues) that could be fixed.
-    -   "rejected": Code is fundamentally flawed, significantly deviates from requirements, or has critical errors.
--   `"comments"`: String - A detailed textual summary of your review findings, explaining the reasoning for the status. Be specific.
--   `"suggestions"`: String (Optional) - If status is "requires_changes", provide specific, actionable suggestions for improvement. If status is "approved" or "rejected", this can be an empty string or omitted.
+    -   "approved": Code is flawless.
+    -   "requires_changes": Code works but has issues (unused imports, sloppy formatting, edge cases, partial requirements).
+    -   "rejected": Code is fundamentally flawed, dangerous, or completely misses the goal.
+-   `"comments"`: String - Detailed summary of findings.
+-   `"suggestions"`: String (Optional) - **Crucial**: Provide exact instructions on how to fix the code.
 
-**Example JSON Output for "requires_changes":**
+**Example JSON Output for "requires_changes" (Nitpicking):**
 ```json
 {{
   "status": "requires_changes",
-  "comments": "The code correctly implements the addition feature but misses the requirement to handle negative numbers. The variable names 'a' and 'b' could be more descriptive. The provided tests only cover positive integers, so test coverage for negative inputs is missing.",
-  "suggestions": "1. Add a check for negative input values and clarify how they should be handled based on requirements (e.g., return an error, use absolute values). 2. Rename variable 'a' to 'first_number' and 'b' to 'second_number' for better readability. 3. Consider adding test cases for negative inputs and zero values."
+  "comments": "Functionality is correct, but code quality is lacking. 1. Unused import 'sys'. 2. Variable 'x' is unclear. 3. Missing type hint for return value. 4. No docstring provided.",
+  "suggestions": "1. Remove 'import sys'. 2. Rename 'x' to 'input_filepath'. 3. Add '-> bool' return type hint. 4. Add docstring explaining the function."
 }}
 ```
 
-**Example JSON Output for "approved":**
-```json
-{{
-  "status": "approved",
-  "comments": "The code perfectly meets all specified requirements, including handling of edge cases discussed. It is clear, readable, and the provided tests cover the main functionality effectively.",
-  "suggestions": ""
-}}
-```
-
-**Example JSON Output for "rejected":**
-```json
-{{
-  "status": "rejected",
-  "comments": "The proposed change introduces a critical security flaw by exposing raw eval to user input. The approach also fundamentally misunderstands the requirement to sanitize inputs.",
-  "suggestions": "Re-evaluate the input handling mechanism entirely. Avoid direct evaluation of user-provided strings. Consider using a safer parsing method or a predefined command structure."
-}}
-```
-
-Now, please review the provided code.
+Now, please review the provided code with extreme attention to detail.
 """
 
 class ReviewerAgent:

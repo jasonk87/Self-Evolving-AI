@@ -1,4 +1,3 @@
-### START FILE: ai_assistant/custom_tools/project_execution_tools.py ###
 # ai_assistant/custom_tools/project_execution_tools.py
 import json
 import os
@@ -154,6 +153,7 @@ async def execute_project_coding_plan(project_name: str, base_projects_dir_overr
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 from ai_assistant.core.reviewer import ReviewerAgent
+from ai_assistant.core.critical_reviewer import CriticalReviewCoordinator # Added import
 from ai_assistant.core.refinement import RefinementAgent 
 import re 
 
@@ -177,7 +177,7 @@ async def generate_and_review_code_tool(
 ) -> Dict[str, Any]:
     """
     Generates Python code based on a description, then reviews it automatically.
-    Includes iterative refinement based on review feedback.
+    Includes iterative refinement based on review feedback from multiple critics.
     """
     if not description:
         return {
@@ -216,40 +216,69 @@ async def generate_and_review_code_tool(
         }
 
     current_generated_code = cleaned_code
-    current_review_results: Dict[str, Any]
-    reviewer = ReviewerAgent()
+
+    # Initialize Critical Review Components
+    critic1 = ReviewerAgent()
+    critic2 = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic1, critic2)
     refinement_agent = RefinementAgent()
-    max_refinement_attempts = 2 
+
+    max_refinement_attempts = 3 # Increased attempts
+    final_review_status = "error"
+    final_review_data: Dict[str, Any] = {"status": "error", "comments": "Initial error state"}
 
     for attempt in range(max_refinement_attempts + 1): 
         review_attempt_number = attempt + 1
-        print(f"generate_and_review_code_tool: Reviewing code (Attempt {review_attempt_number})...")
+        print(f"generate_and_review_code_tool: Requesting critical review (Attempt {review_attempt_number})...")
+
         try:
-            current_review_results = await reviewer.review_code(
-                code_to_review=current_generated_code,
+            # Using CriticalReviewCoordinator for multi-agent review
+            approved, reviews = await coordinator.request_critical_review(
+                original_code=None, # Not modifying existing code in this tool, so None is fine or handle appropriately
+                new_code_string=current_generated_code,
+                code_diff=None, # New code, no diff
                 original_requirements=description,
-                attempt_number=review_attempt_number
+                related_tests=None # Could be added if available
             )
+
+            # Synthesize a single review result object for return compatibility
+            review_summaries = [f"Critic {i+1} ({r.get('status')}): {r.get('comments')}" for i, r in enumerate(reviews)]
+            combined_comments = " | ".join(review_summaries)
+
+            final_review_status = "approved" if approved else "requires_changes"
+            # If any critic errored, status might be error
+            if any(r.get("status") == "error" for r in reviews):
+                final_review_status = "error"
+            elif not approved and all(r.get("status") == "rejected" for r in reviews):
+                final_review_status = "rejected"
+
+            final_review_data = {
+                "status": final_review_status,
+                "comments": combined_comments,
+                "suggestions": "\n".join([f"Critic {i+1}: {r.get('suggestions', '')}" for i, r in enumerate(reviews) if r.get('suggestions')])
+            }
+
         except Exception as e: # pragma: no cover
-            current_review_results = {
+            final_review_data = {
                 "status": "error",
-                "comments": f"Error during code review (Attempt {review_attempt_number}): {e}",
+                "comments": f"Error during critical review (Attempt {review_attempt_number}): {e}",
                 "suggestions": ""
             }
             break 
 
-        review_status = current_review_results.get("status", "error")
-        print(f"generate_and_review_code_tool: Review Status (Attempt {review_attempt_number}): {review_status.upper()}")
+        print(f"generate_and_review_code_tool: Review Status (Attempt {review_attempt_number}): {final_review_status.upper()}")
 
-        if review_status == "approved" or review_status == "rejected" or review_status == "error":
+        if approved:
             break 
 
-        if review_status == "requires_changes" and attempt < max_refinement_attempts:
+        if final_review_status in ["requires_changes", "rejected"] and attempt < max_refinement_attempts:
             print(f"generate_and_review_code_tool: Code requires changes. Attempting refinement {attempt + 1}/{max_refinement_attempts}...")
+
+            # Pass aggregated feedback to refiner
             refined_code_str = await refinement_agent.refine_code(
                 original_code=current_generated_code,
                 requirements=description,
-                review_feedback=current_review_results
+                review_feedback=final_review_data
             )
             if not refined_code_str or not refined_code_str.strip(): # pragma: no cover
                 print(f"generate_and_review_code_tool: Refinement attempt {attempt + 1} did not produce new code. Using previous code.")
@@ -261,9 +290,9 @@ async def generate_and_review_code_tool(
 
     return {
         "generated_code": current_generated_code,
-        "review_results": current_review_results,
+        "review_results": final_review_data,
         "suggested_file_path": target_file_path,
-        "status": current_review_results.get("status", "error") 
+        "status": final_review_data.get("status", "error")
     }
 
 def execute_project_plan(
@@ -504,6 +533,7 @@ if __name__ == '__main__':
     import unittest
     from unittest.mock import patch, AsyncMock 
     import shutil 
+    from unittest.mock import MagicMock # Added missing import
 
     TEST_BASE_PROJECTS_DIR_FOR_DI = "temp_test_ai_projects_execution_di_final_v5" 
 
@@ -738,5 +768,3 @@ if __name__ == '__main__':
     assert result3_exec["step_results"][1]["status"] == "success"
 
     print("\n--- execute_project_plan tests finished ---")
-
-### END FILE: ai_assistant/custom_tools/project_execution_tools.py ###
