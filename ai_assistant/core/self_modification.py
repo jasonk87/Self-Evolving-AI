@@ -428,6 +428,240 @@ async def edit_project_file(
         _update_p_task(ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step="File write operation failed")
         return err_msg
 
+async def edit_class_method(
+    module_path: str,
+    class_name: str,
+    method_name: str,
+    new_code: str,
+    project_root_path: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Edits the source code of a specified method within a class in a given module file using AST.
+    """
+    def _update_p_task(status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None, step_desc: Optional[str] = None):
+        actual_step = step_desc if step_desc else step
+        if task_manager and parent_task_id:
+            task_manager.update_task_status(parent_task_id, status, reason=reason, step_desc=actual_step)
+
+    _update_p_task(ActiveTaskStatus.PLANNING, step=f"Preparing to edit method {class_name}.{method_name}")
+
+    if not os.path.isabs(project_root_path):
+        project_root_path = os.path.abspath(project_root_path)
+
+    relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
+    file_path = os.path.join(project_root_path, relative_module_file_path)
+
+    if not os.path.exists(file_path):
+        return f"Error: File not found: {file_path}"
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_source = f.read()
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    try:
+        new_method_ast = ast.parse(new_code).body[0]
+        if not isinstance(new_method_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+             return "Error: new_code must be a function/method definition."
+    except Exception as e:
+        return f"Error parsing new code: {e}"
+
+    try:
+        original_ast = ast.parse(original_source)
+    except Exception as e:
+        return f"Error parsing original file: {e}"
+
+    class_found = False
+    method_found = False
+
+    for node in original_ast.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            class_found = True
+            new_class_body = []
+            for class_node in node.body:
+                if isinstance(class_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and class_node.name == method_name:
+                    method_found = True
+                    # Replace with new method AST
+                    new_class_body.append(new_method_ast)
+                else:
+                    new_class_body.append(class_node)
+            node.body = new_class_body
+            break
+
+    if not class_found:
+        return f"Error: Class '{class_name}' not found in module '{module_path}'."
+    if not method_found:
+        return f"Error: Method '{method_name}' not found in class '{class_name}'."
+
+    try:
+        new_file_source = ast.unparse(original_ast)
+    except Exception as e:
+        return f"Error unparsing AST: {e}"
+
+    file_diff = generate_diff(original_source, new_file_source, file_name=relative_module_file_path)
+
+    critic1 = ReviewerAgent()
+    critic2 = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic1, critic2)
+
+    _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Reviewing changes for {class_name}.{method_name}")
+
+    try:
+        approved, reviews = await coordinator.request_critical_review(
+            original_code=original_source,
+            new_code_string=new_file_source,
+            code_diff=file_diff,
+            original_requirements=change_description
+        )
+    except Exception as e:
+         return f"Error during review: {e}"
+
+    if not approved:
+        return "Change rejected by critical review."
+
+    shutil.copy2(file_path, file_path + ".bak")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_file_source)
+
+    _update_p_task(ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Method updated.")
+    return f"Method '{class_name}.{method_name}' updated successfully."
+
+async def upsert_import(
+    module_path: str,
+    import_statement: str,
+    project_root_path: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Ensures a specific import statement exists in the module.
+    """
+    if not os.path.isabs(project_root_path):
+        project_root_path = os.path.abspath(project_root_path)
+
+    relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
+    file_path = os.path.join(project_root_path, relative_module_file_path)
+
+    if not os.path.exists(file_path):
+        return f"Error: File not found: {file_path}"
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_source = f.read()
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    try:
+        new_import_node = ast.parse(import_statement).body[0]
+        if not isinstance(new_import_node, (ast.Import, ast.ImportFrom)):
+            return "Error: import_statement must be an import statement."
+    except Exception as e:
+        return f"Error parsing import statement: {e}"
+
+    try:
+        original_ast = ast.parse(original_source)
+    except Exception as e:
+        return f"Error parsing original file: {e}"
+
+    # Check existence
+    exists = False
+    for node in original_ast.body:
+        if type(node) == type(new_import_node):
+            if isinstance(node, ast.Import):
+                if node.names[0].name == new_import_node.names[0].name: # Simplified check
+                    exists = True
+                    break
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == new_import_node.module and node.names[0].name == new_import_node.names[0].name:
+                    exists = True
+                    break
+
+    if exists:
+        return "Import already exists."
+
+    # Insert
+    # Find insertion index
+    insert_idx = 0
+    for i, node in enumerate(original_ast.body):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            insert_idx = i + 1
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            # Docstring, skip
+            if insert_idx == 0: insert_idx = i + 1
+        else:
+            # Stop at first code
+            # But wait, we might have multiple imports, we want to append to them.
+            # If we encountered imports, insert_idx is after them.
+            # If we hit code, we break.
+            break
+
+    original_ast.body.insert(insert_idx, new_import_node)
+
+    try:
+        new_file_source = ast.unparse(original_ast)
+    except Exception as e:
+        return f"Error unparsing AST: {e}"
+
+    shutil.copy2(file_path, file_path + ".bak")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_file_source)
+
+    return f"Import '{import_statement}' upserted successfully."
+
+async def insert_code_block(
+    module_path: str, # Interpreted as file path if not a module path
+    anchor_code: str,
+    new_code: str,
+    position: str = 'after',
+    project_root_path: str = None,
+    change_description: str = "",
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Inserts a code block before or after an anchor string in a file.
+    """
+    # Determine file path. If module_path looks like a path, use it. Else convert.
+    if project_root_path:
+        if not os.path.isabs(project_root_path):
+             project_root_path = os.path.abspath(project_root_path)
+        if module_path.endswith('.py') or '/' in module_path or '\\' in module_path:
+             file_path = os.path.join(project_root_path, module_path)
+        else:
+             file_path = os.path.join(project_root_path, os.path.join(*module_path.split('.')) + ".py")
+    else:
+        file_path = os.path.abspath(module_path) # Assume absolute or relative to cwd
+
+    if not os.path.exists(file_path):
+        return f"Error: File not found: {file_path}"
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    if anchor_code not in content:
+        return f"Error: Anchor code not found in file."
+
+    if position == 'after':
+        new_content = content.replace(anchor_code, anchor_code + "\n" + new_code)
+    elif position == 'before':
+        new_content = content.replace(anchor_code, new_code + "\n" + anchor_code)
+    else:
+        return "Error: Position must be 'before' or 'after'."
+
+    shutil.copy2(file_path, file_path + ".bak")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    return "Code block inserted successfully."
+
 if __name__ == '__main__': # pragma: no cover
     import tempfile
     TEST_DIR = "test_ai_assistant_ws_self_modification"
