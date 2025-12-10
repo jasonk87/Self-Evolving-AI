@@ -16,6 +16,7 @@ import json # Added for parsing LLM response in _is_fact_valuable
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
+from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus # Added for UCWS
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
 from ..core.notification_manager import NotificationManager, NotificationType # Added
 from ai_assistant.custom_tools.agent_tools import spawn_ephemeral_agent, run_agent_code, submit_agent_report
@@ -115,8 +116,10 @@ class ActionExecutor:
             task_manager=self.task_manager,
             notification_manager=self.notification_manager # Add this line
         )
+        self.code_synthesis_service = CodeSynthesisService() # Initialize UCWS
         if is_debug_mode():
             print(f"[DEBUG] CodeService instance in ActionExecutor: {self.code_service}")
+            print(f"[DEBUG] CodeSynthesisService instance in ActionExecutor: {self.code_synthesis_service}")
             print(f"[DEBUG] TaskManager instance in ActionExecutor: {self.task_manager}")
             print(f"[DEBUG] NotificationManager instance in ActionExecutor: {self.notification_manager}")
 
@@ -550,27 +553,33 @@ class ActionExecutor:
             suggested_code_or_llm_generated_code: Optional[str] = suggested_code
 
             if not suggested_code_or_llm_generated_code:
-                print(f"ActionExecutor: No direct code for {tool_name}. Requesting CodeService for fix. Task ID: {action_task_id}")
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="CodeService: Generating code fix")
-                code_service_result = await self.code_service.modify_code(
-                    context="SELF_FIX_TOOL",
-                    modification_instruction=original_description,
-                    existing_code=None,
-                    module_path=module_path,
-                    function_name=function_name
+                print(f"ActionExecutor: No direct code for {tool_name}. Requesting CodeSynthesisService (UCWS) for fix. Task ID: {action_task_id}")
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="UCWS: Generating code fix")
+
+                # UCWS Integration
+                ucws_request = CodeTaskRequest(
+                    task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM,
+                    context_data={
+                        "module_path": module_path,
+                        "function_name": function_name,
+                        "problem_description": original_description
+                    }
                 )
-                if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
-                    suggested_code_or_llm_generated_code = code_service_result.get("modified_code_string")
-                    logger.info(f"CodeService generated code for {function_name}. Length: {len(suggested_code_or_llm_generated_code) if suggested_code_or_llm_generated_code else 0}. Task ID: {action_task_id}")
+
+                ucws_result = await self.code_synthesis_service.submit_task(ucws_request)
+
+                if ucws_result.status == CodeTaskStatus.SUCCESS and ucws_result.generated_code:
+                    suggested_code_or_llm_generated_code = ucws_result.generated_code
+                    logger.info(f"CodeSynthesisService generated code for {function_name}. Length: {len(suggested_code_or_llm_generated_code)}. Task ID: {action_task_id}")
                 else:
-                    err_msg = f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}"
+                    err_msg = f"CodeSynthesisService failed to generate code. Status: {ucws_result.status}, Error: {ucws_result.error_message}"
                     logger.error(f"{err_msg}. Task ID: {action_task_id}")
                     global_reflection_log.log_execution(
-                        goal_description=f"CodeService code generation for insight {source_insight_id}",
-                        plan=[{"action_type": "CODE_SERVICE_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
+                        goal_description=f"UCWS code generation for insight {source_insight_id}",
+                        plan=[{"action_type": "UCWS_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
                         execution_results=[err_msg], overall_success=False, status_override="CODE_SERVICE_GEN_FAILED"
                     )
-                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err_msg, step_desc="CodeService failed")
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err_msg, step_desc="UCWS failed")
                     return False
 
             if suggested_code_or_llm_generated_code:
