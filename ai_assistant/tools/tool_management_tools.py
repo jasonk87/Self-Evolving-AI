@@ -6,9 +6,7 @@ import importlib
 import sys
 from typing import Dict, Any
 
-from ai_assistant.code_services.service import CodeService
-from ai_assistant.llm_interface import ollama_client as default_llm_provider
-from ai_assistant.core import self_modification as default_self_modification_service
+from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.core.reflection import global_reflection_log
@@ -18,44 +16,43 @@ from ai_assistant.utils.display_utils import CLIColors, color_text # For potenti
 
 async def generate_and_register_tool_backend(tool_description: str) -> Dict[str, Any]:
     """
-    Handles the backend process of generating code via CodeService,
+    Handles the backend process of generating code via CodeSynthesisService,
     saving it, and registering it as a tool. This version is less interactive
     than the CLI's _handle_code_generation_and_registration.
     """
     if is_debug_mode():
         print(color_text(f"[DEBUG TOOL_MGMT] Received request to generate tool: {tool_description}", CLIColors.DEBUG_MESSAGE))
 
-    code_service = CodeService(
-        llm_provider=default_llm_provider,
-        self_modification_service=default_self_modification_service
+    code_synthesis_service = CodeSynthesisService()
+
+    ucws_request = CodeTaskRequest(
+        task_type=CodeTaskType.NEW_TOOL_CREATION_LLM,
+        context_data={"description": tool_description}
     )
-    generation_result = await code_service.generate_code(
-        context="NEW_TOOL",
-        prompt_or_description=tool_description,
-        target_path=None  # CodeService might handle path suggestion or use defaults
-    )
+
+    ucws_result = await code_synthesis_service.submit_task(ucws_request)
 
     if is_debug_mode():
-        print(color_text(f"[DEBUG TOOL_MGMT] CodeService generation result: {generation_result}", CLIColors.DEBUG_MESSAGE))
+        print(color_text(f"[DEBUG TOOL_MGMT] CodeSynthesisService generation result: {ucws_result}", CLIColors.DEBUG_MESSAGE))
 
-    if generation_result.get("status") != "SUCCESS_CODE_GENERATED":
-        error_msg = generation_result.get("error", "CodeService failed to generate code or parse metadata.")
+    if ucws_result.status != CodeTaskStatus.SUCCESS:
+        error_msg = ucws_result.error_message or "CodeSynthesisService failed to generate code."
         global_reflection_log.log_execution(
             goal_description=f"Automated tool generation failed (generation_error): {tool_description}",
             plan=[{'action_type': 'AUTO_TOOL_GEN_FAIL', 'description': tool_description}],
-            execution_results=[f"CodeService failed. Status: {generation_result.get('status')}, Error: {error_msg}"],
+            execution_results=[f"CodeSynthesisService failed. Status: {ucws_result.status}, Error: {error_msg}"],
             overall_success=False
         )
         return {"status": "error", "message": f"Tool generation failed: {error_msg}"}
 
-    cleaned_code = generation_result.get("code_string")
-    parsed_metadata = generation_result.get("metadata")
+    cleaned_code = ucws_result.generated_code
+    parsed_metadata = ucws_result.metadata.get("parsed_tool_metadata") if ucws_result.metadata else None
 
     if not cleaned_code or not parsed_metadata:
         global_reflection_log.log_execution(
             goal_description=f"Automated tool generation failed (missing_data): {tool_description}",
             plan=[{'action_type': 'AUTO_TOOL_GEN_FAIL', 'description': tool_description}],
-            execution_results=["CodeService reported success but returned incomplete data (missing code/metadata)."],
+            execution_results=["CodeSynthesisService reported success but returned incomplete data (missing code/metadata)."],
             overall_success=False
         )
         return {"status": "error", "message": "Tool generation succeeded but metadata or code is missing."}
