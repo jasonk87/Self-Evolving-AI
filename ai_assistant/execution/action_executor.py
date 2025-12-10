@@ -257,7 +257,8 @@ class ActionExecutor:
         original_description: str, # This is the change_description for edit_function_source_code
         source_insight_id: str,   # This will be the related_item_id for the task
         action_task_id: Optional[str], # This is the parent_task_id for edit_function_source_code
-        original_reflection_id_for_test: Optional[str] = None # Added parameter
+        original_reflection_id_for_test: Optional[str] = None, # Added parameter
+        staging_mode: bool = False # Added parameter
     ) -> bool: # Return just success/failure
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
@@ -297,8 +298,10 @@ class ActionExecutor:
                         modified_tool_name=tool_name
                     )
 
-                if test_passed_status is False:
-                    print(f"ActionExecutor: Post-modification test failed for {tool_name}. Attempting to revert.")
+                if test_passed_status is False or staging_mode:
+                    revert_reason = "failed post-modification test" if test_passed_status is False else "staging mode (verification only)"
+                    print(f"ActionExecutor: {revert_reason.capitalize()} for {tool_name}. Attempting to revert.")
+
                     original_code_from_backup = self_modification.get_backup_function_source_code(module_path, function_name)
                     if original_code_from_backup:
                         try:
@@ -307,7 +310,7 @@ class ActionExecutor:
                                 function_name=function_name,
                                 new_code_string=original_code_from_backup,
                                 project_root_path=project_root,
-                                change_description=f"Reverting function '{function_name}' to backup due to failed post-modification test.",
+                                change_description=f"Reverting function '{function_name}' to backup due to {revert_reason}.",
                                 task_manager=self.task_manager,
                                 parent_task_id=action_task_id
                             )
@@ -326,6 +329,20 @@ class ActionExecutor:
                 test_run_notes = "Test not run as code edit failed."
 
             final_overall_success = edit_success and (test_passed_status is True)
+
+            # If in staging mode and success, create a suggestion
+            if staging_mode and final_overall_success:
+                from ai_assistant.core.suggestion_manager import add_new_suggestion
+                suggestion_desc = f"Ready to Merge: Fix for '{tool_name}' verified. Description: {original_description}"
+
+                add_new_suggestion(
+                    type="PR_READY",
+                    description=suggestion_desc,
+                    source="Self-Healing Service",
+                    notification_manager=self.notification_manager
+                )
+                print(f"ActionExecutor: Staging mode success. Created 'Ready to Merge' suggestion for {tool_name}.")
+
             try:
                 global_reflection_log.log_execution(
                     goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
@@ -557,12 +574,16 @@ class ActionExecutor:
                     return False
 
             if suggested_code_or_llm_generated_code:
+                # Check for staging mode (Self-Healing Loop)
+                staging_mode = details.get("staging_mode", False)
+
                 edit_success = await self._apply_test_and_revert_code(
                     module_path, function_name, suggested_code_or_llm_generated_code,
                     original_description,
                     str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
                     action_task_id=action_task_id,
-                    original_reflection_id_for_test=details.get("original_reflection_entry_id")
+                    original_reflection_id_for_test=details.get("original_reflection_entry_id"),
+                    staging_mode=staging_mode
                 )
                 if edit_success:
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")
