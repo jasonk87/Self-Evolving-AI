@@ -5,3 +5,4 @@ prompt_toolkit
 google-api-python-client
 flask-socketio
 eventlet
+python-dotenv
