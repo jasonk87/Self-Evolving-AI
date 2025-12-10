@@ -4,6 +4,7 @@ import json # Added for __main__ printing
 from typing import List, Any, Optional, Dict # Added Dict
 # Assuming a generic LLM service interface or a specific one like OllamaProvider
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.memory.persistent_memory import load_learned_facts
 # For __main__ example, we'll mock this.
 
 # TypedDict for ProjectPlanStep can be formally defined if preferred,
@@ -27,6 +28,7 @@ from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE = """
 Given the user's goal: '{user_goal}'
+{learned_facts_section}
 
 Break this down into a list of 3-7 high-level functional components or development phases.
 Each item in the list should be a concise title for that component or phase.
@@ -44,6 +46,7 @@ LLM_HP_DETAILED_TASK_BREAKDOWN_PROMPT_TEMPLATE = """
 User's overall goal: '{user_goal}'
 Current high-level component to break down: '{outline_item}'
 {project_context_section}
+{learned_facts_section}
 Break down the high-level component '{outline_item}' into a list of 3-7 specific, actionable sub-tasks required to implement it, considering the overall user goal.
 These sub-tasks should be concrete steps.
 Return ONLY the list of sub-task descriptions, each on a new line, preferably starting with a hyphen or asterisk.
@@ -68,6 +71,7 @@ LLM_HP_STEP_ELABORATION_PROMPT_TEMPLATE = """
 User's overall goal: '{user_goal}'
 Context: This is for the detailed task: '{detailed_task}'
 {project_context_section}
+{learned_facts_section}
 
 Your task is to convert the above detailed task into a single, specific step for a project plan.
 Determine the most appropriate step 'type' from the allowed types: "python_script", "human_review_gate", "informational".
@@ -119,6 +123,50 @@ class HierarchicalPlanner:
         """
         self.llm_provider = llm_provider
 
+    def _retrieve_relevant_facts(self, query: str) -> str:
+        """
+        Retrieves relevant learned facts based on simple keyword matching.
+        Returns a formatted string of facts.
+        """
+        try:
+            all_facts = load_learned_facts()
+            if not all_facts:
+                return ""
+
+            # Simple keyword matching: if any word from the query (except stop words)
+            # is in the fact text, consider it relevant.
+            # Or simpler: just return all facts if the list is small (e.g. < 20).
+            # For now, let's return all facts but truncated if too many, to ensure context.
+            # In a real system, vector search would be better.
+
+            # Normalize query words
+            query_words = set(re.findall(r'\w+', query.lower()))
+            stop_words = {"a", "an", "the", "in", "on", "for", "with", "to", "of", "and", "is", "are"}
+            query_keywords = query_words - stop_words
+
+            relevant_facts = []
+            for fact in all_facts:
+                fact_text = fact.get("text", "") if isinstance(fact, dict) else str(fact)
+                fact_words = set(re.findall(r'\w+', fact_text.lower()))
+                # If overlap or if fact is about 'preference' or 'configuration'
+                if query_keywords & fact_words or "prefer" in fact_text.lower() or "always" in fact_text.lower():
+                    relevant_facts.append(fact_text)
+                elif len(all_facts) < 10: # If few facts, include all just in case
+                    if fact_text not in relevant_facts:
+                        relevant_facts.append(fact_text)
+
+            if not relevant_facts:
+                return ""
+
+            formatted_facts = "Relevant Learned Facts (Context):\n"
+            for fact in relevant_facts[:10]: # Limit to top 10 relevant
+                formatted_facts += f"- {fact}\n"
+            return formatted_facts
+
+        except Exception as e:
+            print(f"HierarchicalPlanner: Error retrieving facts: {e}")
+            return ""
+
     async def generate_high_level_outline(self, user_goal: str, project_context: Optional[str] = None) -> List[str]:
         """
         Generates a high-level outline (list of main functional blocks or phases)
@@ -135,7 +183,12 @@ class HierarchicalPlanner:
         if not user_goal:
             return []
 
-        prompt = LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE.format(user_goal=user_goal)
+        learned_facts_section = self._retrieve_relevant_facts(user_goal)
+
+        prompt = LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE.format(
+            user_goal=user_goal,
+            learned_facts_section=learned_facts_section
+        )
         if project_context: # pragma: no cover
             prompt += f"\n\nExisting project context to consider:\n{project_context}"
 
@@ -204,10 +257,13 @@ class HierarchicalPlanner:
         if project_context: # pragma: no cover
             project_context_section = f"\nExisting project context to consider:\n{project_context}"
 
+        learned_facts_section = self._retrieve_relevant_facts(f"{user_goal} {outline_item}")
+
         prompt = LLM_HP_DETAILED_TASK_BREAKDOWN_PROMPT_TEMPLATE.format(
             user_goal=user_goal,
             outline_item=outline_item,
-            project_context_section=project_context_section
+            project_context_section=project_context_section,
+            learned_facts_section=learned_facts_section
         )
 
         try:
@@ -266,10 +322,13 @@ class HierarchicalPlanner:
         if project_context: # pragma: no cover
             project_context_section = f"\nExisting project context to consider:\n{project_context}"
 
+        learned_facts_section = self._retrieve_relevant_facts(f"{user_goal} {detailed_task}")
+
         prompt = LLM_HP_STEP_ELABORATION_PROMPT_TEMPLATE.format(
             user_goal=user_goal,
             detailed_task=detailed_task,
-            project_context_section=project_context_section
+            project_context_section=project_context_section,
+            learned_facts_section=learned_facts_section
         )
 
         try:
