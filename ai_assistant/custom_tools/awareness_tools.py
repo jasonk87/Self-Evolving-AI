@@ -233,6 +233,8 @@ def get_item_details_by_id(
 
     elif resolved_item_type == ItemTypeForDetails.SUGGESTION:
         details = find_suggestion(item_id)
+        if details and "source" not in details:
+            details["source"] = "AI" # Default if missing
     elif resolved_item_type == ItemTypeForDetails.PROJECT:
         details = find_project(item_id)
     elif resolved_item_type == ItemTypeForDetails.NOTIFICATION:
@@ -307,7 +309,8 @@ def list_formatted_suggestions(status_filter: Optional[str] = "pending") -> List
                 "type": sugg.get("type", "N/A"), # Or InsightType(sugg.get("type")).name if it's an Enum
                 "description": sugg.get("description", "N/A"),
                 "status": sugg.get("status", "N/A"),
-                "created_at": sugg.get("creation_timestamp", "N/A") # Align with ActionableInsight field name
+                "created_at": sugg.get("creation_timestamp", "N/A"), # Align with ActionableInsight field name
+                "source": sugg.get("source", "AI") # Default to AI if not present
             }
             # Handle if 'type' is an Enum object
             if isinstance(formatted_sugg["type"], Enum):
@@ -326,7 +329,7 @@ LIST_FORMATTED_SUGGESTIONS_SCHEMA = {
     "returns": {
         "type": "list",
         "item_type": "dict",
-        "description": "A list of dictionaries, each representing a suggestion with its key details (id, type, description, status, created_at). Returns an empty list if no suggestions match."
+        "description": "A list of dictionaries, each representing a suggestion with its key details (id, type, description, status, created_at, source). Returns an empty list if no suggestions match."
     }
 }
 
