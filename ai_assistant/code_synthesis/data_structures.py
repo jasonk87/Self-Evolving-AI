@@ -27,6 +27,7 @@ class CodeTaskStatus(Enum):
     FAILURE_UNSUPPORTED_TASK = auto()
     NEEDS_REVIEW = auto()              # Code generated, but requires manual review
     PARTIAL_SUCCESS = auto()           # Some parts succeeded, others failed
+    FAILURE_MAX_RETRIES_REACHED = auto() # Automated self-correction retries exhausted
     # Add more statuses as needed
 
 @dataclass
