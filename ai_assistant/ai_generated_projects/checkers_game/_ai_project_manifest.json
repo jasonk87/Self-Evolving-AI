@@ -1,0 +1,136 @@
+{
+    "project_name": "checkers_game",
+    "sanitized_project_name": "checkers_game",
+    "project_directory": "c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\ai_generated_projects\\checkers_game",
+    "project_description": "A project to create a checkers game where the user can play against the AI.",
+    "creation_timestamp": "2025-12-10T09:17:51.368936+00:00",
+    "last_modified_timestamp": "2025-12-10T09:18:29.333262+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "The main entry point of the checkers game, handling game initialization and the main game loop.",
+                "key_components": [
+                    "Game initialization",
+                    "Main game loop",
+                    "Telemetry writing function"
+                ],
+                "file_dependencies": [
+                    "board.py",
+                    "player.py",
+                    "ai.py",
+                    "telemetry.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:17:55.667264+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for board.py",
+            "details": {
+                "filename": "board.py",
+                "original_description": "Defines the game board representation and provides methods for manipulating the board.",
+                "key_components": [
+                    "Board class",
+                    "move_piece",
+                    "is_valid_move",
+                    "get_possible_moves"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:18:12.973586+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for player.py",
+            "details": {
+                "filename": "player.py",
+                "original_description": "Handles player input and move validation.",
+                "key_components": [
+                    "Player class",
+                    "get_player_move"
+                ],
+                "file_dependencies": [
+                    "board.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:18:17.051224+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK004",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for ai.py",
+            "details": {
+                "filename": "ai.py",
+                "original_description": "Implements the AI opponent logic for making moves.",
+                "key_components": [
+                    "AI class",
+                    "get_ai_move",
+                    "minimax algorithm (or similar)",
+                    "evaluation_function"
+                ],
+                "file_dependencies": [
+                    "board.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:18:22.070836+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK005",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for telemetry.py",
+            "details": {
+                "filename": "telemetry.py",
+                "original_description": "Handles writing game state and progress information to the telemetry file.",
+                "key_components": [
+                    "write_telemetry"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:18:29.319652+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

@@ -2,11 +2,15 @@
 
 # Default model to be used by the Ollama client if no specific model is requested for a task.
 # Options: "gemini", "ollama"
+from dotenv import load_dotenv
+import os
+
 LLM_PROVIDER = "gemini" 
 DEFAULT_MODEL = "gemini-2.0-flash-exp"  # Default model for Gemini
-from dotenv import load_dotenv
-load_dotenv()
-import os
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(project_root, '.env')
+load_dotenv(env_path)
 from typing import Optional, Dict, List
 
 # Define models that support native thinking

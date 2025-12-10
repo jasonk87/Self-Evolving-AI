@@ -10,6 +10,7 @@ import logging
 import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+import subprocess
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.dirname(__file__))
@@ -147,16 +148,54 @@ async def chat():
 
     data = request.json
     message = data.get('message')
+    context = data.get('context', {})
 
     if not message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Add user message to history
-    conversation_history.append({"role": "user", "content": message})
+    # Inject Context into Message
+    # This is a simple way to make the AI aware without changing the Orchestrator signature yet.
+    system_context = ""
+    current_file = context.get('currentFile')
+    
+    if current_file:
+        file_path = current_file.get('path')
+        project_name = current_file.get('project')
+        content = current_file.get('content')
+        system_context += f"[System Context] User is looking at file: {file_path} in project {project_name}.\n"
+        
+        # Resolve Project Root for AI
+        if project_name:
+             try:
+                 from ai_assistant.core.project_manager import find_project
+                 proj = find_project(project_name)
+                 if proj and proj.get('root_path'):
+                     system_context += f"Project Root Path: {proj.get('root_path')}\n"
+                     system_context += f"NOTE: When reading files, prepend the Project Root Path if the file is not found in the root workspace.\n"
+             except Exception as e:
+                 logger.error(f"Failed to resolve project root for context: {e}")
+
+        if content:
+            system_context += f"Content:\n```{content}```\n"
+
+    terminal_output = context.get('terminalOutput')
+    if terminal_output:
+        system_context += f"[System Context] Last Terminal Output:\n{terminal_output}\n"
+
+    full_message = system_context + "\n" + message if system_context else message
+
+    # Add user message to history (Display original message to user in UI, but send full context to AI? 
+    # Actually, history usually tracks what was said. If we hide context, AI might reference it and confuse user if they didn't see it.
+    # But listing 1000 lines of code in history is bad.
+    # The 'content' field in history is what the AI sees. 
+    # The UI should probably display the 'message' separate from the 'context'.
+    # Here we are appending to `conversation_history` which is used by `orchestrator`.
+    # So we MUST append the full message here for the AI to see it.
+    conversation_history.append({"role": "user", "content": full_message})
 
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(message, conversation_history=conversation_history)
+        success, response = await orchestrator.process_prompt(full_message, conversation_history=conversation_history)
         
         # Add assistant response to history
         conversation_history.append({"role": "assistant", "content": response})
@@ -246,30 +285,49 @@ def run_script():
     if not path or not path.startswith('projects/'):
         return jsonify({"error": "Invalid path format. Must start with 'projects/'", "success": False}), 400
 
+    # Parse project name and relative path
+    # Expected format: "projects/<project_name>/<relative_path>"
     try:
-        projects_dir = get_projects_dir()
-        # Remove 'projects/' prefix to get the relative path inside projects directory
-        relative_path = path[len('projects/'):]
+        parts = path.split('/', 2)
+        if len(parts) < 3:
+             return jsonify({"error": "Invalid path format. Missing project name or file path.", "success": False}), 400
+        
+        project_name = parts[1]
+        file_relative_path = parts[2]
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse path: {e}", "success": False}), 400
 
-        # Construct the full path
-        full_path = os.path.abspath(os.path.join(projects_dir, relative_path))
+    try:
+        # Use find_project to get the true root path
+        from ai_assistant.core.project_manager import find_project
+        project = find_project(project_name)
 
-        # Security check: ensure the full path is within the projects directory
-        if not full_path.startswith(os.path.abspath(projects_dir)):
-            return jsonify({"error": "Access denied: Path is outside of projects directory", "success": False}), 403
+        if not project:
+            return jsonify({"error": f"Project '{project_name}' not found.", "success": False}), 404
+        
+        root_path = project.get('root_path')
+        if not root_path or not os.path.exists(root_path):
+            return jsonify({"error": f"Project root path invalid for '{project_name}'.", "success": False}), 500
+
+        # Construct full path
+        full_path = os.path.abspath(os.path.join(root_path, file_relative_path))
+
+        # Security check: ensure path is within root_path
+        if not full_path.startswith(os.path.abspath(root_path)):
+             return jsonify({"error": "Access denied: Path traversal detected.", "success": False}), 403
 
         if not os.path.exists(full_path):
-            return jsonify({"error": "File not found", "success": False}), 404
+            return jsonify({"error": f"File not found: {full_path}", "success": False}), 404
 
-        # Determine the working directory (the script's directory)
+        # determine cwd (script's directory)
         cwd = os.path.dirname(full_path)
 
-        # Execute the script
+        # Execute
         result = subprocess.run(
             [sys.executable, full_path],
             capture_output=True,
             text=True,
-            timeout=10,  # 10 second timeout
+            timeout=10,
             cwd=cwd
         )
 
@@ -285,7 +343,7 @@ def run_script():
         return jsonify({"output": output, "success": True})
 
     except subprocess.TimeoutExpired:
-        return jsonify({"output": "Error: Execution timed out (limit: 10s)", "success": False}), 200 # Return 200 so frontend displays the output text
+        return jsonify({"output": "Error: Execution timed out (limit: 10s)", "success": False}), 200
     except Exception as e:
         logger.error(f"Error executing script {path}: {e}")
         return jsonify({"output": f"Error: {str(e)}", "success": False}), 500
