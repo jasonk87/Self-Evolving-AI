@@ -34,6 +34,7 @@ from ai_assistant.utils.display_utils import (
 )
 from ai_assistant.core.refinement import RefinementAgent
 from ai_assistant.code_services.service import CodeService
+from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core import project_manager
@@ -112,46 +113,39 @@ async def _handle_code_generation_and_registration(
         print_formatted_text(ANSI(color_text("Error: Tool description for generation is empty.", CLIColors.ERROR_MESSAGE)))
         return
 
-    print_formatted_text(ANSI(color_text(f"\nReceived tool description for CodeService generation: \"{tool_description_for_generation}\"", CLIColors.SYSTEM_MESSAGE)))
+    print_formatted_text(ANSI(color_text(f"\nReceived tool description for CodeSynthesisService generation: \"{tool_description_for_generation}\"", CLIColors.SYSTEM_MESSAGE)))
 
-    from ai_assistant.llm_interface import ollama_client as default_llm_provider
-    from ai_assistant.core import self_modification as default_self_modification_service
+    code_synthesis_service = CodeSynthesisService()
 
-    code_service = CodeService(
-        llm_provider=default_llm_provider,
-        self_modification_service=default_self_modification_service,
-        task_manager=task_manager,
-        notification_manager=notification_manager
+    print(color_text(f"Requesting CodeSynthesisService to generate new tool (context='NEW_TOOL_CREATION_LLM')...", CLIColors.DEBUG_MESSAGE))
+
+    request = CodeTaskRequest(
+        task_type=CodeTaskType.NEW_TOOL_CREATION_LLM,
+        context_data={"description": tool_description_for_generation}
     )
 
-    print(color_text(f"Requesting CodeService to generate new tool (context='NEW_TOOL')...", CLIColors.DEBUG_MESSAGE))
-
-    generation_result = await code_service.generate_code(
-        context="NEW_TOOL",
-        prompt_or_description=tool_description_for_generation,
-        target_path=None
-    )
+    result = await code_synthesis_service.submit_task(request)
 
     if is_debug_mode():
-        print_formatted_text(ANSI(color_text(f"[DEBUG] CodeService generation result: {generation_result}", CLIColors.DEBUG_MESSAGE)))
+        print_formatted_text(ANSI(color_text(f"[DEBUG] CodeSynthesisService generation result status: {result.status}", CLIColors.DEBUG_MESSAGE)))
 
-    if generation_result.get("status") != "SUCCESS_CODE_GENERATED":
-        error_msg = generation_result.get("error", "CodeService failed to generate code or parse metadata.")
-        logs = generation_result.get("logs", [])
-        print_formatted_text(ANSI(color_text(f"CodeService Error: {error_msg}", CLIColors.ERROR_MESSAGE)))
-        if logs: # pragma: no cover
-            for log_entry in logs: print(color_text(f"  Log: {log_entry}", CLIColors.DEBUG_MESSAGE))
+    if result.status != CodeTaskStatus.SUCCESS:
+        error_msg = result.error_message or "CodeSynthesisService failed to generate code or parse metadata."
+
+        print_formatted_text(ANSI(color_text(f"CodeSynthesisService Error: {error_msg}", CLIColors.ERROR_MESSAGE)))
 
         global_reflection_log.log_execution(
-            goal_description=f"CodeService new tool generation attempt for: {tool_description_for_generation}",
-            plan=[{'action_type': 'CODESERVICE_GENERATE_NEW_TOOL', 'description': tool_description_for_generation}],
-            execution_results=[f"CodeService failed. Status: {generation_result.get('status')}, Error: {error_msg}"],
-            overall_success=False, status_override=f"CODESERVICE_GEN_FAILED_{generation_result.get('status','UNKNOWN_ERR')}"
+            goal_description=f"CodeSynthesisService new tool generation attempt for: {tool_description_for_generation}",
+            plan=[{'action_type': 'UCWS_GENERATE_NEW_TOOL', 'description': tool_description_for_generation}],
+            execution_results=[f"CodeSynthesisService failed. Status: {result.status}, Error: {error_msg}"],
+            overall_success=False, status_override=f"UCWS_GEN_FAILED_{result.status.name}"
         )
         return
 
-    cleaned_code = generation_result.get("code_string")
-    parsed_metadata = generation_result.get("metadata")
+    cleaned_code = result.generated_code
+    parsed_metadata = None
+    if result.metadata and "parsed_tool_metadata" in result.metadata:
+        parsed_metadata = result.metadata["parsed_tool_metadata"]
 
     if is_debug_mode():
         print_formatted_text(ANSI(color_text(f"[DEBUG] Cleaned code: {cleaned_code[:200] if cleaned_code else 'None'}...", CLIColors.DEBUG_MESSAGE)))
@@ -354,7 +348,26 @@ async def _handle_code_generation_and_registration(
                         os.makedirs(test_target_dir, exist_ok=True)
                         test_target_path = os.path.join(test_target_dir, test_filename)
 
-                        scaffold_gen_result = await code_service.generate_code(
+                        # Use legacy CodeService for scaffold generation for now, as UCWS context not yet migrated fully
+                        # But CodeService instantiation was removed. We need to instantiate it or use UCWS if supported.
+                        # The plan was to refactor tool generation. Scaffold generation is a sub-task.
+                        # Let's instantiate CodeService locally for this legacy part or migrate it.
+                        # Migrating it to UCWS is better but requires UCWS support for GENERATE_UNIT_TEST_SCAFFOLD.
+                        # Checking CodeService.generate_code... it supports GENERATE_UNIT_TEST_SCAFFOLD.
+                        # UCWS does not seem to support it yet in the new implementation (CodeSynthesisService).
+                        # So I will re-instantiate CodeService here for legacy support.
+
+                        from ai_assistant.llm_interface import ollama_client as default_llm_provider
+                        from ai_assistant.core import self_modification as default_self_modification_service
+
+                        legacy_code_service = CodeService(
+                            llm_provider=default_llm_provider,
+                            self_modification_service=default_self_modification_service,
+                            task_manager=task_manager,
+                            notification_manager=notification_manager
+                        )
+
+                        scaffold_gen_result = await legacy_code_service.generate_code(
                             context="GENERATE_UNIT_TEST_SCAFFOLD",
                             prompt_or_description=cleaned_code,
                             additional_context={"module_name_hint": module_path_for_registration},
