@@ -38,5 +38,29 @@
         "source": "migrated_from_old_format",
         "created_at": "2025-12-08T01:57:50.028845+00:00",
         "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_41c74068",
+        "text": "Playwright verification fact.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-10T02:43:06.803841+00:00",
+        "updated_at": "2025-12-10T02:43:06.803860+00:00"
+    },
+    {
+        "fact_id": "fact_a93e40ca",
+        "text": "Playwright verification fact.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-10T02:45:58.691774+00:00",
+        "updated_at": "2025-12-10T02:45:58.691790+00:00"
+    },
+    {
+        "fact_id": "fact_be12f2ca",
+        "text": "Playwright verification fact.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-10T02:48:26.972425+00:00",
+        "updated_at": "2025-12-10T02:48:26.972478+00:00"
     }
 ]

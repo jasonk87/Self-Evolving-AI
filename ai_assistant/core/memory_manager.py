@@ -1,0 +1,149 @@
+from typing import List, Dict, Any, Optional
+import datetime
+import uuid
+import logging
+from ai_assistant.memory.persistent_memory import (
+    load_learned_facts, save_learned_facts,
+    load_actionable_insights, save_actionable_insights
+)
+
+logger = logging.getLogger(__name__)
+
+class MemoryManager:
+    """
+    Manages the AI's long-term memory (facts and insights).
+    """
+
+    def __init__(self):
+        pass
+
+    # --- Facts Management ---
+
+    def get_all_facts(self) -> List[Dict[str, Any]]:
+        """Returns all learned facts."""
+        return load_learned_facts()
+
+    def add_fact(self, text: str, category: str = "manual", source: str = "user_interface") -> Dict[str, Any]:
+        """
+        Adds a new manually created fact.
+        """
+        facts = load_learned_facts()
+
+        new_fact = {
+            "fact_id": f"fact_{uuid.uuid4().hex[:8]}",
+            "text": text,
+            "category": category,
+            "source": source,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        facts.append(new_fact)
+        if save_learned_facts(facts):
+            logger.info(f"Added new fact: {new_fact['fact_id']}")
+            return new_fact
+        else:
+            logger.error("Failed to save new fact.")
+            raise Exception("Failed to save new fact.")
+
+    def update_fact(self, fact_id: str, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Updates an existing fact's text.
+        """
+        facts = load_learned_facts()
+        fact_found = False
+        updated_fact = None
+
+        for fact in facts:
+            if fact.get("fact_id") == fact_id:
+                fact["text"] = text
+                fact["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                fact_found = True
+                updated_fact = fact
+                break
+
+        if fact_found:
+            if save_learned_facts(facts):
+                logger.info(f"Updated fact: {fact_id}")
+                return updated_fact
+            else:
+                logger.error(f"Failed to save updated fact: {fact_id}")
+                raise Exception("Failed to save updated fact.")
+        else:
+            logger.warning(f"Fact not found for update: {fact_id}")
+            return None
+
+    def delete_fact(self, fact_id: str) -> bool:
+        """
+        Deletes a fact by ID.
+        """
+        facts = load_learned_facts()
+        original_count = len(facts)
+        facts = [f for f in facts if f.get("fact_id") != fact_id]
+
+        if len(facts) < original_count:
+            if save_learned_facts(facts):
+                logger.info(f"Deleted fact: {fact_id}")
+                return True
+            else:
+                logger.error(f"Failed to save facts after deletion of: {fact_id}")
+                raise Exception("Failed to save facts after deletion.")
+        else:
+            logger.warning(f"Fact not found for deletion: {fact_id}")
+            return False
+
+    # --- Insights Management ---
+
+    def get_all_insights(self) -> List[Dict[str, Any]]:
+        """Returns all actionable insights."""
+        return load_actionable_insights()
+
+    def update_insight_status(self, insight_id: str, status: str) -> Optional[Dict[str, Any]]:
+        """
+        Updates the status of an insight (e.g., 'DISMISSED', 'APPROVED').
+        """
+        insights = load_actionable_insights()
+        insight_found = False
+        updated_insight = None
+
+        for insight in insights:
+            if insight.get("insight_id") == insight_id:
+                insight["status"] = status
+                # Update metadata if needed
+                if "metadata" not in insight:
+                    insight["metadata"] = {}
+                insight["metadata"][f"status_change_{status.lower()}_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+                insight_found = True
+                updated_insight = insight
+                break
+
+        if insight_found:
+            if save_actionable_insights(insights):
+                logger.info(f"Updated insight status: {insight_id} -> {status}")
+                return updated_insight
+            else:
+                logger.error(f"Failed to save updated insight: {insight_id}")
+                raise Exception("Failed to save updated insight.")
+        else:
+            logger.warning(f"Insight not found for update: {insight_id}")
+            return None
+
+    def delete_insight(self, insight_id: str) -> bool:
+        """
+        Deletes an insight by ID.
+        """
+        insights = load_actionable_insights()
+        original_count = len(insights)
+        insights = [i for i in insights if i.get("insight_id") != insight_id]
+
+        if len(insights) < original_count:
+            if save_actionable_insights(insights):
+                logger.info(f"Deleted insight: {insight_id}")
+                return True
+            else:
+                logger.error(f"Failed to save insights after deletion of: {insight_id}")
+                raise Exception("Failed to save insights after deletion.")
+        else:
+            logger.warning(f"Insight not found for deletion: {insight_id}")
+            return False

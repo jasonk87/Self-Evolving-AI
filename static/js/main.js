@@ -55,6 +55,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Tool Actions
+    function attachToolListeners() {
+        const toolButtons = document.querySelectorAll('.tool-action-btn');
+        toolButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const toolCard = e.target.closest('.tool-card');
+                const toolName = toolCard.querySelector('h3').textContent;
+
+                if (toolName === 'Memory Manager') {
+                    loadMemoryManager();
+                } else {
+                    console.log(`Tool action: ${toolName}`);
+                }
+            });
+        });
+    }
+    attachToolListeners();
+
     function switchPanel(panelId) {
         mainPanels.forEach(panel => {
             if (panel.id === panelId) {
@@ -246,9 +264,225 @@ document.addEventListener('DOMContentLoaded', () => {
             // Load files if Files tab is selected
             if (tabName === 'files') {
                 loadProjectsAndFiles();
+            } else if (tabName === 'memory') {
+                loadMemorySidebar();
             }
         });
     });
+
+    async function loadMemorySidebar() {
+        const memoryTab = document.getElementById('tab-memory');
+        memoryTab.innerHTML = '<div class="loading">Loading memory...</div>';
+
+        try {
+            const [factsRes, insightsRes] = await Promise.all([
+                fetch('/api/memory/facts'),
+                fetch('/api/memory/insights')
+            ]);
+            const factsData = await factsRes.json();
+            const insightsData = await insightsRes.json();
+
+            memoryTab.innerHTML = '';
+
+            // Facts Section
+            const factsHeader = document.createElement('h3');
+            factsHeader.textContent = 'Learned Facts';
+            factsHeader.style.marginTop = '0';
+            memoryTab.appendChild(factsHeader);
+
+            const factsList = document.createElement('ul');
+            factsList.className = 'memory-list';
+            if (factsData.success && factsData.facts.length > 0) {
+                factsData.facts.forEach(fact => {
+                    const li = document.createElement('li');
+                    li.textContent = fact.text;
+                    li.title = `Source: ${fact.source}`;
+                    factsList.appendChild(li);
+                });
+            } else {
+                factsList.innerHTML = '<li class="empty">No facts learned yet.</li>';
+            }
+            memoryTab.appendChild(factsList);
+
+            // Insights Section
+            const insightsHeader = document.createElement('h3');
+            insightsHeader.textContent = 'Actionable Insights';
+            memoryTab.appendChild(insightsHeader);
+
+            const insightsList = document.createElement('ul');
+            insightsList.className = 'memory-list';
+            if (insightsData.success && insightsData.insights.length > 0) {
+                insightsData.insights.forEach(insight => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${insight.type}</strong>: ${insight.description}`;
+                    li.classList.add(`status-${insight.status.toLowerCase()}`);
+                    insightsList.appendChild(li);
+                });
+            } else {
+                insightsList.innerHTML = '<li class="empty">No active insights.</li>';
+            }
+            memoryTab.appendChild(insightsList);
+
+        } catch (error) {
+            console.error('Error loading memory:', error);
+            memoryTab.innerHTML = '<div class="error-state">Failed to load memory.</div>';
+        }
+    }
+
+    async function loadMemoryManager() {
+        // Switch to a new "Memory Panel" (we'll hijack the editor panel or create a new one dynamically if needed)
+        // For simplicity, let's create a dynamic full-screen overlay or replace content of 'tools-panel' temporarily.
+        // Or better, let's use the 'editor-panel' area but clear it.
+        // Actually, let's repurpose the #tools-panel since it's where we clicked.
+
+        const toolsPanel = document.getElementById('tools-panel');
+        const originalContent = toolsPanel.innerHTML;
+
+        toolsPanel.innerHTML = `
+            <header class="panel-header-main">
+                <button id="back-to-tools" class="secondary-btn" style="margin-right: 1rem;">← Back</button>
+                <h1>Memory Manager</h1>
+            </header>
+            <div class="memory-manager-container">
+                <div class="memory-section">
+                    <div class="section-header">
+                        <h2>Learned Facts</h2>
+                        <button id="add-fact-btn" class="primary-btn small">+ Add Fact</button>
+                    </div>
+                    <div id="manager-facts-list" class="manager-list">Loading...</div>
+                </div>
+                <div class="memory-section">
+                    <div class="section-header">
+                        <h2>Insights</h2>
+                    </div>
+                    <div id="manager-insights-list" class="manager-list">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Modal for Adding Fact -->
+            <div id="add-fact-modal" class="modal hidden">
+                <div class="modal-content glass-panel">
+                    <h3>Add New Fact</h3>
+                    <textarea id="new-fact-text" placeholder="Enter new fact..." rows="3"></textarea>
+                    <div class="modal-actions">
+                        <button id="cancel-fact-btn" class="secondary-btn">Cancel</button>
+                        <button id="save-fact-btn" class="primary-btn">Save</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('back-to-tools').addEventListener('click', () => {
+            toolsPanel.innerHTML = originalContent;
+            // Re-attach listeners for tool buttons (since we wiped HTML)
+            attachToolListeners();
+        });
+
+        // Add Fact Logic
+        const modal = document.getElementById('add-fact-modal');
+        document.getElementById('add-fact-btn').addEventListener('click', () => {
+            modal.classList.remove('hidden');
+            document.getElementById('new-fact-text').focus();
+        });
+        document.getElementById('cancel-fact-btn').addEventListener('click', () => {
+             modal.classList.add('hidden');
+             document.getElementById('new-fact-text').value = '';
+        });
+        document.getElementById('save-fact-btn').addEventListener('click', async () => {
+            const text = document.getElementById('new-fact-text').value.trim();
+            if(!text) return;
+
+            try {
+                const res = await fetch('/api/memory/facts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text})
+                });
+                if(res.ok) {
+                    modal.classList.add('hidden');
+                    document.getElementById('new-fact-text').value = '';
+                    renderManagerFacts(); // Refresh
+                } else {
+                    alert('Failed to save fact.');
+                }
+            } catch(e) {
+                console.error(e);
+                alert('Error saving fact.');
+            }
+        });
+
+        // Render Lists
+        renderManagerFacts();
+        renderManagerInsights();
+    }
+
+    async function renderManagerFacts() {
+        const container = document.getElementById('manager-facts-list');
+        if(!container) return;
+
+        try {
+            const res = await fetch('/api/memory/facts');
+            const data = await res.json();
+
+            if(data.success) {
+                container.innerHTML = '';
+                data.facts.forEach(fact => {
+                    const item = document.createElement('div');
+                    item.className = 'memory-item';
+                    item.innerHTML = `
+                        <div class="memory-content">${fact.text}</div>
+                        <div class="memory-meta">${new Date(fact.created_at).toLocaleDateString()}</div>
+                        <button class="delete-btn" title="Delete">🗑️</button>
+                    `;
+                    item.querySelector('.delete-btn').addEventListener('click', async () => {
+                        if(confirm('Delete this fact?')) {
+                            await fetch(`/api/memory/facts/${fact.fact_id}`, {method: 'DELETE'});
+                            renderManagerFacts();
+                        }
+                    });
+                    container.appendChild(item);
+                });
+            }
+        } catch(e) {
+            container.innerHTML = 'Error loading facts.';
+        }
+    }
+
+    async function renderManagerInsights() {
+        const container = document.getElementById('manager-insights-list');
+        if(!container) return;
+
+        try {
+            const res = await fetch('/api/memory/insights');
+            const data = await res.json();
+
+            if(data.success) {
+                container.innerHTML = '';
+                data.insights.forEach(insight => {
+                    const item = document.createElement('div');
+                    item.className = 'memory-item';
+                    item.innerHTML = `
+                        <div class="memory-content">
+                            <strong>[${insight.type}]</strong> ${insight.description}
+                        </div>
+                        <div class="memory-meta">Status: ${insight.status}</div>
+                        <div class="memory-actions">
+                            <button class="delete-btn" title="Delete">🗑️</button>
+                        </div>
+                    `;
+                     item.querySelector('.delete-btn').addEventListener('click', async () => {
+                        if(confirm('Delete this insight?')) {
+                            await fetch(`/api/memory/insights/${insight.insight_id}`, {method: 'DELETE'});
+                            renderManagerInsights();
+                        }
+                    });
+                    container.appendChild(item);
+                });
+            }
+        } catch(e) {
+            container.innerHTML = 'Error loading insights.';
+        }
+    }
 
     // File Tree & Editor Logic
     const fileTreeContainer = document.getElementById('file-tree');

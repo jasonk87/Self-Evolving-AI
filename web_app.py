@@ -31,6 +31,7 @@ from ai_assistant.core.startup_services import resume_interrupted_tasks
 from ai_assistant.core.project_manager import list_projects
 from ai_assistant.custom_tools.file_system_tools import list_project_files, get_project_file_content, save_project_file_content
 from ai_assistant.core.events import EventEmitter
+from ai_assistant.core.memory_manager import MemoryManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -117,6 +118,9 @@ async def init_orchestrator():
         hierarchical_planner=hierarchical_planner
     )
     logger.info("Orchestrator initialized successfully.")
+
+# Initialize Memory Manager
+memory_manager = MemoryManager()
 
 # Run initialization.
 # Since we are at module level, we can't easily await.
@@ -285,6 +289,108 @@ def run_script():
     except Exception as e:
         logger.error(f"Error executing script {path}: {e}")
         return jsonify({"output": f"Error: {str(e)}", "success": False}), 500
+
+# --- Memory Management Endpoints ---
+
+@app.route('/api/memory/facts', methods=['GET'])
+def get_facts():
+    """Returns a list of all learned facts."""
+    try:
+        facts = memory_manager.get_all_facts()
+        return jsonify({"facts": facts, "success": True})
+    except Exception as e:
+        logger.error(f"Error fetching facts: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/facts', methods=['POST'])
+def add_fact():
+    """Adds a new fact."""
+    data = request.json
+    text = data.get('text')
+
+    if not text:
+        return jsonify({"error": "Fact text is required", "success": False}), 400
+
+    try:
+        new_fact = memory_manager.add_fact(text)
+        return jsonify({"fact": new_fact, "success": True})
+    except Exception as e:
+        logger.error(f"Error adding fact: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/facts/<fact_id>', methods=['PUT'])
+def update_fact(fact_id):
+    """Updates an existing fact."""
+    data = request.json
+    text = data.get('text')
+
+    if not text:
+        return jsonify({"error": "Fact text is required", "success": False}), 400
+
+    try:
+        updated_fact = memory_manager.update_fact(fact_id, text)
+        if updated_fact:
+            return jsonify({"fact": updated_fact, "success": True})
+        else:
+            return jsonify({"error": "Fact not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error updating fact {fact_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/facts/<fact_id>', methods=['DELETE'])
+def delete_fact(fact_id):
+    """Deletes a fact."""
+    try:
+        success = memory_manager.delete_fact(fact_id)
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "Fact not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error deleting fact {fact_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/insights', methods=['GET'])
+def get_insights():
+    """Returns a list of all actionable insights."""
+    try:
+        insights = memory_manager.get_all_insights()
+        return jsonify({"insights": insights, "success": True})
+    except Exception as e:
+        logger.error(f"Error fetching insights: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/insights/<insight_id>', methods=['PUT'])
+def update_insight_status(insight_id):
+    """Updates the status of an insight."""
+    data = request.json
+    status = data.get('status')
+
+    if not status:
+        return jsonify({"error": "Status is required", "success": False}), 400
+
+    try:
+        updated_insight = memory_manager.update_insight_status(insight_id, status)
+        if updated_insight:
+            return jsonify({"insight": updated_insight, "success": True})
+        else:
+            return jsonify({"error": "Insight not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error updating insight {insight_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/memory/insights/<insight_id>', methods=['DELETE'])
+def delete_insight(insight_id):
+    """Deletes an insight."""
+    try:
+        success = memory_manager.delete_insight(insight_id)
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "Insight not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error deleting insight {insight_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
 
 # SocketIO Event Handlers
 @socketio.on('connect')
