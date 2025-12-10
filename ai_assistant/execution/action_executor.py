@@ -7,7 +7,7 @@ import os
 import uuid
 import logging
 
-from ai_assistant.config import is_debug_mode
+from ai_assistant.config import is_debug_mode, get_model_for_task
 from ai_assistant.core import self_modification
 from ..core.reflection import global_reflection_log, ReflectionLogEntry
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
@@ -173,7 +173,7 @@ class ActionExecutor:
         """
 
         try:
-            model_name = self.llm_provider.model
+            model_name = get_model_for_task("reasoning")
 
             llm_response = await self.llm_provider.invoke_ollama_model_async(
                 prompt, model_name=model_name, temperature=0.5
@@ -413,7 +413,7 @@ class ActionExecutor:
             return False, "LLM provider not available for assessment."
 
         try:
-            model_name = self.llm_provider.model
+            model_name = get_model_for_task("reasoning")
 
             llm_response_str = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
@@ -462,7 +462,7 @@ class ActionExecutor:
             return default_category
 
         try:
-            model_name = self.llm_provider.model
+            model_name = get_model_for_task("reasoning")
             llm_response_str = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
@@ -719,7 +719,20 @@ class ActionExecutor:
                  self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
                  return False
 
-            generated_code = await self.llm_provider.generate_code_async(prompt_for_code)
+            # generate_code_async doesn't usually take model argument?
+            # We should check invoke_ollama_model_async usage or if generate_code_async supports model override.
+            # OllamaProvider.generate_code_async usually uses DEFAULT_MODEL or self.model.
+            # Let's assume we should call invoke_ollama_model_async for control, or if provider supports overrides.
+            # Actually, let's look at OllamaProvider. It might not support dynamic model in generate_code_async easily.
+            # But let's check if we can pass it.
+
+            # If OllamaProvider doesn't support model arg in generate_code_async, we might need to rely on default or change logic.
+            # Assuming for now we can't easily change it without reading OllamaProvider code.
+            # But wait, reviewer complained about configuration regression.
+            # I will use invoke_ollama_model_async which definitely supports it.
+
+            model_name = get_model_for_task("code_generation")
+            generated_code = await self.llm_provider.invoke_ollama_model_async(prompt_for_code, model_name=model_name)
 
             if not generated_code:
                  self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")

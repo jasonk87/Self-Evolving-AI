@@ -12,6 +12,8 @@ class CodeTaskType(Enum):
     NEW_TOOL_CREATION_LLM = auto()
     EXISTING_TOOL_SELF_FIX_LLM = auto()
     EXISTING_TOOL_SELF_FIX_AST = auto()
+    HIERARCHICAL_GENERATION_OUTLINE = auto() # Generate outline only
+    HIERARCHICAL_GENERATION_FULL = auto()    # Full flow: outline -> details -> assembly
     # Add more types as the system evolves
 
 class CodeTaskStatus(Enum):
