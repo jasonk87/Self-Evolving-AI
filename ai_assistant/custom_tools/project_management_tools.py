@@ -67,7 +67,7 @@ Ensure filenames are conventional (e.g., use .py for Python, .js for JavaScript 
 Do not include any other explanatory text or markdown formatting like ```json ... ``` around the JSON object.
 """
 
-async def initiate_ai_project(project_name: str, project_description: str) -> str:
+async def initiate_ai_project(project_name: str, project_description: str = None, description: str = None) -> str:
     """
     Initializes a new AI-managed software project. 
     
@@ -78,16 +78,22 @@ async def initiate_ai_project(project_name: str, project_description: str) -> st
 
     Args:
         project_name: The desired name for the project.
-        project_description: A brief description of what the project is about.
+        project_description (or description): A brief description of what the project is about.
 
     Returns:
         A string confirming successful initialization and summarizing the plan, 
         or an error message if any step fails.
     """
+    # Handle aliasing
+    final_description = project_description or description
+
     if not project_name or not isinstance(project_name, str) or not project_name.strip():
         return "Error: Project name must be a non-empty string."
-    if not project_description or not isinstance(project_description, str) or not project_description.strip():
+    if not final_description or not isinstance(final_description, str) or not final_description.strip():
         return "Error: Project description must be a non-empty string."
+    
+    # Use final_description for logical operations
+    project_description = final_description
 
     sanitized_name = sanitize_project_name(project_name)
     
@@ -241,15 +247,22 @@ Based on the project description, the file's purpose, its key components, and it
 - If this file is responsible for state management or main execution logic, ensure it imports `json` and writes the state dictionary to `telemetry.json` whenever it changes.
 """
 
-async def generate_code_for_project_file(project_name: str, filename: str) -> str:
+async def generate_code_for_project_file(project_name: str, filename: str = None, file_path: str = None, **kwargs) -> str:
     """
     Generates code for a specific file within an AI-managed project,
     based on the project plan stored in the project's manifest.
+    kwargs are accepted to handle extra arguments from LLM gracefully.
     """
+    # Handle aliasing
+    final_filename = filename or file_path
+
     if not project_name or not isinstance(project_name, str) or not project_name.strip():
         return "Error: Project name must be a non-empty string."
-    if not filename or not isinstance(filename, str) or not filename.strip():
-        return "Error: Filename must be a non-empty string."
+    if not final_filename or not isinstance(final_filename, str) or not final_filename.strip():
+        return "Error: Filename (or file_path) must be a non-empty string."
+    
+    # Use final_filename henceforth
+    filename = final_filename
 
     sanitized_project_name = sanitize_project_name(project_name)
     project_dir = os.path.join(BASE_PROJECTS_DIR, sanitized_project_name)

@@ -37,47 +37,48 @@ def get_system_status_summary(
     """
     summary_lines = ["System Status Summary:"]
 
-    if not task_manager:
-        summary_lines.append("TaskManager not available.") # Changed to append
-    else:
+    if task_manager:
         active_tasks = task_manager.list_active_tasks()
-    archived_tasks = task_manager.list_archived_tasks(limit=archived_limit)
+        archived_tasks = task_manager.list_archived_tasks(limit=archived_limit)
 
-    summary_lines = ["System Status Summary:"]
+        summary_lines = ["System Status Summary:"]
 
-    summary_lines.append(f"\nActive Tasks ({len(active_tasks)} total):")
-    if not active_tasks:
-        summary_lines.append("  No active tasks currently.")
+        summary_lines.append(f"\nActive Tasks ({len(active_tasks)} total):")
+        if not active_tasks:
+            summary_lines.append("  No active tasks currently.")
+        else:
+            for i, task in enumerate(active_tasks):
+                if i >= active_limit:
+                    summary_lines.append(f"  ... and {len(active_tasks) - active_limit} more active tasks.")
+                    break
+                details_str = f" (ID: {task.task_id}, Related: {task.related_item_id or 'N/A'})"
+                reason_str = f" Reason: {task.status_reason}" if task.status_reason else ""
+                step_str = f" Step: {task.current_step_description}" if task.current_step_description else ""
+                summary_lines.append(
+                    f"  - {task.description[:60]}... ({task.task_type.name}) - Status: {task.status.name}{step_str}{reason_str}{details_str}"
+                )
+        
+        summary_lines.append(f"\nRecently Completed/Archived Tasks ({len(archived_tasks)} shown, up to {archived_limit}):")
+        if not archived_tasks:
+            summary_lines.append("  No recently archived tasks.")
+        else:
+            for task in archived_tasks:
+                details_str = f" (ID: {task.task_id}, Related: {task.related_item_id or 'N/A'})"
+                reason_str = f" Reason: {task.status_reason}" if task.status_reason else ""
+                summary_lines.append(
+                    f"  - {task.description[:60]}... ({task.task_type.name}) - Final Status: {task.status.name}{reason_str}{details_str}"
+                )
+        
+        if active_tasks:
+            summary_lines.append("\nActive Task Status Breakdown:")
+            status_counts: Dict[ActiveTaskStatus, int] = {}
+            for task in active_tasks:
+                status_counts[task.status] = status_counts.get(task.status, 0) + 1
+            for status_key, count in status_counts.items():
+                summary_lines.append(f"  - {status_key.name}: {count}")
+
     else:
-        for i, task in enumerate(active_tasks):
-            if i >= active_limit:
-                summary_lines.append(f"  ... and {len(active_tasks) - active_limit} more active tasks.")
-                break
-            details_str = f" (ID: {task.task_id}, Related: {task.related_item_id or 'N/A'})"
-            reason_str = f" Reason: {task.status_reason}" if task.status_reason else ""
-            step_str = f" Step: {task.current_step_description}" if task.current_step_description else ""
-            summary_lines.append(
-                f"  - {task.description[:60]}... ({task.task_type.name}) - Status: {task.status.name}{step_str}{reason_str}{details_str}"
-            )
-
-    summary_lines.append(f"\nRecently Completed/Archived Tasks ({len(archived_tasks)} shown, up to {archived_limit}):")
-    if not archived_tasks:
-        summary_lines.append("  No recently archived tasks.")
-    else:
-        for task in archived_tasks:
-            details_str = f" (ID: {task.task_id}, Related: {task.related_item_id or 'N/A'})"
-            reason_str = f" Reason: {task.status_reason}" if task.status_reason else ""
-            summary_lines.append(
-                f"  - {task.description[:60]}... ({task.task_type.name}) - Final Status: {task.status.name}{reason_str}{details_str}"
-            )
-
-    if active_tasks:
-        summary_lines.append("\nActive Task Status Breakdown:")
-        status_counts: Dict[ActiveTaskStatus, int] = {}
-        for task in active_tasks:
-            status_counts[task.status] = status_counts.get(task.status, 0) + 1
-        for status_key, count in status_counts.items():
-            summary_lines.append(f"  - {status_key.name}: {count}")
+        summary_lines.append("TaskManager not available.")
 
     if not notification_manager:
         summary_lines.append("\nNotificationManager not available.")
@@ -103,8 +104,8 @@ def get_system_status_summary(
                     ts_str = notification.timestamp.strftime('%Y-%m-%d %H:%M')
 
                 summary_msg_display = notification.summary_message
-                if len(summary_msg_display) > 70:
-                    summary_msg_display = summary_msg_display[:67] + "..."
+                if len(summary_msg_display) > 250:
+                    summary_msg_display = summary_msg_display[:247] + "..."
 
                 summary_lines.append(
                     f"  - [{ts_str}] {notification.event_type.name}: {summary_msg_display} (ID: {notification.notification_id})"
@@ -188,19 +189,22 @@ class ItemTypeForDetails(Enum):
     TASK = "task"
     SUGGESTION = "suggestion"
     PROJECT = "project"
+    NOTIFICATION = "notification"
 
 def get_item_details_by_id(
     item_id: str,
     item_type: str,
     task_manager: Optional[TaskManager] = None,
+    notification_manager: Optional[NotificationManager] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves details for a specific item (task, suggestion, or project) by its ID.
 
     Args:
         item_id: The ID of the item to retrieve.
-        item_type: The type of item (e.g., "task", "suggestion", "project").
+        item_type: The type of item (e.g., "task", "suggestion", "project", "notification").
         task_manager: An instance of the TaskManager (required if item_type is "task").
+        notification_manager: An instance of the NotificationManager (required if item_type is "notification").
 
     Returns:
         A dictionary containing the item's details, or an error dictionary if not found or type is invalid.
@@ -231,6 +235,27 @@ def get_item_details_by_id(
         details = find_suggestion(item_id)
     elif resolved_item_type == ItemTypeForDetails.PROJECT:
         details = find_project(item_id)
+    elif resolved_item_type == ItemTypeForDetails.NOTIFICATION:
+        if not notification_manager:
+            return {"error": "NotificationManager instance not provided for item_type 'notification'."}
+        # Iterate to find notification by ID (NotificationManager doesn't have a direct get_by_id usually exposed, assuming linear search on recent or active)
+        # Note: notifications list might be long, but usually in memory.
+        found_notif = None
+        for n in notification_manager.notifications:
+            if n.notification_id == item_id:
+                found_notif = n
+                break
+        
+        if found_notif:
+             details = {
+                 "notification_id": found_notif.notification_id,
+                 "event_type": found_notif.event_type.name,
+                 "summary_message": found_notif.summary_message,
+                 "details": found_notif.details_payload,
+                 "related_item_id": found_notif.related_item_id,
+                 "status": found_notif.status.name,
+                 "timestamp": found_notif.timestamp.isoformat() if isinstance(found_notif.timestamp, datetime) else str(found_notif.timestamp)
+             }
 
     if not details and resolved_item_type:
         return {"error": f"{resolved_item_type.value.capitalize()} with ID '{item_id}' not found."}
@@ -243,7 +268,7 @@ GET_ITEM_DETAILS_BY_ID_SCHEMA = {
     "description": "Retrieves details for a specific system item (task, suggestion, or project) using its ID and type.",
     "parameters": [
         {"name": "item_id", "type": "str", "description": "The unique ID of the item."},
-        {"name": "item_type", "type": "str", "description": "The type of item. Valid values: 'task', 'suggestion', 'project'."}
+        {"name": "item_type", "type": "str", "description": "The type of item. Valid values: 'task', 'suggestion', 'project', 'notification'."}
     ],
     "returns": {
         "type": "dict",
@@ -312,6 +337,11 @@ if __name__ == '__main__': # pragma: no cover
     import os # For __main__ test file path handling
     from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus, Notification # For __main__
     from ai_assistant.config import get_data_dir # For __main__
+    
+    class MockInsightType(Enum):
+        TOOL_ENHANCEMENT_SUGGESTED = auto()
+        KNOWLEDGE_GAP_IDENTIFIED = auto()
+        NEW_TOOL_SUGGESTED = auto()
 
     print("--- Testing awareness_tools.py ---")
 
@@ -331,26 +361,26 @@ if __name__ == '__main__': # pragma: no cover
     tm = TaskManager(notification_manager=tm_notification_manager) # TaskManager now requires notification_manager
 
     task1_desc = "Creating new calculator tool with advanced trigonometric functions and history."
-    task1 = tm.add_task(ActiveTaskType.AGENT_TOOL_CREATION, task1_desc, "calculator_v3")
+    task1 = tm.add_task(task1_desc, ActiveTaskType.AGENT_TOOL_CREATION, "calculator_v3")
     tm.update_task_status(task1.task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="LLM call for function body")
 
     task2_desc = "Processing user suggestion sugg_xyz to implement dark mode feature."
-    task2 = tm.add_task(ActiveTaskType.SUGGESTION_PROCESSING, task2_desc, "sugg_xyz")
+    task2 = tm.add_task(task2_desc, ActiveTaskType.SUGGESTION_PROCESSING, "sugg_xyz")
 
     task3_desc = "Modifying the existing logging tool to support structured JSON output."
-    task3 = tm.add_task(ActiveTaskType.AGENT_TOOL_MODIFICATION, task3_desc, "logger_tool_v2")
+    task3 = tm.add_task(task3_desc, ActiveTaskType.AGENT_TOOL_MODIFICATION, "logger_tool_v2")
     tm.update_task_status(task3.task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc="Submitted to primary and secondary critics")
 
     task4_completed_desc = "Learning about Python context managers and their applications in resource management."
-    task4_completed = tm.add_task(ActiveTaskType.LEARNING_NEW_FACT, task4_completed_desc, "python_context_managers")
+    task4_completed = tm.add_task(task4_completed_desc, ActiveTaskType.LEARNING_NEW_FACT, "python_context_managers")
     tm.update_task_status(task4_completed.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Fact learned, categorized, and saved successfully.")
 
     task5_failed_desc = "Scaffolding a new web application project named 'MyIntranetPortal' with FastAPI and React."
-    task5_failed = tm.add_task(ActiveTaskType.USER_PROJECT_SCAFFOLDING, task5_failed_desc, "MyIntranetPortal_proj")
+    task5_failed = tm.add_task(task5_failed_desc, ActiveTaskType.USER_PROJECT_SCAFFOLDING, "MyIntranetPortal_proj")
     tm.update_task_status(task5_failed.task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Invalid project name format: contains special characters not allowed by the scaffolder.")
 
     for i in range(4):
-        tm.add_task(ActiveTaskType.MISC_SYSTEM_ACTION, f"Miscellaneous background task {i+1}", f"misc_action_00{i+1}")
+        tm.add_task(f"Miscellaneous background task {i+1}", ActiveTaskType.MISC_CODE_GENERATION, f"misc_action_00{i+1}")
 
     print("\n--- Testing get_system_status_summary (populated TaskManager) ---")
     summary = get_system_status_summary(task_manager=tm, active_limit=3, archived_limit=2)
@@ -364,13 +394,13 @@ if __name__ == '__main__': # pragma: no cover
     print("\n--- Testing get_system_status_summary (only archived in a new TM) ---")
     archived_test_tm = TaskManager()
     archived_task_desc1 = "Old tool build for 'LegacyUtility' completed last month."
-    archived_task1_obj = archived_test_tm.add_task(ActiveTaskType.AGENT_TOOL_CREATION, archived_task_desc1)
+    archived_task1_obj = archived_test_tm.add_task(archived_task_desc1, ActiveTaskType.AGENT_TOOL_CREATION)
     archived_test_tm.update_task_status(archived_task1_obj.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Build successful, deployed to sandbox.")
     archived_task_desc2 = "Attempted fix for old tool 'DataConverter', failed due to dependency issues."
-    archived_task2_obj = archived_test_tm.add_task(ActiveTaskType.AGENT_TOOL_MODIFICATION, archived_task_desc2)
+    archived_task2_obj = archived_test_tm.add_task(archived_task_desc2, ActiveTaskType.AGENT_TOOL_MODIFICATION)
     archived_test_tm.update_task_status(archived_task2_obj.task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason="Dependency conflict: libX v1 required, v2 found.")
     archived_task_desc3 = "User query regarding 'AdvancedSearch' feature processed and answered."
-    archived_task3_obj = archived_test_tm.add_task(ActiveTaskType.MISC_USER_REQUEST, archived_task_desc3)
+    archived_task3_obj = archived_test_tm.add_task(archived_task_desc3, ActiveTaskType.MISC_CODE_GENERATION)
     archived_test_tm.update_task_status(archived_task3_obj.task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY)
     archived_test_tm._active_tasks = {}
     archived_summary = get_system_status_summary(task_manager=archived_test_tm, active_limit=2, archived_limit=2, notification_manager=None)
@@ -391,11 +421,17 @@ if __name__ == '__main__': # pragma: no cover
 
     nm = NotificationManager(filepath=test_notify_file)
     # Add more than the limit to test limit functionality
+    import time
     nm.add_notification(NotificationType.TASK_COMPLETED_SUCCESSFULLY, "Tool 'alpha_tool' created by user.", "task_alpha")
+    time.sleep(0.01)
     nm.add_notification(NotificationType.NEW_SUGGESTION_CREATED_AI, "Suggest to refactor module 'beta_module' for improved clarity and performance.", "sugg_beta")
+    time.sleep(0.01)
     nm.add_notification(NotificationType.WARNING, "System disk space is critically low (currently at 95% usage). Please investigate.", "system_warning_disk_space_01")
+    time.sleep(0.01)
     nm.add_notification(NotificationType.GENERAL_INFO, "User preferences for project 'GammaProject' have been updated successfully.", "user_pref_gamma")
+    time.sleep(0.01)
     nm.add_notification(NotificationType.ERROR, "Failed to connect to external API 'OmegaService' after 3 retries.", "api_omega_conn_fail")
+    time.sleep(0.01)
 
     # Mark one as read to test that only unread are shown by default or by unread_notifications_limit
     # Assuming notifications are added to the start of the list by default by NotificationManager
@@ -403,7 +439,7 @@ if __name__ == '__main__': # pragma: no cover
     # To be sure, find its ID.
     prefs_updated_notif_id = None
     for notif in nm.notifications: # nm.notifications is loaded sorted by timestamp desc
-        if "User preferences updated" in notif.summary_message:
+        if "User preferences" in notif.summary_message:
             prefs_updated_notif_id = notif.notification_id
             break
     if prefs_updated_notif_id:
@@ -459,8 +495,9 @@ if __name__ == '__main__': # pragma: no cover
     mock_sugg_details = {"suggestion_id": "sugg123", "description": "A mock suggestion", "status": "pending", "type": "tool_improvement", "creation_timestamp": "2023-01-01T10:00:00Z"}
     mock_proj_details = {"project_id": "proj789", "name": "Mock Project", "status": "active"}
 
-    with patch('ai_assistant.custom_tools.awareness_tools.find_suggestion', return_value=mock_sugg_details) as mock_fs, \
-         patch('ai_assistant.custom_tools.awareness_tools.find_project', return_value=mock_proj_details) as mock_fp:
+    patch_base = __name__ # Use current module name (which is __main__ when running directly)
+    with patch(f'{patch_base}.find_suggestion', return_value=mock_sugg_details) as mock_fs, \
+         patch(f'{patch_base}.find_project', return_value=mock_proj_details) as mock_fp:
 
         sugg_details_result = get_item_details_by_id("sugg123", "suggestion")
         print(f"Details for suggestion 'sugg123': {sugg_details_result}")
@@ -470,8 +507,8 @@ if __name__ == '__main__': # pragma: no cover
         print(f"Details for project 'proj789': {proj_details_result}")
         assert proj_details_result == mock_proj_details
 
-    with patch('ai_assistant.custom_tools.awareness_tools.find_suggestion', return_value=None) as mock_fs_none, \
-         patch('ai_assistant.custom_tools.awareness_tools.find_project', return_value=None) as mock_fp_none:
+    with patch(f'{patch_base}.find_suggestion', return_value=None) as mock_fs_none, \
+         patch(f'{patch_base}.find_project', return_value=None) as mock_fp_none:
 
         sugg_not_found = get_item_details_by_id("non_sugg", "suggestion")
         print(f"Details for non_sugg: {sugg_not_found}")
@@ -489,15 +526,25 @@ if __name__ == '__main__': # pragma: no cover
     print(f"Details for task with no TM: {no_tm_for_task_result}")
     assert no_tm_for_task_result and no_tm_for_task_result.get("error")
 
+    print(f"\n--- Testing get_item_details_by_id (notification) ---")
+    if nm.notifications:
+        first_notif = nm.notifications[0]
+        notif_details = get_item_details_by_id(first_notif.notification_id, "notification", notification_manager=nm)
+        print(f"Details for notification '{first_notif.notification_id}': {json.dumps(notif_details, default=str)}")
+        assert notif_details and notif_details.get("notification_id") == first_notif.notification_id
+        assert "summary_message" in notif_details
+    else:
+        print("No notifications to test lookup.")
+
     print("\n--- Testing list_formatted_suggestions ---")
     mock_suggestions_data = [
         # ActionableInsight like structure
-        {"suggestion_id": "sugg_pend1", "type": InsightType.TOOL_ENHANCEMENT_SUGGESTED, "description": "Improve X", "status": "pending", "creation_timestamp": "2023-01-01T10:00:00Z"},
-        {"suggestion_id": "sugg_appr1", "type": InsightType.KNOWLEDGE_GAP_IDENTIFIED, "description": "Learn Y", "status": "approved", "creation_timestamp": "2023-01-02T10:00:00Z"},
-        {"suggestion_id": "sugg_pend2", "type": InsightType.NEW_TOOL_SUGGESTED, "description": "Create Z", "status": "pending", "creation_timestamp": "2023-01-03T10:00:00Z"},
+        {"suggestion_id": "sugg_pend1", "type": MockInsightType.TOOL_ENHANCEMENT_SUGGESTED, "description": "Improve X", "status": "pending", "creation_timestamp": "2023-01-01T10:00:00Z"},
+        {"suggestion_id": "sugg_appr1", "type": MockInsightType.KNOWLEDGE_GAP_IDENTIFIED, "description": "Learn Y", "status": "approved", "creation_timestamp": "2023-01-02T10:00:00Z"},
+        {"suggestion_id": "sugg_pend2", "type": MockInsightType.NEW_TOOL_SUGGESTED, "description": "Create Z", "status": "pending", "creation_timestamp": "2023-01-03T10:00:00Z"},
     ]
 
-    with patch('ai_assistant.custom_tools.awareness_tools.list_suggestions', return_value=mock_suggestions_data) as mock_ls:
+    with patch(f'{patch_base}.list_suggestions', return_value=mock_suggestions_data) as mock_ls:
         pending_suggs = list_formatted_suggestions(status_filter="pending")
         print(f"Pending suggestions: {json.dumps(pending_suggs, indent=2)}")
         assert len(pending_suggs) == 2
@@ -516,7 +563,7 @@ if __name__ == '__main__': # pragma: no cover
         print(f"Denied suggestions (expected 0): {json.dumps(denied_suggs, indent=2)}")
         assert len(denied_suggs) == 0
 
-    with patch('ai_assistant.custom_tools.awareness_tools.list_suggestions', return_value=[]) as mock_ls_empty:
+    with patch(f'{patch_base}.list_suggestions', return_value=[]) as mock_ls_empty:
         no_suggs = list_formatted_suggestions()
         print(f"No suggestions (empty list from manager): {json.dumps(no_suggs, indent=2)}")
         assert len(no_suggs) == 0

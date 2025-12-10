@@ -49,19 +49,37 @@ async def resume_interrupted_tasks(
             original_status = task.status
             reason = f"Task was in state '{original_status.name}' and agent shutdown occurred."
 
-            print(f"StartupServices: Task {task.task_id} ('{task.description[:30]}...') was in {original_status.name}, marking as FAILED_INTERRUPTED.")
+            # RESUMPTION LOGIC:
+            # Instead of failing, we want to resume.
+            # However, if a task was in a middle of an action (like GENERATING_CODE), that context is lost.
+            # It is safer to revert "in-flight" statuses to a state that triggers re-evaluation, like PLANNING.
+            
+            new_status = original_status
+            if original_status in [
+                ActiveTaskStatus.GENERATING_CODE,
+                ActiveTaskStatus.POST_MOD_TESTING,
+                ActiveTaskStatus.APPLYING_CHANGES,
+                ActiveTaskStatus.CRITIC_REVIEW_APPROVED # Re-apply might be needed
+            ]:
+                new_status = ActiveTaskStatus.PLANNING
+                reason = f"Resuming task. Reverted from volatile state '{original_status.name}' to PLANNING for safe retry."
+            else:
+                 reason = f"Resuming task from state '{original_status.name}'."
 
+            print(f"StartupServices: Resuming Task {task.task_id} ('{task.description[:30]}...'). Status: {original_status.name} -> {new_status.name}")
+
+            # Update status but DO NOT archive (status is not terminal)
             task_manager.update_task_status(
                 task.task_id,
-                ActiveTaskStatus.FAILED_INTERRUPTED,
+                new_status,
                 reason=reason,
-                step_desc="Task marked as interrupted on agent startup."
+                step_desc="Task resumed on agent startup."
             )
 
             if notification_manager:
                 notification_manager.add_notification(
-                    NotificationType.TASK_INTERRUPTED,
-                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was in state '{original_status.name}' and has been marked as interrupted.",
+                    NotificationType.GENERAL_INFO, # Use INFO instead of INTERRUPTED/FAILED
+                    f"Resuming interrupted task '{task.description[:50]}...' (ID: {task.task_id}). Status: {new_status.name}",
                     related_item_id=task.task_id,
                     related_item_type="task"
                 )
@@ -102,15 +120,15 @@ if __name__ == '__main__': # pragma: no cover
         expected_update_calls = [
             MagicMock(
                 task_id=task1_planning.task_id,
-                new_status=ActiveTaskStatus.FAILED_INTERRUPTED,
-                reason=f"Task was in state '{ActiveTaskStatus.PLANNING.name}' and agent shutdown occurred.",
-                step_desc="Task marked as interrupted on agent startup."
+                new_status=ActiveTaskStatus.PLANNING, # Resumed (kept original)
+                reason=f"Resuming task from state '{ActiveTaskStatus.PLANNING.name}'.",
+                step_desc="Task resumed on agent startup."
             ),
             MagicMock(
                 task_id=task2_generating.task_id,
-                new_status=ActiveTaskStatus.FAILED_INTERRUPTED,
-                reason=f"Task was in state '{ActiveTaskStatus.GENERATING_CODE.name}' and agent shutdown occurred.",
-                step_desc="Task marked as interrupted on agent startup."
+                new_status=ActiveTaskStatus.PLANNING, # Reverted to PLANNING
+                reason=f"Resuming task. Reverted from volatile state '{ActiveTaskStatus.GENERATING_CODE.name}' to PLANNING for safe retry.",
+                step_desc="Task resumed on agent startup."
             )
         ]
 
@@ -122,29 +140,30 @@ if __name__ == '__main__': # pragma: no cover
         # Check task1
         call1_args, call1_kwargs = update_calls_actual[0]
         assert call1_args[0] == task1_planning.task_id
-        assert call1_args[1] == ActiveTaskStatus.FAILED_INTERRUPTED
-        assert call1_kwargs['reason'] == f"Task was in state '{ActiveTaskStatus.PLANNING.name}' and agent shutdown occurred."
-        assert call1_kwargs['step_desc'] == "Task marked as interrupted on agent startup."
+        assert call1_args[1] == ActiveTaskStatus.PLANNING
+        assert call1_kwargs['reason'] == f"Resuming task from state '{ActiveTaskStatus.PLANNING.name}'."
+        assert call1_kwargs['step_desc'] == "Task resumed on agent startup."
 
         # Check task2
         call2_args, call2_kwargs = update_calls_actual[1]
         assert call2_args[0] == task2_generating.task_id
-        assert call2_args[1] == ActiveTaskStatus.FAILED_INTERRUPTED
-        assert call2_kwargs['reason'] == f"Task was in state '{ActiveTaskStatus.GENERATING_CODE.name}' and agent shutdown occurred."
-        assert call2_kwargs['step_desc'] == "Task marked as interrupted on agent startup."
+        assert call2_args[1] == ActiveTaskStatus.PLANNING
+        assert call2_kwargs['reason'] == f"Resuming task. Reverted from volatile state '{ActiveTaskStatus.GENERATING_CODE.name}' to PLANNING for safe retry."
+        assert call2_kwargs['step_desc'] == "Task resumed on agent startup."
 
         # Check calls to add_notification
         # add_notification should be called twice
         assert mock_notification_manager.add_notification.call_count == 2
 
         notif_call1_args, notif_call1_kwargs = mock_notification_manager.add_notification.call_args_list[0]
-        assert notif_call1_args[0] == NotificationType.TASK_INTERRUPTED
+        assert notif_call1_args[0] == NotificationType.GENERAL_INFO
         assert task1_planning.task_id in notif_call1_args[1]
         assert notif_call1_kwargs['related_item_id'] == task1_planning.task_id
 
         notif_call2_args, notif_call2_kwargs = mock_notification_manager.add_notification.call_args_list[1]
-        assert notif_call2_args[0] == NotificationType.TASK_INTERRUPTED
+        assert notif_call2_args[0] == NotificationType.GENERAL_INFO
         assert task2_generating.task_id in notif_call2_args[1]
+        assert "Status: PLANNING" in notif_call2_args[1]
         assert notif_call2_kwargs['related_item_id'] == task2_generating.task_id
 
         print("--- resume_interrupted_tasks Test Finished ---")

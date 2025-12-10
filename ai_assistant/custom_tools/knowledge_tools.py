@@ -143,31 +143,31 @@ async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool
         print(f"Error (_curate_and_update_fact_store): Unexpected error during fact curation: {e}")
         return False
 
-async def learn_fact(fact_text: str) -> str:
+async def learn_fact(fact: str) -> str:
     """
     Learns a new fact by adding it to the knowledge base via LLM curation.
     This function is now asynchronous.
 
     Args:
-        fact_text: The fact to be learned.
+        fact: The fact to be learned.
 
     Returns:
         A string confirming that the fact has been processed for learning,
         or an error message if the process failed.
     """
-    if not isinstance(fact_text, str) or not fact_text.strip():
+    if not isinstance(fact, str) or not fact.strip():
         return "Sorry, I can only learn non-empty facts provided as text."
 
     # For a single fact, wrap it in a list for the curation function
-    success = await _curate_and_update_fact_store([fact_text])
+    success = await _curate_and_update_fact_store([fact])
     
     if success:
         # We can't be sure if *this specific fact* was added, modified, or discarded by the LLM.
         # The confirmation message indicates the process completed, including the save attempt.
-        return f"Okay, I've processed the information: '{fact_text}'. My knowledge base has been updated and the changes were saved."
+        return f"Okay, I've processed the information: '{fact}'. My knowledge base has been updated and the changes were saved."
     else:
         # This now more clearly indicates a failure in the curation/save pipeline.
-        return (f"Sorry, I encountered an error while trying to process and save the information: '{fact_text}'. "
+        return (f"Sorry, I encountered an error while trying to process and save the information: '{fact}'. "
                 "The fact may not have been permanently learned.")
 
 def recall_facts(query: Optional[str] = None) -> List[str]:

@@ -17,8 +17,21 @@ def subtract_numbers(a: float, b: float) -> Union[float, str]:
     except ValueError:
         return "Error: Invalid input. 'a' and 'b' must be numbers for subtract_numbers."
 
+def get_current_time() -> str:
+    """
+    Returns the current date and time.
+    """
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 def echo_message(message: str, repeat: int = 1) -> str:
-    """Repeats a message a specified number of times."""
+    """
+    Repeats a message a specified number of times.
+    
+    Args:
+        message (str): The message to repeat.
+        repeat (int): Number of times to repeat (default 1).
+    """
     try:
         num_repeats = int(repeat)
         if num_repeats < 0:

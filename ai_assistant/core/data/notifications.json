@@ -1,5 +1,1523 @@
 [
     {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_f01e4eef38",
+        "timestamp": "2025-12-10T01:04:34.733103+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_1d683470",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_56e4c5041a",
+        "timestamp": "2025-12-10T01:04:34.722695+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_1d683470",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_5f4bbe37dd",
+        "timestamp": "2025-12-10T01:04:34.712318+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6dd5aa9a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_f0f22e58a2",
+        "timestamp": "2025-12-10T01:04:34.701949+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6dd5aa9a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_82d3cebd5f",
+        "timestamp": "2025-12-10T01:04:34.690383+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2c571eb7",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_138c179a19",
+        "timestamp": "2025-12-10T01:04:34.680438+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2c571eb7",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_bd2bf5789b",
+        "timestamp": "2025-12-10T01:04:34.670923+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e6511df9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_e9f909a6cc",
+        "timestamp": "2025-12-10T01:04:34.660510+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e6511df9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_ce074ab2a8",
+        "timestamp": "2025-12-10T01:04:34.650289+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6d759da2",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_678ba2e83f",
+        "timestamp": "2025-12-10T01:04:34.640725+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6d759da2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_e07e75b2) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_ec4570d3ce",
+        "timestamp": "2025-12-10T01:04:34.629556+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e07e75b2",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_b37373557d",
+        "timestamp": "2025-12-10T01:04:34.620122+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e07e75b2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_32aeeec2) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9bfb069e0e",
+        "timestamp": "2025-12-10T01:04:34.609367+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_32aeeec2",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_455c3868b2",
+        "timestamp": "2025-12-10T01:04:34.599991+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_32aeeec2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_7047567f) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_bd3109ab10",
+        "timestamp": "2025-12-10T01:04:34.589640+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7047567f",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_a6f9029fd0",
+        "timestamp": "2025-12-10T01:04:34.579227+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7047567f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_7a2b8fc3) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9018c84a10",
+        "timestamp": "2025-12-10T01:04:34.569014+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7a2b8fc3",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_ca39e32b63",
+        "timestamp": "2025-12-10T01:04:34.558893+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7a2b8fc3",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_1d6b876e) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_f41704386c",
+        "timestamp": "2025-12-10T01:04:34.548949+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_1d6b876e",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_719c0d4c63",
+        "timestamp": "2025-12-10T01:04:34.538621+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_1d6b876e",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_249a764a) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_950bb2f8ad",
+        "timestamp": "2025-12-10T01:04:34.525876+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_249a764a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_9c63eae307",
+        "timestamp": "2025-12-10T01:04:34.515897+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_249a764a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_3e64ef7f) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_ee4b01dbe7",
+        "timestamp": "2025-12-10T01:04:34.506056+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3e64ef7f",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_c9b03cb3a4",
+        "timestamp": "2025-12-10T01:04:34.495580+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3e64ef7f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_e6399377) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_278492000e",
+        "timestamp": "2025-12-10T01:04:34.486751+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e6399377",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_7ef6220a38",
+        "timestamp": "2025-12-10T01:04:34.477221+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e6399377",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_58f23642) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_7abccafbb8",
+        "timestamp": "2025-12-10T01:04:34.468135+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_58f23642",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_95f2e890b6",
+        "timestamp": "2025-12-10T01:04:34.457650+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_58f23642",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_5d8cc076) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_7e07c338fc",
+        "timestamp": "2025-12-10T01:04:34.446326+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5d8cc076",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_ee71d179a0",
+        "timestamp": "2025-12-10T01:04:34.437381+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5d8cc076",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_71266ae8) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_033e13ada5",
+        "timestamp": "2025-12-10T01:04:34.428045+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_71266ae8",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_33c9961626",
+        "timestamp": "2025-12-10T01:04:34.419193+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_71266ae8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_cd1dea17) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_6b449b866f",
+        "timestamp": "2025-12-10T01:04:34.408978+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_cd1dea17",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_ca08517ef7",
+        "timestamp": "2025-12-10T01:04:34.400343+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_cd1dea17",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_166ad141) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_044dce6790",
+        "timestamp": "2025-12-10T01:04:34.390147+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_166ad141",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_199033f1ad",
+        "timestamp": "2025-12-10T01:04:34.380002+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_166ad141",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_b74b5dd0) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_6f8bb42130",
+        "timestamp": "2025-12-10T01:04:34.371800+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b74b5dd0",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_7756a65f0a",
+        "timestamp": "2025-12-10T01:04:34.361476+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b74b5dd0",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_bedd9443) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_d9fafa5abd",
+        "timestamp": "2025-12-10T01:04:34.346358+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bedd9443",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_e4ffe12314",
+        "timestamp": "2025-12-10T01:04:34.337592+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bedd9443",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_ab9504e9) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_3adc67611c",
+        "timestamp": "2025-12-10T01:04:34.327950+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ab9504e9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_731973f776",
+        "timestamp": "2025-12-10T01:04:34.318325+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ab9504e9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_587c5382) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_1b76d9ba49",
+        "timestamp": "2025-12-10T01:04:34.309005+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_587c5382",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_e1f79e9e1d",
+        "timestamp": "2025-12-10T01:04:34.296051+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_587c5382",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_a9ae6576) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_92589d26cf",
+        "timestamp": "2025-12-10T01:04:34.288430+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a9ae6576",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_d393fa222b",
+        "timestamp": "2025-12-10T01:04:34.279328+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a9ae6576",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_d9d7918a) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9838373660",
+        "timestamp": "2025-12-10T01:04:34.271108+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d9d7918a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_5edb87e6d1",
+        "timestamp": "2025-12-10T01:04:34.262100+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d9d7918a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_bba3043b) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_050e512dee",
+        "timestamp": "2025-12-10T01:04:34.253716+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bba3043b",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_43e8665d7f",
+        "timestamp": "2025-12-10T01:04:34.243383+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bba3043b",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_46ba33de) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_f13b986a25",
+        "timestamp": "2025-12-10T01:04:34.235823+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_46ba33de",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_f73195b155",
+        "timestamp": "2025-12-10T01:04:34.225990+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_46ba33de",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_f90a56e9) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_9f7a27a768",
+        "timestamp": "2025-12-10T01:04:34.218261+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f90a56e9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_6e17f41266",
+        "timestamp": "2025-12-10T01:04:34.207735+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f90a56e9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_5db4a242) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_e189f5c3b5",
+        "timestamp": "2025-12-10T01:04:34.195357+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5db4a242",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_72137e9798",
+        "timestamp": "2025-12-10T01:04:34.187202+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5db4a242",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_dac7c303) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_ee5f1bd7c5",
+        "timestamp": "2025-12-10T01:04:34.178358+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_dac7c303",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_03ad359287",
+        "timestamp": "2025-12-10T01:04:34.170288+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_dac7c303",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_b1202435) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_d6ef3d0215",
+        "timestamp": "2025-12-10T01:04:34.161002+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b1202435",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_776d5bfaa4",
+        "timestamp": "2025-12-10T01:04:34.153818+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b1202435",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_4d9d21b4) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_ce63b91702",
+        "timestamp": "2025-12-10T01:04:34.143265+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4d9d21b4",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_eb1c73878d",
+        "timestamp": "2025-12-10T01:04:34.128913+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4d9d21b4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_57382e4a) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_96a45efdf8",
+        "timestamp": "2025-12-10T01:04:34.120918+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_57382e4a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_b1971dff45",
+        "timestamp": "2025-12-10T01:04:34.110601+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_57382e4a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_0a56025a) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_caff3f8cd4",
+        "timestamp": "2025-12-10T01:04:34.102082+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0a56025a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_90667729bb",
+        "timestamp": "2025-12-10T01:04:34.092684+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0a56025a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_faadbdda) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_06307f5dbe",
+        "timestamp": "2025-12-10T01:04:34.084201+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_faadbdda",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_175972bebe",
+        "timestamp": "2025-12-10T01:04:34.073147+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_faadbdda",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_81978ac8) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_395835ca3c",
+        "timestamp": "2025-12-10T01:04:34.062996+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_81978ac8",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_3868719d27",
+        "timestamp": "2025-12-10T01:04:34.055193+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_81978ac8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_05a3219f) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_6a3ea7f1b4",
+        "timestamp": "2025-12-10T01:04:34.043555+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_05a3219f",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_74ffdefc05",
+        "timestamp": "2025-12-10T01:04:34.036106+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_05a3219f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_56a7f6f7) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_4e8cfc1d08",
+        "timestamp": "2025-12-10T01:04:34.027684+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_56a7f6f7",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_2ac330de9e",
+        "timestamp": "2025-12-10T01:04:34.020105+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_56a7f6f7",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_e08cb7da) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_0eddc50ba4",
+        "timestamp": "2025-12-10T01:04:34.009833+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e08cb7da",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_27ae2ae05a",
+        "timestamp": "2025-12-10T01:04:34.003059+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e08cb7da",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_06c060ce) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_0d5822d45a",
+        "timestamp": "2025-12-10T01:04:33.993410+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_06c060ce",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_8bf40ad8d8",
+        "timestamp": "2025-12-10T01:04:33.985068+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_06c060ce",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_4bf8f788) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_c92186dc15",
+        "timestamp": "2025-12-10T01:04:33.975716+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4bf8f788",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_bd0297d801",
+        "timestamp": "2025-12-10T01:04:33.967234+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4bf8f788",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_4fe9c0e4) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_76b60cb7c9",
+        "timestamp": "2025-12-10T01:04:33.957050+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4fe9c0e4",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_5312b1663a",
+        "timestamp": "2025-12-10T01:04:33.941874+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4fe9c0e4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_223a72c5) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_0cdd41e5d7",
+        "timestamp": "2025-12-10T01:04:33.931781+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_223a72c5",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_b10dd48777",
+        "timestamp": "2025-12-10T01:04:33.922841+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_223a72c5",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_8aebc202) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_dd79e48f26",
+        "timestamp": "2025-12-10T01:04:33.911660+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8aebc202",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_92d7b87921",
+        "timestamp": "2025-12-10T01:04:33.903709+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8aebc202",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_4517eabe) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_f2e1dd1efc",
+        "timestamp": "2025-12-10T01:04:33.893409+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4517eabe",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_7eb32abf17",
+        "timestamp": "2025-12-10T01:04:33.882344+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4517eabe",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_9e1cbe5e) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_5ad9a78c1b",
+        "timestamp": "2025-12-10T01:04:33.873887+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_9e1cbe5e",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_7160d1c173",
+        "timestamp": "2025-12-10T01:04:33.864730+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_9e1cbe5e",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_5a5a76b8) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_409f115c45",
+        "timestamp": "2025-12-10T01:04:33.857283+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5a5a76b8",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_f370db28b8",
+        "timestamp": "2025-12-10T01:04:33.846886+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5a5a76b8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_8c66f147) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_379d68a209",
+        "timestamp": "2025-12-10T01:04:33.834869+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8c66f147",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_05158fc0e4",
+        "timestamp": "2025-12-10T01:04:33.824646+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8c66f147",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_528e9af9) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_985d96be62",
+        "timestamp": "2025-12-10T01:04:33.814553+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_528e9af9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_2087bc6bd9",
+        "timestamp": "2025-12-10T01:04:33.804013+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_528e9af9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_bbaa822f) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_15400ff27d",
+        "timestamp": "2025-12-10T01:04:33.794622+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bbaa822f",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_4a71df292b",
+        "timestamp": "2025-12-10T01:04:33.785840+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bbaa822f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_c216a119) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_4fd5411d4d",
+        "timestamp": "2025-12-10T01:04:33.775580+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_c216a119",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_0f70d09aec",
+        "timestamp": "2025-12-10T01:04:33.767350+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_c216a119",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_a804ad13) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9ea17b8602",
+        "timestamp": "2025-12-10T01:04:33.753980+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a804ad13",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_7d45ad5ad6",
+        "timestamp": "2025-12-10T01:04:33.743303+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a804ad13",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_f2027f1d) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_22b2082b28",
+        "timestamp": "2025-12-10T01:04:33.735240+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f2027f1d",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_1d08e9819f",
+        "timestamp": "2025-12-10T01:04:33.727297+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f2027f1d",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_e5161af8) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_863c2da12f",
+        "timestamp": "2025-12-10T01:04:33.718514+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e5161af8",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_8dd308c324",
+        "timestamp": "2025-12-10T01:04:33.710242+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e5161af8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_2d73db6c) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9de45d4a45",
+        "timestamp": "2025-12-10T01:04:33.702004+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2d73db6c",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_c264c9d5aa",
+        "timestamp": "2025-12-10T01:04:33.693333+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2d73db6c",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_04b479b2) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_aec55c725c",
+        "timestamp": "2025-12-10T01:04:33.682397+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_04b479b2",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_6f7f55e8f4",
+        "timestamp": "2025-12-10T01:04:33.670271+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_04b479b2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_6e3dd2c9) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_c29ff39570",
+        "timestamp": "2025-12-10T01:04:33.656335+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6e3dd2c9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_c613365610",
+        "timestamp": "2025-12-10T01:04:33.644538+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6e3dd2c9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_aff2239d) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_acec7cddc6",
+        "timestamp": "2025-12-10T01:04:33.636889+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_aff2239d",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_6151251de8",
+        "timestamp": "2025-12-10T01:04:33.624528+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_aff2239d",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_3494f829) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_17d8829889",
+        "timestamp": "2025-12-10T01:04:33.614663+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3494f829",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_47cb4ca77c",
+        "timestamp": "2025-12-10T01:04:33.600604+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3494f829",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_7bb49a9b) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_b0fa1d5b1b",
+        "timestamp": "2025-12-10T01:04:33.587707+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7bb49a9b",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_0657c98a91",
+        "timestamp": "2025-12-10T01:04:33.575021+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7bb49a9b",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_d701de67) was in state 'GENERATING_CODE' and has been marked as interrupted.",
+        "notification_id": "notify_0f3eedfdd8",
+        "timestamp": "2025-12-10T01:04:33.560830+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d701de67",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred.",
+        "notification_id": "notify_eff3fb132f",
+        "timestamp": "2025-12-10T01:04:33.535125+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d701de67",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_CREATION",
+            "description": "Creating new calculator tool with advanced trigonometric functions and history."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_bee23e4a) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_f4327ab3f7",
+        "timestamp": "2025-12-10T01:04:33.482826+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bee23e4a",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_e750a4ad87",
+        "timestamp": "2025-12-10T01:04:33.473712+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bee23e4a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "SUGGESTION_PROCESSING",
+            "description": "Processing user suggestion sugg_xyz to implement dark mode feature."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' (ID: task_679a5cad) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted.",
+        "notification_id": "notify_4db8b24851",
+        "timestamp": "2025-12-10T01:04:33.464504+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_679a5cad",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred.",
+        "notification_id": "notify_0269c33b57",
+        "timestamp": "2025-12-10T01:04:33.457103+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_679a5cad",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modifying the existing logging tool to support structured JSON output."
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' (ID: task_a41b43e2) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_aa69cb6385",
+        "timestamp": "2025-12-10T01:04:33.449515+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a41b43e2",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 1...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_0357b1537c",
+        "timestamp": "2025-12-10T01:04:33.441421+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a41b43e2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 1"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' (ID: task_15764dfe) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_9ae7bc2f98",
+        "timestamp": "2025-12-10T01:04:33.433812+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_15764dfe",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 2...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_a2d97db92e",
+        "timestamp": "2025-12-10T01:04:33.426244+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_15764dfe",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 2"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' (ID: task_aa0c0af9) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_1770c83653",
+        "timestamp": "2025-12-10T01:04:33.419710+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_aa0c0af9",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 3...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_8b42ed1dc4",
+        "timestamp": "2025-12-10T01:04:33.412757+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_aa0c0af9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 3"
+        }
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' (ID: task_854835ad) was in state 'INITIALIZING' and has been marked as interrupted.",
+        "notification_id": "notify_e4e804485e",
+        "timestamp": "2025-12-10T01:04:33.407170+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_854835ad",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_INTERRUPTED",
+        "summary_message": "Task 'Miscellaneous background task 4...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred.",
+        "notification_id": "notify_c9229dea3d",
+        "timestamp": "2025-12-10T01:04:33.400187+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_854835ad",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "MISC_CODE_GENERATION",
+            "description": "Miscellaneous background task 4"
+        }
+    },
+    {
         "event_type": "GENERAL_INFO",
         "summary_message": "Fact assessed as not valuable, not learned: The sky is often blue during the day....",
         "notification_id": "notify_1464c66c85",

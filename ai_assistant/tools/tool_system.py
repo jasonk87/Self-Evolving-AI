@@ -283,7 +283,8 @@ class ToolSystem:
 
     async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
                          task_manager: Optional[TaskManager] = None,
-                         notification_manager: Optional[NotificationManager] = None) -> Any: # Type hint updated
+                         notification_manager: Optional[NotificationManager] = None,
+                         action_executor: Optional[Any] = None) -> Any: # Type hint updated
         """
         Executes a registered tool by its name.
         Loads the tool function dynamically if not already cached.
@@ -341,6 +342,11 @@ class ToolSystem:
                 final_kwargs['notification_manager'] = notification_manager
                 if is_debug_mode():
                     print(f"ToolSystem: Injecting NotificationManager into tool '{name}'.")
+
+            if action_executor and 'action_executor' in sig.parameters:
+                final_kwargs['action_executor'] = action_executor
+                if is_debug_mode():
+                    print(f"ToolSystem: Injecting ActionExecutor into tool '{name}'.")
 
         try:
             if is_debug_mode():
@@ -585,10 +591,12 @@ def get_tool(name: str) -> Optional[Dict[str, Any]]:
 # For now, assuming direct tool_system_instance.execute_tool is used more internally where task_manager is available.
 async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
                        task_manager: Optional[TaskManager] = None,
-                       notification_manager: Optional[NotificationManager] = None) -> Any: # Type hint updated
+                       notification_manager: Optional[NotificationManager] = None,
+                       action_executor: Optional[Any] = None) -> Any: # Type hint updated
     return await tool_system_instance.execute_tool(name, args, kwargs,
                                                   task_manager=task_manager,
-                                                  notification_manager=notification_manager)
+                                                  notification_manager=notification_manager,
+                                                  action_executor=action_executor)
 def list_tools() -> Dict[str, str]:
     return tool_system_instance.list_tools()
 def save_registered_tools() -> bool: # Should primarily be called internally by ToolSystem

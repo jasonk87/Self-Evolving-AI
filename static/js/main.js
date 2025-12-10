@@ -28,6 +28,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Sidebar Navigation
+    const sidebarLinks = document.querySelectorAll('.nav-links li');
+    const mainPanels = document.querySelectorAll('main.glass-panel'); // Select all main panels
+
+    sidebarLinks.forEach(link => {
+        link.addEventListener('click', () => {
+            const targetId = link.dataset.view;
+            if (!targetId) return;
+
+            // Update active state in sidebar
+            sidebarLinks.forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+
+            // Switch Main Views
+            if (targetId === 'projects-view') {
+                // Special handling for Projects: Show Editor Panel (or specialized project view if we had one)
+                // For now, let's map it to editor-panel. 
+                // Ideally, this might show a project dashboard. 
+                // If a file is open, editor-panel makes sense. If not, maybe we keep Chat but open Files tab in context?
+                // Let's go with: Switch to Editor Panel.
+                switchPanel('editor-panel');
+            } else {
+                switchPanel(targetId);
+            }
+        });
+    });
+
+    function switchPanel(panelId) {
+        mainPanels.forEach(panel => {
+            if (panel.id === panelId) {
+                panel.classList.remove('hidden');
+            } else {
+                panel.classList.add('hidden');
+            }
+        });
+    }
+
     socket.on('project_update', (data) => {
         console.log('Project Update:', data);
         updateTelemetryUI(data);
@@ -52,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const eventDiv = document.createElement('div');
         eventDiv.className = `council-event ${type}`;
 
-        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
         if (type === 'stage_start') {
             eventDiv.innerHTML = `<div class="event-header"><strong>${data.message}</strong> <span class="time">${time}</span></div>`;
@@ -63,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>`;
         } else if (type === 'critic_verdict') {
             const statusClass = data.status === 'approved' ? 'status-approved' :
-                               (data.status === 'rejected' ? 'status-rejected' : 'status-changes');
+                (data.status === 'rejected' ? 'status-rejected' : 'status-changes');
             const icon = data.status === 'approved' ? '✅' : (data.status === 'rejected' ? '❌' : '⚠️');
 
             eventDiv.innerHTML = `
@@ -98,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('refinement_started', (data) => createCouncilEvent('refinement', data));
 
     // Auto-resize textarea
-    userInput.addEventListener('input', function() {
+    userInput.addEventListener('input', function () {
         this.style.height = 'auto';
         this.style.height = (this.scrollHeight) + 'px';
     });

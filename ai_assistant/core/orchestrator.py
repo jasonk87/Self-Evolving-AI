@@ -100,7 +100,7 @@ class DynamicOrchestrator:
                 f"{outcome_str}")
         return "\n".join(summary_lines)
 
-    async def process_prompt(self, prompt: str) -> Tuple[bool, str]:
+    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Tuple[bool, str]:
         """
         Process a user prompt by creating and executing a dynamic plan.
         Returns (success, response_message)
@@ -229,7 +229,8 @@ class DynamicOrchestrator:
                 goal_description=prompt,
                 available_tools=available_tools_rich,
                 project_context_summary=final_context_for_planner,
-                project_name_for_context=project_name_for_context
+                project_name_for_context=project_name_for_context,
+                conversation_history=conversation_history
             )
 
             use_hierarchical_planner = False
@@ -327,7 +328,8 @@ class DynamicOrchestrator:
                 self.planner,
                 self.learning_agent,
                 task_manager=self.task_manager,
-                notification_manager=self.notification_manager
+                notification_manager=self.notification_manager,
+                action_executor=self.action_executor
             )
             self.current_plan = final_plan_attempted
 

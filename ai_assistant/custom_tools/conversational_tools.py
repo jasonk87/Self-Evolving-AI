@@ -29,8 +29,8 @@ def request_user_clarification(question_text: str, options: Optional[List[str]] 
             print(f"  {i+1}. {opt}")
         # Future enhancement: could add logic to map numeric choice back to option text if desired.
 
-    # Return the clarification question directly to the system.
-    # The system (Orchestrator) should handle obtaining the answer from the user in the next turn.
+    # Return the clarification question directly to the system as a structured signal.
+    # The system (Orchestrator/ExecutionAgent) should handle this by pausing execution.
     
     formatted_msg = f"\n--- AI Assistant Needs Clarification ---\n{question_text}"
     if options and isinstance(options, list) and len(options) > 0:
@@ -40,10 +40,15 @@ def request_user_clarification(question_text: str, options: Optional[List[str]] 
     
     formatted_msg += "\n\n(Please provide your answer in the next prompt)"
     
-    # We print it here for immediate visibility as well, but return it for the result.
+    # We print it here for immediate visibility as well.
     print(formatted_msg)
 
-    return f"CLARIFICATION_REQUESTED: {question_text} (Options: {options if options else 'None'})"
+    return {
+        "status": "PAUSED",
+        "message": f"CLARIFICATION_REQUESTED: {question_text} (Options: {options if options else 'None'})",
+        "question": question_text,
+        "options": options
+    }
 
 
 # Conceptual Schema for ToolSystem registration
@@ -55,8 +60,8 @@ REQUEST_USER_CLARIFICATION_SCHEMA = {
         {"name": "options", "type": "list", "description": "Optional. A list of suggested string options for the user to choose from or consider."}
     ],
     "returns": {
-        "type": "str",
-        "description": "A specific formatted string indicating clarification was requested. The user's actual response will be processed in the subsequent conversation turn."
+        "type": "object",
+        "description": "A dictionary containing 'status': 'PAUSED', and details about the clarification request. This signals the execution engine to stop and wait for user input."
     }
 }
 

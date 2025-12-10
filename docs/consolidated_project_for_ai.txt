@@ -3753,7 +3753,7 @@ DEBUG_MODE = True
 # IMPORTANT: These are sensitive keys.
 # Option 1: Set them as environment variables (GOOGLE_API_KEY, GOOGLE_CSE_ID) - Recommended for production.
 # Option 2: Set them here directly for local development. If you do, ensure this file is appropriately .gitignored or manage secrets carefully.
-GOOGLE_API_KEY: Optional[str] = "AIzaSyCx8GehlHEy21kg156f3PON3mfCRAW60YI"
+GOOGLE_API_KEY: Optional[str] = "AIzaSyDfPzWLeoLjseupGzZ7YzZUBwaa8M9QDIU"
 GOOGLE_CSE_ID: Optional[str] = "3354e92e98ab54b31"
 
 def is_debug_mode() -> bool:

@@ -1,6 +1,6 @@
 from typing import Dict, Any
-import eventlet
-eventlet.monkey_patch()
+# import eventlet
+# eventlet.monkey_patch()
 
 import os
 import sys
@@ -17,7 +17,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Import AI Assistant components
-from ai_assistant.config import get_projects_dir
+from ai_assistant.config import get_projects_dir, LLM_PROVIDER
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.learning.learning import LearningAgent
@@ -38,10 +38,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Initialize SocketIO with threading mode to avoid eventlet/asyncio conflicts
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global Orchestrator instance
 orchestrator = None
+# Global Conversation History
+conversation_history = []
 # We need a dedicated event loop for the agents if they rely on one.
 # For simplicity in this skeleton, we'll use `asyncio.run` for the single calls or create a loop.
 # However, Flask is WSGI (sync). `orchestrator.process_prompt` is async.
@@ -70,7 +73,13 @@ async def init_orchestrator():
     # Instantiate LLM Provider and Hierarchical Planner
     llm_provider = None
     try:
-        llm_provider = OllamaProvider()
+        if LLM_PROVIDER == "gemini":
+            logger.info("Initializing LLM Provider (Gemini via wrapper)...")
+            # We still use OllamaProvider class as it wraps the Gemini client when configured
+            llm_provider = OllamaProvider() 
+        else:
+             logger.info("Initializing LLM Provider (Ollama)...")
+             llm_provider = OllamaProvider()
     except Exception as e:
         logger.error(f"Failed to initialize OllamaProvider: {e}")
 
@@ -128,7 +137,7 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 async def chat():
-    global orchestrator
+    global orchestrator, conversation_history
     if not orchestrator:
         return jsonify({"error": "Orchestrator not initialized"}), 500
 
@@ -138,9 +147,16 @@ async def chat():
     if not message:
         return jsonify({"error": "No message provided"}), 400
 
+    # Add user message to history
+    conversation_history.append({"role": "user", "content": message})
+
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(message)
+        success, response = await orchestrator.process_prompt(message, conversation_history=conversation_history)
+        
+        # Add assistant response to history
+        conversation_history.append({"role": "assistant", "content": response})
+
         return jsonify({
             "response": response,
             "success": success
@@ -362,4 +378,5 @@ def watch_telemetry():
 
 if __name__ == '__main__':
     socketio.start_background_task(watch_telemetry)
-    socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
+    logger.info("Starting Web App on port 5000...")
+    socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

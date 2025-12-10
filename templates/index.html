@@ -16,11 +16,11 @@
                 <div class="logo-icon">AI</div>
             </div>
             <ul class="nav-links">
-                <li class="active" title="Chat"><span class="icon">💬</span></li>
-                <li title="Projects"><span class="icon">📁</span></li>
-                <li title="Tools"><span class="icon">🛠️</span></li>
-                <li title="Settings"><span class="icon">⚙️</span></li>
-                <li title="Profile"><span class="icon">👤</span></li>
+                <li class="active" title="Chat" data-view="chat-panel"><span class="icon">💬</span></li>
+                <li title="Projects" data-view="projects-view"><span class="icon">📁</span></li> <!-- Projects toggles file tree expansion or specific view -->
+                <li title="Tools" data-view="tools-panel"><span class="icon">🛠️</span></li>
+                <li title="Settings" data-view="settings-panel"><span class="icon">⚙️</span></li>
+                <li title="Profile" data-view="profile-panel"><span class="icon">👤</span></li>
             </ul>
         </nav>
 
@@ -60,6 +60,106 @@
                 <textarea id="file-editor" spellcheck="false"></textarea>
                 <div id="terminal-container">
                     <div id="terminal-output"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Tools Panel -->
+        <main class="tools-interface glass-panel hidden" id="tools-panel">
+            <header class="panel-header-main">
+                <h1>System Tools</h1>
+            </header>
+            <div class="tools-container">
+                <div class="tool-card">
+                    <div class="tool-icon">🔍</div>
+                    <div class="tool-info">
+                        <h3>Codebase Search</h3>
+                        <p>Semantic search across the entire project.</p>
+                    </div>
+                    <button class="tool-action-btn">Active</button>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-icon">🧠</div>
+                    <div class="tool-info">
+                        <h3>Memory Manager</h3>
+                        <p>View and edit AI long-term memory.</p>
+                    </div>
+                    <button class="tool-action-btn">Manage</button>
+                </div>
+                 <div class="tool-card">
+                    <div class="tool-icon">🚀</div>
+                    <div class="tool-info">
+                        <h3>Task Autonomy</h3>
+                        <p>Autonomous agent task execution engine.</p>
+                    </div>
+                    <button class="tool-action-btn">Configure</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings Panel -->
+        <main class="settings-interface glass-panel hidden" id="settings-panel">
+             <header class="panel-header-main">
+                <h1>Settings</h1>
+            </header>
+            <div class="settings-container">
+                <div class="setting-group">
+                    <h3>Appearance</h3>
+                    <div class="setting-item">
+                        <span>Theme</span>
+                        <select class="glass-select">
+                            <option value="deep-space">Deep Space</option>
+                            <option value="matrix">Matrix</option>
+                            <option value="light">Light (Experimental)</option>
+                        </select>
+                    </div>
+                </div>
+                 <div class="setting-group">
+                    <h3>System</h3>
+                    <div class="setting-item">
+                        <span>Notifications</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <span>Auto-Save</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Profile Panel -->
+        <main class="profile-interface glass-panel hidden" id="profile-panel">
+             <header class="panel-header-main">
+                <h1>User Profile</h1>
+            </header>
+            <div class="profile-container">
+                <div class="profile-header">
+                    <div class="profile-avatar">👨‍💻</div>
+                    <div class="profile-details">
+                        <h2>Jason</h2>
+                        <span class="role-badge">Admin</span>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-value">42</span>
+                        <span class="stat-label">Tasks Completed</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value">12h</span>
+                        <span class="stat-label">Uptime</span>
+                    </div>
+                     <div class="stat-card">
+                        <span class="stat-value">850</span>
+                        <span class="stat-label">Lines Written</span>
+                    </div>
                 </div>
             </div>
         </main>

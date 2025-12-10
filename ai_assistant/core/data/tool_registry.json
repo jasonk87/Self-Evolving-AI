@@ -219,7 +219,7 @@
         "tool_name": "generate_new_tool_from_description",
         "module_path": "ai_assistant.custom_tools.meta_programming_tools",
         "function_name": "generate_new_tool_from_description",
-        "description": "Generates Python code for a new tool based on a description and saves it",
+        "description": "CRITICAL: Generates a NEW, PERSISTENT, REUSABLE Agent Tool (Python coding capability) based on a description. Use this when the user wants to add a new ability to the AI.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -733,6 +733,14 @@
         "module_path": "ai_assistant.custom_tools.file_system_tools",
         "function_name": "save_project_file_content",
         "description": "Writes content to a specified file within a project.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_current_time": {
+        "tool_name": "get_current_time",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "get_current_time",
+        "description": "Returns the current date and time.",
         "type": "custom_discovered",
         "schema_details": null
     }

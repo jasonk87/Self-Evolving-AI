@@ -29,6 +29,7 @@ class ExecutionAgent:
         learning_agent: LearningAgent, # Added LearningAgent
         task_manager: Optional[TaskManager] = None,
         notification_manager: Optional[NotificationManager] = None, # New parameter
+        action_executor: Optional[Any] = None, # New parameter
         ollama_model_name: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], List[Any]]: # Returns final_plan, results
         """
@@ -135,7 +136,8 @@ class ExecutionAgent:
                                 args=final_args_for_tool,
                                 kwargs=final_kwargs_for_tool,
                                 task_manager=task_manager,
-                                notification_manager=notification_manager # Pass notification_manager
+                                notification_manager=notification_manager, # Pass notification_manager
+                                action_executor=action_executor # Pass action_executor
                             )
                             current_step_error_details = {} 
                             if attempt > 0:
@@ -162,6 +164,20 @@ class ExecutionAgent:
                 if isinstance(step_result, Exception):
                     step_failed = True
                 elif isinstance(step_result, dict):
+                    # Check for "PAUSED" status first
+                    if step_result.get("status") == "PAUSED":
+                        print(f"ExecutionAgent: PAUSED signal received from tool '{tool_name}'. Stopping execution of subsequent steps.")
+                        # Log the pause
+                        global_reflection_log.log_execution(
+                            goal_description=goal_description,
+                            plan=current_plan[:i+1], # Log up to current step
+                            execution_results=plan_results,
+                            overall_success=True, # Considered success as it was an intentional pause
+                            notes=f"Plan execution paused at step {i+1} ({tool_name}). Reason: {step_result.get('message', 'No reason provided')}",
+                            status_override="PAUSED"
+                        )
+                        return current_plan[:i+1], plan_results # Return partial plan and results
+
                     # Check for common failure indicators in dictionary results
                     if step_result.get("ran_successfully") is False or step_result.get("error") is not None:
                         step_failed = True

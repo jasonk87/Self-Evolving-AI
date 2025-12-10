@@ -189,7 +189,8 @@ class PlannerAgent:
         goal_description: str, 
         available_tools: Dict[str, str], # This will be Dict[str, Dict[str, Any]] from ToolSystem.list_tools_with_sources()
         project_context_summary: Optional[str] = None,
-        project_name_for_context: Optional[str] = None
+        project_name_for_context: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> List[Dict[str, Any]]:
         """ (Async)
         Creates a plan to achieve the goal_description using an LLM to generate the plan steps.
@@ -238,7 +239,19 @@ When generating the plan, consider this existing project context. For example, i
                 project_context_summary=project_context_summary
             )
 
+        conversation_history_section_str = ""
+        if conversation_history:
+            history_lines = ["Conversation History (Use this to resolve references like 'it', 'that', 'the previous tool'):"]
+            # Take last 10 turns to keep context manageable
+            recent_history = conversation_history[-10:] 
+            for msg in recent_history:
+                role = msg.get('role', 'unknown').capitalize()
+                content = msg.get('content', '')
+                history_lines.append(f"- {role}: {content}")
+            conversation_history_section_str = "\n".join(history_lines) + "\n"
+
         LLM_PLANNING_PROMPT_TEMPLATE = """Given the user's goal: "{goal}"
+{conversation_history_section}
 {project_context_section}
 
 **Leveraging Provided Information (Context & Facts):**
@@ -294,7 +307,7 @@ Example for tool creation:
   [
     {{"tool_name": "generate_new_tool_from_description", "args": ["a tool that tells me the current moon phase"], "kwargs": {{}}}}
   ]
-Do NOT attempt to fulfill the *functionality* of a requested new tool using other existing tools if the user explicitly asks to *create* a tool. Your task in such a scenario is to initiate the tool creation process.
+Do NOT attempt to fulfill the *functionality* of a requested new tool using other existing tools (especially `execute_sandboxed_python_script`) if the user explicitly asks to *create* a tool. Your task in such a scenario is to initiate the tool creation process so the capability becomes persistent. One-off scripts are NOT tools.
 
 **Guidance for Editing Existing Agent Tools:**
 If the user's goal is to "edit an existing agent tool", "modify an agent tool", "change how an agent tool works", or similar, your plan should generally follow these steps. If the user's feedback about which tool to edit or what specific change to make is too vague, consider using the `request_user_clarification` tool first to get more details before proceeding with these steps.
@@ -484,6 +497,7 @@ JSON Plan:
 
         current_prompt = LLM_PLANNING_PROMPT_TEMPLATE.format(
             goal=goal_description, 
+            conversation_history_section=conversation_history_section_str,
             project_context_section=project_context_section_str,
             tools_json_string=tools_json_string
         )

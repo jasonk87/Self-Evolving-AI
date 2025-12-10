@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import json
 # import shutil # Not strictly needed if TemporaryDirectory handles all cleanup
 from typing import Dict, Any, Optional, List
 
@@ -41,6 +42,25 @@ def execute_sandboxed_python_script(
         return {"status": "error", "error_message": "No script content provided.", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
 
     interpreter = python_executable or "python"
+
+    # Robustness: Parse JSON strings if passed instead of dict/list
+    if isinstance(input_files, str):
+        try:
+            input_files = json.loads(input_files)
+        except json.JSONDecodeError:
+            return {"status": "error", "error_message": f"Invalid input_files argument: Expected dict or JSON string, got invalid JSON: {input_files}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
+
+    if isinstance(output_filenames, str):
+        try:
+            output_filenames = json.loads(output_filenames)
+        except json.JSONDecodeError:
+             return {"status": "error", "error_message": f"Invalid output_filenames argument: Expected list or JSON string, got invalid JSON: {output_filenames}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
+             
+    if input_files is not None and not isinstance(input_files, dict):
+         return {"status": "error", "error_message": f"Invalid input_files argument: Expected dict, got {type(input_files).__name__}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
+
+    if output_filenames is not None and not isinstance(output_filenames, list):
+         return {"status": "error", "error_message": f"Invalid output_filenames argument: Expected list, got {type(output_filenames).__name__}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
 
     with tempfile.TemporaryDirectory() as temp_dir_path:
         script_filename = "main_script.py"
