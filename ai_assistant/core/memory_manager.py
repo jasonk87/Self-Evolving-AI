@@ -77,6 +77,16 @@ class MemoryManager:
         facts.append(new_fact)
         if save_learned_facts(facts):
             logger.info(f"Added new fact: {new_fact['fact_id']}")
+
+            # Fire-and-forget async RAG ingestion if loop is running
+            if self.rag_system:
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.rag_system.ingest_fact(new_fact['text'], metadata=new_fact))
+                except RuntimeError:
+                    # No running loop, skipping async ingest (sync fallback not implemented here to keep add_fact sync)
+                    logger.warning(f"Could not ingest fact '{new_fact['fact_id']}' into RAG: no active event loop.")
+
             return new_fact
         else:
             logger.error("Failed to save new fact.")
