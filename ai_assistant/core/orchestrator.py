@@ -15,7 +15,7 @@ from ..config import is_debug_mode
 from ..utils.display_utils import CLIColors, color_text
 from ..execution.action_executor import ActionExecutor
 from ..memory.persistent_memory import load_learned_facts
-from .task_manager import TaskManager
+from .task_manager import TaskManager, ActiveTaskType
 from .notification_manager import NotificationManager
 from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
 from ..llm_interface.ollama_client import OllamaProvider
