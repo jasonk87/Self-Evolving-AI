@@ -44,13 +44,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Socket.IO
     const socket = io();
 
+    // Typing Indicator Logic
+    function showTypingIndicator() {
+        if (document.getElementById('typing-indicator')) return; // Already showing
+        const indicator = document.createElement('div');
+        indicator.id = 'typing-indicator';
+        indicator.className = 'typing-indicator';
+        indicator.innerHTML = `
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        `;
+        chatContainer.appendChild(indicator);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function removeTypingIndicator() {
+        const indicator = document.getElementById('typing-indicator');
+        if (indicator) indicator.remove();
+    }
+
     socket.on('response', (data) => {
+        removeTypingIndicator();
         appendMessage('assistant', data.response);
         notifyIfHidden("AI Assistant", data.response);
     });
 
     socket.on('chat_response', (data) => {
         if (data.success) {
+            removeTypingIndicator();
             appendMessage('assistant', data.response);
             notifyIfHidden("AI Assistant", data.response);
         }
@@ -60,7 +82,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add to Council Console
         const entry = document.createElement('div');
         entry.className = `log-entry ${data.level || 'INFO'}`;
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${data.message}`;
+
+        // Add spinner if it's a "start" or "processing" type event (heuristic)
+        let icon = '';
+        if (data.message.toLowerCase().includes('analyzing') || data.message.toLowerCase().includes('thinking')) {
+            icon = '<span class="spinner"></span>';
+        }
+
+        entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${icon} ${data.message}`;
         councilContainer.appendChild(entry);
         councilContainer.scrollTop = councilContainer.scrollHeight;
     });
@@ -436,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return;
         appendMessage('user', message);
         chatInput.value = '';
+        showTypingIndicator(); // Show typing immediately
 
         // Prepare context
         let context = {};
@@ -460,11 +490,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
             const data = await res.json();
+            removeTypingIndicator(); // Remove on fetch complete (though socket might handle it too)
             if (data.success) {
+                // If the backend sends 'chat_response' via socket, this might double post if we don't check.
+                // Current implementation in web_app.py returns JSON response AND doesn't seem to emit chat_response for the direct reply?
+                // Wait, web_app.py returns jsonify(...). It does NOT emit 'chat_response' for the main reply.
+                // So we MUST append here.
                 appendMessage('assistant', data.response);
                 notifyIfHidden("AI Assistant", data.response);
             }
-        } catch (e) { appendMessage('assistant', 'Error sending.'); }
+        } catch (e) {
+            removeTypingIndicator();
+            appendMessage('assistant', 'Error sending.');
+        }
     }
     if (sendBtn) sendBtn.addEventListener('click', sendMessage);
 

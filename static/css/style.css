@@ -344,31 +344,100 @@ body {
 .message {
     display: flex;
     gap: 15px;
-    animation: fadeIn 0.3s ease;
+    animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .message .avatar {
-    width: 32px;
-    height: 32px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 50%; /* Circle looks smoother */
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    flex-shrink: 0;
 }
 
 .message.assistant .avatar {
     background: rgba(0, 240, 255, 0.1);
     color: var(--accent-cyan);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
 }
 
 .message .content {
-    background: rgba(22, 27, 34, 0.6);
+    background: rgba(30, 35, 45, 0.7);
     border: var(--glass-border);
-    padding: 12px 16px;
-    border-radius: 8px;
+    padding: 14px 18px;
+    border-radius: 0px 12px 12px 12px; /* Chat bubble style */
     max-width: 85%;
     line-height: 1.6;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+}
+
+.message.user .content {
+    background: rgba(189, 52, 254, 0.15); /* Purple tint for user */
+    border-color: rgba(189, 52, 254, 0.2);
+    border-radius: 12px 0px 12px 12px;
+}
+
+/* Typing Indicator */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 10px 15px;
+    background: rgba(30, 35, 45, 0.5);
+    border-radius: 20px;
+    width: fit-content;
+    margin-left: 50px; /* Offset for avatar width */
+    animation: fadeIn 0.3s ease;
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+/* Status Spinner (for Council/Tools) */
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent-cyan);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    margin-right: 5px;
+}
+
+/* Animations */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+    40% { transform: scale(1); opacity: 1; background: var(--accent-cyan); }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .input-area {
