@@ -24,6 +24,9 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
 OLLAMA_CHAT_API_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 DEFAULT_OLLAMA_MODEL = CFG_DEFAULT_MODEL
+# Alias for compatibility with code expecting DEFAULT_MODEL or model at module level
+DEFAULT_MODEL = DEFAULT_OLLAMA_MODEL
+model = DEFAULT_OLLAMA_MODEL
 
 THINKING_PROMPT_TEMPLATE = """You are a highly capable AI assistant with strong analytical and problem-solving abilities. Let's solve this problem step by step.
 
