@@ -1,5 +1,4 @@
 import numpy as np
-import pickle
 import os
 import json
 import logging
@@ -81,30 +80,45 @@ class VectorStore:
 
     def _save(self):
         """
-        Saves the store to disk.
+        Saves the store to disk using JSON (safer than pickle).
         """
+        # Convert numpy arrays to lists for JSON serialization
+        vectors_list = [v.tolist() for v in self.vectors]
+
         data = {
-            "vectors": self.vectors,
+            "vectors": vectors_list,
             "documents": self.documents,
             "metadata": self.metadata
         }
         os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
-        with open(self.storage_path, "wb") as f:
-            pickle.dump(data, f)
+        # Change file extension if it was pkl
+        save_path = self.storage_path
+        if save_path.endswith(".pkl"):
+            save_path = save_path.replace(".pkl", ".json")
+
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
 
     def _load(self):
         """
         Loads the store from disk.
         """
-        if os.path.exists(self.storage_path):
+        load_path = self.storage_path
+        if load_path.endswith(".pkl"):
+             load_path = load_path.replace(".pkl", ".json")
+
+        if os.path.exists(load_path):
             try:
-                with open(self.storage_path, "rb") as f:
-                    data = pickle.load(f)
-                self.vectors = data.get("vectors", [])
+                with open(load_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                vectors_list = data.get("vectors", [])
+                # Convert back to numpy arrays
+                self.vectors = [np.array(v, dtype=np.float32) for v in vectors_list]
                 self.documents = data.get("documents", [])
                 self.metadata = data.get("metadata", [])
             except Exception as e:
-                logger.error(f"Failed to load vector store from {self.storage_path}: {e}")
+                logger.error(f"Failed to load vector store from {load_path}: {e}")
                 # Initialize empty if load fails
                 self.vectors = []
                 self.documents = []

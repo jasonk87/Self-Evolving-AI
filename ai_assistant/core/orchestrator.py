@@ -38,7 +38,8 @@ class DynamicOrchestrator:
                  action_executor: ActionExecutor,
                  task_manager: Optional[TaskManager] = None,
                  notification_manager: Optional[NotificationManager] = None,
-                 hierarchical_planner: Optional[HierarchicalPlanner] = None):
+                 hierarchical_planner: Optional[HierarchicalPlanner] = None,
+                 memory_manager: Optional[Any] = None): # Added memory_manager
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
@@ -46,6 +47,11 @@ class DynamicOrchestrator:
         self.task_manager = task_manager
         self.notification_manager = notification_manager
         self.hierarchical_planner = hierarchical_planner
+        self.memory_manager = memory_manager
+
+        # Inject memory manager into planner if not already set
+        if self.planner and self.memory_manager and hasattr(self.planner, 'memory_manager') and self.planner.memory_manager is None:
+            self.planner.memory_manager = self.memory_manager
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None

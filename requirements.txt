@@ -7,4 +7,3 @@ flask-socketio
 eventlet
 python-dotenv
 numpy
-scikit-learn

@@ -110,6 +110,9 @@ async def init_orchestrator():
     execution_agent = ExecutionAgent()
     planner_agent = PlannerAgent()
 
+    # Initialize Memory Manager
+    memory_manager = MemoryManager()
+
     orchestrator = DynamicOrchestrator(
         planner=planner_agent,
         executor=execution_agent,
@@ -117,13 +120,10 @@ async def init_orchestrator():
         action_executor=action_executor,
         task_manager=task_manager,
         notification_manager=notification_manager,
-        hierarchical_planner=hierarchical_planner
+        hierarchical_planner=hierarchical_planner,
+        memory_manager=memory_manager # Inject memory_manager
     )
     logger.info("Orchestrator initialized successfully.")
-
-# Initialize Memory Manager
-memory_manager = MemoryManager()
-
 # Run initialization.
 # Since we are at module level, we can't easily await.
 # We'll run it in a thread or just run_until_complete if we are sure no other loop is running.

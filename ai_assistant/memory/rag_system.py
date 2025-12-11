@@ -14,7 +14,7 @@ class RAGSystem:
     """
     def __init__(self, ollama_provider: OllamaProvider):
         self.ollama_provider = ollama_provider
-        self.storage_path = os.path.join(get_data_dir(), "rag_vector_store.pkl")
+        self.storage_path = os.path.join(get_data_dir(), "rag_vector_store.json")
         self.vector_store = VectorStore(self.storage_path)
 
     async def ingest_fact(self, fact_text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
