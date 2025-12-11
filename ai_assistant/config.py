@@ -63,6 +63,8 @@ TASK_MODELS: Dict[str, Optional[str]] = {
     "fact_extraction": DEFAULT_MODEL,              # For extracting facts for autonomous learning
     "tool_design": DEFAULT_MODEL,                # For designing tool components (name, params, code) from a description
     "tool_creation": DEFAULT_MODEL,              # For the AI to create new tools
+    "council_skeptic": DEFAULT_MODEL,            # For the Skeptic role in Council Debate
+    "council_judge": DEFAULT_MODEL,              # For the Judge role in Council Debate
     # Add other tasks here as needed, e.g.:
     # "translation": "another_model:latest",
 }
