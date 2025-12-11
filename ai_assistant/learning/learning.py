@@ -137,6 +137,63 @@ class LearningAgent:
         else: # pragma: no cover
             print(f"LearningAgent: Failed to save insights.")
 
+    def ingest_reflection_suggestions(self, suggestions: List[Dict[str, Any]]) -> int:
+        """
+        Ingests improvement suggestions from the autonomous reflection cycle.
+        Converts approved suggestions into ActionableInsights for execution.
+        """
+        count = 0
+        for suggestion in suggestions:
+            # Only ingest approved suggestions (and ensure they have a Score)
+            if not suggestion.get("review_looks_good"):
+                continue
+            
+            # Additional filter: High confidence only
+            if suggestion.get("reviewer_confidence", 0.0) < 0.8:
+                continue
+
+            # Check if already ingested (duplicate check by ID)
+            s_id = suggestion.get("suggestion_id")
+            if any(i.metadata.get("source_suggestion_id") == s_id for i in self.insights):
+                continue
+
+            action_type = suggestion.get("action_type")
+            insight_type = InsightType.TOOL_ENHANCEMENT_SUGGESTED
+            
+            # Map action types to InsightTypes
+            if action_type == "MODIFY_TOOL_CODE":
+                 insight_type = InsightType.TOOL_BUG_SUSPECTED # Treat code mods as high priority bugs/fixes
+            elif action_type == "CREATE_NEW_TOOL":
+                insight_type = InsightType.NEW_TOOL_SUGGESTED
+
+            # Map fields
+            details = suggestion.get("action_details", {})
+            
+            new_insight = ActionableInsight(
+                type=insight_type,
+                description=suggestion.get("suggestion_text", "No description"),
+                source_reflection_entry_ids=[], 
+                related_tool_name=details.get("tool_name") or details.get("function_name"),
+                suggested_code_change=details.get("suggested_code_change"),
+                new_tool_requirements=details.get("tool_description_prompt") if action_type == "CREATE_NEW_TOOL" else None,
+                priority=3, # Default priority
+                status="NEW",
+                metadata={
+                    "source_suggestion_id": s_id,
+                    "action_type_from_reflection": action_type,
+                    "module_path": details.get("module_path"),
+                    "function_name": details.get("function_name"),
+                    "reviewer_confidence": suggestion.get("reviewer_confidence")
+                }
+            )
+            self.insights.append(new_insight)
+            count += 1
+        
+        if count > 0:
+            self._save_insights()
+            print(f"LearningAgent: Ingested {count} suggestions from reflection cycle.")
+        return count
+
     def process_reflection_entry(self, entry: ReflectionLogEntry) -> Optional[ActionableInsight]:
         # Use the new unique entry_id from ReflectionLogEntry
         source_entry_ref_id = entry.entry_id # NEW WAY

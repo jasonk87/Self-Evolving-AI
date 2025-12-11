@@ -190,9 +190,14 @@ def recall_facts(query: Optional[str] = None) -> List[str]:
     if not all_facts:
         return []
 
-    if query and query.strip():
-        query_lower = query.lower()
-        return [fact for fact in all_facts if query_lower in fact.lower()]
+    if query:
+        if isinstance(query, dict):
+            # Handle case where LLM passes a dict (e.g. {'query': '...'} or {'text': '...'})
+            query = query.get('query', query.get('text', str(query)))
+        
+        if isinstance(query, str) and query.strip():
+            query_lower = query.lower()
+            return [fact for fact in all_facts if query_lower in fact.lower()]
     
     return all_facts
 

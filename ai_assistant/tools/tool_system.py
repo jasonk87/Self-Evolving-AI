@@ -43,7 +43,9 @@ class ToolSystem:
 
         # Define a list of custom tool modules to discover
         # Each tuple is (module_import_path, friendly_filename_for_logging)
-        custom_tool_modules_to_discover = [
+        # Define a list of custom tool modules to discover
+        # Each tuple is (module_import_path, friendly_filename_for_logging)
+        self.custom_tool_modules_to_discover = [
             ("ai_assistant.custom_tools.my_extra_tools", "my_extra_tools.py"),
             ("ai_assistant.custom_tools.awareness_tools", "awareness_tools.py"),
             ("ai_assistant.custom_tools.config_management_tools", "config_management_tools.py"),
@@ -55,13 +57,13 @@ class ToolSystem:
             ("ai_assistant.custom_tools.git_tools", "git_tools.py"),
             ("ai_assistant.custom_tools.knowledge_tools", "knowledge_tools.py"),
             ("ai_assistant.custom_tools.meta_programming_tools", "meta_programming_tools.py"),
-            ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"), # Added
+            ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"),
             ("ai_assistant.custom_tools.agent_tools", "agent_tools.py"),
             ("ai_assistant.custom_tools.generated", "generated_tools_module"),
         ]
 
         any_new_tools_registered_overall = False
-        for module_import_path, module_filename in custom_tool_modules_to_discover:
+        for module_import_path, module_filename in self.custom_tool_modules_to_discover:
             try:
                 # Attempt to import the module
                 module_to_inspect = importlib.import_module(module_import_path)
@@ -158,6 +160,38 @@ class ToolSystem:
         return new_tools_registered_in_this_module
 
 
+    def refresh_custom_tools(self) -> str:
+        """
+        Reloads all custom tool modules and re-registers tools.
+        Useful when new tools are generated or code is modified at runtime.
+        """
+        results = []
+        # Import moved inside helper to avoid potential circular dependency issues at top level
+        # if not strictly needed there, though it's standard importlib.
+        # But 'sys' is needed.
+        for module_import_path, module_filename in self.custom_tool_modules_to_discover:
+            try:
+                # Reload existing module if it's already imported
+                if module_import_path in sys.modules:
+                    module = sys.modules[module_import_path]
+                    importlib.reload(module)
+                    if is_debug_mode():
+                        print(f"ToolSystem: Reloaded module {module_import_path}")
+                else:
+                    # Import if not present
+                    module = importlib.import_module(module_import_path)
+                
+                # Re-discover tools
+                if self._discover_and_register_custom_tools(module, module_import_path):
+                     results.append(f"Discovered new tools in {module_filename}")
+            except Exception as e:
+                # Don't let one failure stop the rest
+                results.append(f"Failed to refresh {module_filename}: {e}")
+        
+        self.save_registered_tools()
+        self.register_example_tools() # Ensure examples are still there
+        return "Tool refresh complete. " + ("; ".join(results) if results else "No new tools discovered, but modules were reloaded.")
+
     def _system_update_tool_metadata_impl(self, tool_name: str, new_description: Optional[str] = None) -> bool:
         """
         Implementation logic for updating a tool's metadata.
@@ -214,6 +248,18 @@ class ToolSystem:
             self._tool_registry["system_update_tool_metadata"]['callable_cache'] = self._system_update_tool_metadata_impl
         if is_debug_mode():
             print("ToolSystem: System tools registered.")
+        
+        # Register refresh tool
+        refresh_tool_entry = {
+            'tool_name': "refresh_available_tools",
+            'description': "Reloads all custom tool modules to discover new or updated tools without restarting. Returns status.",
+            'type': 'system_internal',
+            'module_path': self.__class__.__module__,
+            'function_name': 'refresh_custom_tools',
+            'callable_cache': self.refresh_custom_tools,
+            'is_method_on_instance': True
+        }
+        self._tool_registry["refresh_available_tools"] = refresh_tool_entry
 
 
     def register_tool(

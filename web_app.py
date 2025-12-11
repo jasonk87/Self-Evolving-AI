@@ -33,6 +33,7 @@ from ai_assistant.core.project_manager import list_projects
 from ai_assistant.custom_tools.file_system_tools import list_project_files, get_project_file_content, save_project_file_content
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.core.memory_manager import MemoryManager
+from ai_assistant.core.background_service import run_background_services_forever
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -191,7 +192,7 @@ async def chat():
     # The UI should probably display the 'message' separate from the 'context'.
     # Here we are appending to `conversation_history` which is used by `orchestrator`.
     # So we MUST append the full message here for the AI to see it.
-    conversation_history.append({"role": "user", "content": full_message})
+    conversation_history.append({"role": "user", "content": message})
 
     try:
         # Flask 2.0+ supports async views.
@@ -542,5 +543,7 @@ def watch_telemetry():
 
 if __name__ == '__main__':
     socketio.start_background_task(watch_telemetry)
+    # Start the autonomous background services loop (insights, self-healing, etc.)
+    socketio.start_background_task(run_background_services_forever)
     logger.info("Starting Web App on port 5000...")
     socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

@@ -1,5 +1,18 @@
 [
     {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' FAILED_PRE_REVIEW. Reason: Missing module_path or function_name for tool 'generate_new_tool_from_description'. Cannot attempt modification.",
+        "notification_id": "notify_2c9f33a6a6",
+        "timestamp": "2025-12-11T10:17:04.718294+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ab95d93c",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_08fe0039"
+        }
+    },
+    {
         "event_type": "TASK_INTERRUPTED",
         "summary_message": "Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted.",
         "notification_id": "notify_f01e4eef38",

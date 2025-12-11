@@ -46,4 +46,3 @@ def set_reminder(reminder_text: str, reminder_time: str) -> str:
         return f"Error setting reminder: {e}"
 
 
-Suggested Filename: reminder_tool.py

@@ -9,9 +9,11 @@ import logging
 from typing import Optional, List
 
 from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle
+from ai_assistant.core.reflection import global_reflection_log # Import global log for timestamp check
 from ai_assistant.tools import tool_system # To get available tools
 # Modified: Import the specific curation function and config for interval
 from ai_assistant.custom_tools.knowledge_tools import run_periodic_fact_store_curation_async
+from ai_assistant.memory.persistent_memory import LEARNED_FACTS_FILEPATH # Import constant for dirty check
 from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
 # Added for self-healing
 from ai_assistant.learning.learning import LearningAgent
@@ -139,6 +141,18 @@ async def _background_loop_async():
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
     _last_self_healing_time = time.time()
+    
+    # Track limits to avoid processing
+    _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
+    
+    # Track modification time of learned facts file to avoid redundant curation
+    _last_facts_file_mtime = 0.0
+    if os.path.exists(LEARNED_FACTS_FILEPATH):
+        _last_facts_file_mtime = os.path.getmtime(LEARNED_FACTS_FILEPATH)
+    
+    if is_debug_mode():
+        logger.info(f"BackgroundService: Initialized last analyzed reflection timestamp to {_last_reflection_analyzed_timestamp}")
+        logger.info(f"BackgroundService: Initialized facts file mtime to {_last_facts_file_mtime}")
 
     next_reflection_run_time = time.time() + _polling_interval_seconds
     next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
@@ -161,39 +175,83 @@ async def _background_loop_async():
         
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
-            current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S') # No need for to_thread for time.strftime
-            logger.info(f"BackgroundService: Running self-reflection cycle (current time: {current_time_str_reflection})...")
-            try:
-                available_tools = await asyncio.to_thread(tool_system.tool_system_instance.list_tools)
-                if not available_tools: # pragma: no cover
-                    logger.info("BackgroundService: No tools available for reflection cycle. Skipping self-reflection.")
-                else:
-                    suggestions = await asyncio.to_thread(run_self_reflection_cycle, available_tools=available_tools)
-                    if suggestions: # pragma: no cover
-                        logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions.")
-                    elif suggestions == []: # pragma: no cover
-                        logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
-                    else: 
-                        logger.info("BackgroundService: Self-reflection cycle did not complete or was aborted (e.g. not enough log data).")
-            except Exception as e: # pragma: no cover
-                logger.error(f"BackgroundService: Error during self-reflection cycle: {e}", exc_info=True)
-            next_reflection_run_time = time.time() + _polling_interval_seconds
+            current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Optimization: Check if there are new logs since last analysis
+            latest_log_timestamp = global_reflection_log.get_last_entry_timestamp()
+            
+            if latest_log_timestamp <= _last_reflection_analyzed_timestamp:
+                if is_debug_mode():
+                    logger.debug(f"BackgroundService: Skipping self-reflection. No new logs since {_last_reflection_analyzed_timestamp} (Current latest: {latest_log_timestamp}).")
+                # Even if skipped, we schedule the next check
+                next_reflection_run_time = time.time() + _polling_interval_seconds
+            else:
+                logger.info(f"BackgroundService: Running self-reflection cycle (current time: {current_time_str_reflection}, entries updated)...")
+                try:
+                    available_tools = await asyncio.to_thread(tool_system.tool_system_instance.list_tools)
+                    if not available_tools: # pragma: no cover
+                        logger.info("BackgroundService: No tools available for reflection cycle. Skipping self-reflection.")
+                    else:
+                        suggestions = await asyncio.to_thread(run_self_reflection_cycle, available_tools=available_tools)
+                        
+                        # Update the timestamp only after a successful run attempt (even if no suggestions)
+                        # We use the timestamp we fetched before the run to be safe, or fetch again?
+                        # Fetching again is safer in case logs were added *during* the run.
+                        _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
+
+                        if suggestions: # pragma: no cover
+                            logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions.")
+                            if learning_agent:
+                                ingested_count = learning_agent.ingest_reflection_suggestions(suggestions)
+                                if ingested_count > 0:
+                                    logger.info(f"BackgroundService: Passed {ingested_count} approved suggestions to Learning Agent for autonomous action.")
+                        elif suggestions == []: # pragma: no cover
+                            logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
+                        else: 
+                            logger.info("BackgroundService: Self-reflection cycle did not complete normally.")
+                except Exception as e: # pragma: no cover
+                    logger.error(f"BackgroundService: Error during self-reflection cycle: {e}", exc_info=True)
+                
+                next_reflection_run_time = time.time() + _polling_interval_seconds
 
         # --- LLM-Powered Fact Curation Task ---
         if current_loop_time >= next_fact_curation_run_time:
             current_time_str_curation = time.strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"BackgroundService: Running LLM fact curation (current time: {current_time_str_curation})...")
-            try:
-                # Call the dedicated function from knowledge_tools
-                curation_success = await run_periodic_fact_store_curation_async()
-                if curation_success: # pragma: no cover
-                    logger.info("BackgroundService: LLM fact curation process completed successfully.")
-                else: # pragma: no cover
-                    logger.warning("BackgroundService: LLM fact curation process encountered an issue or made no changes.")
-            except Exception as e: # pragma: no cover
-                logger.error(f"BackgroundService: Error during LLM fact curation: {e}", exc_info=True)
-            _last_fact_curation_time = time.time()
-            next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
+            
+            # Optimization: Check if facts file has been modified
+            current_facts_mtime = 0.0
+            if os.path.exists(LEARNED_FACTS_FILEPATH):
+                current_facts_mtime = os.path.getmtime(LEARNED_FACTS_FILEPATH)
+            
+            # We add a small buffer (e.g. 1 sec) or just strict inequality. 
+            # If the file hasn't changed since we last looked/updated, skip.
+            if current_facts_mtime <= _last_facts_file_mtime:
+                if is_debug_mode():
+                    logger.debug(f"BackgroundService: Skipping fact curation. File not modified since {_last_facts_file_mtime}.")
+                next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS
+            else:
+                logger.info(f"BackgroundService: Running LLM fact curation (current time: {current_time_str_curation})...")
+                try:
+                    # Call the dedicated function from knowledge_tools
+                    curation_success = await run_periodic_fact_store_curation_async()
+                    
+                    if curation_success: # pragma: no cover
+                        logger.info("BackgroundService: LLM fact curation process completed successfully.")
+                    else: # pragma: no cover
+                        logger.warning("BackgroundService: LLM fact curation process encountered an issue or made no changes.")
+                    
+                    # Update our mtime tracker to NOW (or re-read file mtime)
+                    # Re-reading is safer as curation writes to the file.
+                    if os.path.exists(LEARNED_FACTS_FILEPATH):
+                        _last_facts_file_mtime = os.path.getmtime(LEARNED_FACTS_FILEPATH)
+                    else:
+                        _last_facts_file_mtime = time.time()
+
+                except Exception as e: # pragma: no cover
+                    logger.error(f"BackgroundService: Error during LLM fact curation: {e}", exc_info=True)
+                
+                _last_fact_curation_time = time.time()
+                next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
         
         # --- Autonomous Project Coding Task ---
         if PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
@@ -346,6 +404,42 @@ async def stop_background_services():
 def is_background_service_active() -> bool:
     """Checks if the background service is currently active."""
     return _background_service_active
+
+def run_background_services_forever():
+    """
+    Synchronous entry point that sets up a new asyncio event loop and runs 
+    the background services indefinitely. 
+    Ideal for running in a separate thread (e.g., via socketio.start_background_task).
+    """
+    global _background_service_active
+    
+    if _background_service_active:
+        logger.warning("BackgroundService: Service already active. Ignoring request to start forever loop.")
+        return
+
+    logger.info("BackgroundService: Starting standalone background loop...")
+    _background_service_active = True
+    
+    # Create a new loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(_background_loop_async())
+    except Exception as e:
+        logger.error(f"BackgroundService: Standalone loop generated exception: {e}", exc_info=True)
+    finally:
+        _background_service_active = False
+        try:
+            # Cancel all tasks
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+            logger.info("BackgroundService: Standalone loop closed.")
+        except Exception as e:
+            logger.error(f"BackgroundService: Error closing standalone loop: {e}")
 
 if __name__ == '__main__': # pragma: no cover
     # Minimal __main__ for testing the background service loop structure manually

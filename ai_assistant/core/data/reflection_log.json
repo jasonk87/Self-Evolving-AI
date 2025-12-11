@@ -2707,5 +2707,994 @@
         "post_modification_test_passed": null,
         "post_modification_test_details": null,
         "commit_info": null
+    },
+    {
+        "goal_description": "how are we doing today?",
+        "plan": [
+            {
+                "tool_name": "get_system_status_summary",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "System Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 3):\n  No recently archived tasks.\n\nUnread Notifications (3 shown, up to 3 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "f31f2a32-61b6-4727-a892-97f62fefdbab",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:29:51.138579+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "do you have a scheduler tool?",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?"
+                ],
+                "kwargs": {
+                    "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+                }
+            }
+        ],
+        "execution_results": [
+            {
+                "status": "PAUSED",
+                "message": "CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+                "question": "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?",
+                "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+            }
+        ],
+        "status": "PAUSED",
+        "entry_id": "c94af72d-0ce5-42ed-a69a-c08c0a4e641f",
+        "notes": "Plan execution paused at step 1 (request_user_clarification). Reason: CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+        "timestamp": "2025-12-11T09:30:13.717934+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "no i am asking you if you already have one",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [
+                    "Do you already have a scheduler tool?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\n(Context: Do you already have a scheduler tool?)\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 3):\n  No recently archived tasks.\n\nUnread Notifications (5 shown, up to 5 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "65bfae53-6ccf-42f1-8e87-12baf37631bb",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:30:38.917772+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you create a scheduler tool so that i tell you to tell me something at a certain time then you can",
+        "plan": [
+            {
+                "tool_name": "generate_new_tool_from_description",
+                "args": [
+                    "a scheduler tool so that i tell you to tell me something at a certain time then you can"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Error: Failed to generate valid Python tool code after 3 attempts. Last error: SyntaxError: invalid syntax (<unknown>, line 42)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "27b2d8a0-db97-44ee-84b3-fbf3e112f7a4",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:45:58.011690+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you create a scheduler tool so that i tell you to tell me something at a certain time then you can",
+        "plan": [
+            {
+                "tool_name": "generate_new_tool_from_description",
+                "args": [
+                    "a tool that allows the user to schedule a reminder to be displayed at a specific time with a custom message"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Successfully generated tool code and applied syntax verification.\nSaved to: 'ai_assistant/custom_tools/generated/reminder_scheduler.py'\nFunction: 'schedule_reminder'\nIMPORTANT: A restart of the AI Assistant or a '/refresh_tools' command is required to use this tool."
+        ],
+        "status": "SUCCESS",
+        "entry_id": "dc0b6da1-33df-48de-a20b-c922bd432dd8",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:51:43.104814+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "did you really?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [
+                    "Did you really create a scheduler tool, as you claimed in the previous turn?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\n(Context: Did you really create a scheduler tool, as you claimed in the previous turn?)\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 3):\n  No recently archived tasks.\n\nUnread Notifications (5 shown, up to 5 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "fb860bb1-f08b-443c-bc0d-669ca30e8445",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:52:13.267562+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "why didn't you finish?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 3):\n  No recently archived tasks.\n\nUnread Notifications (5 shown, up to 5 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "56ef8f03-a585-4a0f-9afa-6e26dbbc2bfb",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:52:27.386529+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "do you have a scheduler tool?",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?"
+                ],
+                "kwargs": {
+                    "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+                }
+            }
+        ],
+        "execution_results": [
+            {
+                "status": "PAUSED",
+                "message": "CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+                "question": "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?",
+                "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+            }
+        ],
+        "status": "PAUSED",
+        "entry_id": "c21503cc-574c-4c73-896a-15289a0543ef",
+        "notes": "Plan execution paused at step 1 (request_user_clarification). Reason: CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+        "timestamp": "2025-12-11T09:56:04.387250+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "i am asking if you already have one",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "3aa34d09-0f6e-4d15-a563-d1b5d57a6408",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:56:18.354808+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "that didn't answer my damn question",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "7291735d-a661-4792-ac28-3dad0d8371cc",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:56:31.283290+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "what tools do you have?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nError scanning generated tools: name 'os' is not defined\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "9ec40258-55fb-48f4-bc14-38d365eeaa1b",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:58:35.523879+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "that is not helpful, i know you have more tools than that",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nError scanning generated tools: name 'os' is not defined\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "30f3e42d-5399-4cce-9817-f1b9397e2f20",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T09:58:55.761852+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "good morning, what tools do you have available to you right now?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nError scanning generated tools: name 'os' is not defined\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "88358558-c70f-4f92-9bde-b942be491c6e",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:01:56.045450+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "you have more tools than that, give me a list",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nError scanning generated tools: name 'os' is not defined\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "b01395cf-f5f9-4d49-8ad6-59bb40528679",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:02:13.882506+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "why are you not being helpful?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nError scanning generated tools: name 'os' is not defined\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "a0885c78-4a4b-42f9-9082-c0395db533fc",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:02:28.427738+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "i have done some more work to your code, now can you tell me what tools you have available?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nRecently Created/Modified Tools (File System):\n  - reminder_tool.py (Last Modified: 2025-12-11 04:00)\n  - scheduler_tool.py (Last Modified: 2025-12-11 04:00)\n  - reminder_scheduler.py (Last Modified: 2025-12-11 03:51)\n  - set_reminder.py (Last Modified: 2025-12-09 20:06)\n  - set_bedtime_reminder.py (Last Modified: 2025-12-09 19:55)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "38cb15f5-ca91-4daa-bff6-671b4335a92b",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:04:01.550470+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "do you have access to your whole tool list?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nRecently Created/Modified Tools (File System):\n  - reminder_tool.py (Last Modified: 2025-12-11 04:00)\n  - scheduler_tool.py (Last Modified: 2025-12-11 04:00)\n  - reminder_scheduler.py (Last Modified: 2025-12-11 03:51)\n  - set_reminder.py (Last Modified: 2025-12-09 20:06)\n  - set_bedtime_reminder.py (Last Modified: 2025-12-09 19:55)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\n(Use this information to answer the user's question about how you are doing.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "76c2eff9-c860-4e9e-9c51-9db8553441ef",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:04:19.067933+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you tell me all the tools you have available",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_678ba2e83f)\n\nRecently Created/Modified Tools (File System):\n  - reminder_tool.py (Last Modified: 2025-12-11 04:00)\n  - scheduler_tool.py (Last Modified: 2025-12-11 04:00)\n  - reminder_scheduler.py (Last Modified: 2025-12-11 03:51)\n  - set_reminder.py (Last Modified: 2025-12-09 20:06)\n  - set_bedtime_reminder.py (Last Modified: 2025-12-09 19:55)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\nAvailable Tools:\n  (Total: 53)\n  add_dependency_to_project, add_numbers, build_project, create_project_directory, echo_message, execute_project_coding_plan, execute_project_plan, execute_python_script_in_project, execute_sandboxed_python_script, find_agent_tool_source, generate_and_review_code_tool, generate_code_for_project_file, generate_new_tool_from_description, get_current_time, get_generated_tools_path, get_item_details_by_id, get_project_file_content, get_self_awareness_info_and_converse, get_system_status_summary, greet_user, initiate_ai_project, learn_fact, list_formatted_suggestions, list_project_files, manage_suggestion_status, manage_tool_confirmation_settings, maybe_fail_tool, multiply_numbers, no_op_tool, process_search_results, propose_project_file_update, push_ai_generated_commits, read_text_from_file, recall_facts, request_code_review_tool, request_user_clarification, run_agent_code, run_all_tests, run_periodic_fact_store_curation_async, run_project_tests, sanitize_project_name, save_project_file_content, search_duckduckgo, search_google_custom_search, setup_test_environment, simulate_edit_function_code, spawn_ephemeral_agent, stage_agent_tool_modification, submit_agent_report, subtract_numbers, teardown_test_environment, view_function_code, write_text_to_file\n\n(Use this information to answer the user's question about how you are doing or what tools you have.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "1b115ac7-202f-4485-9873-a031cdbbfbf1",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:07:16.274024+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you remind me at 415 to get ready please",
+        "plan": [
+            {
+                "tool_name": "get_current_time",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "2025-12-11 04:12:27"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "027c635d-0694-451c-9d83-efb93704379e",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:12:27.868263+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "why didn't you tell me it is passed 415?",
+        "plan": [
+            {
+                "tool_name": "get_current_time",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "2025-12-11 04:16:51"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "89ced2ee-f4a6-4365-b978-2fdcb4758e5d",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:16:51.845644+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "Self-modification attempt for insight TOOL_BUG_SUSPECTED_08fe0039",
+        "plan": [
+            {
+                "action_type": "PROPOSE_TOOL_MODIFICATION",
+                "details": {
+                    "module_path": null,
+                    "function_name": null,
+                    "tool_name": "generate_new_tool_from_description",
+                    "suggested_change_description": "Tool execution failed or partially failed for goal 'can you create a tool that will take a project's name and output a project's directory? this will come into use later when modifying projects'. Error: ToolExecutionError - Error during execution of tool 'generate_new_tool_from_description': generate_new_tool_from_description() missing 1 required positional argument: 'tool_description'. The failure occurred at the step involving tool 'generate_new_tool_from_description'.",
+                    "suggested_code_change": null,
+                    "reason": "Self-healing trigger from insight TOOL_BUG_SUSPECTED_08fe0039",
+                    "original_reflection_entry_ref_id": "bcf7ee83-0a7a-4df6-8212-403e2b85e26d",
+                    "staging_mode": true
+                }
+            }
+        ],
+        "execution_results": [
+            "Failure: Missing module_path or function_name for tool 'generate_new_tool_from_description'. Cannot attempt modification."
+        ],
+        "status": "SELF_MODIFICATION_FAILED_PRECONDITIONS",
+        "entry_id": "5b1c42a0-c61b-4486-8f60-8c3cd0813c4a",
+        "notes": "Action for insight TOOL_BUG_SUSPECTED_08fe0039: Missing module_path or function_name for tool 'generate_new_tool_from_description'. Cannot attempt modification.",
+        "timestamp": "2025-12-11T10:17:04.695331+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": {
+            "notes": "Test not run due to precondition failure."
+        },
+        "commit_info": null
+    },
+    {
+        "goal_description": "i told you to remind me",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "Could you please clarify what you meant by 'i told you to remind me'? Are you saying that I failed to remind you about something previously requested, or are you trying to set a new reminder?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            {
+                "status": "PAUSED",
+                "message": "CLARIFICATION_REQUESTED: Could you please clarify what you meant by 'i told you to remind me'? Are you saying that I failed to remind you about something previously requested, or are you trying to set a new reminder? (Options: None)",
+                "question": "Could you please clarify what you meant by 'i told you to remind me'? Are you saying that I failed to remind you about something previously requested, or are you trying to set a new reminder?",
+                "options": null
+            }
+        ],
+        "status": "PAUSED",
+        "entry_id": "af2bc8c8-07af-4c25-87dd-7fe15d13cba6",
+        "notes": "Plan execution paused at step 1 (request_user_clarification). Reason: CLARIFICATION_REQUESTED: Could you please clarify what you meant by 'i told you to remind me'? Are you saying that I failed to remind you about something previously requested, or are you trying to set a new reminder? (Options: None)",
+        "timestamp": "2025-12-11T10:17:05.851007+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you remind me at 4:23 to get ready please?",
+        "plan": [
+            {
+                "tool_name": "get_current_time",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "2025-12-11 04:21:19"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "a396688a-b724-40dc-ac61-3dc8d7f51bbf",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:21:19.616891+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "what is the weather today?",
+        "plan": [
+            {
+                "tool_name": "search_duckduckgo",
+                "args": [
+                    "weather today"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "process_search_results",
+                "args": [
+                    "weather today",
+                    "[[step_1_output]]"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "[]",
+            "I couldn't find any specific weather information for today based on the provided search results."
+        ],
+        "status": "SUCCESS",
+        "entry_id": "bf88c8c5-9301-4f3b-a168-3446ffb4c7bd",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:21:44.764759+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you make a simple tool to figure out the weather in a specific area",
+        "plan": [
+            {
+                "tool_name": "generate_new_tool_from_description",
+                "args": [
+                    "a simple tool to figure out the weather in a specific area"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Successfully generated tool code and applied syntax verification.\nSaved to: 'ai_assistant/custom_tools/generated/weather_tool.py'\nFunction: 'get_weather'\nIMPORTANT: A restart of the AI Assistant or a '/refresh_tools' command is required to use this tool."
+        ],
+        "status": "SUCCESS",
+        "entry_id": "b0e488ad-aa82-41c7-bd86-f8b8697a2a71",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:22:22.140666+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "what did i ask you to remind me?",
+        "plan": [
+            {
+                "tool_name": "recall_facts",
+                "args": [
+                    "reminder"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            {
+                "_is_error_representation_": true,
+                "error_type_name": "ToolExecutionError",
+                "error_message_str": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'"
+            }
+        ],
+        "status": "FAILURE",
+        "entry_id": "6874dd1c-280d-4660-b0e9-4bad8e89d56d",
+        "notes": "Plan attempt 1 failed at step 1 (recall_facts). Failed after 2 attempt(s). Last error: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "timestamp": "2025-12-11T10:22:44.911197+00:00",
+        "error_type": "ToolExecutionError",
+        "error_message": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "traceback_snippet": "Traceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 359, in execute_tool\n    result = await asyncio.to_thread(func_to_execute, *args, **final_kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\asyncio\\threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\concurrent\\futures\\thread.py\", line 58, in run\n    result = self.fn(*self.args, **self.kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'dict' object has no attribute 'lower'\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\planning\\execution.py\", line 134, in execute_plan\n    step_result = await tool_system.execute_tool(\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 366, in execute_tool\n    raise ToolExecutionError(f\"Error during execution of tool '{name}': {e}\") from e\nai_assistant.tools.tool_system.ToolExecutionError: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'\n",
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "what did i ask you to remind me?",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "Could you please remind me of the context or keywords related to the reminder you set?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            {
+                "status": "PAUSED",
+                "message": "CLARIFICATION_REQUESTED: Could you please remind me of the context or keywords related to the reminder you set? (Options: None)",
+                "question": "Could you please remind me of the context or keywords related to the reminder you set?",
+                "options": null
+            }
+        ],
+        "status": "PAUSED",
+        "entry_id": "ebfd3680-5187-483a-b4dc-cfedf845dbc7",
+        "notes": "Plan execution paused at step 1 (request_user_clarification). Reason: CLARIFICATION_REQUESTED: Could you please remind me of the context or keywords related to the reminder you set? (Options: None)",
+        "timestamp": "2025-12-11T10:22:53.052105+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "its 4:23 why didn't your reminder go off?",
+        "plan": [
+            {
+                "tool_name": "recall_facts",
+                "args": [
+                    "reminder at 4:23"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "get_current_time",
+                "args": [],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "I am sorry that the reminder did not go off. I need to check the system logs. Do you want me to check the system logs to see if there was an error, or should I create the reminder again?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            {
+                "_is_error_representation_": true,
+                "error_type_name": "ToolExecutionError",
+                "error_message_str": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'"
+            }
+        ],
+        "status": "FAILURE",
+        "entry_id": "98bcc9dc-8cc1-48e0-b4bc-675298660689",
+        "notes": "Plan attempt 1 failed at step 1 (recall_facts). Failed after 2 attempt(s). Last error: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "timestamp": "2025-12-11T10:23:31.445027+00:00",
+        "error_type": "ToolExecutionError",
+        "error_message": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "traceback_snippet": "Traceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 359, in execute_tool\n    result = await asyncio.to_thread(func_to_execute, *args, **final_kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\asyncio\\threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\concurrent\\futures\\thread.py\", line 58, in run\n    result = self.fn(*self.args, **self.kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'dict' object has no attribute 'lower'\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\planning\\execution.py\", line 134, in execute_plan\n    step_result = await tool_system.execute_tool(\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 366, in execute_tool\n    raise ToolExecutionError(f\"Error during execution of tool '{name}': {e}\") from e\nai_assistant.tools.tool_system.ToolExecutionError: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'\n",
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "its 4:23 why didn't your reminder go off?",
+        "plan": [
+            {
+                "tool_name": "recall_facts",
+                "args": [
+                    "reminder at 4:23"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "recall_facts",
+                "args": [
+                    "reminders"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "recall_facts",
+                "args": [
+                    "scheduled events"
+                ],
+                "kwargs": {}
+            },
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "I am sorry that the reminder did not go off. How did you set the reminder? Was it through me, or another application? What specifically was the reminder for?"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            {
+                "_is_error_representation_": true,
+                "error_type_name": "ToolExecutionError",
+                "error_message_str": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'"
+            }
+        ],
+        "status": "FAILURE",
+        "entry_id": "96419006-7ac3-4836-bec4-fa191b0482f3",
+        "notes": "Plan attempt 2 failed at step 1 (recall_facts). Failed after 2 attempt(s). Last error: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "timestamp": "2025-12-11T10:23:39.780166+00:00",
+        "error_type": "ToolExecutionError",
+        "error_message": "Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'",
+        "traceback_snippet": "Traceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 359, in execute_tool\n    result = await asyncio.to_thread(func_to_execute, *args, **final_kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\asyncio\\threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\concurrent\\futures\\thread.py\", line 58, in run\n    result = self.fn(*self.args, **self.kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'dict' object has no attribute 'lower'\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\planning\\execution.py\", line 134, in execute_plan\n    step_result = await tool_system.execute_tool(\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\tools\\tool_system.py\", line 366, in execute_tool\n    raise ToolExecutionError(f\"Error during execution of tool '{name}': {e}\") from e\nai_assistant.tools.tool_system.ToolExecutionError: Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'\n",
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "do you have a scheduler tool?",
+        "plan": [
+            {
+                "tool_name": "request_user_clarification",
+                "args": [
+                    "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?"
+                ],
+                "kwargs": {
+                    "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+                }
+            }
+        ],
+        "execution_results": [
+            {
+                "status": "PAUSED",
+                "message": "CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+                "question": "Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?",
+                "options": "['A new tool for me (the AI assistant)?', 'A new software project for you to work on?']"
+            }
+        ],
+        "status": "PAUSED",
+        "entry_id": "e194bd86-dae4-4ac1-804f-0b683ab1625e",
+        "notes": "Plan execution paused at step 1 (request_user_clarification). Reason: CLARIFICATION_REQUESTED: Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you? (Options: ['A new tool for me (the AI assistant)?', 'A new software project for you to work on?'])",
+        "timestamp": "2025-12-11T10:24:53.709324+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "can you remind me at 4:27 to get ready for work?",
+        "plan": [
+            {
+                "tool_name": "generate_new_tool_from_description",
+                "args": [
+                    "reminds the user at a specified time to do something"
+                ],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Successfully generated tool code and applied syntax verification.\nSaved to: 'ai_assistant/custom_tools/generated/set_reminder.py'\nFunction: 'set_reminder'\nIMPORTANT: A restart of the AI Assistant or a '/refresh_tools' command is required to use this tool."
+        ],
+        "status": "SUCCESS",
+        "entry_id": "98c8af7d-89a7-43bf-9490-e711e994671f",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:25:18.238872+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
+    },
+    {
+        "goal_description": "why didn't your reminder go off?",
+        "plan": [
+            {
+                "tool_name": "get_self_awareness_info_and_converse",
+                "args": [],
+                "kwargs": {}
+            }
+        ],
+        "execution_results": [
+            "Self-Awareness Report:\nSystem Status Summary:\n\nActive Tasks (0 total):\n  No active tasks currently.\n\nRecently Completed/Archived Tasks (0 shown, up to 20):\n  No recently archived tasks.\n\nUnread Notifications (10 shown, up to 10 displayed):\n  - [2025-12-11 10:17] TASK_FAILED_UNKNOWN: Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' FAILED_PRE_REVIEW. Reason: Missing module_path or function_name for tool 'generate_new_tool_from_description'. Cannot attempt modification. (ID: notify_2c9f33a6a6)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_1d683470) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_f01e4eef38)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_56e4c5041a)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6dd5aa9a) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_5f4bbe37dd)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' FAILED_INTERRUPTED. Reason: Task was in state 'INITIALIZING' and agent shutdown occurred. (ID: notify_f0f22e58a2)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' (ID: task_2c571eb7) was in state 'AWAITING_CRITIC_REVIEW' and has been marked as interrupted. (ID: notify_82d3cebd5f)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Modifying the existing logging tool to support str...' FAILED_INTERRUPTED. Reason: Task was in state 'AWAITING_CRITIC_REVIEW' and agent shutdown occurred. (ID: notify_138c179a19)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' (ID: task_e6511df9) was in state 'GENERATING_CODE' and has been marked as interrupted. (ID: notify_bd2bf5789b)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Creating new calculator tool with advanced trigono...' FAILED_INTERRUPTED. Reason: Task was in state 'GENERATING_CODE' and agent shutdown occurred. (ID: notify_e9f909a6cc)\n  - [2025-12-10 01:04] TASK_INTERRUPTED: Task 'Processing user suggestion sugg_xyz to implement d...' (ID: task_6d759da2) was in state 'INITIALIZING' and has been marked as interrupted. (ID: notify_ce074ab2a8)\n\nRecently Created/Modified Tools (File System):\n  - set_reminder.py (Last Modified: 2025-12-11 04:25)\n  - weather_tool.py (Last Modified: 2025-12-11 04:22)\n  - reminder_tool.py (Last Modified: 2025-12-11 04:00)\n  - scheduler_tool.py (Last Modified: 2025-12-11 04:00)\n  - reminder_scheduler.py (Last Modified: 2025-12-11 03:51)\n\nLearned Facts:\n  - The AI can access and process information from the real world through Google Search.\n  - The AI can perform various tasks using tools.\n  - The AI is under development and learning.\n  - The user lives in Glasgow, KY.\n  - The user's name is Jason Kinslow.\n\n\nAvailable Tools:\n  (Total: 53)\n  add_dependency_to_project, add_numbers, build_project, create_project_directory, echo_message, execute_project_coding_plan, execute_project_plan, execute_python_script_in_project, execute_sandboxed_python_script, find_agent_tool_source, generate_and_review_code_tool, generate_code_for_project_file, generate_new_tool_from_description, get_current_time, get_generated_tools_path, get_item_details_by_id, get_project_file_content, get_self_awareness_info_and_converse, get_system_status_summary, greet_user, initiate_ai_project, learn_fact, list_formatted_suggestions, list_project_files, manage_suggestion_status, manage_tool_confirmation_settings, maybe_fail_tool, multiply_numbers, no_op_tool, process_search_results, propose_project_file_update, push_ai_generated_commits, read_text_from_file, recall_facts, request_code_review_tool, request_user_clarification, run_agent_code, run_all_tests, run_periodic_fact_store_curation_async, run_project_tests, sanitize_project_name, save_project_file_content, search_duckduckgo, search_google_custom_search, setup_test_environment, simulate_edit_function_code, spawn_ephemeral_agent, stage_agent_tool_modification, submit_agent_report, subtract_numbers, teardown_test_environment, view_function_code, write_text_to_file\n\n(Use this information to answer the user's question about how you are doing or what tools you have.)"
+        ],
+        "status": "SUCCESS",
+        "entry_id": "834be7c8-805a-4e1b-822a-9d255ef94f56",
+        "notes": "Plan attempt 1 succeeded.",
+        "timestamp": "2025-12-11T10:28:16.874530+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": false,
+        "source_suggestion_id": null,
+        "modification_type": null,
+        "modification_details": null,
+        "post_modification_test_passed": null,
+        "post_modification_test_details": null,
+        "commit_info": null
     }
 ]

@@ -3,42 +3,51 @@ import datetime
 import time
 from typing import Optional
 
-async def set_reminder(reminder_time: str, message: Optional[str] = None) -> str:
+async def set_reminder(reminder_time: str, task: str) -> str:
     """
-    Sets a reminder for a specific time with an optional message.
+    Sets a reminder to perform a specific task at a specified time.
 
     Args:
-        reminder_time (str): The time for the reminder in HH:MM format (24-hour clock).
-        message (Optional[str]): An optional message to display when the reminder goes off. Defaults to None.
+        reminder_time (str): The time at which to set the reminder, in HH:MM format (e.g., "14:30").
+        task (str): The task to be reminded about.
 
     Returns:
-        str: A message indicating whether the reminder was set successfully or if an error occurred.
+        str: A message indicating whether the reminder was successfully set or if an error occurred.
     """
     try:
         now = datetime.datetime.now()
         reminder_hour, reminder_minute = map(int, reminder_time.split(':'))
 
-        if not (0 <= reminder_hour <= 23 and 0 <= reminder_minute <= 59):
-            return "Error: Invalid time format. Please use HH:MM (24-hour clock)."
+        reminder_datetime = datetime.datetime(now.year, now.month, now.day, reminder_hour, reminder_minute)
 
-        reminder_datetime = now.replace(hour=reminder_hour, minute=reminder_minute, second=0, microsecond=0)
+        if reminder_datetime < now:
+            reminder_datetime += datetime.timedelta(days=1)
 
-        if reminder_datetime <= now:
-            reminder_datetime += datetime.timedelta(days=1)  # Set for the next day if the time has already passed
+        wait_time = (reminder_datetime - now).total_seconds()
 
-        time_difference = (reminder_datetime - now).total_seconds()
-
-        if time_difference <= 0:
-            return "Error: Invalid time. Please provide a future time."
-
-        await asyncio.sleep(time_difference)
-
-        if message:
-            return f"Reminder: {message}"
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
+            return f"Reminder: It's time to {task}!"
         else:
-            return "Reminder: Time's up!"
+            return "Error: The specified time has already passed."
 
     except ValueError:
-        return "Error: Invalid time format. Please use HH:MM (24-hour clock)."
+        return "Error: Invalid time format. Please use HH:MM format (e.g., 14:30)."
     except Exception as e:
         return f"Error: {e}"
+
+async def main(reminder_time: str, task: str) -> str:
+    """
+    Main function to set the reminder.
+
+    Args:
+        reminder_time (str): The time at which to set the reminder, in HH:MM format (e.g., "14:30").
+        task (str): The task to be reminded about.
+
+    Returns:
+        str: A message indicating whether the reminder was successfully set or if an error occurred.
+    """
+    return await set_reminder(reminder_time, task)
+
+if __name__ == "__main__":
+    asyncio.run(main("16:00", "take out the trash"))

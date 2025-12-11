@@ -3753,7 +3753,7 @@ DEBUG_MODE = True
 # IMPORTANT: These are sensitive keys.
 # Option 1: Set them as environment variables (GOOGLE_API_KEY, GOOGLE_CSE_ID) - Recommended for production.
 # Option 2: Set them here directly for local development. If you do, ensure this file is appropriately .gitignored or manage secrets carefully.
-GOOGLE_API_KEY: Optional[str] = "HIDDEN_FOR_COMMIT"
+GOOGLE_API_KEY: Optional[str] = "REDACTED_FOR_COMMIT"
 GOOGLE_CSE_ID: Optional[str] = "3354e92e98ab54b31"
 
 def is_debug_mode() -> bool:
@@ -10384,7 +10384,7 @@ def search_google_custom_search(query: str, num_results: Union[int, str] = 5) ->
         str: A JSON string representing a list of search results, each with
              'title', 'href' (URL), and 'body' (snippet). Returns '[]' on error.
     """
-    api_key = "HIDDEN_FOR_COMMIT"
+    api_key = "REDACTED_FOR_COMMIT"
     cse_id = os.environ.get("GOOGLE_CSE_ID") or CFG_GOOGLE_CSE_ID
 
     if not api_key:

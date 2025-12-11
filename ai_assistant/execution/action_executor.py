@@ -258,27 +258,48 @@ class ActionExecutor:
         source_insight_id: str,   # This will be the related_item_id for the task
         action_task_id: Optional[str], # This is the parent_task_id for edit_function_source_code
         original_reflection_id_for_test: Optional[str] = None, # Added parameter
-        staging_mode: bool = False # Added parameter
+        staging_mode: bool = False, # Added parameter
+        modification_strategy: str = "full_replace", # Added parameter
+        target_node_pattern: Optional[str] = None # Added parameter
     ) -> bool: # Return just success/failure
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
 
         log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
         modification_type_ast = "MODIFY_TOOL_CODE_LLM_AST" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST"
-        modification_type_exception = "MODIFY_TOOL_CODE_LLM_AST_EXCEPTION" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST_EXCEPTION"
+        # Suffix with SURGICAL if applicable
+        if modification_strategy == "surgical_replace_node":
+            modification_type_ast += "_SURGICAL"
+        
+        modification_type_exception = modification_type_ast + "_EXCEPTION"
 
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
         try:
-            modification_result_msg = await self_modification.edit_function_source_code(
-                module_path=module_path,
-                function_name=function_name,
-                new_code_string=code_to_apply,
-                project_root_path=project_root,
-                change_description=original_description,
-                task_manager=self.task_manager,
-                parent_task_id=action_task_id
-            )
+            if modification_strategy == "surgical_replace_node":
+                if not target_node_pattern:
+                    return False # Error: Missing pattern
+                
+                modification_result_msg = await self_modification.surgical_edit_function(
+                    module_path=module_path,
+                    function_name=function_name,
+                    target_node_pattern=target_node_pattern,
+                    replacement_code=code_to_apply,
+                    project_root_path=project_root,
+                    change_description=original_description,
+                    task_manager=self.task_manager,
+                    parent_task_id=action_task_id
+                )
+            else:
+                modification_result_msg = await self_modification.edit_function_source_code(
+                    module_path=module_path,
+                    function_name=function_name,
+                    new_code_string=code_to_apply,
+                    project_root_path=project_root,
+                    change_description=original_description,
+                    task_manager=self.task_manager,
+                    parent_task_id=action_task_id
+                )
             edit_success = "success" in modification_result_msg.lower()
             print(f"ActionExecutor: Code modification result for {tool_name} (from {source_of_code}): {modification_result_msg}")
 
@@ -576,6 +597,8 @@ class ActionExecutor:
             if suggested_code_or_llm_generated_code:
                 # Check for staging mode (Self-Healing Loop)
                 staging_mode = details.get("staging_mode", False)
+                modification_strategy = details.get("modification_strategy", "full_replace")
+                target_node_pattern = details.get("target_node_pattern")
 
                 edit_success = await self._apply_test_and_revert_code(
                     module_path, function_name, suggested_code_or_llm_generated_code,
@@ -583,7 +606,9 @@ class ActionExecutor:
                     str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
                     action_task_id=action_task_id,
                     original_reflection_id_for_test=details.get("original_reflection_entry_id"),
-                    staging_mode=staging_mode
+                    staging_mode=staging_mode,
+                    modification_strategy=modification_strategy, # Pass new param
+                    target_node_pattern=target_node_pattern # Pass new param
                 )
                 if edit_success:
                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")

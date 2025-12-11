@@ -153,7 +153,7 @@ Now, generate the Python code and the suggested filename for the described tool.
                 last_error = "LLM returned empty response."
                 continue
 
-            code_match = re.search(r"```python\n(.*?)\n```", llm_response, re.DOTALL)
+            code_match = re.search(r"```(?:python)?\s*\n(.*?)\n```", llm_response, re.DOTALL | re.IGNORECASE)
             filename_match = re.search(r"Suggested Filename:\s*([\w_.-]+\.py)", llm_response)
 
             if not code_match:
@@ -176,8 +176,16 @@ Now, generate the Python code and the suggested filename for the described tool.
                 
                 break # Success, exit loop
             except SyntaxError as e:
-                last_error = f"SyntaxError: {e}"
-                logger.warning(f"Generated code failed syntax check on attempt {attempt + 1}: {e}")
+                # Extract the failing line for better feedback
+                lines = candidate_code.splitlines()
+                # e.lineno is 1-indexed
+                if e.lineno and 0 <= e.lineno - 1 < len(lines):
+                    failing_line = lines[e.lineno - 1]
+                    last_error = f"SyntaxError on line {e.lineno}: {e.msg}\nFailing Line: '{failing_line}'"
+                else:
+                     last_error = f"SyntaxError: {e}"
+                
+                logger.warning(f"Generated code failed syntax check on attempt {attempt + 1}: {e}\nContext: {last_error}")
                 continue
 
         if not generated_code:
@@ -230,12 +238,22 @@ Now, generate the Python code and the suggested filename for the described tool.
                     f_append_init.write(import_statement)
                 logger.info(f"Appended '{import_statement.strip()}' to {init_py_path}")
 
+        try:
+            # Auto-reload tools so the new one is available immediately
+            from ai_assistant.tools.tool_system import tool_system_instance
+            reload_result = tool_system_instance.refresh_custom_tools()
+            logger.info(f"Auto-reloaded tools after generation: {reload_result}")
+            reload_msg = "Tool generated and reloaded. You can use it immediately."
+        except Exception as e_reload:
+            logger.error(f"Failed to auto-reload tools: {e_reload}")
+            reload_msg = "Tool generated, but auto-reload failed. Please restart or use /refresh_tools."
+
         relative_file_path = os.path.join("custom_tools", GENERATED_TOOLS_DIR_NAME, final_filename).replace("\\", "/")
         return (
             f"Successfully generated tool code and applied syntax verification.\n"
             f"Saved to: 'ai_assistant/{relative_file_path}'\n"
             f"Function: '{tool_function_name}'\n"
-            "IMPORTANT: A restart of the AI Assistant or a '/refresh_tools' command is required to use this tool."
+            f"{reload_msg}"
         )
     except Exception as e:
         logger.error(f"Error in generate_new_tool_from_description: {e}", exc_info=True)
@@ -401,7 +419,9 @@ def stage_agent_tool_modification(
     modified_code_string: str,
     change_description: str,
     original_reflection_entry_id: Optional[str] = None,
-    tool_name_for_action: Optional[str] = None # New optional arg
+    tool_name_for_action: Optional[str] = None, # New optional arg
+    modification_strategy: str = "full_replace",
+    target_node_pattern: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Prepares a structured dictionary for proposing a modification to an existing agent tool.
@@ -410,11 +430,13 @@ def stage_agent_tool_modification(
     Args:
         module_path: The module path of the tool to be modified (e.g., "ai_assistant.custom_tools.my_tool").
         function_name: The name of the function within the module to be modified.
-        modified_code_string: The complete new source code for the function.
+        modified_code_string: The complete new source code for the function, OR the replacement code snippet if strategy is 'surgical'.
         change_description: A description of why the change is being made or the user's request.
         original_reflection_entry_id: Optional. If the modification stems from a reflection log.
         tool_name_for_action: Optional. The 'tool_name' as known by the tool system (e.g. for display or logging).
                               If None, defaults to function_name.
+        modification_strategy: "full_replace" (default) or "surgical_replace_node".
+        target_node_pattern: Required if strategy is 'surgical_replace_node'. The code string to find and match for replacement.
 
     Returns:
         A dictionary structured for ActionExecutor's PROPOSE_TOOL_MODIFICATION action.
@@ -428,8 +450,12 @@ def stage_agent_tool_modification(
         "tool_name": actual_tool_name,
         "suggested_code_change": modified_code_string,
         "suggested_change_description": change_description,
+        "modification_strategy": modification_strategy,
         # "source_of_code": "PlannerLLM->CodeService->StagedModification", # Could add more provenance
     }
+    if target_node_pattern:
+        action_details["target_node_pattern"] = target_node_pattern
+
     if original_reflection_entry_id:
         action_details["original_reflection_entry_id"] = original_reflection_entry_id
 
@@ -441,14 +467,16 @@ def stage_agent_tool_modification(
 # Conceptual Schema for stage_agent_tool_modification tool
 STAGE_AGENT_TOOL_MODIFICATION_SCHEMA = {
     "name": "stage_agent_tool_modification",
-    "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor.",
+    "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor. Supports both full function replacement and surgical node replacement.",
     "parameters": [
         tuple(sorted({"name": "module_path", "type": "str", "description": "The module path of the tool (e.g., 'ai_assistant.custom_tools.my_tool')."}.items())),
         tuple(sorted({"name": "function_name", "type": "str", "description": "The function name of the tool to modify."}.items())),
-        tuple(sorted({"name": "modified_code_string", "type": "str", "description": "The complete new source code for the modified function."}.items())),
+        tuple(sorted({"name": "modified_code_string", "type": "str", "description": "The complete new source code for the modified function, OR the replacement snippet for surgical edits."}.items())),
         tuple(sorted({"name": "change_description", "type": "str", "description": "Detailed description of the changes made or the reason for modification."}.items())),
         tuple(sorted({"name": "original_reflection_entry_id", "type": "str", "description": "Optional. The ID of the reflection entry that suggested this modification."}.items())),
-        tuple(sorted({"name": "tool_name_for_action", "type": "str", "description": "Optional. The 'tool_name' for logging/display in ActionExecutor, defaults to function_name."}.items()))
+        tuple(sorted({"name": "tool_name_for_action", "type": "str", "description": "Optional. The 'tool_name' for logging/display in ActionExecutor, defaults to function_name."}.items())),
+        tuple(sorted({"name": "modification_strategy", "type": "str", "description": "Optional. 'full_replace' (default) or 'surgical_replace_node'."}.items())),
+        tuple(sorted({"name": "target_node_pattern", "type": "str", "description": "Optional (Required for surgical). The existing code snippet to match and replace."}.items()))
     ],
     "returns": tuple(sorted({
         "type": "string",

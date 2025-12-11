@@ -55,6 +55,8 @@ class NotificationType(Enum):
     ERROR = auto()
 
 
+from ai_assistant.core.events import EventEmitter
+
 @dataclass
 class Notification:
     event_type: NotificationType
@@ -145,6 +147,11 @@ class NotificationManager:
         )
         self.notifications.insert(0, new_notification)
         self._save_notifications()
+        
+        # Emit event to UI via EventEmitter (which web_app bridges to SocketIO)
+        formatted_message = f"[Notification] {summary_message}"
+        EventEmitter.emit("log_event", {"message": formatted_message, "level": "INFO"})
+        
         print(f"NotificationManager: Added notification {new_notification.notification_id} ({event_type.name})")
         return new_notification
 

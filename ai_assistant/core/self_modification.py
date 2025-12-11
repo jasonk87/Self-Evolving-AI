@@ -795,6 +795,120 @@ async def insert_code_block(
 
     return "Code block inserted successfully."
 
+async def surgical_edit_function(
+    module_path: str,
+    function_name: str,
+    target_node_pattern: str,
+    replacement_code: str,
+    project_root_path: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Performs a surgical edit on a function by locating a specific statement
+    (matching target_node_pattern) and replacing it with replacement_code.
+    """
+    def _update_p_task(status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None, step_desc: Optional[str] = None):
+        actual_step = step_desc if step_desc else step
+        if task_manager and parent_task_id:
+            task_manager.update_task_status(parent_task_id, status, reason=reason, step_desc=actual_step)
+
+    _update_p_task(ActiveTaskStatus.PLANNING, step=f"Preparing surgical edit for {function_name}")
+
+    if not os.path.isabs(project_root_path):
+        project_root_path = os.path.abspath(project_root_path)
+
+    relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
+    file_path = os.path.join(project_root_path, relative_module_file_path)
+
+    if not os.path.exists(file_path):
+        return f"Error: File not found: {file_path}"
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_source = f.read()
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    # Verify target pattern validity
+    try:
+        normalized_target_str = ast.unparse(ast.parse(target_node_pattern)).strip()
+    except Exception as e:
+        return f"Error parsing target_node_pattern: {e}"
+
+    # Verify replacement code validity
+    try:
+        replacement_ast_body = ast.parse(replacement_code).body
+    except Exception as e:
+        return f"Error parsing replacement_code: {e}"
+
+    try:
+        original_ast = ast.parse(original_source)
+    except Exception as e:
+        return f"Error parsing original file: {e}"
+    
+    class SurgicalTransformer(ast.NodeTransformer):
+        def __init__(self):
+            self.found = False
+            self.replaced_count = 0
+
+        def visit_FunctionDef(self, node):
+            if node.name == function_name:
+                new_body = []
+                for child in node.body:
+                    try:
+                        child_source = ast.unparse(child).strip()
+                        if child_source == normalized_target_str:
+                            self.found = True
+                            self.replaced_count += 1
+                            new_body.extend(replacement_ast_body)
+                        else:
+                            new_body.append(self.visit(child))
+                    except Exception as e:
+                        new_body.append(child)
+                node.body = new_body
+            return node
+        
+        def visit_AsyncFunctionDef(self, node):
+            return self.visit_FunctionDef(node)
+
+    transformer = SurgicalTransformer()
+    new_tree = transformer.visit(original_ast)
+
+    if not transformer.found:
+        return f"Error: Target pattern '{target_node_pattern}' not found in function '{function_name}'."
+
+    try:
+        new_source_code = ast.unparse(new_tree)
+    except Exception as e:
+        return f"Error unparsing AST: {e}"
+
+    code_diff = generate_diff(original_source, new_source_code, file_name=relative_module_file_path)
+
+    critic1 = ReviewerAgent()
+    critic2 = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic1, critic2)
+    
+    _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc="Reviewing surgical changes")
+    
+    approved, reviews = await coordinator.request_critical_review(
+        original_code=original_source,
+        new_code_string=new_source_code,
+        code_diff=code_diff,
+        original_requirements=change_description
+    )
+
+    if not approved:
+         return "Surgical edit rejected by critical review."
+
+    shutil.copy2(file_path, file_path + ".bak")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_source_code)
+    
+    _update_p_task(ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Surgical edit applied.")
+    return f"Surgical edit to '{function_name}' applied successfully."
+
 if __name__ == '__main__': # pragma: no cover
     import tempfile
     TEST_DIR = "test_ai_assistant_ws_self_modification"

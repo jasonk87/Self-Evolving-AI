@@ -272,6 +272,12 @@ class ReflectionLog:
             return []
         return self.log_entries[-limit:]
 
+    def get_last_entry_timestamp(self) -> float:
+        """Returns the timestamp of the last entry as a float (unix epoch), or 0.0 if empty."""
+        if not self.log_entries:
+            return 0.0
+        return self.log_entries[-1].timestamp.timestamp()
+
     def log_execution(
         self,
         goal_description: str,

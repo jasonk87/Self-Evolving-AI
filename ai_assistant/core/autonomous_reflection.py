@@ -15,6 +15,7 @@ This allows the assistant to make informed decisions about which self-improvemen
 tasks to undertake.
 """
 import json 
+import time
 from typing import List, Dict, Any, Optional
 import re
 import logging
@@ -641,6 +642,7 @@ def run_self_reflection_cycle(
                 logger.warning(f"Skipping scoring for an invalid suggestion item: {suggestion}")
                 continue
 
+            time.sleep(10) # Throttle to prevent 429 errors
             scores = _invoke_suggestion_scoring_llm(suggestion, llm_model_name=llm_model_name)
             if scores:
                 suggestion["impact_score"] = scores.get("impact_score")
@@ -657,6 +659,7 @@ def run_self_reflection_cycle(
         for suggestion in final_suggestions:
             if not isinstance(suggestion, dict): continue
 
+            time.sleep(10) # Throttle to prevent 429 errors
             review_data = _invoke_suggestion_review_llm(suggestion, llm_model_name=llm_model_name)
             if review_data:
                 suggestion["review_looks_good"] = review_data.get("review_looks_good")

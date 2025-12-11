@@ -11,6 +11,8 @@ from dataclasses import asdict
 from ai_assistant.core.suggestion_manager import find_suggestion, list_suggestions 
 from ai_assistant.core.project_manager import find_project
 from ai_assistant.memory.persistent_memory import load_learned_facts
+import os
+import glob
 
 
 
@@ -88,9 +90,6 @@ def get_system_status_summary(
             limit=unread_notifications_limit
         )
         num_unread_actually_shown = len(unread_notifications)
-        # Get total unread count if manager supports it, otherwise rely on what was fetched.
-        # For simplicity, we'll just state how many are shown from the limit.
-        # A more accurate total unread count would require another call or method in NotificationManager.
         total_unread_count_note = f"({num_unread_actually_shown} shown, up to {unread_notifications_limit} displayed)"
 
         summary_lines.append(f"\nUnread Notifications {total_unread_count_note}:")
@@ -98,7 +97,6 @@ def get_system_status_summary(
             summary_lines.append("  No unread notifications.")
         else:
             for i, notification in enumerate(unread_notifications):
-                # Basic formatting, can be enhanced
                 ts_str = "Unknown Time"
                 if isinstance(notification.timestamp, datetime):
                     ts_str = notification.timestamp.strftime('%Y-%m-%d %H:%M')
@@ -110,6 +108,37 @@ def get_system_status_summary(
                 summary_lines.append(
                     f"  - [{ts_str}] {notification.event_type.name}: {summary_msg_display} (ID: {notification.notification_id})"
                 )
+
+    # --- New Section: Check for recently created/modified tools in the file system ---
+    # This provides "long-term memory" of tool creation even if TaskManager is reset.
+    import glob
+    try:
+        # Assuming standard path structure relative to this file
+        # This file: ai_assistant/custom_tools/awareness_tools.py
+        # Generated: ai_assistant/custom_tools/generated/
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        generated_tools_dir = os.path.join(current_dir, "generated")
+        
+        if os.path.exists(generated_tools_dir):
+            # Find all .py files, ignore __init__.py
+            py_files = glob.glob(os.path.join(generated_tools_dir, "*.py"))
+            py_files = [f for f in py_files if not os.path.basename(f).startswith("__")]
+            
+            # Sort by modification time, newest first
+            py_files.sort(key=os.path.getmtime, reverse=True)
+            
+            recent_files = py_files[:5] # Show top 5
+            
+            if recent_files:
+                summary_lines.append("\nRecently Created/Modified Tools (File System):")
+                for f_path in recent_files:
+                    f_name = os.path.basename(f_path)
+                    mtime = datetime.fromtimestamp(os.path.getmtime(f_path)).strftime('%Y-%m-%d %H:%M')
+                    summary_lines.append(f"  - {f_name} (Last Modified: {mtime})")
+            else:
+                summary_lines.append("\nRecently Created/Modified Tools: None found in generated directory.")
+    except Exception as e:
+        summary_lines.append(f"\nError scanning generated tools: {e}")
 
     return "\n".join(summary_lines)
 
@@ -142,11 +171,15 @@ def get_self_awareness_info_and_converse(
         task_manager: Injected TaskManager.
         notification_manager: Injected NotificationManager.
     """
+    import json
+    from ai_assistant.config import get_data_dir
+    
     status_summary = get_system_status_summary(
         task_manager=task_manager,
         notification_manager=notification_manager,
-        active_limit=5,
-        unread_notifications_limit=5
+        active_limit=10,
+        archived_limit=20, # Increased from default 3 to prevent "amnesia" about recent work
+        unread_notifications_limit=10
     )
 
     # Add learned facts to the report
@@ -169,10 +202,30 @@ def get_self_awareness_info_and_converse(
              if len(facts) > 10:
                 facts_summary += f"  ... and {len(facts) - 10} more."
 
+    # --- New Section: Available Tools from Registry ---
+    registry_path = os.path.join(get_data_dir(), "tool_registry.json")
+    tool_list_str = "\nAvailable Tools:\n"
+    try:
+        if os.path.exists(registry_path):
+            with open(registry_path, 'r') as f:
+                registry = json.load(f)
+                # Sort tool names for readability
+                tool_names = sorted(list(registry.keys()))
+                count = len(tool_names)
+                tool_list_str += f"  (Total: {count})\n"
+                
+                # Group them or just list them? Listing them all might be long but highly requested.
+                # Let's list comma-separated to save vertical space.
+                tool_list_str += "  " + ", ".join(tool_names)
+        else:
+             tool_list_str += "  Registry file not found."
+    except Exception as e:
+        tool_list_str += f"  Error reading tool registry: {e}"
+
     response = f"Self-Awareness Report:\n"
     if context:
         response += f"(Context: {context})\n"
-    response += f"{status_summary}\n{facts_summary}\n\n(Use this information to answer the user's question about how you are doing.)"
+    response += f"{status_summary}\n{facts_summary}\n{tool_list_str}\n\n(Use this information to answer the user's question about how you are doing or what tools you have.)"
     return response
 
 GET_SELF_AWARENESS_INFO_AND_CONVERSE_SCHEMA = {
