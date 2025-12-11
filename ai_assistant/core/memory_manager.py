@@ -2,10 +2,14 @@ from typing import List, Dict, Any, Optional
 import datetime
 import uuid
 import logging
+import asyncio # Added for async operations
 from ai_assistant.memory.persistent_memory import (
     load_learned_facts, save_learned_facts,
     load_actionable_insights, save_actionable_insights
 )
+# Integration with RAG
+from ai_assistant.memory.rag_system import RAGSystem
+from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +19,39 @@ class MemoryManager:
     """
 
     def __init__(self):
-        pass
+        self.rag_system: Optional[RAGSystem] = None
+        self._initialize_rag()
+
+    def _initialize_rag(self):
+        try:
+            provider = OllamaProvider()
+            self.rag_system = RAGSystem(provider)
+            # Potentially sync existing facts asynchronously
+            # Since __init__ is sync, we can't await here.
+            # Ideally, this should be done in a startup service or lazy loaded.
+        except Exception as e:
+            logger.error(f"Failed to initialize RAG system: {e}")
+
+    async def retrieve_relevant_context(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
+        """
+        Retrieves relevant context (facts) for a given query using RAG.
+        """
+        if not self.rag_system:
+             return []
+
+        return await self.rag_system.retrieve_context(query, k=k)
+
+    async def add_fact_with_rag(self, text: str, category: str = "manual", source: str = "user_interface") -> Dict[str, Any]:
+        """
+        Adds a fact and indexes it in the RAG system.
+        Note: This is an async version of add_fact.
+        """
+        new_fact = self.add_fact(text, category, source)
+
+        if self.rag_system:
+            await self.rag_system.ingest_fact(new_fact['text'], metadata=new_fact)
+
+        return new_fact
 
     # --- Facts Management ---
 

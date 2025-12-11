@@ -279,13 +279,16 @@ async def _generate_test_for_tool(
     tool_name: str,
     tool_filename: str,
     tool_code: str,
-    action_executor: "ActionExecutor"
+    action_executor: Optional["ActionExecutor"]
 ) -> str:
     """
     Generates a pytest file for the newly created tool.
     """
     if not tool_name:
         return "Skipped (no tool name identified)."
+
+    if not action_executor:
+        return "Skipped (no action_executor provided)."
 
     logger.info(f"Generating test for tool: {tool_name}")
 
