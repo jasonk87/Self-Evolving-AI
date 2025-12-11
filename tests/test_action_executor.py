@@ -14,7 +14,7 @@ try:
     from ai_assistant.core.reflection import ReflectionLogEntry, global_reflection_log as core_global_reflection_log
     from ai_assistant.planning.execution import ExecutionAgent
     from ai_assistant.planning.planning import PlannerAgent
-    from ai_assistant.code_services.service import CodeService # Added for mocking
+    from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult # Updated import
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
@@ -23,7 +23,7 @@ except ImportError: # pragma: no cover
     from ai_assistant.core.reflection import ReflectionLogEntry, global_reflection_log as core_global_reflection_log
     from ai_assistant.planning.execution import ExecutionAgent
     from ai_assistant.planning.planning import PlannerAgent
-    from ai_assistant.code_services.service import CodeService
+    from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult
 
 
 @dataclass
@@ -49,7 +49,7 @@ class MockReflectionLogEntryForTest:
 class TestActionExecutor(unittest.TestCase):
 
     def setUp(self):
-        self.executor = ActionExecutor()
+        self.executor = ActionExecutor(learning_agent=mock.MagicMock())
         self.original_log_entries = list(core_global_reflection_log.log_entries)
         core_global_reflection_log.log_entries = []
 
@@ -60,55 +60,47 @@ class TestActionExecutor(unittest.TestCase):
 class MockToolSystemForExecutionAgent:
     def __init__(self):
         self.tools_called_with_args = []
-        self.tool_outputs = {} # Store predefined outputs for tools
+        self.tool_outputs = {}
 
-    async def execute_tool(self, name, args=(), kwargs=None, task_manager=None, notification_manager=None): # Match signature
+    async def execute_tool(self, name, args=(), kwargs=None, task_manager=None, notification_manager=None, action_executor=None):
         self.tools_called_with_args.append({"name": name, "args": args, "kwargs": kwargs or {}})
         print(f"[MockToolSystemForExecutionAgent] Called: {name} with args: {args}, kwargs: {kwargs}")
         if name in self.tool_outputs:
             output = self.tool_outputs[name]
-            if callable(output): # Allow dynamic output based on args
+            if callable(output):
                 return output(*args, **(kwargs or {}))
             return output
         return f"Mock success for {name}"
 
-    def list_tools_with_sources(self): # Needed by PlannerAgent
-        # Provide a basic structure; adapt if PlannerAgent needs more details
+    def list_tools_with_sources(self):
         return {
             "request_user_clarification": {"description": "Asks for clarification.", "schema_details": {}},
             "some_other_tool": {"description": "Another tool.", "schema_details": {}},
         }
 
-    def list_tools(self): # Needed by PlannerAgent if it uses this
+    def list_tools(self):
         return {name: data["description"] for name, data in self.list_tools_with_sources().items()}
 
 
-class MockPlannerAgentForExecutionAgent(PlannerAgent): # Inherit from real PlannerAgent
+class MockPlannerAgentForExecutionAgent(PlannerAgent):
     async def create_plan_with_llm(self, goal_description, available_tools, project_context_summary=None, project_name_for_context=None):
-        # Not actively used if ExecutionAgent doesn't re-plan in this specific test
         return []
     async def replan_after_failure(self, original_goal, failure_analysis, available_tools, ollama_model_name=None):
-        # Not actively used if ExecutionAgent doesn't re-plan in this specific test
         return []
 
-class MockLearningAgentForExecutionAgent: # Simple mock, doesn't need to inherit
+class MockLearningAgentForExecutionAgent:
     def process_reflection_entry(self, entry):
         print(f"[MockLearningAgentForExecutionAgent] Processing reflection for goal: {entry.goal_description}")
 
 
-class TestExecutionAgentFlows(unittest.IsolatedAsyncioTestCase): # Use IsolatedAsyncioTestCase for async tests
+class TestExecutionAgentFlows(unittest.IsolatedAsyncioTestCase):
 
     async def test_execute_plan_with_clarification_tool(self):
-        """
-        Tests ExecutionAgent's ability to execute a plan involving the
-        request_user_clarification tool and use its output in a subsequent step.
-        """
         execution_agent = ExecutionAgent()
         mock_tool_system = MockToolSystemForExecutionAgent()
         mock_planner_agent = MockPlannerAgentForExecutionAgent()
         mock_learning_agent = MockLearningAgentForExecutionAgent()
 
-        # Define the output for the clarification tool
         clarification_response = "my_preferred_file.txt"
         mock_tool_system.tool_outputs["request_user_clarification"] = clarification_response
 
@@ -119,44 +111,34 @@ class TestExecutionAgentFlows(unittest.IsolatedAsyncioTestCase): # Use IsolatedA
 
         goal_desc = "Test goal using clarification"
 
-        # Execute the plan
-        # ExecutionAgent.execute_plan returns -> Tuple[List[Dict[str, Any]], List[Any]] (final_plan, results)
         final_plan, results = await execution_agent.execute_plan(
             goal_description=goal_desc,
             initial_plan=test_plan,
             tool_system=mock_tool_system,
             planner_agent=mock_planner_agent,
             learning_agent=mock_learning_agent
-            # task_manager and notification_manager can be None for this test if not essential to the flow
         )
 
         self.assertEqual(len(mock_tool_system.tools_called_with_args), 2, "Expected two tools to be called")
 
-        # Check call to request_user_clarification
         clarification_call = mock_tool_system.tools_called_with_args[0]
         self.assertEqual(clarification_call["name"], "request_user_clarification")
         self.assertEqual(clarification_call["args"], ("What is your preferred filename?",))
 
-        # Check call to some_other_tool
         other_tool_call = mock_tool_system.tools_called_with_args[1]
         self.assertEqual(other_tool_call["name"], "some_other_tool")
-        # Verify that the output of the first step was correctly substituted
         self.assertEqual(other_tool_call["args"], (clarification_response, "static_value"))
 
-        # Check overall results
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0], clarification_response) # Result of first step
-        # The result of the second step would be the mock output for "some_other_tool"
+        self.assertEqual(results[0], clarification_response)
         self.assertEqual(results[1], f"Mock success for some_other_tool")
-
-        # Ensure the final plan matches the initial plan if no re-planning occurred
         self.assertEqual(final_plan, test_plan)
 
 
 class TestActionExecutor(unittest.TestCase):
 
     def setUp(self):
-        self.executor = ActionExecutor(learning_agent=mock.MagicMock()) # Pass a mock LearningAgent
+        self.executor = ActionExecutor(learning_agent=mock.MagicMock())
         self.original_log_entries = list(core_global_reflection_log.log_entries)
         core_global_reflection_log.log_entries = []
 
@@ -175,7 +157,7 @@ class TestActionExecutor(unittest.TestCase):
             "module_path": "test_module.py", "function_name": "test_func", "tool_name": "test_tool",
             "suggested_code_change": "def test_func(): pass # new code",
             "original_reflection_entry_id": "entry_id_for_test_pass",
-            "suggested_change_description": original_desc # This should be passed as change_description
+            "suggested_change_description": original_desc
         }
         proposed_action = {"source_insight_id": "insight1", "action_type": "PROPOSE_TOOL_MODIFICATION", "details": action_details}
 
@@ -197,18 +179,20 @@ class TestActionExecutor(unittest.TestCase):
     @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code')
     @patch.object(ActionExecutor, '_run_post_modification_test', new_callable=AsyncMock)
     def test_tool_mod_via_codeservice_and_test_pass(self, mock_run_post_mod_test, mock_edit_code, mock_log_execution):
-        # Mock the CodeService's modify_code method on the executor's instance
-        self.executor.code_service = mock.AsyncMock(spec=CodeService)
-        self.executor.code_service.modify_code.return_value = {
-            "status": "SUCCESS_CODE_GENERATED",
-            "modified_code_string": "def new_llm_func(): return 'fixed_by_codeservice'"
-        }
+        # Mock CodeSynthesisService submit_task
+        self.executor.code_synthesis_service = mock.AsyncMock(spec=CodeSynthesisService)
+        self.executor.code_synthesis_service.submit_task.return_value = CodeTaskResult(
+            request_id="mock_req",
+            status=CodeTaskStatus.SUCCESS,
+            generated_code="def new_llm_func(): return 'fixed_by_codeservice'"
+        )
+
         mock_edit_code.return_value = "Successfully modified function 'old_func'."
         mock_run_post_mod_test.return_value = (True, "Post-CodeService-mod test passed.")
 
         action_details = {
             "module_path": "test_module.py", "function_name": "old_func", "tool_name": "test_tool",
-            "suggested_change_description": "Needs a fix via CodeService.",
+            "suggested_change_description": "Needs a fix via CodeService generated code.",
             # NO suggested_code_change, to trigger the CodeService path
             "original_reflection_entry_id": "dummy_ref_id_cs"
         }
@@ -217,28 +201,20 @@ class TestActionExecutor(unittest.TestCase):
         result = asyncio.run(self.executor.execute_action(proposed_action))
 
         self.assertTrue(result)
-        self.executor.code_service.modify_code.assert_called_once_with(
-            context="SELF_FIX_TOOL",
-            modification_instruction="Needs a fix via CodeService.",
-            module_path="test_module.py",
-            function_name="old_func",
-            existing_code=None
-        )
+        self.executor.code_synthesis_service.submit_task.assert_called_once()
+        call_args = self.executor.code_synthesis_service.submit_task.call_args
+        request = call_args[0][0]
+        self.assertEqual(request.task_type, CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM)
+        self.assertEqual(request.context_data['problem_description'], "Needs a fix via CodeService generated code.")
+
         mock_edit_code.assert_called_once()
         args, kwargs = mock_edit_code.call_args
         self.assertEqual(kwargs.get('module_path'), "test_module.py")
         self.assertEqual(kwargs.get('function_name'), "old_func")
         self.assertEqual(kwargs.get('new_code_string'), "def new_llm_func(): return 'fixed_by_codeservice'")
-        self.assertEqual(kwargs.get('change_description'), "Needs a fix via CodeService.") # Verify here
+        self.assertEqual(kwargs.get('change_description'), "Needs a fix via CodeService generated code.")
 
         mock_run_post_mod_test.assert_called_once()
-
-        # The actual code does NOT log CODE_SERVICE_GEN_SUCCESS to the reflection log
-        # It only logs failure in the else block. Success is implicit in the continuation.
-        # So we remove this assertion that was causing StopIteration.
-        # code_service_log_call = next(call for call in mock_log_execution.call_args_list if call.kwargs.get('status_override') == "CODE_SERVICE_GEN_SUCCESS")
-        # self.assertIsNotNone(code_service_log_call)
-        # self.assertTrue(code_service_log_call.kwargs.get('overall_success'))
 
         final_log_call_args = mock_log_execution.call_args_list[-1].kwargs
         self.assertTrue(final_log_call_args.get('overall_success'))
@@ -247,12 +223,13 @@ class TestActionExecutor(unittest.TestCase):
 
     @patch('ai_assistant.execution.action_executor.global_reflection_log.log_execution')
     def test_tool_mod_via_codeservice_fails_to_generate(self, mock_log_execution):
-        self.executor.code_service = mock.AsyncMock(spec=CodeService)
-        self.executor.code_service.modify_code.return_value = {
-            "status": "ERROR_LLM_NO_SUGGESTION",
-            "modified_code_string": None,
-            "error": "LLM said no."
-        }
+        self.executor.code_synthesis_service = mock.AsyncMock(spec=CodeSynthesisService)
+        self.executor.code_synthesis_service.submit_task.return_value = CodeTaskResult(
+            request_id="mock_req_fail",
+            status=CodeTaskStatus.FAILURE_LLM_GENERATION,
+            error_message="LLM said no."
+        )
+
         action_details = {
             "module_path": "test_module.py", "function_name": "old_func", "tool_name": "test_tool",
             "suggested_change_description": "Needs a fix via CodeService, but CS will fail.",
@@ -263,7 +240,7 @@ class TestActionExecutor(unittest.TestCase):
         result = asyncio.run(self.executor.execute_action(proposed_action))
 
         self.assertFalse(result)
-        self.executor.code_service.modify_code.assert_called_once()
+        self.executor.code_synthesis_service.submit_task.assert_called_once()
 
         code_service_fail_log_call = next(call for call in mock_log_execution.call_args_list if call.kwargs.get('status_override') == "CODE_SERVICE_GEN_FAILED")
         self.assertIsNotNone(code_service_fail_log_call)

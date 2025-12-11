@@ -122,15 +122,6 @@ class ActionExecutor:
             print(f"[DEBUG] TaskManager instance in ActionExecutor: {self.task_manager}")
             print(f"[DEBUG] NotificationManager instance in ActionExecutor: {self.notification_manager}")
 
-    # Property to maintain backward compatibility for a moment if needed, or just for clarity
-    @property
-    def code_service(self):
-        # We mock the structure expected: self.code_service.llm_provider
-        class MockCodeService:
-            def __init__(self, provider):
-                self.llm_provider = provider
-        return MockCodeService(self.llm_provider)
-
     def _update_task_if_manager(self, task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step_desc: Optional[str] = None):
         if task_id and self.task_manager:
             self.task_manager.update_task_status(task_id, status, reason=reason, step_desc=step_desc)
