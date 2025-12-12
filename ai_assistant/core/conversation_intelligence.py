@@ -13,6 +13,7 @@ from ai_assistant.tools.tool_system import ToolSystem # Assuming ToolSystem is t
 from .reflection import global_reflection_log
 from ai_assistant.memory.event_logger import log_event, get_recent_events
 from ai_assistant.custom_tools.knowledge_tools import recall_facts # Added import
+from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus # Added for Evolutionary Architect
 
 from ai_assistant.learning.learning import LearningAgent # Import LearningAgent
 TOOL_CONFIRMATION_CONFIG_FILENAME_CI = "tool_confirmation_config.json" # For consistency
@@ -140,6 +141,43 @@ async def detect_missed_tool_opportunity(
         if is_debug_mode(): # pragma: no cover
             print(f"[DEBUG CONV_INTEL] detect_missed_tool_opportunity returning None due to empty user_statement or available_tools.")
         return None
+
+    # --- Evolutionary Architect Welcome Back Hook ---
+    # Check if user statement is a greeting or session start indicator
+    is_greeting = False
+    lower_stmt = user_statement.lower().strip()
+    if lower_stmt in ["hi", "hello", "hey", "good morning", "good evening", "greetings", "start"]:
+         is_greeting = True
+
+    if is_greeting:
+        try:
+            nm = NotificationManager()
+            proposals = nm.get_notifications(
+                status_filter=NotificationStatus.UNREAD,
+                type_filter=NotificationType.EVOLUTION_PROPOSAL,
+                limit=1
+            )
+            if proposals:
+                proposal = proposals[0]
+                # Mark as read so we don't spam
+                nm.mark_as_read([proposal.notification_id])
+
+                target_file = proposal.details_payload.get('target_file', 'a file')
+                summary = proposal.details_payload.get('proposal', {}).get('summary', 'an optimization')
+
+                welcome_msg = (
+                    f"Welcome back! While you were offline, I acted as your Evolutionary Architect and audited `{os.path.basename(target_file)}`.\n"
+                    f"I found a way to improve it: {summary}.\n"
+                    f"Would you like to review the full proposal?"
+                )
+                return {
+                    "conversational_response": welcome_msg,
+                    "autonomously_executed": False
+                }
+        except Exception as e:
+            if is_debug_mode():
+                print(f"[DEBUG CONV_INTEL] Error checking for evolution proposals: {e}")
+    # --- End Evolutionary Architect Hook ---
 
     try:
         tools_json_string = json.dumps(available_tools, indent=2)
