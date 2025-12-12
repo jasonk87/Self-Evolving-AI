@@ -508,6 +508,16 @@ def delete_fact(fact_id):
         logger.error(f"Error deleting fact {fact_id}: {e}")
         return jsonify({"error": str(e), "success": False}), 500
 
+@app.route('/api/memory/all', methods=['GET'])
+def get_all_memories():
+    """Returns all memories (facts and insights) for visualization."""
+    try:
+        data = memory_manager.get_all_memories_structured()
+        return jsonify({"data": data, "success": True})
+    except Exception as e:
+        logger.error(f"Error fetching all memories: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
 @app.route('/api/memory/insights', methods=['GET'])
 def get_insights():
     """Returns a list of all actionable insights."""
