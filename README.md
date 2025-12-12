@@ -40,6 +40,20 @@ This project is a next-generation AI agent designed not just to execute tasks, b
    - **What it is:** For complex goals (e.g., "Build a Snake game"), the AI breaks the task down into a high-level project plan and then executes it step-by-step.
    - **Benefit:** Allows the AI to handle large, multi-stage projects without getting lost.
 
+### 7. **Evolutionary Architect**
+   - **What it is:** A background autonomous process that periodically "audits" the codebase while the system is idle.
+   - **Capabilities:**
+     - **Static Analysis Filter:** Uses Python's `ast` to filter out clean code and identify files with high complexity, deprecated patterns, or TODOs.
+     - **Evolutionary Lenses:** Generates optimization, modernization, or completion proposals using specialized LLM prompts.
+     - **Safety:** Only generates *proposals* (Notifications). Never modifies code without user confirmation.
+
+### 8. **Visual Memory Explorer ("Cortex")**
+   - **What it is:** An interactive visualization of the AI's long-term memory.
+   - **Benefit:** Allows the user to "see what the AI knows."
+   - **Features:**
+     - **Graph View:** Displays Facts and Insights as connected nodes in a force-directed graph.
+     - **Management:** Users can inspect memory details and delete incorrect facts to correct the AI's behavior.
+
 ## 🛠️ Architecture
 
 *   **Orchestrator:** `DynamicOrchestrator` manages the lifecycle of user requests, coordinating the Planner, Executor, and Learning agents.
@@ -68,7 +82,8 @@ This project is a next-generation AI agent designed not just to execute tasks, b
 
 ## 🤖 Evolution Status
 
+*   **Architecture:** Evolutionary (Background Auditing Active)
 *   **Self-Modification:** ENABLED (Protected by The Council)
-*   **Memory:** RAG-Enhanced
+*   **Memory:** RAG-Enhanced & Visually Explorable
 *   **Testing:** Test-Driven
 *   **Planning:** Hierarchical & Wisdom-Augmented
