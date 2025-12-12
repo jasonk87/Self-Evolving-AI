@@ -58,7 +58,7 @@ _last_project_execution_scan_time: float = 0.0 # New state for project execution
 _last_self_healing_time: float = 0.0 # State for self-healing
 _self_healing_interval_seconds = 600 # Check every 10 minutes
 _last_architect_audit_timestamp: float = 0.0
-_architect_audit_interval_seconds = 43200 # 12 hours
+_architect_audit_interval_seconds = 900 # 15 minutes for debugging
 ARCHITECT_STATE_FILE = "architect_state.json"
 
 def sanitize_project_name(name: str) -> str:
