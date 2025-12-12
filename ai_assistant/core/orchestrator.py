@@ -38,7 +38,8 @@ class DynamicOrchestrator:
                  action_executor: ActionExecutor,
                  task_manager: Optional[TaskManager] = None,
                  notification_manager: Optional[NotificationManager] = None,
-                 hierarchical_planner: Optional[HierarchicalPlanner] = None):
+                 hierarchical_planner: Optional[HierarchicalPlanner] = None,
+                 memory_manager: Optional[Any] = None): # Added memory_manager
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
@@ -46,6 +47,11 @@ class DynamicOrchestrator:
         self.task_manager = task_manager
         self.notification_manager = notification_manager
         self.hierarchical_planner = hierarchical_planner
+        self.memory_manager = memory_manager
+
+        # Inject memory manager into planner if not already set
+        if self.planner and self.memory_manager and hasattr(self.planner, 'memory_manager') and self.planner.memory_manager is None:
+            self.planner.memory_manager = self.memory_manager
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
@@ -116,43 +122,38 @@ class DynamicOrchestrator:
                 metadata={"goal": prompt}
             )
 
-            # --- Fact Retrieval ---
-            all_learned_facts = load_learned_facts()
-            relevant_facts_for_prompt: List[Dict[str, Any]] = [] # Ensure type
-
-            if all_learned_facts:
-                # Refined selection logic:
-                keyword_matched_facts: List[Dict[str, Any]] = [] # Ensure type
-                prompt_keywords_set = set(prompt.lower().split()) # Ensure type
-                for fact_entry in all_learned_facts:
-                    fact_text_lower = fact_entry.get("text", "").lower()
-                    if any(keyword in fact_text_lower for keyword in prompt_keywords_set):
-                        if len(keyword_matched_facts) < 5:
-                            keyword_matched_facts.append(fact_entry)
-
-                relevant_facts_for_prompt = list(keyword_matched_facts)
-
-                category_matched_facts_count = 0
-                preferred_categories = ["user_preference", "project_context", "general_knowledge"] # Moved definition here
-                for fact_entry in reversed(all_learned_facts):
-                    if len(relevant_facts_for_prompt) >= 7:
-                        break
-                    if category_matched_facts_count >= 2:
-                        break
-
-                    is_already_added = any(rf['fact_id'] == fact_entry['fact_id'] for rf in relevant_facts_for_prompt)
-                    if not is_already_added and fact_entry.get("category") in preferred_categories:
-                         relevant_facts_for_prompt.append(fact_entry)
-                         category_matched_facts_count +=1
-
-                MAX_FACTS_FOR_PROMPT = 7
-                if len(relevant_facts_for_prompt) > MAX_FACTS_FOR_PROMPT:
-                    relevant_facts_for_prompt = relevant_facts_for_prompt[:MAX_FACTS_FOR_PROMPT]
-
+            # --- Fact Retrieval (Semantic RAG) ---
+            relevant_facts_for_prompt = []
             learned_facts_section_str = ""
-            if relevant_facts_for_prompt:
-                facts_str_list = [f"- {fact.get('text', '')} (Category: {fact.get('category', 'N/A')}, Source: {fact.get('source', 'N/A')})" for fact in relevant_facts_for_prompt]
-                learned_facts_section_str = "\nRelevant Learned Facts:\n" + "\n".join(facts_str_list)
+            
+            if self.memory_manager:
+                try:
+                    # Retrieve relevant facts using Semantic Search
+                    # We query with the full prompt to find conceptually similar facts
+                    rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=5)
+                    
+                    if rag_results:
+                        # RAG results structure: [{'text': '...', 'metadata': {...}, 'score': 0.8}, ...]
+                        relevant_facts_for_prompt = rag_results
+                        
+                        facts_str_list = []
+                        for res in rag_results:
+                            fact_text = res.get('text', '')
+                            metadata = res.get('metadata', {})
+                            category = metadata.get('category', 'N/A') if metadata else 'N/A'
+                            score = res.get('score', 0.0)
+                            facts_str_list.append(f"- {fact_text} (Category: {category}, Relevance: {score:.2f})")
+                            
+                        learned_facts_section_str = "\nRelevant Learned Facts (Semantic Search):\n" + "\n".join(facts_str_list)
+                        if is_debug_mode():
+                            print(f"DynamicOrchestrator: Retrieved {len(rag_results)} facts via RAG.")
+                except Exception as e_rag:
+                    logger.error(f"Error during RAG retrieval: {e_rag}")
+                    # Fallback or just proceed without facts
+            else:
+                 if is_debug_mode():
+                     print("DynamicOrchestrator: MemoryManager not available for RAG.")
+
             # --- End Fact Retrieval ---
 
             # --- Contextualization Phase (Simulated for Project Files) ---

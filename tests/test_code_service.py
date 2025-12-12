@@ -576,7 +576,7 @@ if __name__ == '__main__':
         }
         result_code = self.code_service._assemble_components(outline, details)
 
-        expected_code = """import math
+        expected_code = '''import math
 
 class MyCalc:
     """A calculator."""
@@ -590,7 +590,7 @@ class MyCalc:
     def add(self, x: float) -> float:
         return self.val + x
 
-"""
+'''
         self.assertEqual(result_code.strip(), expected_code.strip())
 
 

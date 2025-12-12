@@ -6,3 +6,5 @@ google-api-python-client
 flask-socketio
 eventlet
 python-dotenv
+numpy
+pytest

@@ -1,14 +1,14 @@
 import json
 from board import Board
-from player import Player
+from player import Player, HumanPlayer
 from rules import Rules
 from telemetry import Telemetry
 
 class CheckersGame:
     def __init__(self):
         self.board = Board()
-        self.player1 = Player("Player 1", "W")
-        self.player2 = Player("Player 2", "B")
+        self.player1 = HumanPlayer("Player 1", "W")
+        self.player2 = HumanPlayer("Player 2", "B")
         self.rules = Rules(self.board)
         self.current_player = self.player1
         self.telemetry = Telemetry()
@@ -66,7 +66,7 @@ class CheckersGame:
 
     def game_loop(self):
         while not self.game_over:
-            self.board.print_board()
+            self.board.display_board()
             print(f"{self.current_player.name}'s turn ({self.current_player.color})")
 
             try:

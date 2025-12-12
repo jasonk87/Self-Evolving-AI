@@ -321,6 +321,27 @@ def get_reflection_log_summary_for_analysis(
 
     return "\n\n".join(formatted_summary_parts)
 
+def repair_json(json_str: str) -> str:
+    """
+    Attempts to repair truncated JSON by closing open brackets/braces.
+    """
+    stack = []
+    for char in json_str:
+        if char in '{[':
+            stack.append(char)
+        elif char in '}]':
+            if stack:
+                if (char == '}' and stack[-1] == '{') or (char == ']' and stack[-1] == '['):
+                    stack.pop()
+    
+    closing = ""
+    while stack:
+        opener = stack.pop()
+        if opener == '{': closing += '}'
+        elif opener == '[': closing += ']'
+    
+    return json_str + closing
+
 def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     model_to_use = llm_model_name if llm_model_name is not None else get_model_for_task("reflection")
     prompt = IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE.format(reflection_log_summary=log_summary_str)
@@ -351,8 +372,16 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
             return None
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from pattern identification LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
-        return None
+        logger.info(f"JSONDecodeError in pattern id, attempting repair. Error: {e}")
+        try:
+            repaired_json = repair_json(cleaned_response)
+            data = json.loads(repaired_json)
+            if not isinstance(data, dict):
+                 return None
+            return data
+        except Exception as e2:
+            logger.error(f"Error decoding JSON (even after repair) from pattern identification LLM: {e2}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
+            return None
 
 def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, available_tools_json_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     model_to_use = llm_model_name if llm_model_name is not None else get_model_for_task("reflection")
@@ -387,8 +416,17 @@ def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, av
             return None
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from suggestion generation LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
-        return None
+        logger.info(f"JSONDecodeError in suggestion generation, attempting repair. Error: {e}")
+        try:
+            repaired_json = repair_json(cleaned_response)
+            data = json.loads(repaired_json)
+             # Basic structure check after repair
+            if isinstance(data, dict) and "improvement_suggestions" in data:
+                 return data
+            return None
+        except Exception as e2:
+            logger.error(f"Error decoding JSON (even after repair) from suggestion generation LLM: {e2}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
+            return None
 
 def _invoke_suggestion_scoring_llm(suggestion: Dict[str, Any], llm_model_name: Optional[str] = None) -> Optional[Dict[str, int]]:
     suggestion_text = suggestion.get("suggestion_text", "")
@@ -449,8 +487,20 @@ def _invoke_suggestion_scoring_llm(suggestion: Dict[str, Any], llm_model_name: O
             "effort_score": data["effort_score"],
         }
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from suggestion scoring LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
-        return None
+        logger.info(f"JSONDecodeError in suggestion scoring, attempting repair. Error: {e}")
+        try:
+            repaired_json = repair_json(cleaned_response)
+            data = json.loads(repaired_json)
+            if isinstance(data, dict) and "impact_score" in data:
+                return {
+                    "impact_score": int(data.get("impact_score", 0)),
+                    "risk_score": int(data.get("risk_score", 0)),
+                    "effort_score": int(data.get("effort_score", 0)),
+                }
+            return None
+        except Exception as e2:
+            logger.error(f"Error decoding JSON (even after repair) from suggestion scoring LLM: {e2}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
+            return None
     except Exception as e:
         logger.error(f"An unexpected error occurred during suggestion scoring validation: {e}. Response: {cleaned_response}")
         return None
@@ -511,8 +561,19 @@ def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Op
             return None
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from suggestion review LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
-        return None
+        logger.info(f"JSONDecodeError in suggestion review, attempting repair. Error: {e}")
+        try:
+            repaired_json = repair_json(cleaned_response)
+            data = json.loads(repaired_json)
+            if not isinstance(data, dict) or \
+               "review_looks_good" not in data or not isinstance(data["review_looks_good"], bool) or \
+               "qualitative_review" not in data or not isinstance(data["qualitative_review"], str) or \
+               "confidence_score" not in data or not isinstance(data["confidence_score"], float):
+                return None
+            return data
+        except Exception as e2:
+             logger.error(f"Error decoding JSON (even after repair) from suggestion review LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
+             return None
     except Exception as e:
         logger.error(f"An unexpected error occurred during suggestion review LLM response processing: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
         return None

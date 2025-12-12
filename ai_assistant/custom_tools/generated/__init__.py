@@ -6,3 +6,4 @@ from .set_reminder import set_reminder
 
 from .reminder_scheduler import schedule_reminder
 from .weather_tool import get_weather
+from .remind_at_3_40 import remind_at_3_40

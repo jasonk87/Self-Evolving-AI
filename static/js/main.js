@@ -22,12 +22,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendBtn = document.getElementById('send-btn');
     const fileTreeContainer = document.getElementById('file-tree');
     const editorContainer = document.getElementById('editor-container');
+    const chatSessionsList = document.getElementById('chat-sessions-list');
+    const newChatBtn = document.getElementById('new-chat-btn');
 
     // Editor State
     let currentProject = null;
     let currentFilePath = null;
     let editor = null;
     let lastRunOutput = ""; // Store last visualization/run output for AI context
+    let currentSessionId = null; // Track active session
 
 
     // --- Initialization ---
@@ -44,13 +47,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Socket.IO
     const socket = io();
 
+    // Typing Indicator Logic
+    function showTypingIndicator() {
+        if (document.getElementById('typing-indicator')) return; // Already showing
+        const indicator = document.createElement('div');
+        indicator.id = 'typing-indicator';
+        indicator.className = 'typing-indicator';
+        indicator.innerHTML = `
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        `;
+        chatContainer.appendChild(indicator);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function removeTypingIndicator() {
+        const indicator = document.getElementById('typing-indicator');
+        if (indicator) indicator.remove();
+    }
+
     socket.on('response', (data) => {
+        removeTypingIndicator();
         appendMessage('assistant', data.response);
         notifyIfHidden("AI Assistant", data.response);
     });
 
     socket.on('chat_response', (data) => {
         if (data.success) {
+            removeTypingIndicator();
             appendMessage('assistant', data.response);
             notifyIfHidden("AI Assistant", data.response);
         }
@@ -60,7 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add to Council Console
         const entry = document.createElement('div');
         entry.className = `log-entry ${data.level || 'INFO'}`;
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${data.message}`;
+
+        // Add spinner if it's a "start" or "processing" type event (heuristic)
+        let icon = '';
+        if (data.message.toLowerCase().includes('analyzing') || data.message.toLowerCase().includes('thinking')) {
+            icon = '<span class="spinner"></span>';
+        }
+
+        entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${icon} ${data.message}`;
         councilContainer.appendChild(entry);
         councilContainer.scrollTop = councilContainer.scrollHeight;
     });
@@ -151,9 +183,169 @@ document.addEventListener('DOMContentLoaded', () => {
                 view.classList.remove('hidden');
                 if (targetId === 'view-sidebar-files') loadProjects();
                 if (targetId === 'view-sidebar-memory') loadMemory();
+                if (targetId === 'view-sidebar-chats') loadSessions();
             }
         });
     });
+
+    // --- Feature: Chat Sessions ---
+    async function loadSessions() {
+        if (!chatSessionsList) return;
+        chatSessionsList.innerHTML = '<div class="loading">Loading chats...</div>';
+        try {
+            const res = await fetch('/api/sessions');
+            const data = await res.json();
+            if (data.success) {
+                chatSessionsList.innerHTML = '';
+                if (!data.sessions || data.sessions.length === 0) {
+                    chatSessionsList.innerHTML = '<div style="padding:10px; color:#666;">No active chats. Start a new one!</div>';
+                } else {
+                    data.sessions.forEach(s => {
+                        const el = document.createElement('div');
+                        el.className = `session-item ${s.id === currentSessionId ? 'active' : ''}`;
+                        el.innerHTML = `
+                            <div class="session-title">${s.title}</div>
+                            <div class="session-meta">
+                                <span>${new Date(s.updated_at * 1000).toLocaleDateString()}</span>
+                                <span class="btn-delete-session" data-id="${s.id}">🗑️</span>
+                            </div>
+                        `;
+                        // Load Session
+                        el.addEventListener('click', () => loadChatSession(s.id));
+
+                        // Delete Session
+                        el.querySelector('.btn-delete-session').addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            showModal(
+                                "Delete Chat",
+                                `Are you sure you want to delete "${s.title}"? This cannot be undone.`,
+                                async () => {
+                                    await fetch(`/api/sessions/${s.id}`, { method: 'DELETE' });
+                                    if (currentSessionId === s.id) {
+                                        currentSessionId = null;
+                                        chatContainer.innerHTML = ''; // Clear view
+                                        appendMessage('system', '<div class="bubble">Session deleted.</div>');
+                                    }
+                                    loadSessions();
+                                },
+                                true // isDestructive
+                            );
+                        });
+                        chatSessionsList.appendChild(el);
+                    });
+                }
+            }
+        } catch (e) {
+            chatSessionsList.innerHTML = 'Error loading sessions';
+        }
+    }
+
+    // --- Modal Logic ---
+    function showModal(title, message, onConfirm, isDestructive = false) {
+        const modal = document.getElementById('custom-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
+
+        if (!modal) return;
+
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        // Styling for destructive actions
+        if (isDestructive) {
+            confirmBtn.className = 'btn-modal danger';
+            confirmBtn.textContent = 'Delete';
+        } else {
+            confirmBtn.className = 'btn-modal confirm';
+            confirmBtn.textContent = 'Confirm';
+        }
+
+        // Event Handlers (One-time)
+        const close = () => {
+            modal.classList.remove('active');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+        };
+
+        confirmBtn.onclick = () => {
+            onConfirm();
+            close();
+        };
+
+        cancelBtn.onclick = close;
+
+        // Show
+        modal.classList.add('active');
+    }
+
+    async function loadChatSession(sessionId) {
+        // Highlight in UI
+        currentSessionId = sessionId;
+        if (chatSessionsList) {
+            const items = chatSessionsList.querySelectorAll('.session-item');
+            items.forEach(i => i.classList.remove('active'));
+            // Find the one with matching delete btn data-id (hacky but works)
+            // Better: re-render or find by text content? 
+            // Re-render is safer to update active state correctly
+            loadSessions();
+        }
+
+        chatContainer.innerHTML = '<div class="loading">Loading history...</div>';
+
+        try {
+            const res = await fetch(`/api/sessions/${sessionId}`);
+            const data = await res.json();
+            chatContainer.innerHTML = ''; // Clear loading
+
+            if (data.success && data.session) {
+                // Populate History
+                if (data.session.history && data.session.history.length > 0) {
+                    data.session.history.forEach(msg => {
+                        appendMessage(msg.role, msg.content);
+                    });
+                } else {
+                    appendMessage('system', '<div class="bubble">New conversation started.</div>');
+                }
+
+                // Ensure main view is chat
+                const chatTrigger = document.querySelector('[data-target="view-chat"]');
+                // Don't auto-click fetch trigger if we want to keep sidebar open?
+                // User clicked sidebar item, so they expect to see chat.
+                // But standard behavior: selecting items updates the "main stage" (chat area) but KEEPS sidebar open (like VS Code explorer).
+                // So we do NOT switch views, just ensure chat main stage is visible if it wasn't?
+                const chatMain = document.getElementById('view-chat');
+                if (chatMain && !chatMain.classList.contains('active')) {
+                    // We need to switch main stage but NOT close sidebar
+                    mainViews.forEach(v => v.classList.remove('active'));
+                    chatMain.classList.add('active');
+                }
+                chatInput.focus();
+            }
+        } catch (e) {
+            chatContainer.innerHTML = 'Error loading chat history.';
+        }
+    }
+
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', async () => {
+            // Create new session via API
+            try {
+                const res = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: "New Chat" })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadChatSession(data.session_id);
+                }
+            } catch (e) {
+                alert("Failed to create new chat");
+            }
+        });
+    }
 
     // --- Feature: Memory Management ---
     async function loadMemory() {
@@ -180,10 +372,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Delete Handler
                     el.querySelector('.btn-delete').addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        if (confirm('Forget this fact?')) {
-                            await fetch(`/api/memory/facts/${fact.fact_id}`, { method: 'DELETE' });
-                            loadMemory();
-                        }
+                        showModal(
+                            "Forget Fact",
+                            "Are you sure you want to delete this memory?",
+                            async () => {
+                                await fetch(`/api/memory/facts/${fact.fact_id}`, { method: 'DELETE' });
+                                loadMemory();
+                            },
+                            true
+                        );
                     });
                     memoryList.appendChild(el);
                 });
@@ -436,6 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return;
         appendMessage('user', message);
         chatInput.value = '';
+        showTypingIndicator(); // Show typing immediately
 
         // Prepare context
         let context = {};
@@ -456,15 +654,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message,
-                    context: context
+                    context: context,
+                    session_id: currentSessionId
                 })
             });
             const data = await res.json();
+            removeTypingIndicator(); // Remove on fetch complete (though socket might handle it too)
+
             if (data.success) {
+                // Update Session ID if it was new
+                if (data.session_id && currentSessionId !== data.session_id) {
+                    currentSessionId = data.session_id;
+                    // Refresh list to show new title/session
+                    loadSessions();
+                } else {
+                    // Refresh list to update timestamp/title?
+                    // Maybe debounce this or only do it occasionally.
+                    // For now, let's do it to keep "Last Updated" fresh.
+                    loadSessions();
+                }
+
+                // If the backend sends 'chat_response' via socket, this might double post if we don't check.
+                // Current implementation in web_app.py returns JSON response AND doesn't seem to emit chat_response for the direct reply?
+                // Wait, web_app.py returns jsonify(...). It does NOT emit 'chat_response' for the main reply.
+                // So we MUST append here.
                 appendMessage('assistant', data.response);
                 notifyIfHidden("AI Assistant", data.response);
             }
-        } catch (e) { appendMessage('assistant', 'Error sending.'); }
+        } catch (e) {
+            removeTypingIndicator();
+            appendMessage('assistant', 'Error sending.');
+        }
     }
     if (sendBtn) sendBtn.addEventListener('click', sendMessage);
 
@@ -479,9 +699,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial Load
     loadProjects();
-    sidebarPanel.style.display = 'none'; // Default to collapsed
-    activityItems.forEach(i => i.classList.remove('active')); // Deselect all sidebar tools
-    document.querySelector('[data-target="view-chat"]').classList.add('active'); // Ensure Chat is active
+    // Default: Show Chat Sessions Sidebar
+    loadSessions();
+    const chatSidebarBtn = document.querySelector('[data-target="view-sidebar-chats"]');
+    if (chatSidebarBtn) chatSidebarBtn.click();
+
+    // Ensure Chat Main Stage is active (it is by default in HTML usually, but good to force)
+    document.querySelector('[data-target="view-chat"]').classList.add('active');
 
 
     const testNotifyBtn = document.getElementById('test-notify-btn');

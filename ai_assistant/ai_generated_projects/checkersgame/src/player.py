@@ -4,21 +4,22 @@ from abc import ABC, abstractmethod
 from board import Board
 
 class Player(ABC):
-    def __init__(self, player_type, color):
-        self.player_type = player_type
+    def __init__(self, name, color):
+        self.name = name
         self.color = color
+        self.pieces = 12
 
     @abstractmethod
     def get_move(self, board):
         pass
 
     def __str__(self):
-        return f"{self.player_type} Player ({self.color})"
+        return f"{self.name} ({self.color})"
 
 
 class HumanPlayer(Player):
-    def __init__(self, color):
-        super().__init__("Human", color)
+    def __init__(self, name, color):
+        super().__init__(name, color)
 
     def get_move(self, board):
         while True:

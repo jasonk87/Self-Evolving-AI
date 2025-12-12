@@ -40,14 +40,40 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+from ai_assistant.core.chat_manager import ChatSessionManager
+
 # Initialize SocketIO
 # Initialize SocketIO with threading mode to avoid eventlet/asyncio conflicts
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# --- Custom Log Handler for SocketIO ---
+class SocketIOLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            log_entry = self.format(record)
+            # Emit to 'log_event' which the frontend listens to
+            # We use distinct levels so frontend can colorize
+            socketio.emit('log_event', {
+                'message': log_entry,
+                'level': record.levelname
+            })
+        except Exception:
+            self.handleError(record)
+
+# Attach handler to root logger so we catch everything
+socketio_handler = SocketIOLogHandler()
+socketio_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(socketio_handler)
+
 # Global Orchestrator instance
 orchestrator = None
-# Global Conversation History
-conversation_history = []
+
+# Initialize Chat Session Manager
+chat_manager = ChatSessionManager(os.path.join(project_root, "_memory_", "chat_sessions"))
+
+# ... (init_orchestrator and run_init same as before) ...
+
+
 # We need a dedicated event loop for the agents if they rely on one.
 # For simplicity in this skeleton, we'll use `asyncio.run` for the single calls or create a loop.
 # However, Flask is WSGI (sync). `orchestrator.process_prompt` is async.
@@ -117,13 +143,13 @@ async def init_orchestrator():
         action_executor=action_executor,
         task_manager=task_manager,
         notification_manager=notification_manager,
-        hierarchical_planner=hierarchical_planner
+        hierarchical_planner=hierarchical_planner,
+        memory_manager=memory_manager # Inject memory_manager
     )
     logger.info("Orchestrator initialized successfully.")
 
 # Initialize Memory Manager
 memory_manager = MemoryManager()
-
 # Run initialization.
 # Since we are at module level, we can't easily await.
 # We'll run it in a thread or just run_until_complete if we are sure no other loop is running.
@@ -141,18 +167,81 @@ run_init()
 def index():
     return render_template('index.html')
 
+# --- Session Management Endpoints ---
+
+@app.route('/api/sessions', methods=['GET'])
+def list_sessions():
+    """Lists all chat sessions."""
+    try:
+        sessions = chat_manager.list_sessions()
+        return jsonify({"sessions": sessions, "success": True})
+    except Exception as e:
+        logger.error(f"Error listing sessions: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/sessions', methods=['POST'])
+def create_session():
+    """Creates a new chat session."""
+    data = request.json or {}
+    title = data.get('title', 'New Chat')
+    try:
+        session_id = chat_manager.create_session(title=title)
+        return jsonify({"session_id": session_id, "success": True})
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/sessions/<session_id>', methods=['GET'])
+def get_session(session_id):
+    """Gets history for a specific session."""
+    try:
+        session = chat_manager.get_session(session_id)
+        if not session:
+             return jsonify({"error": "Session not found", "success": False}), 404
+        return jsonify({"session": session, "success": True})
+    except Exception as e:
+        logger.error(f"Error getting session {session_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/sessions/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """Deletes a chat session."""
+    try:
+        success = chat_manager.delete_session(session_id)
+        if success:
+             return jsonify({"success": True})
+        return jsonify({"error": "Session not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
 @app.route('/chat', methods=['POST'])
 async def chat():
-    global orchestrator, conversation_history
+    global orchestrator
     if not orchestrator:
         return jsonify({"error": "Orchestrator not initialized"}), 500
 
     data = request.json
     message = data.get('message')
     context = data.get('context', {})
+    session_id = data.get('session_id')
 
     if not message:
         return jsonify({"error": "No message provided"}), 400
+
+    # Handle Session
+    if not session_id:
+        # Create new session if none provided
+        session_id = chat_manager.create_session()
+    
+    session_data = chat_manager.get_session(session_id)
+    if not session_data:
+         # Fallback if invalid ID passed
+         session_id = chat_manager.create_session()
+         session_data = chat_manager.get_session(session_id)
+
+    # Load History
+    conversation_history = session_data.get('history', [])
 
     # Inject Context into Message
     # This is a simple way to make the AI aware without changing the Orchestrator signature yet.
@@ -192,17 +281,27 @@ async def chat():
     # The UI should probably display the 'message' separate from the 'context'.
     # Here we are appending to `conversation_history` which is used by `orchestrator`.
     # So we MUST append the full message here for the AI to see it.
-    conversation_history.append({"role": "user", "content": message})
-
+    # We update the Persistent Session FIRST
+    updated_session = chat_manager.add_message(session_id, "user", message)
+    if not updated_session:
+         # Fallback if add failed?
+         updated_session = session_data # Just use what we had
+    
+    # Update local history list for Orchestrator using the object returned from add_message 
+    # (which contains the new message)
+    current_history_list = updated_session.get('history', [])
+    
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(full_message, conversation_history=conversation_history)
+        success, response = await orchestrator.process_prompt(full_message, conversation_history=current_history_list)
         
-        # Add assistant response to history
-        conversation_history.append({"role": "assistant", "content": response})
-
+        # Add assistant response to history (and storage)
+        if success and response:
+             updated_session = chat_manager.add_message(session_id, "assistant", response)
+        
         return jsonify({
             "response": response,
+            "session_id": session_id,
             "success": success
         })
     except Exception as e:

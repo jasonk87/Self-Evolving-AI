@@ -1,0 +1,86 @@
+{
+    "project_name": "HigherLowerGame",
+    "sanitized_project_name": "higherlowergame",
+    "project_directory": "C:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\ai_generated_projects\\higherlowergame",
+    "project_description": "A project where the user can play the higher lower number game.",
+    "creation_timestamp": "2025-12-12T10:22:14.290585+00:00",
+    "last_modified_timestamp": "2025-12-12T10:22:33.113545+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for higher_lower.py",
+            "details": {
+                "filename": "higher_lower.py",
+                "original_description": "The main game logic and user interface.",
+                "key_components": [
+                    "generate_secret_number",
+                    "get_user_guess",
+                    "check_guess",
+                    "play_game",
+                    "update_telemetry"
+                ],
+                "file_dependencies": [
+                    "telemetry.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-12T10:22:28.261189+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for telemetry.py",
+            "details": {
+                "filename": "telemetry.py",
+                "original_description": "Handles writing game state to the telemetry.json file.",
+                "key_components": [
+                    "write_telemetry"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-12T10:22:33.075571+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Dynamically added task to generate main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "Dynamically added task to generate main.py",
+                "key_components": [],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-12T10:22:20.508233+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

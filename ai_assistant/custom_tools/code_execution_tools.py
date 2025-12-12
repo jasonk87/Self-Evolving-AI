@@ -70,7 +70,17 @@ def execute_sandboxed_python_script(
 
         try:
             with open(script_file_path, 'w', encoding='utf-8') as f:
-                f.write(script_content)
+                # Prepend a safety wrapper to catch interactive input calls
+                safety_wrapper = """
+import builtins
+import sys
+
+def _safe_input(prompt=None):
+    raise RuntimeError("Interactive input is not supported in this environment. The script is attempting to read from stdin (e.g., using input()).")
+
+builtins.input = _safe_input
+"""
+                f.write(safety_wrapper + "\n" + script_content)
         except IOError as e: # pragma: no cover
             return {"status": "error", "error_message": f"Failed to write script to temp file: {e}", "return_code": -1, "stdout": "", "stderr": "", "output_files": {}}
 

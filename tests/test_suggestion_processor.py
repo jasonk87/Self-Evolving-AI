@@ -9,8 +9,8 @@ import uuid # For mocking
 # Ensure ai_assistant module can be imported
 try:
     from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
-    from ai_assistant.core.execution.action_executor import ActionExecutor
-    from ai_assistant.core.code_services.service import CodeService
+    from ai_assistant.execution.action_executor import ActionExecutor
+    from ai_assistant.code_services.service import CodeService
     # from ai_assistant.llm_interface.ollama_client import OllamaProvider # If needed for type hinting mock
 except ImportError as e: # pragma: no cover
     print(f"Import error in test_suggestion_processor: {e}")
@@ -18,8 +18,8 @@ except ImportError as e: # pragma: no cover
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
-    from ai_assistant.core.execution.action_executor import ActionExecutor
-    from ai_assistant.core.code_services.service import CodeService
+    from ai_assistant.execution.action_executor import ActionExecutor
+    from ai_assistant.code_services.service import CodeService
     # from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 
@@ -229,4 +229,3 @@ def run_async_tests(test_case_class): # pragma: no cover
 
 if __name__ == '__main__': # pragma: no cover
     run_async_tests(TestSuggestionProcessor)
-```

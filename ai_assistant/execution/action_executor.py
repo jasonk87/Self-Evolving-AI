@@ -262,6 +262,63 @@ class ActionExecutor:
         modification_strategy: str = "full_replace", # Added parameter
         target_node_pattern: Optional[str] = None # Added parameter
     ) -> bool: # Return just success/failure
+        # --- The Council: Adversarial Review for Self-Modification ---
+        # If this is a self-modification task, engage The Council before proceeding.
+        # Check if we have the critical reviewer infrastructure available (ReviewerAgent).
+        # We need to instantiate CriticalReviewCoordinator dynamically or inject it.
+        # For now, we'll instantiate it here if possible, or use a simplified check.
+
+        try:
+            from ai_assistant.core.critical_reviewer import CriticalReviewCoordinator
+            from ai_assistant.core.reviewer import ReviewerAgent
+
+            # Use 'council_skeptic' and 'council_judge' models if configured, else default
+            # We can create temporary reviewer agents for this debate
+            skeptic = ReviewerAgent("council_skeptic")
+            judge = ReviewerAgent("council_judge") # Though coordinator usually takes 2 critics, execute_council_debate is custom
+
+            # Note: CriticalReviewCoordinator expects 2 critics in __init__, but execute_council_debate uses models directly via config.
+            # We just need a valid instance.
+            coordinator = CriticalReviewCoordinator(skeptic, judge)
+
+            # Get original code for context
+            original_code_content = self_modification.get_function_source_code(module_path, function_name) or ""
+
+            # Execute Debate
+            is_approved, reasoning = await coordinator.execute_council_debate(
+                proposed_code=code_to_apply,
+                proposal_description=original_description,
+                original_code=original_code_content,
+                module_path=module_path,
+                llm_provider=self.code_service.llm_provider
+            )
+
+            if not is_approved:
+                logger.warning(f"The Council REJECTED the modification for {function_name}. Reasoning: {reasoning}")
+                if self.task_manager and action_task_id:
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=f"Council Rejected: {reasoning}", step_desc="Council Debate")
+
+                # Log rejection
+                global_reflection_log.log_execution(
+                    goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
+                    plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": function_name, "module_path": module_path}}],
+                    execution_results=[f"Council Rejection: {reasoning}"], overall_success=False,
+                    notes=f"The Council blocked this change.",
+                    is_self_modification_attempt=True, source_suggestion_id=source_insight_id
+                )
+                return False
+
+            logger.info(f"The Council APPROVED the modification for {function_name}. Reasoning: {reasoning}")
+
+        except ImportError:
+            logger.warning("CriticalReviewCoordinator not found. Skipping Council Debate.")
+        except Exception as e:
+            logger.error(f"Error during Council Debate: {e}. Proceeding with caution (fail-open or fail-closed strategy? Fail-open for now to not block progress if LLM issues).")
+            # Fail-open behavior: If debate fails (e.g. API error), we proceed but log it.
+            # Ideally, for high risk, we might fail-closed.
+            pass
+        # -------------------------------------------------------------
+
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
 
