@@ -285,14 +285,26 @@ body {
 
 .terminal-input-wrapper {
     display: flex;
+    flex-direction: row;
+    /* Align prompt and input row */
     align-items: center;
     background: #111114;
-    padding: 12px 15px;
+    padding: 0 15px;
+    /* Add horizontal padding */
     /* Bigger click area */
     border-top: 1px solid #333;
     border-radius: 0 0 8px 8px;
     /* Rounded bottom */
     transition: box-shadow 0.2s var(--easing);
+}
+
+.terminal-input-wrapper .input-row {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    /* Take remaining space */
+    padding: 12px 0;
+    /* Vertical padding only */
 }
 
 .terminal-input-wrapper:focus-within {
@@ -313,9 +325,28 @@ body {
     color: #fff;
     font-family: var(--font-code);
     font-size: 14px;
-    /* Larger font */
     outline: none;
     height: 24px;
+    min-width: 0;
+    /* Important for flex */
+}
+
+#terminal-send-btn {
+    background: transparent;
+    border: none;
+    color: var(--accent-cyan);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 8px;
+    transition: transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#terminal-send-btn:hover {
+    transform: translateX(2px);
+    text-shadow: 0 0 5px var(--accent-cyan);
 }
 
 
@@ -344,19 +375,23 @@ body {
 }
 
 .log-entry {
-    margin-bottom: 2px;
-    padding: 2px 6px;
+    margin-bottom: 8px;
+    /* Increased separation */
+    padding: 6px 8px;
+    /* Increased padding */
     font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
     font-size: 11px;
-    border-radius: 0;
+    border-radius: 4px;
+    /* Slight rounding */
     background: transparent;
     color: #dcdcdc;
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
+    flex-direction: column;
+    /* Stack vertically for readability */
+    gap: 4px;
     line-height: 1.4;
-    border-left: none;
-    /* Remove border, go for pure terminal look */
+    border-left: 2px solid transparent;
+    /* Prepare for status color */
 }
 
 .log-entry:hover {
@@ -364,30 +399,45 @@ body {
 }
 
 .log-entry .timestamp {
-    color: #666;
-    flex-shrink: 0;
-    min-width: 60px;
+    color: #555;
+    /* Dimmer timestamp */
+    font-size: 10px;
 }
 
 .log-entry .logger-name {
     color: var(--accent-purple);
     font-weight: bold;
-    flex-shrink: 0;
+    font-size: 10px;
+    margin-bottom: 2px;
+}
+
+.log-entry.ERROR {
+    border-left-color: #ff4757;
+    background: rgba(255, 71, 87, 0.05);
 }
 
 .log-entry.ERROR .log-msg {
-    color: #ff4757;
+    color: #ff6b81;
+}
+
+.log-entry.WARNING {
+    border-left-color: #ffa502;
+    background: rgba(255, 165, 2, 0.05);
 }
 
 .log-entry.WARNING .log-msg {
-    color: #ffa502;
+    color: #ffd32a;
 }
 
 .log-entry .log-msg {
     flex: 1;
     white-space: pre-wrap;
-    word-break: normal;
+    word-break: break-word;
+    /* Ensure wrapping */
     overflow-wrap: break-word;
+    color: #e0e0e0;
+    padding-left: 4px;
+    /* Indent message slightly */
 }
 
 
@@ -647,13 +697,33 @@ body {
 }
 
 #send-btn {
-    background: var(--accent-cyan);
-    border: none;
+    background: rgba(0, 229, 255, 0.1);
+    border: 1px solid rgba(0, 229, 255, 0.3);
     border-radius: 6px;
-    padding: 0 20px;
-    font-weight: bold;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    color: #000;
+    color: var(--accent-cyan);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#send-btn:hover {
+    background: rgba(0, 229, 255, 0.2);
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.2);
+    transform: translateY(-1px);
+    color: #fff;
+    border-color: var(--accent-cyan);
+}
+
+#send-btn svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2;
+    margin-left: -2px;
+    /* Optically center the paper plane */
 }
 
 
@@ -1063,4 +1133,147 @@ body {
 
 .badge.hidden {
     display: none;
+}
+
+/* --- MOBILE RESPONSIVENESS --- */
+@media (max-width: 768px) {
+
+    /* Layout Switch */
+    .app-layout {
+        flex-direction: column;
+        height: 100dvh;
+        /* Dynamic viewport height for mobile browsers */
+    }
+
+    /* 1. Bottom Navigation Bar */
+    .activity-bar {
+        width: 100%;
+        height: 60px;
+        /* Touch friendly height */
+        flex-direction: row;
+        border-right: none;
+        border-top: var(--glass-border);
+        order: 10;
+        /* Move to bottom */
+        padding: 0;
+        background: rgba(13, 17, 23, 0.95);
+        /* Slightly more opaque */
+    }
+
+    .activity-top {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-evenly;
+        align-items: center;
+        height: 100%;
+    }
+
+    .activity-bottom {
+        display: none;
+        /* Hide secondary tools on mobile to save space, or merge if needed */
+    }
+
+    .activity-item {
+        width: auto;
+        height: 100%;
+        margin-bottom: 0;
+        border-left: none;
+        border-top: 3px solid transparent;
+        border-radius: 0;
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .activity-item.active {
+        border-top-color: var(--accent-cyan);
+        border-left-color: transparent;
+        background: rgba(0, 240, 255, 0.05);
+        box-shadow: none;
+    }
+
+    /* Hide Desktop-only tools on Mobile */
+    .activity-item[data-target="view-sidebar-files"],
+    .activity-item[data-target="view-sidebar-terminal"] {
+        display: none !important;
+    }
+
+    /* Disable tooltips on mobile */
+    .activity-item:hover::after,
+    .activity-item::after {
+        display: none;
+    }
+
+    /* 2. Full Screen Sidebar Panel */
+    .sidebar-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: calc(100dvh - 60px);
+        /* Height minus nav bar */
+        z-index: 100;
+        /* Above main stage */
+        border-right: none;
+        margin-left: 0;
+        /* Override transition logic if any */
+        transition: transform 0.3s ease;
+        transform: translateY(0);
+    }
+
+    .sidebar-panel.collapsed {
+        display: flex;
+        /* Keep it flex but translate it out */
+        transform: translateY(110%);
+        /* Slide down */
+        pointer-events: none;
+    }
+
+    /* 3. Main Stage Adjustments */
+    .main-stage {
+        width: 100%;
+        height: calc(100dvh - 60px);
+        flex: 1;
+        order: 1;
+    }
+
+    .message .content {
+        max-width: 90%;
+    }
+
+    /* Input Area Optimization */
+    .input-area {
+        padding: 10px;
+        gap: 8px;
+    }
+
+    #chat-input {
+        font-size: 16px;
+        /* Prevent zoom on iOS */
+        padding: 12px;
+    }
+
+    #send-btn,
+    #mic-btn,
+    #voice-toggle-btn {
+        width: 44px;
+        height: 44px;
+        /* Larger touch targets */
+    }
+
+    /* Adjust Visuals */
+    .stage-header {
+        padding: 0 15px;
+    }
+
+    .stage-header .title {
+        font-size: 16px;
+    }
+
+    /* Fix Council/Graph Size */
+    #council-visualizer {
+        height: 200px;
+    }
 }

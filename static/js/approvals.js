@@ -25,7 +25,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let lastApprovalsJson = '';
+
     function renderApprovals(approvals) {
+        const currentJson = JSON.stringify(approvals);
+        if (currentJson === lastApprovalsJson) return;
+        lastApprovalsJson = currentJson;
         // Update Badge
         if (badge) {
             if (approvals.length > 0) {
@@ -71,8 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatType(type) {
-        if (type === 'insight_fix') return 'Auto-Fix';
+        if (type === 'tool_bug_suspected') return 'Tool Fix';
+        if (type === 'tool_enhancement_suggested') return 'Tool Upgrade';
+        if (type === 'new_tool_suggested') return 'New Tool';
+        if (type === 'knowledge_gap_identified') return 'Knowledge Gap';
+        if (type === 'learned_fact_correction') return 'Fact Correction';
         if (type === 'suggestion') return 'Suggestion';
+        if (type === 'architect_proposal') return 'Architect Proposal';
         return type.replace(/_/g, ' ').toUpperCase();
     }
 

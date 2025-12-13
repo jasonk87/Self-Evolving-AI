@@ -56,6 +56,7 @@ class NotificationType(Enum):
     GENERAL_INFO = auto()
     WARNING = auto()
     ERROR = auto()
+    SYSTEM_ALERT = auto()
 
 
 from ai_assistant.core.events import EventEmitter

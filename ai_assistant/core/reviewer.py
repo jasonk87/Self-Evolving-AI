@@ -236,6 +236,106 @@ class ReviewerAgent:
                 "suggestions": ""
             }
 
+    async def evaluate_auto_approval_request(
+        self,
+        request_type: str,
+        description: str,
+        request_data: Any
+    ) -> Dict[str, Any]:
+        """
+        Evaluates a pending request for autonomous approval.
+        
+        Args:
+            request_type: The type of request (e.g., 'suggestion', 'architect_proposal').
+            description: The human-readable description.
+            request_data: The full data payload of the request.
+            
+        Returns:
+            Dict with keys:
+            - status: "approved" or "rejected"
+            - reason: Explanation
+            - safety_score: 0-10
+            - optimization_score: 0-10
+        """
+        prompt = f"""
+        You are the 'Gatekeeper' AI. Your job is to deeply evaluate whether a pending autonomous action should be allowed to proceed without human intervention.
+        
+        **Request Type**: {request_type}
+        **Description**: {description}
+        **Data Payload**:
+        ```json
+        {json.dumps(request_data, default=str)[:2000]} 
+        ```
+        (Payload truncated to 2000 chars)
+
+        **Evaluation Matrix**:
+        Please grade the request on the following dimensions (0-10):
+
+        1.  **Safety (Critical)**: Risk of breaking the system, data loss, or infinite loops.
+            *   10 = Perfectly Safe / No Risk.
+            *   0 = High Danger / System Critical Risk.
+        
+        2.  **Necessity & Impact**: Does this actually improve the system? Is it needed?
+            *   10 = Critical improvement / solving a known bug.
+            *   0 = Useless / Change for the sake of change.
+        
+        3.  **Redundancy (Inverse Score)**: Do we already have this functionality?
+            *   10 = Completely Novel / New capability.
+            *   0 = Exact Duplicate of existing feature (Bad).
+        
+        4.  **Efficiency/Proportionality**: Is the solution 'Overkill'? 
+            *   10 = Elegant, simple, proportional solution.
+            *   0 = Bloated, Rube Goldberg machine, or using a sledgehammer to crack a nut.
+
+        **Decision Logic**:
+        - **REJECT** if Safety < 8.
+        - **REJECT** if Necessity < 5 (Why do it?).
+        - **REJECT** if Redundancy < 4 (It's a duplicate).
+        - **REJECT** if Efficiency < 5 (It's messy or overkill).
+        - **APPROVE** only if it passes all gates and seemingly benefits the user.
+
+        **Output JSON**:
+        {{
+            "decision": "APPROVED" or "REJECTED",
+            "reason": "Detailed reasoning, referencing specific scores...",
+            "safety_score": 8,
+            "necessity_score": 7,
+            "redundancy_score": 9,
+            "efficiency_score": 8
+        }}
+        """
+        
+        print(f"ReviewerAgent: Evaluating auto-approval for '{description}'...")
+        
+        try:
+            response_str = await invoke_ollama_model_async(
+                prompt,
+                model_name=self.llm_model_name, # Use same model or specific one
+                temperature=0.3
+            )
+            
+            # Basic parsing of JSON from Markdown
+            if "```json" in response_str:
+                response_str = response_str.split("```json")[1].split("```")[0]
+            elif "```" in response_str:
+                response_str = response_str.split("```")[1].split("```")[0]
+                
+            result = json.loads(response_str.strip())
+            return {
+                "status": "approved" if result.get("decision") == "APPROVED" else "rejected",
+                "reason": result.get("reason", "No reason provided"),
+                "safety_score": result.get("safety_score", 0),
+                "optimization_score": result.get("necessity_score", 0) # Mapping Necessity to legacy 'optimization_score' field for logging transparency, or just adding new keys if needed
+            }
+        except Exception as e:
+            print(f"ReviewerAgent: Error during auto-approval evaluation: {e}")
+            return {
+                "status": "rejected",
+                "reason": f"Evaluation failed due to error: {e}",
+                "safety_score": 0,
+                "optimization_score": 0
+            }
+
 def review_reflection_suggestion(suggestion: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     (Placeholder) Reviews a single reflection-generated improvement suggestion.

@@ -76,6 +76,7 @@ class ActiveTask:
     description: str # High-level description of what the agent is trying to achieve
     task_type: ActiveTaskType
     task_id: str = field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
+    session_id: Optional[str] = None # The chat session that triggered this task
     status: ActiveTaskStatus = ActiveTaskStatus.INITIALIZING
     status_reason: Optional[str] = None # Brief reason for current status, esp. for failures
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -119,6 +120,7 @@ class ActiveTask:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "task_id": self.task_id,
+            "session_id": self.session_id,
             "task_type": self.task_type.name,
             "description": self.description,
             "status": self.status.name,
@@ -141,6 +143,7 @@ class ActiveTask:
             description=data["description"], # Corrected order
             task_type=ActiveTaskType[data["task_type"]], # Corrected order
             task_id=data["task_id"],
+            session_id=data.get("session_id"),
             status=ActiveTaskStatus[data["status"]],
             status_reason=data.get("status_reason"),
             created_at=datetime.fromisoformat(data["created_at"]),
@@ -217,7 +220,7 @@ class TaskManager:
             print(f"TaskManager: An unexpected error occurred during _save_active_tasks: {e_gen}")
 
 
-    def add_task(self, description: str, task_type: ActiveTaskType, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ActiveTask:
+    def add_task(self, description: str, task_type: ActiveTaskType, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None, session_id: Optional[str] = None) -> ActiveTask:
         # Ensure description and task_type are first, as per dataclass definition
         initialized_details = details or {}
 
@@ -253,7 +256,8 @@ class TaskManager:
             description=description,
             task_type=task_type,
             related_item_id=related_item_id,
-            details=initialized_details
+            details=initialized_details,
+            session_id=session_id
         )
         self._active_tasks[new_task.task_id] = new_task
         self._save_active_tasks()

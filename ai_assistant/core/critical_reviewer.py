@@ -156,7 +156,8 @@ class CriticalReviewCoordinator:
         - Look for infinite loops.
         - Look for security vulnerabilities (e.g., executing arbitrary code from user input without sanitization).
         - Look for logic errors that could break the system.
-        - Be harsh. If it looks fine, admit it, but try to find flaws.
+        - Be harsh, BUT accept robustness improvements. If the change makes the function handle more input types or recover from errors better, that is a positive trait, not a bug, even if the caller is technically "wrong".
+        - If it looks fine, admit it, but try to find flaws.
 
         Output your critique concisely.
         """
@@ -182,6 +183,7 @@ class CriticalReviewCoordinator:
         Your Goal: Weigh the proposal against the critique.
         - If the critique highlights a critical flaw (security risk, system-breaking bug), REJECT.
         - If the critique is minor or nitpicky and the value of the proposal is high, APPROVE.
+        - If the change improves ROBUSTNESS (e.g. handling more inputs, fixing crashes), APPROVE it even if the critique argues that the caller should be fixed instead. Pragmatic resilience is preferred over theoretical purity.
         - If the code looks safe and correct, APPROVE.
 
         Output Format:

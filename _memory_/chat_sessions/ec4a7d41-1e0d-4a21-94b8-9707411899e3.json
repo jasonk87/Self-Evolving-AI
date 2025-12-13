@@ -1,0 +1,16 @@
+{
+  "id": "ec4a7d41-1e0d-4a21-94b8-9707411899e3",
+  "title": "How are you?",
+  "created_at": 1765629138.105463,
+  "updated_at": 1765629503.6797569,
+  "history": [
+    {
+      "role": "user",
+      "content": "How are you?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm doing okay, thanks for asking! I ran a self-awareness check. I've been working on some code modifications and tool updates, but some of my recent attempts to modify tools have been rejected after code review due to security concerns. I also see a list of the tools I've recently created or modified."
+    }
+  ]
+}

@@ -107,29 +107,46 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
         )
 
     model = get_model_for_task("code_generation")
-    response = await invoke_ollama_model_async(prompt, model_name=model)
+    
+    max_retries = 3
+    current_prompt = prompt
+    
+    for attempt in range(max_retries):
+        try:
+            response = await invoke_ollama_model_async(current_prompt, model_name=model)
 
-    # Try to parse JSON from response
-    try:
-        if "```json" in response:
-            json_str = response.split("```json")[1].split("```")[0]
-        elif "```" in response:
-            json_str = response.split("```")[1].split("```")[0]
-        else:
+            # Try to parse JSON from response
             json_str = response
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0]
+            
+            proposal = json.loads(json_str.strip())
+            
+            # If successful, return immediately
+            return {
+                "status": "proposal",
+                "target_file": filepath,
+                "metric": metric,
+                "lens": lens,
+                "proposal": proposal
+            }
 
-        proposal = json.loads(json_str)
-    except Exception as e:
-        logger.warning(f"Failed to parse LLM proposal for {filepath}: {e}")
-        return None
+        except json.JSONDecodeError as e:
+            logger.warning(f"EvolutionaryArchitect: Failed to parse LLM proposal (Attempt {attempt+1}/{max_retries}) for {filepath}: {e}")
+            # Add feedback to the prompt for the next attempt
+            current_prompt = prompt + f"\n\nERROR: Your previous response was invalid JSON ({e}). Please fix the JSON formatting and try again. Ensure strings are properly escaped and the JSON is valid."
+            
+        except Exception as e:
+            logger.warning(f"EvolutionaryArchitect: Unexpected error during proposal generation (Attempt {attempt+1}/{max_retries}): {e}")
+            # For non-JSON errors, maybe just retry cleanly or stop? Let's retry.
+            pass
 
-    return {
-        "status": "proposal",
-        "target_file": filepath,
-        "metric": metric,
-        "lens": lens,
-        "proposal": proposal
-    }
+    logger.error(f"EvolutionaryArchitect: Failed to generate valid proposal for {filepath} after {max_retries} attempts.")
+    return None
+
+
 
 async def perform_architectural_audit(effort_level: str = "normal") -> Optional[Dict[str, Any]]:
     """

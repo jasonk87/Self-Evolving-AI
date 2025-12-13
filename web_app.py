@@ -72,6 +72,16 @@ socketio_handler = SocketIOLogHandler()
 socketio_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.getLogger().addHandler(socketio_handler)
 
+# Suppress noisy werkzeug logs for polling endpoints
+def filter_polling_logs(record):
+    if "GET /api/approvals" in record.getMessage() and " 200 " in record.getMessage():
+        return False
+    if "GET /api/memory/all" in record.getMessage() and " 200 " in record.getMessage():
+        return False
+    return True
+
+logging.getLogger("werkzeug").addFilter(filter_polling_logs)
+
 # Global Orchestrator instance
 orchestrator = None
 
@@ -123,8 +133,8 @@ async def init_orchestrator():
     if llm_provider:
         hierarchical_planner = HierarchicalPlanner(llm_provider=llm_provider)
 
-    # Insights path
-    insights_file_path = os.path.join(os.path.expanduser("~"), ".ai_assistant", "actionable_insights.json")
+    # Insights path - Use project-local path to match BackgroundService and rest of the system
+    insights_file_path = os.path.join(project_root, "ai_assistant", "core", "data", "actionable_insights.json")
     os.makedirs(os.path.dirname(insights_file_path), exist_ok=True)
 
     # Instantiate Agents
@@ -304,10 +314,10 @@ async def chat():
     
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(full_message, conversation_history=current_history_list)
+        success, response = await orchestrator.process_prompt(full_message, conversation_history=current_history_list, session_id=session_id)
         
         # Add assistant response to history (and storage)
-        if success and response:
+        if response:
              updated_session = chat_manager.add_message(session_id, "assistant", response)
         
         return jsonify({
@@ -459,6 +469,52 @@ def run_script():
         logger.error(f"Error executing script {path}: {e}")
         return jsonify({"output": f"Error: {str(e)}", "success": False}), 500
 
+@app.route('/api/terminal/exec', methods=['POST'])
+def exec_terminal_command():
+    """Executes a shell command directly."""
+    data = request.json
+    command = data.get('command')
+    project_name = data.get('project_name')
+    
+    if not command:
+        return jsonify({"error": "Command is required", "success": False}), 400
+
+    cwd = project_root # Default to app root
+    
+    if project_name:
+         try:
+             from ai_assistant.core.project_manager import find_project
+             project = find_project(project_name)
+             if project and project.get('root_path'):
+                 cwd = project.get('root_path')
+         except Exception as e:
+             logger.warning(f"Could not resolve project path for {project_name}: {e}")
+
+    try:
+        # Use shell=True to allow complex commands (pipes, etc.) - Security Risk if public, but this is local user app.
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=cwd
+        )
+        
+        return jsonify({
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+            "cwd": cwd,
+            "success": True
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Execution timed out", "success": False}), 408
+    except Exception as e:
+        logger.error(f"Error executing command '{command}': {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
 # --- Memory Management Endpoints ---
 
 @app.route('/api/memory/facts', methods=['GET'])
@@ -595,6 +651,47 @@ def handle_connect():
 def handle_disconnect():
     logger.info('Client disconnected')
 
+@socketio.on('message')
+def handle_message(data):
+    """Handles incoming socket messages (e.g. from Terminal)."""
+    global orchestrator
+    if not orchestrator:
+        socketio.emit('response', {'response': "Error: System not initialized.", 'success': False})
+        return
+
+    message = data.get('message')
+    session_id = data.get('session_id')
+    context = data.get('context', {})
+
+    if not message:
+        return
+
+    # Use existing Chat Manager if session_id is provided
+    if session_id:
+        chat_manager.add_message(session_id, "user", message)
+    else:
+        # Create temporary session or default?
+        session_id = chat_manager.create_session("Terminal Session")
+
+    # Run processing loop
+    try:
+        # We need to run async orchestrator method in a sync context
+        # Orchestrator.process_prompt returns (success, response_string)
+        success, response = asyncio.run(
+            orchestrator.process_prompt(message)
+        )
+        
+        # Save to history
+        if session_id:
+             chat_manager.add_message(session_id, "assistant", response)
+
+        # Emit back direct response
+        socketio.emit('response', {'response': response, 'success': success, 'session_id': session_id})
+
+    except Exception as e:
+        logger.error(f"Socket message processing error: {e}")
+        socketio.emit('response', {'response': f"Error: {str(e)}", 'success': False})
+
 def handle_log_event(data):
     """
     Broadcasts log messages to connected clients.
@@ -721,7 +818,7 @@ def get_approvals():
                 # Map Insight to Approval Request Format temporarily for UI
                 insight_req = {
                     "id": insight.insight_id, # Standardize on 'id' for frontend
-                    "type": "insight_fix" if insight.type.name == "TOOL_BUG_SUSPECTED" else "suggestion",
+                    "type": insight.type.name.lower(), # Use the actual type name (e.g., 'tool_bug_suspected')
                     "description": insight.description,
                     "created_at": insight.creation_timestamp,
                     "data": serialize_approval_data(insight),

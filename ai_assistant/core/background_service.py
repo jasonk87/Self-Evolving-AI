@@ -24,7 +24,8 @@ from ai_assistant.learning.learning import InsightType
 
 # Added for Evolutionary Architect
 from ai_assistant.learning.evolutionary_architect import perform_architectural_audit
-from ai_assistant.config import get_data_dir
+from ai_assistant.config import get_data_dir, AUTO_APPROVE_DELAY_SECONDS
+from ai_assistant.core.reviewer import ReviewerAgent
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ _self_healing_interval_seconds = 600 # Check every 10 minutes
 _last_architect_audit_timestamp: float = 0.0
 _architect_audit_interval_seconds = 900 # 15 minutes for debugging
 ARCHITECT_STATE_FILE = "architect_state.json"
+_last_auto_approve_check_time: float = 0.0
+_auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
 
 def sanitize_project_name(name: str) -> str:
     """
@@ -168,11 +171,12 @@ def _save_architect_state():
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
 
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
     _last_self_healing_time = time.time()
+    _last_auto_approve_check_time = time.time()
     
     _load_architect_state()
 
@@ -192,6 +196,7 @@ async def _background_loop_async():
     next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
     next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_self_healing_run_time = time.time() + _self_healing_interval_seconds
+    next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
 
     # Logic to run architect audit immediately if overdue
     if time.time() - _last_architect_audit_timestamp > _architect_audit_interval_seconds:
@@ -209,6 +214,9 @@ async def _background_loop_async():
     except Exception as e: # pragma: no cover
         logger.error(f"BackgroundService: Failed to initialize LearningAgent: {e}")
         learning_agent = None
+    
+    # Initialize Reviewer for Auto-Approvals
+    reviewer_agent = ReviewerAgent()
 
     while _background_service_active:
         current_loop_time = time.time()
@@ -401,6 +409,63 @@ async def _background_loop_async():
                  logger.error(f"BackgroundService: Error during Evolutionary Architect audit: {e}", exc_info=True)
                  # Retry later to avoid rapid error loop
                  next_architect_audit_run_time = time.time() + 3600
+
+        # --- Auto-Approval Task ---
+        if current_loop_time >= next_auto_approve_check_time:
+             try:
+                 pending_requests = approval_manager.get_pending_requests()
+                 if pending_requests:
+                     logger.info(f"BackgroundService: Checking {len(pending_requests)} pending requests for auto-approval (Timeout: {AUTO_APPROVE_DELAY_SECONDS}s).")
+                     
+                     for req in pending_requests:
+                         req_id = req['id']
+                         req_time = req['timestamp']
+                         age = current_loop_time - req_time
+                         
+                         if age >= AUTO_APPROVE_DELAY_SECONDS:
+                             logger.info(f"BackgroundService: Evaluating request {req_id} for auto-approval (Age: {age:.1f}s).")
+                             
+                             # AI Review Step
+                             eval_result = await reviewer_agent.evaluate_auto_approval_request(
+                                 request_type=req.get('type'),
+                                 description=req.get('description'),
+                                 request_data=req.get('data')
+                             )
+                             
+                             logger.info(f"BackgroundService: AI Gatekeeper decision for {req_id}: {eval_result['status'].upper()} (Safety: {eval_result['safety_score']}, Opt: {eval_result['optimization_score']})")
+
+                             if eval_result['status'] == 'approved':
+                                 # Use NotificationManager to inform user of autonomous action
+                                 if learning_agent and learning_agent.notification_manager:
+                                     learning_agent.notification_manager.add_notification(
+                                    title="Auto-Approved Action",
+                                    message=f"I auto-approved '{req.get('description')}' because it passed all 4 Gatekeeper checks (Safety: {eval_result['safety_score']}/10).",
+                                    priority="normal",
+                                    n_type=NotificationType.SYSTEM_ALERT
+                                )
+
+                                 approval_success = await approval_manager.approve_request(req_id)
+                                 if approval_success:
+                                     logger.info(f"BackgroundService: Successfully auto-executed request {req_id}.")
+                                 else:
+                                     logger.error(f"BackgroundService: Failed to auto-execute request {req_id}.")
+                             
+                             else:
+                                 # Auto-Deny
+                                 if learning_agent and learning_agent.notification_manager:
+                                     learning_agent.notification_manager.add_notification(
+                                         title="Auto-Rejected Action",
+                                         message=f"I auto-denied '{req.get('description')}'. Reason: {eval_result['reason']}",
+                                         priority="normal",
+                                         n_type=NotificationType.SYSTEM_ALERT
+                                     )
+                                 approval_manager.deny_request(req_id)
+                                 logger.info(f"BackgroundService: Auto-denied request {req_id}. Reason: {eval_result['reason']}")
+                         
+             except Exception as e:
+                 logger.error(f"BackgroundService: Error during Auto-Approval check: {e}", exc_info=True)
+             
+             next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
         
         # Determine sleep time until the next event
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
@@ -408,8 +473,9 @@ async def _background_loop_async():
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
         time_until_next_healing = max(0, next_self_healing_run_time - time.time()) if learning_agent else float('inf')
         time_until_next_audit = max(0, next_architect_audit_run_time - time.time())
+        time_until_next_auto_approve = max(0, next_auto_approve_check_time - time.time())
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover

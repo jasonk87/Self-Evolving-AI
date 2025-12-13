@@ -35,7 +35,7 @@
         <!-- 1. LEFT: Activity Bar (Icons) -->
         <aside class="activity-bar glass-panel">
             <div class="activity-top">
-                <div class="activity-item active" title="Chats" data-target="view-sidebar-chats" data-label="Chats">
+                <div class="activity-item" title="Chats" data-target="view-sidebar-chats" data-label="Chats">
                     <span class="icon">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -45,7 +45,7 @@
                         </svg>
                     </span>
                 </div>
-                <div class="activity-item" title="Chat" data-target="view-chat" data-label="Focus Chat">
+                <div class="activity-item active" title="Chat" data-target="view-chat" data-label="Focus Chat">
                     <!-- "Focus Chat" just focuses the main window without opening sidebar -->
                     <span class="icon">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -150,7 +150,7 @@
 
         <!-- 2. LEFT: Sidebar Panel (Context Content) -->
         <!-- This panel is visible when a "sidebar tool" is active. -->
-        <aside class="sidebar-panel glass-panel" id="sidebar-panel">
+        <aside class="sidebar-panel glass-panel collapsed" id="sidebar-panel">
 
             <!-- Chats View -->
             <div id="view-sidebar-chats" class="sidebar-view hidden">
@@ -187,7 +187,10 @@
                 </div>
                 <div class="terminal-input-wrapper">
                     <span class="prompt">$</span>
-                    <input type="text" id="terminal-input" placeholder="Command...">
+                    <div class="input-row">
+                        <input type="text" id="terminal-input" placeholder="Command...">
+                        <button id="terminal-send-btn" class="btn-icon" title="Send">➤</button>
+                    </div>
                 </div>
             </div>
 
@@ -267,7 +270,13 @@
                     </div>
                     <textarea id="chat-input" placeholder="Instructions..." rows="1"></textarea>
                     <button id="mic-btn" class="btn-icon" title="Voice Input">🎤</button>
-                    <button id="send-btn">SEND</button>
+                    <button id="send-btn" class="btn-icon" title="Send Message">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
                 </div>
             </div>
 

@@ -1,0 +1,12 @@
+{
+  "id": "533a3950-1fe2-4fe9-aeb4-cc78abe516ee",
+  "title": "Terminal Session",
+  "created_at": 1765623599.0159476,
+  "updated_at": 1765623606.5346107,
+  "history": [
+    {
+      "role": "assistant",
+      "content": "I need a little more information. Are you asking me to list the files and directories in a directory on my system, or are you referring to a 'dir' command within a specific project I am managing?"
+    }
+  ]
+}

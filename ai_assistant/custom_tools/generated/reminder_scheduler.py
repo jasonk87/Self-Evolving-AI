@@ -4,7 +4,13 @@ import time
 import threading
 from typing import Optional
 
-def schedule_reminder(reminder_time: str, message: str) -> str:
+def schedule_reminder(reminder_time: Optional[str] = None, message: str = "", time: Optional[str] = None) -> str:
+    # Support 'time' as alias for 'reminder_time' for robustness
+    if reminder_time is None and time is not None:
+        reminder_time = time
+    
+    if not reminder_time:
+        return "Error: Missing required argument 'reminder_time' (or 'time')."
     """Schedules a reminder to be displayed at a specific time with a custom message.
 
     Args:

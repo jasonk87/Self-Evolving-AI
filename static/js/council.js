@@ -12,13 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Configuration ---
     // Compact layout for the sidebar (Width ~300px)
     const AGENT_NODES = [
-        { id: 'user', label: 'USER', group: 'trigger', x: 0, y: -100 },
+        { id: 'user', label: 'USER', group: 'trigger', x: 0, y: -200 },
         { id: 'orchestrator', label: 'ORCHESTRATOR', group: 'hub', x: 0, y: 0 },
-        { id: 'planner', label: 'PLANNER', group: 'agent', x: -80, y: 60 },
-        { id: 'executor', label: 'EXECUTOR', group: 'agent', x: 80, y: 60 },
-        { id: 'action_executor', label: 'ACTION', group: 'agent', x: 80, y: 0 },
-        { id: 'learning', label: 'LEARNING', group: 'agent', x: -80, y: 0 },
-        { id: 'memory', label: 'MEMORY', group: 'storage', x: 0, y: 120 }
+        { id: 'planner', label: 'PLANNER', group: 'agent', x: -160, y: 120 },
+        { id: 'executor', label: 'EXECUTOR', group: 'agent', x: 160, y: 120 },
+        { id: 'action_executor', label: 'ACTION', group: 'agent', x: 160, y: 0 },
+        { id: 'learning', label: 'LEARNING', group: 'agent', x: -160, y: 0 },
+        { id: 'memory', label: 'MEMORY', group: 'storage', x: 0, y: 240 }
     ];
 
     const EDGES = [
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { from: 'orchestrator', to: 'action_executor' },
         { from: 'orchestrator', to: 'learning' },
         { from: 'orchestrator', to: 'memory' },
-        { from: 'planner', to: 'executor', style: 'dash-line' }, // Planning -> Execution flow
+        { from: 'planner', to: 'executor', dashes: true }, // Planning -> Execution flow
         { from: 'learning', to: 'memory' }
     ];
 
@@ -131,12 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Map logger names/sources to Node IDs
     const SOURCE_MAP = {
         'DynamicOrchestrator': 'orchestrator',
+        'orchestrator': 'orchestrator', // Match module path fragment
         'PlannerAgent': 'planner',
+        'planning': 'planner', // Match module path fragment
         'ExecutionAgent': 'executor',
+        'execution': 'executor', // Match module path fragment (careful, action_executor has execution too?)
         'ActionExecutor': 'action_executor',
+        'action_executor': 'action_executor', // Match module path fragment
         'LearningAgent': 'learning',
+        'learning': 'learning', // Match module path fragment
         'MemoryManager': 'memory',
+        'memory': 'memory', // Match module path fragment
         'TaskManager': 'orchestrator', // TaskManager is close to Orchestrator
+        'task_manager': 'orchestrator',
         'user': 'user'
     };
 
@@ -155,6 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function flashNode(nodeId, type = 'info') {
         if (!nodeId || !nodes) return;
+
+        // console.log(`Council: Flashing ${nodeId} (${type})`); // Debug log
 
         const originalColor = { background: '#0d1117', border: '#30363d' };
         let flashColor = '#58a6ff'; // Blue (Info)
@@ -191,29 +200,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 400);
 
             // Animate Edges connected to this node (Pulse effect)
-            if (nodeId !== 'orchestrator') {
-                const connectedEdges = edges.get({
-                    filter: function (item) {
-                        return (item.from === 'orchestrator' && item.to === nodeId) ||
-                            (item.from === nodeId && item.to === 'orchestrator');
-                    }
-                });
+            // Removed restriction: if (nodeId !== 'orchestrator') 
+            // We want edges to light up even if orchestrator is the one 'acting' 
+            // (though usually orchestrator acts -> someone else, so the other person flashing is better source of edge flash)
 
-                connectedEdges.forEach(edge => {
+            const connectedEdges = edges.get({
+                filter: function (item) {
+                    return item.from === nodeId || item.to === nodeId;
+                }
+            });
+
+            // console.log(`Found ${connectedEdges.length} edges for ${nodeId}`);
+
+            connectedEdges.forEach(edge => {
+                edges.update({
+                    id: edge.id,
+                    color: { color: flashColor, opacity: 0.8 },
+                    width: 2
+                });
+                setTimeout(() => {
                     edges.update({
                         id: edge.id,
-                        color: { color: flashColor, opacity: 0.8 },
-                        width: 2
+                        color: options.edges.color, // Reset to default
+                        width: 1
                     });
-                    setTimeout(() => {
-                        edges.update({
-                            id: edge.id,
-                            color: options.edges.color, // Reset to default
-                            width: 1
-                        });
-                    }, 400);
-                });
-            }
+                }, 400);
+            });
+
         } catch (e) {
             console.warn("Council animation error:", e);
         }

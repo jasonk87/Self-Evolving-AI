@@ -106,7 +106,7 @@ class DynamicOrchestrator:
                 f"{outcome_str}")
         return "\n".join(summary_lines)
 
-    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Tuple[bool, str]:
+    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None) -> Tuple[bool, str]:
         """
         Process a user prompt by creating and executing a dynamic plan.
         Returns (success, response_message)
@@ -119,8 +119,10 @@ class DynamicOrchestrator:
                 event_type="ORCHESTRATOR_START_PROCESSING",
                 description=f"Starting to process prompt: {prompt}",
                 source="DynamicOrchestrator.process_prompt",
-                metadata={"goal": prompt}
+                metadata={"goal": prompt, "session_id": session_id}
             )
+
+            # ... (Existing logic for RAG and Contextualization) ...
 
             # --- Fact Retrieval (Semantic RAG) ---
             relevant_facts_for_prompt = []
@@ -236,6 +238,7 @@ class DynamicOrchestrator:
 
             use_hierarchical_planner = False
             if not self.current_plan:
+                # ... (Logic for hierarchical check) ...
                 complex_keywords = ["project", "develop", "create a game", "build an app", "design a system", "implement a feature", "refactor module"]
                 prompt_lower_for_check = prompt.lower()
                 if any(keyword in prompt_lower_for_check for keyword in complex_keywords):
@@ -279,7 +282,8 @@ class DynamicOrchestrator:
                                 "project_plan": generated_project_plan,
                                 "user_goal": prompt,
                                 "project_name": project_name_for_context or "Unnamed Project"
-                            }
+                            },
+                            session_id=session_id
                         )
                         hierarchical_task_id = active_hierarchical_task.task_id
 
@@ -293,14 +297,10 @@ class DynamicOrchestrator:
                             "description": f"Execute the multi-step project plan for: {prompt[:70]}...",
                             "reasoning": "Hierarchical planner generated a detailed project breakdown, now executing it."
                         }]
-                        log_event(
-                            event_type="ORCHESTRATOR_HIERARCHICAL_PLAN_READY",
-                            description=f"Hierarchical plan created for '{prompt}', ready for execution via execute_project_plan tool.",
-                            source="DynamicOrchestrator.process_prompt",
-                            metadata={"num_steps_in_project_plan": len(generated_project_plan), "parent_task_id": hierarchical_task_id}
-                        )
+                        # ...
 
             elif not self.current_plan:
+                # ... (Handle No Plan) ...
                 technical_error_msg = self.context.get('last_error_info', "Could not create a plan for the given prompt.")
                 user_friendly_response_final = technical_error_msg # Default to technical
                 summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
@@ -318,6 +318,7 @@ class DynamicOrchestrator:
                         logger.error(f"Error rephrasing plan creation failure: {e_rephrase}", exc_info=True)
                         # user_friendly_response_final remains technical_error_msg
                 return False, user_friendly_response_final + summary_for_no_plan
+
 
             if is_debug_mode():
                 print(f"DynamicOrchestrator: Executing plan with {len(self.current_plan)} steps")
@@ -363,7 +364,7 @@ class DynamicOrchestrator:
                              overall_success_of_plan = False
                              continue
 
-                        ae_success = await self.action_executor.execute_action(proposed_action_for_ae)
+                        ae_success = await self.action_executor.execute_action(proposed_action_for_ae, session_id=session_id)
 
                         processed_results.append({
                             "tool_name_original_staged": action_details.get('tool_name', 'unknown_tool_from_stage'),

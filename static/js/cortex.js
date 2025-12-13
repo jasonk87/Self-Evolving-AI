@@ -182,11 +182,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     labelText = insight.type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
                 }
 
+                // Status-based coloring
+                let nodeColor = '#ffb347'; // Default Orange (Pending)
+                if (insight.status === 'APPROVED_BY_USER' || insight.status === 'COMPLETED') {
+                    nodeColor = '#2ecc71'; // Green (Done)
+                } else if (insight.status === 'REJECTED_BY_USER' || insight.status === 'DISMISSED') {
+                    nodeColor = '#95a5a6'; // Grey (Inactive)
+                }
+
                 newNodes.push({
                     id: insight.insight_id,
                     label: labelText,
-                    title: insight.description ? insight.description.substring(0, 100) + "..." : "No description",
-                    color: '#ffb347', // Orange/Gold
+                    title: `[${insight.status}] ${insight.description ? insight.description.substring(0, 100) + "..." : "No description"}`,
+                    color: nodeColor,
                     group: 'insight',
                     _data: insight
                 });

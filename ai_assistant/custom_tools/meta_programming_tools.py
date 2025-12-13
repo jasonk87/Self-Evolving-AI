@@ -162,6 +162,16 @@ Now, generate the Python code and the suggested filename for the described tool.
             
             candidate_code = code_match.group(1).strip()
 
+            # Fix: Remove "Suggested Filename: ..." if it was accidentally included inside the code block
+            if "Suggested Filename:" in candidate_code:
+                # Extract filename if present inside code block for fallback
+                internal_filename_match = re.search(r"Suggested Filename:\s*([\w_.-]+\.py)", candidate_code)
+                if internal_filename_match and not suggested_filename and not filename_match:
+                    filename_match = internal_filename_match
+                
+                # Remove the line
+                candidate_code = re.sub(r"^Suggested Filename:.*$", "", candidate_code, flags=re.MULTILINE).strip()
+
             # Syntax Verification using AST
             try:
                 ast.parse(candidate_code)
@@ -409,7 +419,8 @@ except Exception as e_get_dir: # pragma: no cover
 
 KNOWN_TOOL_DIRECTORIES = [
     CUSTOM_TOOLS_DIR_PATH,
-    GENERATED_TOOLS_DIR_FOR_FINDER # For tools in the generated directory
+    GENERATED_TOOLS_DIR_FOR_FINDER, # For tools in the generated directory (from tool_creator)
+    get_generated_tools_path() # Explicitly include the local generated directory to be safe
 ]
 # Filter out None entries if get_generated_tools_dir failed completely
 KNOWN_TOOL_DIRECTORIES = [d for d in KNOWN_TOOL_DIRECTORIES if d and os.path.isdir(d)]
@@ -506,6 +517,70 @@ def find_agent_tool_source(tool_name: str) -> Optional[Dict[str, str]]:
                 logger.error(f"Could not load or inspect tool '{tool_name}' from '{prospective_file_path}': {e}", exc_info=True)
                 # Fall through to try next directory or return None
                 pass
+
+                pass
+
+    # Fallback: Scan all files in known directories if direct match failed
+    logger.info(f"Direct file match failed for tool '{tool_name}'. Scanning known directories for definition...")
+    for tool_dir_abs_path in KNOWN_TOOL_DIRECTORIES:
+        if not tool_dir_abs_path or not os.path.exists(tool_dir_abs_path):
+            continue
+            
+        try:
+            for filename in os.listdir(tool_dir_abs_path):
+                if filename.endswith(".py"):
+                    file_path = os.path.join(tool_dir_abs_path, filename)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        
+                        # Simple check first
+                        if f"def {tool_name}(" in content:
+                            # Verify with import/inspect to be sure
+                            # Re-use logic or just return manually constructed result
+                            # Using regex extraction for source implies we trust the file content
+                            # But ideally we load it to get the module path correct
+                            
+                            # Determine module path heuristic
+                            module_path_parts = []
+                            current_path = os.path.normpath(tool_dir_abs_path)
+                            path_parts = current_path.split(os.sep)
+                            try:
+                                ai_assistant_index = path_parts.index("ai_assistant")
+                                module_path_parts = path_parts[ai_assistant_index:]
+                            except ValueError:
+                                module_path_parts = [os.path.basename(tool_dir_abs_path)]
+                                
+                            full_module_name_for_spec = ".".join(module_path_parts + [filename.replace(".py", "")])
+                            
+                            # Attempt extraction
+                            source_match = re.search(r"def\s+" + tool_name + r"\s*\(.*?(?=\n\S|\Z)", content, re.DOTALL)
+                            # Regex is tricky for full function body including nested blocks.
+                            # Better to use AST or Inspect.
+                            
+                            try:
+                                module_spec = importlib.util.spec_from_file_location(full_module_name_for_spec, file_path)
+                                if module_spec and module_spec.loader:
+                                    module_obj = importlib.util.module_from_spec(module_spec)
+                                    module_spec.loader.exec_module(module_obj)
+                                    if hasattr(module_obj, tool_name):
+                                        function_obj = getattr(module_obj, tool_name)
+                                        source_code = inspect.getsource(function_obj)
+                                        return {
+                                            "module_path": full_module_name_for_spec,
+                                            "function_name": tool_name,
+                                            "file_path": file_path,
+                                            "source_code": source_code.strip()
+                                        }
+                            except Exception as e_inner:
+                                logger.warning(f"Found match in {filename} but failed to load: {e_inner}")
+                                continue
+                    except Exception as e_file:
+                        logger.warning(f"Error reading {file_path}: {e_file}")
+                        continue
+        except Exception as e_dir:
+            logger.error(f"Error scanning directory {tool_dir_abs_path}: {e_dir}")
+            continue
 
     return None # Tool not found in any known directory
 

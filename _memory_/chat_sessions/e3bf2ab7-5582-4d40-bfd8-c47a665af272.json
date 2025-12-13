@@ -1,0 +1,20 @@
+{
+  "id": "e3bf2ab7-5582-4d40-bfd8-c47a665af272",
+  "title": "can you remind me in 15 minute...",
+  "created_at": 1765626754.8865843,
+  "updated_at": 1765626772.8378212,
+  "history": [
+    {
+      "role": "user",
+      "content": "can you remind me in 15 minutes to call my mom?"
+    },
+    {
+      "role": "assistant",
+      "content": "I ran into a problem setting your reminder. I need the time in HH:MM format (like 14:30) to set it correctly. Could you provide the time in that format?"
+    },
+    {
+      "role": "user",
+      "content": "you can figure that out on your own"
+    }
+  ]
+}

@@ -96,11 +96,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     socket.on('response', (data) => {
-        // Redundant event often emitted alongside REST response. 
-        // We generally ignore this for the main chat flow, as sendMessage handles the display.
-        // Only show if it's distinctly different or we haven't just acted.
-        // For now: IGNORE generic 'response' event to stop duplication.
-        // console.log("Socket 'response' received (Ignored to prevent dupes):", data);
+        // Handle generic response events (e.g. from Terminal)
+
+        // Check if we are waiting for terminal output
+        if (window.isWaitingForTerminal && window.handleTerminalResponse) {
+            window.handleTerminalResponse(data.response);
+            window.isWaitingForTerminal = false;
+        } else {
+            // Only log if not terminal (to avoid console noise)
+            // console.log("Socket 'response' received (Ignored/Not Terminal):", data);
+        }
     });
 
     socket.on('chat_response', (data) => {
@@ -109,6 +114,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (hash === lastResponseHash) return; // Prevent duplicate
 
             removeTypingIndicator();
+
+            // Check if we are waiting for terminal output
+            console.log("Socket response received:", data);
+            console.log("isWaitingForTerminal:", window.isWaitingForTerminal);
+            console.log("handleTerminalResponse exists:", !!window.handleTerminalResponse);
+
+            if (window.isWaitingForTerminal && window.handleTerminalResponse) {
+                console.log("Routing to terminal...");
+                window.handleTerminalResponse(data.response);
+                window.isWaitingForTerminal = false;
+                // Don't append to chat if it was a terminal command? 
+                // Let's allow it in chat too for history, but maybe suppress notification?
+                // For now, let's just append to chat as well so they have a record.
+            }
+
             appendMessage('assistant', data.response);
             lastResponseHash = hash;
             notifyIfHidden("AI Assistant", data.response);
@@ -144,6 +164,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('task_update', (task) => {
+        // Prevent background tasks from hijacking the chat UI "Thinking" state
+        // Only show status for tasks belonging to this session
+        if (task.session_id && task.session_id !== currentSessionId) {
+            return;
+        }
+
+        // If task has NO session_id, it is likely a background task (e.g. Council Debate from cron).
+        // We should NOT show blocking "Thinking..." UI for these.
+        if (!task.session_id) {
+            // Optional: Show in a non-intrusive way (toast/statusbar) instead?
+            // For now, identifying it's a background task and NOT blocking chat is the priority.
+            console.log("Background task update ignored in chat:", task.description);
+            return;
+        }
+
         // Show detailed status in chat if "Thinking"
         if (task.status !== 'COMPLETED_SUCCESSFULLY' &&
             task.status !== 'FAILED_UNKNOWN' &&
@@ -303,6 +338,180 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+    // --- Terminal Input Logic (Global) ---
+    const termInput = document.getElementById('terminal-input');
+    const termSendBtn = document.getElementById('terminal-send-btn');
+    const terminalOutputDiv = document.getElementById('terminal-output');
+
+    // Global state for terminal
+    window.isWaitingForTerminal = false;
+    window.handleTerminalResponse = (responseText) => {
+        if (!terminalOutputDiv) return;
+
+        // Remove "Processing..." line if it exists (it's the last child)
+        if (terminalOutputDiv.lastChild && terminalOutputDiv.lastChild.textContent === 'Processing...') {
+            terminalOutputDiv.removeChild(terminalOutputDiv.lastChild);
+        }
+
+        const outputLine = document.createElement('div');
+        outputLine.className = 'line output';
+        // Handle basic formatting
+        outputLine.innerHTML = responseText.replace(/\n/g, '<br>');
+        terminalOutputDiv.appendChild(outputLine);
+        terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+    };
+
+    const aiSuggestions = [
+        "I noticed an error in the terminal. Do you want me to see if I can help?",
+        "That command didn't work as expected. Should I investigate?",
+        "It looks like something went wrong. Want me to take a look?",
+        "Error detected. Do you want me to try and fix it?"
+    ];
+
+    function showAiAssistanceSuggestion(originalCmd, errorContext) {
+        if (!terminalOutputDiv) return;
+
+        const suggestion = aiSuggestions[Math.floor(Math.random() * aiSuggestions.length)];
+
+        const div = document.createElement('div');
+        div.className = 'line system ai-suggestion';
+        div.style.marginTop = '10px';
+        div.style.padding = '10px';
+        div.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+        div.style.borderRadius = '5px';
+        div.style.borderLeft = '3px solid var(--accent-color)';
+
+        div.innerHTML = `
+            <div style="margin-bottom:8px;">🤖 ${suggestion}</div>
+            <button class="btn-xs" style="padding: 4px 8px; cursor: pointer; background: var(--accent-color); border: none; color: white; border-radius: 4px;">Yes, help me fix this</button>
+        `;
+
+        const btn = div.querySelector('button');
+        btn.onclick = () => {
+            div.remove(); // Remove suggestion
+
+            // Construct specific help request
+            const message = `I ran the command \`${originalCmd}\` and it failed. Here is the output:\n\`\`\`\n${errorContext}\n\`\`\`\nCan you help me fix this?`;
+
+            // Show in chat as user message
+            // appendMessage('user', message); // Optional: Do we want to duplicate it in chat? Yes, for history.
+
+            // Send to AI
+            if (socket) {
+                // We want the response in the terminal?
+                window.isWaitingForTerminal = true;
+                socket.emit('message', { session_id: currentSessionId, message: message });
+
+                if (terminalOutputDiv) {
+                    const loading = document.createElement('div');
+                    loading.className = 'line system';
+                    loading.innerText = 'AI Analysis running...';
+                    terminalOutputDiv.appendChild(loading);
+                }
+            }
+        };
+
+        terminalOutputDiv.appendChild(div);
+        terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+    }
+
+    async function sendTerminalCommand() {
+        if (!termInput) return;
+        const cmd = termInput.value.trim();
+        if (!cmd) return;
+
+        // Display user command
+        const cmdLine = document.createElement('div');
+        cmdLine.className = 'line command';
+        cmdLine.innerText = `$ ${cmd}`;
+        if (terminalOutputDiv) {
+            terminalOutputDiv.appendChild(cmdLine);
+            terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+        }
+        termInput.value = '';
+
+        // Reset waiting flag
+        window.isWaitingForTerminal = false;
+
+        // Loading feedback
+        let loadingId = 'term-loading-' + Date.now();
+        if (terminalOutputDiv) {
+            const loading = document.createElement('div');
+            loading.id = loadingId;
+            loading.className = 'line system';
+            loading.innerText = 'Executing...';
+            terminalOutputDiv.appendChild(loading);
+            terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+        }
+
+        try {
+            const res = await fetch('/api/terminal/exec', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd, project_name: currentProject })
+            });
+            const data = await res.json();
+
+            // Remove loading
+            const loadingEl = document.getElementById(loadingId);
+            if (loadingEl) loadingEl.remove();
+
+            if (data.success) {
+                // Display Stdout
+                if (data.stdout) {
+                    const out = document.createElement('div');
+                    out.className = 'line output';
+                    out.innerHTML = data.stdout.replace(/\n/g, '<br>');
+                    terminalOutputDiv.appendChild(out);
+                }
+                // Display Stderr
+                if (data.stderr) {
+                    const err = document.createElement('div');
+                    err.className = 'line output error';
+                    err.style.color = '#ff6b6b';
+                    err.innerHTML = data.stderr.replace(/\n/g, '<br>');
+                    terminalOutputDiv.appendChild(err);
+                }
+
+                terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+
+                // Intelligent Error Detection
+                if (data.returncode !== 0 || (data.stderr && data.stderr.trim().length > 0)) {
+                    showAiAssistanceSuggestion(cmd, `Command failed with code ${data.returncode}.\nStderr: ${data.stderr}\nStdout: ${data.stdout}`);
+                }
+            } else {
+                // API Error
+                const err = document.createElement('div');
+                err.className = 'line error';
+                err.innerText = "Execution Error: " + (data.error || "Unknown error");
+                terminalOutputDiv.appendChild(err);
+                showAiAssistanceSuggestion(cmd, "Execution Error: " + data.error);
+                terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+            }
+
+        } catch (e) {
+            const loadingEl = document.getElementById(loadingId);
+            if (loadingEl) loadingEl.remove();
+
+            if (terminalOutputDiv) {
+                const err = document.createElement('div');
+                err.className = 'line error';
+                err.innerText = "Network Error: " + e.message;
+                terminalOutputDiv.appendChild(err);
+                terminalOutputDiv.scrollTop = terminalOutputDiv.scrollHeight;
+            }
+        }
+    }
+
+    if (termSendBtn) {
+        termSendBtn.addEventListener('click', sendTerminalCommand);
+    }
+    if (termInput) {
+        termInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendTerminalCommand();
+        });
+    }
+
     // --- Navigation Logic ---
     // 1. Sidebar Tools (Files, Terminal, Council, Memory, Settings)
     // 2. Main Stage (Chat, Editor)
@@ -322,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // If chat, AUTO-COLLAPSE SIDEBAR as requested
                 if (targetId === 'view-chat') {
                     chatInput.focus();
-                    sidebarPanel.style.display = 'none'; // Collapse sidebar
+                    sidebarPanel.classList.add('collapsed'); // Collapse sidebar
                     // Deselect sidebar tools
                     activityItems.forEach(i => {
                         if (i.parentElement.classList.contains('activity-top') && i.getAttribute('data-target') !== 'view-chat') {
@@ -351,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if clicking the ALREADY ACTIVE tool -> Toggle Off (Collapse)
             if (item.classList.contains('active')) {
                 item.classList.remove('active');
-                sidebarPanel.style.display = 'none';
+                sidebarPanel.classList.add('collapsed');
                 return;
             }
 
@@ -365,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
             item.classList.add('active');
 
             // 2. Show Sidebar Panel
-            sidebarPanel.style.display = 'flex'; // Ensure visible
+            sidebarPanel.classList.remove('collapsed'); // Ensure visible
 
             // 3. Switch Sidebar Content
             sidebarViews.forEach(v => v.classList.add('hidden'));
@@ -527,6 +736,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     chatMain.classList.add('active');
                 }
                 chatInput.focus();
+
+                // Mobile UX: If on mobile, collapse sidebar by triggering the chat view button
+                if (window.innerWidth <= 768) {
+                    const chatNavBtn = document.querySelector('[data-target="view-chat"]');
+                    if (chatNavBtn) chatNavBtn.click();
+                }
             }
         } catch (e) {
             chatContainer.innerHTML = 'Error loading chat history.';
@@ -544,7 +759,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    loadChatSession(data.session_id);
+                    await loadChatSession(data.session_id);
+
+                    // Mobile UX: Switch to main chat view immediately
+                    const chatNavBtn = document.querySelector('[data-target="view-chat"]');
+                    if (chatNavBtn) chatNavBtn.click();
                 }
             } catch (e) {
                 window.showAlert("Error", "Failed to create new chat");
@@ -872,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             removeTypingIndicator(); // Remove on fetch complete (though socket might handle it too)
 
-            if (data.success) {
+            if (data.success || data.response) {
                 // Update Session ID if it was new
                 if (data.session_id && currentSessionId !== data.session_id) {
                     currentSessionId = data.session_id;

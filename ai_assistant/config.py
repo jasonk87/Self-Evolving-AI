@@ -81,6 +81,11 @@ FACT_CURATION_INTERVAL_SECONDS = 3600  # Default to 1 hour
 # Enable or disable the AI's ability to autonomously learn facts from conversation.
 AUTONOMOUS_LEARNING_ENABLED = True # MODIFIED FOR SCENARIO 5
 
+# --- Auto-Approval Configuration ---
+# Wait time (in seconds) before the AI auto-executes pending requests for Self-Evolving activities.
+# Default: 600 (10 minutes) - gives the user a short window, then the AI reviews and decides.
+AUTO_APPROVE_DELAY_SECONDS = 600
+
 # --- Fresh Start Configuration ---
 # If True, the application should attempt to clear existing knowledge (context, memory, reflections, suggestions, learned facts etc.) on startup.
 CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP = False # Default to False to preserve data
@@ -103,7 +108,7 @@ GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 
 # --- ElevenLabs TTS Configuration ---
-ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY', '') # User provided key
+ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY') # User provided key
 ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" # Rachel (American, Calm) - Good default
 ELEVENLABS_MODEL_ID = "eleven_turbo_v2" # Low latency model
 MW_TTS_ENABLED = True

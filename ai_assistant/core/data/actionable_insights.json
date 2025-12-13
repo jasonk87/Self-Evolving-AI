@@ -63,7 +63,7 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "APPROVED_BY_USER",
         "creation_timestamp": "2025-12-12T09:26:30.664720+00:00",
         "metadata": {
             "source_suggestion_id": "SUG_002",
@@ -135,7 +135,7 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "REJECTED_BY_USER",
         "creation_timestamp": "2025-12-12T09:26:30.664768+00:00",
         "metadata": {
             "source_suggestion_id": "SUG_005",
@@ -159,7 +159,7 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "APPROVED_BY_USER",
         "creation_timestamp": "2025-12-12T09:26:30.664780+00:00",
         "metadata": {
             "source_suggestion_id": "SUG_006",
@@ -183,7 +183,7 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "APPROVED_BY_USER",
         "creation_timestamp": "2025-12-12T09:41:27.269597+00:00",
         "metadata": {
             "source_suggestion_id": "SUG_007",
@@ -191,6 +191,54 @@
             "module_path": null,
             "function_name": null,
             "reviewer_confidence": 0.9
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'you can figure that out on your own'. Error: ToolExecutionError - Error during execution of tool 'schedule_reminder': schedule_reminder() got an unexpected keyword argument 'time'. The failure occurred at the step involving tool 'schedule_reminder'.",
+        "source_reflection_entry_ids": [
+            "8a4addc6-2ef9-48c3-b59e-60bfc3ac979c"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_c2cc48e4",
+        "related_tool_name": "schedule_reminder",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T11:52:54.809304+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "8a4addc6-2ef9-48c3-b59e-60bfc3ac979c",
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "schedule_reminder",
+            "self_healing_start": "2025-12-13T12:14:45.360439+00:00",
+            "self_healing_end": "2025-12-13T12:14:58.364749+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'you can figure that out on your own' (Error: ToolExecutionError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "aee70468-1a84-4651-baf2-1b6f62e88b0e"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_b2d933cf",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T11:53:07.531120+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "aee70468-1a84-4651-baf2-1b6f62e88b0e"
         }
     }
 ]

@@ -1,0 +1,12 @@
+{
+  "id": "604508af-6eb3-4855-b6eb-9427a4a5bc1b",
+  "title": "Terminal Session",
+  "created_at": 1765623280.5718274,
+  "updated_at": 1765623287.8410676,
+  "history": [
+    {
+      "role": "assistant",
+      "content": "I need a little more information. Are you asking me to list the files and directories in the current working directory, or would you like me to create a new tool that can list files and directories?"
+    }
+  ]
+}

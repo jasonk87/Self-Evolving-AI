@@ -573,7 +573,7 @@ class ActionExecutor:
             logger.error(f"Unexpected error during fact category assessment: {e}. Defaulting to 'general'.", exc_info=True)
             return default_category
 
-    async def execute_action(self, proposed_action: Dict[str, Any]) -> bool:
+    async def execute_action(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
         action_type = proposed_action.get("action_type")
         details = proposed_action.get("details", {})
         source_insight_id = proposed_action.get("source_insight_id", f"action_{uuid.uuid4().hex[:8]}")
@@ -601,7 +601,8 @@ class ActionExecutor:
                 description=task_description, # Corrected order
                 task_type=task_type,          # Corrected order
                 related_item_id=related_item,
-                details=details
+                details=details,
+                session_id=session_id
             )
             action_task_id = action_task.task_id
 
