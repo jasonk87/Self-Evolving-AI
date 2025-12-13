@@ -14,13 +14,18 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
     <!-- Vis.js for Network Graph -->
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js"></script>
     <style type="text/css">
         #cortex-graph {
             width: 100%;
-            height: 100%;
+            /* height: 100%; replaced by flex: 1 for proper filling in flex column */
+            flex: 1;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            background-color: #0f172a; /* Match Deep Space theme */
+            background-color: #0f172a;
+            /* Match Deep Space theme */
+            min-height: 0;
+            /* Important for nested flex scroll/size */
         }
     </style>
 </head>
@@ -97,11 +102,24 @@
                 </div>
                 <div class="activity-item" title="Cortex" data-target="view-cortex" data-label="Visual Cortex">
                     <span class="icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                            <path
+                                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                            </path>
                         </svg>
+                    </span>
+                </div>
+                <div class="activity-item" title="Approvals" data-target="view-sidebar-approvals"
+                    data-label="Approvals">
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span id="approval-badge" class="badge hidden">0</span>
                     </span>
                 </div>
                 <div class="activity-item" title="Settings" data-target="view-sidebar-settings" data-label="Settings">
@@ -178,6 +196,7 @@
                 <div class="panel-header">
                     <h3>THE COUNCIL</h3>
                 </div>
+                <div id="council-visualizer"></div>
                 <div id="council-logs" class="council-container">
                     <div class="log-entry system">Listening to Agent Swarm...</div>
                 </div>
@@ -194,6 +213,17 @@
                         <!-- Facts go here -->
                         <div class="loading">Fetching engrams...</div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Approvals View -->
+            <div id="view-sidebar-approvals" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>APPROVALS</h3>
+                    <button class="btn-icon" id="refresh-approvals-btn" title="Refresh">↻</button>
+                </div>
+                <div id="approvals-list" class="approvals-list">
+                    <div class="loading">Checking for pending actions...</div>
                 </div>
             </div>
 
@@ -263,6 +293,16 @@
                     </div>
                 </header>
                 <div id="cortex-graph"></div>
+                <!-- Details Panel for Node Inspection -->
+                <div id="cortex-details-panel" class="details-panel">
+                    <div class="panel-header">
+                        <h3 id="panel-title">Details</h3>
+                        <button id="close-panel-btn" class="icon-btn">×</button>
+                    </div>
+                    <div class="panel-content" id="panel-body">
+                        <!-- details go here -->
+                    </div>
+                </div>
             </div>
 
         </main>
@@ -280,6 +320,9 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <!-- Cortex JS -->
     <script src="{{ url_for('static', filename='js/cortex.js') }}"></script>
+    <!-- Council JS -->
+    <script src="{{ url_for('static', filename='js/council.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/approvals.js') }}"></script>
     <!-- 4. CUSTOM MODAL -->
     <div id="custom-modal" class="modal-overlay">
         <div class="modal-content">

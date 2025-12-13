@@ -743,5 +743,61 @@
         "description": "Returns the current date and time.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "get_weather": {
+        "tool_name": "get_weather",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "get_weather",
+        "description": "Retrieves the current weather information for a specified location.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "remind_at_3_40": {
+        "tool_name": "remind_at_3_40",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "remind_at_3_40",
+        "description": "Reminds the user when it is 3:40 AM/PM.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "schedule_reminder": {
+        "tool_name": "schedule_reminder",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "schedule_reminder",
+        "description": "Schedules a reminder to be displayed at a specific time with a custom message.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "set_bedtime_reminder": {
+        "tool_name": "set_bedtime_reminder",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "set_bedtime_reminder",
+        "description": "Sets a reminder to go to bed at 8:00 PM today.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "set_os_reminder": {
+        "tool_name": "set_os_reminder",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "set_os_reminder",
+        "description": "Sets a reminder using the operating system's built-in functionality.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "set_reminder": {
+        "tool_name": "set_reminder",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "set_reminder",
+        "description": "Sets a reminder to perform a specific task at a specified time.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "set_scheduled_reminder": {
+        "tool_name": "set_scheduled_reminder",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "set_scheduled_reminder",
+        "description": "Schedules a reminder to print a message at a specified time.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

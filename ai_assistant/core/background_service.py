@@ -19,6 +19,8 @@ from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
+from ai_assistant.core.approval_manager import approval_manager
+from ai_assistant.learning.learning import InsightType
 
 # Added for Evolutionary Architect
 from ai_assistant.learning.evolutionary_architect import perform_architectural_audit
@@ -237,12 +239,21 @@ async def _background_loop_async():
                         # Fetching again is safer in case logs were added *during* the run.
                         _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
 
-                        if suggestions: # pragma: no cover
-                            logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions.")
+                        if suggestions:
+                            logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions. Queueing for approval.")
                             if learning_agent:
-                                ingested_count = learning_agent.ingest_reflection_suggestions(suggestions)
-                                if ingested_count > 0:
-                                    logger.info(f"BackgroundService: Passed {ingested_count} approved suggestions to Learning Agent for autonomous action.")
+                                for suggestion in suggestions:
+                                    # Create specific callback for this suggestion
+                                    # We use default argument binding to capture the loop variable 'suggestion'
+                                    async def _ingest_callback(s=suggestion):
+                                        learning_agent.ingest_reflection_suggestions([s])
+                                    
+                                    approval_manager.add_request(
+                                        req_type="suggestion",
+                                        data=suggestion,
+                                        description=suggestion.get("suggestion_text", "No description"),
+                                        execute_func=_ingest_callback
+                                    )
                         elif suggestions == []: # pragma: no cover
                             logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
                         else: 
@@ -348,17 +359,16 @@ async def _background_loop_async():
 
         # --- Autonomous Self-Healing Task ---
         if learning_agent and current_loop_time >= next_self_healing_run_time:
-            current_time_str_healing = time.strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"BackgroundService: Running self-healing cycle (current time: {current_time_str_healing})...")
             try:
+                # Restore Autonomous Self-Healing
+                # The user can still intervene via the UI because we expose 'NEW' insights
+                # via the API. If the loop picks it up first, it just becomes 'ACTION_ATTEMPTED'.
                 processed_count = await learning_agent.process_self_healing_insights()
                 if processed_count > 0:
-                    logger.info(f"BackgroundService: Self-healing processed {processed_count} insights.")
-                else:
-                    logger.info("BackgroundService: No insights found for self-healing.")
+                    logger.info(f"BackgroundService: Autonomously processed {processed_count} self-healing insights.")
             except Exception as e:
-                logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
-            _last_self_healing_time = time.time()
+                 logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
+            
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
 
         # --- Evolutionary Architect Audit Task ---
@@ -370,12 +380,16 @@ async def _background_loop_async():
                      summary = proposal.get('proposal', {}).get('summary', 'No summary provided')
                      target_file = proposal.get('target_file', 'unknown file')
 
-                     learning_agent.notification_manager.add_notification(
-                         event_type=NotificationType.EVOLUTION_PROPOSAL,
-                         summary_message=f"Architect Proposal for {os.path.basename(target_file)}: {summary}",
-                         details_payload=proposal
+                     async def _apply_proposal(p=proposal):
+                         await learning_agent.execute_architect_proposal(p)
+
+                     approval_manager.add_request(
+                         req_type="architect_proposal",
+                         data=proposal,
+                         description=f"Architect Proposal for {os.path.basename(target_file)}: {summary}",
+                         execute_func=_apply_proposal
                      )
-                     logger.info(f"BackgroundService: Generated evolution proposal for {target_file}")
+                     logger.info(f"BackgroundService: Queued evolution proposal for {target_file}")
                  elif not proposal:
                      logger.info("BackgroundService: No proposal generated during audit.")
 

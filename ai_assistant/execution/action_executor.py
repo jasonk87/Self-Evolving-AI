@@ -262,6 +262,9 @@ class ActionExecutor:
         modification_strategy: str = "full_replace", # Added parameter
         target_node_pattern: Optional[str] = None # Added parameter
     ) -> bool: # Return just success/failure
+        tool_name = function_name
+        source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
+
         # --- The Council: Adversarial Review for Self-Modification ---
         # If this is a self-modification task, engage The Council before proceeding.
         # Check if we have the critical reviewer infrastructure available (ReviewerAgent).
@@ -319,9 +322,8 @@ class ActionExecutor:
             pass
         # -------------------------------------------------------------
 
-        tool_name = function_name
-        source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
-
+        # Variables moved up
+        
         log_notes_prefix = f"Action for insight {source_insight_id} ({source_of_code}): "
         modification_type_ast = "MODIFY_TOOL_CODE_LLM_AST" if source_of_code == "CodeService_LLM" else "MODIFY_TOOL_CODE_AST"
         # Suffix with SURGICAL if applicable
@@ -750,11 +752,79 @@ class ActionExecutor:
         elif action_type == "EXECUTE_EPHEMERAL_AGENT":
             return await self._execute_ephemeral_agent_task(details, action_task_id)
 
-        else: # pragma: no cover
-            log_msg = f"ActionExecutor: Unknown or unsupported action_type: {action_type}"
-            print(log_msg)
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Unsupported action type")
-            return False
+        elif action_type == "APPLY_ARCHITECT_PROPOSAL":
+            target_file = details.get("target_file")
+            proposal_summary = details.get("proposal_summary")
+            proposal_plan = details.get("proposal_plan")
+
+            if not target_file or not os.path.exists(target_file):
+                log_msg = f"Target file not found for architect proposal: {target_file}"
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="File check failed")
+                return False
+            
+            try:
+                # Read original content
+                with open(target_file, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+                
+                # Generate modification using CodeService
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Architect: Generating file modifications")
+                
+                modification_instruction = f"Refactor/Modify the file according to this plan:\nSummary: {proposal_summary}\nPlan: {proposal_plan}"
+                
+                code_service_result = await self.code_service.modify_code(
+                    context="ARCHITECT_EVOLUTION",
+                    modification_instruction=modification_instruction,
+                    existing_code=original_content,
+                    module_path=None, # Whole file context
+                    function_name=None
+                )
+
+                if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
+                    new_content = code_service_result.get("modified_code_string")
+                    
+                    # Apply using edit_project_file (which handles backups)
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Architect: Applying changes")
+                    
+                    # Determine context for self_modification
+                    # We need a relative path for some utils, but edit_project_file takes absolute.
+                    
+                    apply_result = await self_modification.edit_project_file(
+                        absolute_file_path=target_file,
+                        new_content=new_content,
+                        change_description=f"Evolutionary Architect: {proposal_summary}",
+                        task_manager=self.task_manager,
+                        parent_task_id=action_task_id
+                    )
+                    
+                    success = "success" in apply_result.lower()
+                    status = ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_DURING_APPLY
+                    self._update_task_if_manager(action_task_id, status, reason=apply_result, step_desc="Changes applied")
+                    
+                    global_reflection_log.log_execution(
+                        goal_description=f"Architect Evolution for {os.path.basename(target_file)}",
+                        plan=[{"action_type": action_type, "details": details}],
+                        execution_results=[apply_result], overall_success=success,
+                        notes=f"Architect applied changes. Result: {apply_result}"
+                    )
+                    
+                    if success:
+                        self._add_notification_if_manager(
+                            NotificationType.EVOLUTION_APPLIED,
+                            f"Architect evolution applied to {os.path.basename(target_file)}",
+                            related_item_id=target_file,
+                            related_item_type="file",
+                            details_payload={"summary": proposal_summary}
+                        )
+                    
+                    return success
+                else:
+                    err = code_service_result.get("error", "Unknown CodeService error")
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err, step_desc="Code generation failed")
+                    return False
+            except Exception as e:
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during architect execution")
+                return False
 
         if 'edit_success' in locals() and isinstance(edit_success, bool):
             final_status_reason = "Tool modification process completed." if edit_success else "Tool modification process failed."

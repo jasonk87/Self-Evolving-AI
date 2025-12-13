@@ -26,6 +26,7 @@ class ActiveTaskStatus(Enum):
     PROJECT_PLAN_FAILED_STEP = auto()
     # Added from later inspection
     FAILED_CODE_GENERATION = auto()
+    REFINING_PLAN = auto()
 
 
 class ActiveTaskType(Enum):
@@ -158,6 +159,7 @@ ACTIVE_TASKS_FILE_NAME = "active_tasks.json"
 import os
 import json
 from .notification_manager import NotificationManager, NotificationType
+from .events import EventEmitter # Import EventEmitter
 
 
 def get_data_dir():
@@ -325,6 +327,10 @@ class TaskManager:
 
             task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data)
             self._save_active_tasks()
+            
+            # Emit event for UI
+            EventEmitter.emit("task_update", task.to_dict())
+            
             print(f"TaskManager: Task {task_id} ({task.description[:30]}...) status updated from {old_status.name} to {new_status.name}. Step: {task.current_step_description or 'N/A'}")
 
             terminal_statuses = [

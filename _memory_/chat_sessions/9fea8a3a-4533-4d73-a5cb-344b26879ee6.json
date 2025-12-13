@@ -1,0 +1,16 @@
+{
+  "id": "9fea8a3a-4533-4d73-a5cb-344b26879ee6",
+  "title": "Can you",
+  "created_at": 1765587784.5013964,
+  "updated_at": 1765587794.2080452,
+  "history": [
+    {
+      "role": "user",
+      "content": "Can you"
+    },
+    {
+      "role": "assistant",
+      "content": "I have processed your request. The detailed technical summary is available if needed."
+    }
+  ]
+}

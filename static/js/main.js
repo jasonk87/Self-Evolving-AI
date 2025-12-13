@@ -52,8 +52,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const socket = io();
 
     // Typing Indicator Logic
-    function showTypingIndicator() {
-        if (document.getElementById('typing-indicator')) return; // Already showing
+    function showTypingIndicator(text = "Thinking...") {
+        const existing = document.getElementById('typing-indicator');
+        if (existing) {
+            // Update text if already exists
+            const label = existing.querySelector('.typing-label');
+            if (label) label.textContent = text;
+            return;
+        }
+
         const indicator = document.createElement('div');
         indicator.id = 'typing-indicator';
         indicator.className = 'typing-indicator';
@@ -61,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="typing-dot"></div>
             <div class="typing-dot"></div>
             <div class="typing-dot"></div>
+            <span class="typing-label" style="margin-left: 10px; font-size: 12px; color: var(--text-secondary);">${text}</span>
         `;
         chatContainer.appendChild(indicator);
         chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -71,16 +79,38 @@ document.addEventListener('DOMContentLoaded', () => {
         if (indicator) indicator.remove();
     }
 
+    // Prevent duplicate AI messages by tracking the last processed response ID or content hash
+    let lastResponseHash = "";
+
+    // Hash function for simple string deduplication
+    const cyrb53 = (str, seed = 0) => {
+        let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+        for (let i = 0, ch; i < str.length; i++) {
+            ch = str.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+    };
+
     socket.on('response', (data) => {
-        removeTypingIndicator();
-        appendMessage('assistant', data.response);
-        notifyIfHidden("AI Assistant", data.response);
+        // Redundant event often emitted alongside REST response. 
+        // We generally ignore this for the main chat flow, as sendMessage handles the display.
+        // Only show if it's distinctly different or we haven't just acted.
+        // For now: IGNORE generic 'response' event to stop duplication.
+        // console.log("Socket 'response' received (Ignored to prevent dupes):", data);
     });
 
     socket.on('chat_response', (data) => {
         if (data.success) {
+            const hash = cyrb53(data.response);
+            if (hash === lastResponseHash) return; // Prevent duplicate
+
             removeTypingIndicator();
             appendMessage('assistant', data.response);
+            lastResponseHash = hash;
             notifyIfHidden("AI Assistant", data.response);
         }
     });
@@ -90,15 +120,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const entry = document.createElement('div');
         entry.className = `log-entry ${data.level || 'INFO'}`;
 
-        // Add spinner if it's a "start" or "processing" type event (heuristic)
         let icon = '';
-        if (data.message.toLowerCase().includes('analyzing') || data.message.toLowerCase().includes('thinking')) {
-            icon = '<span class="spinner"></span>';
+        const msgLower = data.message.toLowerCase();
+
+        // Icons based on content/logger
+        if (msgLower.includes('analyzing') || msgLower.includes('thinking') || msgLower.includes('planning')) {
+            icon = '🧠';
+        } else if (data.logger && data.logger.includes('ActionExecutor')) {
+            icon = '⚡';
+        } else if (data.level === 'ERROR') {
+            icon = '❌';
+        } else if (data.level === 'WARNING') {
+            icon = '⚠️';
         }
 
-        entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${icon} ${data.message}`;
+        const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+        const loggerName = data.logger ? `<span class="logger-name">[${data.logger.split('.').pop()}]</span>` : '';
+
+        entry.innerHTML = `<span class="timestamp">${timestamp}</span> ${loggerName} ${icon} <span class="log-msg">${data.message}</span>`;
+
         councilContainer.appendChild(entry);
         councilContainer.scrollTop = councilContainer.scrollHeight;
+    });
+
+    socket.on('task_update', (task) => {
+        // Show detailed status in chat if "Thinking"
+        if (task.status !== 'COMPLETED_SUCCESSFULLY' &&
+            task.status !== 'FAILED_UNKNOWN' &&
+            !task.status.startsWith('FAILED')) {
+
+            let statusText = task.current_step_description || task.description || "Processing...";
+            if (statusText.length > 50) statusText = statusText.substring(0, 50) + "...";
+
+            showTypingIndicator(statusText);
+        } else {
+            // If completed/failed, we might want to remove indicator OR wait for final chat response.
+            // Usually chat response comes after. Let's leave it, but maybe update text.
+            // removeTypingIndicator(); // Don't remove, let the final response do it.
+            if (task.status === 'COMPLETED_SUCCESSFULLY') {
+                showTypingIndicator("Finalizing...");
+            }
+        }
     });
 
     function notifyIfHidden(title, body) {
@@ -142,17 +204,44 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
+            const result = event.results[0];
+            const transcript = result[0].transcript;
+
+            // Only process final results
+            if (!result.isFinal) return;
+
+            if (!transcript.trim()) return;
+
+            // Prevent double-submission guard
+            if (chatInput.disabled) return;
+
             chatInput.value = transcript;
-            lastInputWasVoice = true; // Mark as voice input
-            sendMessage(); // Auto-send
+            lastInputWasVoice = true;
+            isListening = false;
+            recognition.stop();
+            micBtn.classList.remove('listening');
+
+            // Disable input briefly to prevent race conditions
+            chatInput.disabled = true;
+            sendMessage().then(() => {
+                chatInput.disabled = false;
+                chatInput.focus();
+            });
         };
 
         recognition.onerror = (event) => {
-            console.error("Speech Error:", event.error);
+            console.warn("Speech Recognition Error:", event.error); // Warn instead of Error to reduce noise
             isListening = false;
             micBtn.classList.remove('listening');
-            chatInput.placeholder = "Error. Try again.";
+
+            if (event.error === 'not-allowed') {
+                chatInput.placeholder = "Mic permission denied.";
+                // We could show a notification or toast here
+            } else if (event.error === 'no-speech') {
+                chatInput.placeholder = "No speech detected.";
+            } else {
+                chatInput.placeholder = "Error. Try again.";
+            }
         };
     } else {
         if (micBtn) micBtn.style.display = 'none'; // Hide if not supported
@@ -178,24 +267,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function speakText(text) {
-        if (!('speechSynthesis' in window)) return;
+        if (!text) return;
 
-        // Strip markdown/code for reading
-        const cleanText = text.replace(/```[\s\S]*?```/g, " code block ")
-                              .replace(/`([^`]+)`/g, "$1")
-                              .replace(/[*_#]/g, "");
+        // Strip markdown for cleaner reading
+        const cleanText = text.replace(/```[\s\S]*?```/g, "Code block omitted.")
+            .replace(/`([^`]+)`/g, "$1")
+            .replace(/\*/g, ""); // Basic cleanup
 
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        utterance.rate = 1.1;
-        utterance.pitch = 1.0;
-
-        // Try to select a good voice
-        const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha"));
-        if (preferredVoice) utterance.voice = preferredVoice;
-
-        window.speechSynthesis.speak(utterance);
+        // Use backend TTS
+        fetch('/api/speak', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: cleanText.substring(0, 1000) }) // Limit length
+        })
+            .then(response => {
+                if (!response.ok) throw new Error("TTS Failed");
+                return response.blob();
+            })
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.play();
+                audio.onended = () => URL.revokeObjectURL(url);
+            })
+            .catch(err => {
+                console.error("TTS Error, falling back to local:", err);
+                // Fallback to local synthesis
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(cleanText);
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+            });
     }
+
 
     // --- Navigation Logic ---
     // 1. Sidebar Tools (Files, Terminal, Council, Memory, Settings)
@@ -206,8 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetId = item.getAttribute('data-target');
             if (!targetId) return;
 
-            // Handle Main Stage Switches (Chat / Editor)
-            if (targetId === 'view-chat' || targetId === 'view-editor-main') {
+            // Handle Main Stage Switches (Chat / Editor / Cortex)
+            if (targetId === 'view-chat' || targetId === 'view-editor-main' || targetId === 'view-cortex') {
                 // Switch Main View
                 mainViews.forEach(v => v.classList.remove('active'));
                 const main = document.getElementById(targetId);
@@ -301,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Delete Session
                         el.querySelector('.btn-delete-session').addEventListener('click', async (e) => {
                             e.stopPropagation();
-                            showModal(
+                            window.showModal(
                                 "Delete Chat",
                                 `Are you sure you want to delete "${s.title}"? This cannot be undone.`,
                                 async () => {
@@ -326,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Modal Logic ---
-    function showModal(title, message, onConfirm, isDestructive = false) {
+    window.showModal = function (title, message, onConfirm, isDestructive = false, showCancel = true) {
         const modal = document.getElementById('custom-modal');
         const modalTitle = document.getElementById('modal-title');
         const modalMessage = document.getElementById('modal-message');
@@ -344,7 +450,16 @@ document.addEventListener('DOMContentLoaded', () => {
             confirmBtn.textContent = 'Delete';
         } else {
             confirmBtn.className = 'btn-modal confirm';
-            confirmBtn.textContent = 'Confirm';
+            confirmBtn.textContent = 'OK';
+        }
+
+        // Toggle Cancel Button
+        if (!showCancel) {
+            cancelBtn.style.display = 'none';
+            confirmBtn.style.width = '100%';
+        } else {
+            cancelBtn.style.display = 'block';
+            confirmBtn.style.width = 'auto';
         }
 
         // Event Handlers (One-time)
@@ -355,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         confirmBtn.onclick = () => {
-            onConfirm();
+            if (onConfirm) onConfirm();
             close();
         };
 
@@ -363,6 +478,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Show
         modal.classList.add('active');
+    }
+
+    // Helper for simple alerts
+    window.showAlert = function (title, message) {
+        window.showModal(title, message, null, false, false);
     }
 
     async function loadChatSession(sessionId) {
@@ -427,7 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadChatSession(data.session_id);
                 }
             } catch (e) {
-                alert("Failed to create new chat");
+                window.showAlert("Error", "Failed to create new chat");
             }
         });
     }
@@ -457,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Delete Handler
                     el.querySelector('.btn-delete').addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        showModal(
+                        window.showModal(
                             "Forget Fact",
                             "Are you sure you want to delete this memory?",
                             async () => {
@@ -572,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function saveFile() {
-        if (!currentProject || !currentFilePath) return alert("No file open.");
+        if (!currentProject || !currentFilePath) return window.showAlert("Info", "No file open.");
         const content = editor.getValue();
         try {
             const res = await fetch('/api/files/save', {
@@ -582,15 +702,21 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             if (data.success) {
-                alert("File saved!"); // Replace with better notification if available
+                // Optional: Toast notification instead of modal for success? For now, modal is fine.
+                // window.showAlert("Success", "File saved!"); 
+                // Actually user might find it annoying to dismiss. Let's rely on standard log or something?
+                // But user ASKED for modal.
+                // Let's use a non-intrusive notification if we had one, but we don't really.
+                // We'll use the modal but maybe we can make it auto-close later.
+                window.showAlert("Success", "File saved successfully.");
             } else {
-                alert("Save failed: " + data.error);
+                window.showAlert("Error", "Save failed: " + data.error);
             }
-        } catch (e) { alert("Error saving file."); }
+        } catch (e) { window.showAlert("Error", "Error saving file."); }
     }
 
     async function runFile() {
-        if (!currentFilePath) return alert("No file open.");
+        if (!currentFilePath) return window.showAlert("Info", "No file open.");
         // Switch to Terminal
         const terminalTrigger = document.querySelector('[data-target="view-sidebar-terminal"]');
         if (terminalTrigger) terminalTrigger.click();
@@ -626,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Correcting RunFile Logic based on investigation
     async function runFileCorrected() {
-        if (!currentFilePath || !currentProject) return alert("No file open.");
+        if (!currentFilePath || !currentProject) return window.showAlert("Info", "No file open.");
 
         // Show Terminal
         const terminalTrigger = document.querySelector('[data-target="view-sidebar-terminal"]');
@@ -763,6 +889,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Current implementation in web_app.py returns JSON response AND doesn't seem to emit chat_response for the direct reply?
                 // Wait, web_app.py returns jsonify(...). It does NOT emit 'chat_response' for the main reply.
                 // So we MUST append here.
+                // Track this response hash to avoid socket duplication
+                lastResponseHash = cyrb53(data.response);
+
                 appendMessage('assistant', data.response);
                 notifyIfHidden("AI Assistant", data.response);
 
@@ -777,7 +906,10 @@ document.addEventListener('DOMContentLoaded', () => {
             appendMessage('assistant', 'Error sending.');
         }
     }
-    if (sendBtn) sendBtn.addEventListener('click', sendMessage);
+    if (sendBtn) sendBtn.addEventListener('click', (e) => {
+        e.preventDefault(); // Prevent accidental form submit
+        sendMessage();
+    });
 
     if (chatInput) {
         chatInput.addEventListener('keydown', (e) => {

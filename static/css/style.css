@@ -1,15 +1,20 @@
 /* Glassmorphism / Cyberpunk Theme - Unified Left Sidebar */
 :root {
-    --bg-color: #0d1117;
-    --glass-bg: rgba(22, 27, 34, 0.7);
-    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
-    --text-primary: #e6edf3;
+    --bg-color: #050505;
+    /* Blacker background for contrast */
+    --glass-bg: rgba(20, 20, 25, 0.65);
+    /* More transparent */
+    --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+    --text-primary: #f0f6fc;
     --text-secondary: #8b949e;
-    --accent-cyan: #00f0ff;
-    --accent-purple: #bd34fe;
-    --accent-glow: 0 0 10px rgba(0, 240, 255, 0.3);
-    --font-ui: 'Inter', 'Segoe UI', system-ui, sans-serif;
-    --font-code: 'JetBrains Mono', 'Consolas', monospace;
+    --accent-cyan: #00e5ff;
+    /* Slightly sharper cyan */
+    --accent-purple: #c54aff;
+    --accent-glow: 0 0 15px rgba(0, 229, 255, 0.25);
+    --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-code: 'JetBrains Mono', 'Fira Code', monospace;
+    --easing: cubic-bezier(0.16, 1, 0.3, 1);
+    /* Smooth apple-like easing */
 }
 
 * {
@@ -21,8 +26,8 @@
 body {
     background-color: var(--bg-color);
     background-image:
-        radial-gradient(circle at 10% 20%, rgba(189, 52, 254, 0.05) 0%, transparent 20%),
-        radial-gradient(circle at 90% 80%, rgba(0, 240, 255, 0.05) 0%, transparent 20%);
+        radial-gradient(circle at 15% 25%, rgba(197, 74, 255, 0.08) 0%, transparent 25%),
+        radial-gradient(circle at 85% 75%, rgba(0, 229, 255, 0.08) 0%, transparent 25%);
     color: var(--text-primary);
     font-family: var(--font-ui);
     height: 100vh;
@@ -60,7 +65,7 @@ body {
     justify-content: center;
     cursor: pointer;
     color: var(--text-secondary);
-    transition: all 0.2s;
+    transition: all 0.3s var(--easing);
     border-left: 3px solid transparent;
 }
 
@@ -267,19 +272,32 @@ body {
 /* Terminal */
 .terminal-output {
     flex: 1;
-    background: #000;
-    padding: 10px;
+    background: #08080a;
+    padding: 15px;
     font-family: var(--font-code);
-    font-size: 12px;
+    font-size: 13px;
+    line-height: 1.5;
     overflow-y: auto;
     color: #a5d6ff;
+    border-radius: 8px 8px 0 0;
+    /* Rounded top */
 }
 
 .terminal-input-wrapper {
     display: flex;
-    background: #111;
-    padding: 5px;
+    align-items: center;
+    background: #111114;
+    padding: 12px 15px;
+    /* Bigger click area */
     border-top: 1px solid #333;
+    border-radius: 0 0 8px 8px;
+    /* Rounded bottom */
+    transition: box-shadow 0.2s var(--easing);
+}
+
+.terminal-input-wrapper:focus-within {
+    box-shadow: 0 0 0 1px var(--accent-cyan);
+    background: #16161a;
 }
 
 .prompt {
@@ -294,40 +312,82 @@ body {
     border: none;
     color: #fff;
     font-family: var(--font-code);
+    font-size: 14px;
+    /* Larger font */
     outline: none;
+    height: 24px;
 }
 
+
+/* Council Visualizer */
+#council-visualizer {
+    height: 250px;
+    width: 100%;
+    min-width: 250px;
+    /* Safety min-width */
+    background: rgba(13, 17, 23, 0.4);
+    /* Match theme dark tone */
+    border-bottom: var(--glass-border);
+    position: relative;
+    overflow: hidden;
+}
 
 /* Council (Logs) */
 .council-container {
     flex: 1;
-    padding: 10px;
+    padding: 12px;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.2);
     font-family: var(--font-code);
-    font-size: 11px;
+    font-size: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .log-entry {
-    margin-bottom: 6px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.03);
-    border-left: 2px solid #555;
-    word-wrap: break-word;
+    margin-bottom: 2px;
+    padding: 2px 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    border-radius: 0;
+    background: transparent;
+    color: #dcdcdc;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.4;
+    border-left: none;
+    /* Remove border, go for pure terminal look */
 }
 
-.log-entry.INFO {
-    border-left-color: var(--accent-cyan);
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.05);
 }
 
-.log-entry.ERROR {
-    border-left-color: #ff4757;
+.log-entry .timestamp {
+    color: #666;
+    flex-shrink: 0;
+    min-width: 60px;
 }
 
-.log-entry.system {
-    font-style: italic;
-    opacity: 0.6;
+.log-entry .logger-name {
+    color: var(--accent-purple);
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.log-entry.ERROR .log-msg {
+    color: #ff4757;
+}
+
+.log-entry.WARNING .log-msg {
+    color: #ffa502;
+}
+
+.log-entry .log-msg {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: normal;
+    overflow-wrap: break-word;
 }
 
 
@@ -518,7 +578,8 @@ body {
     border-top: var(--glass-border);
     display: flex;
     gap: 10px;
-    align-items: center; /* Center items vertically */
+    align-items: center;
+    /* Center items vertically */
 }
 
 #chat-input {
@@ -538,7 +599,8 @@ body {
     align-items: center;
 }
 
-#mic-btn, #voice-toggle-btn {
+#mic-btn,
+#voice-toggle-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 6px;
@@ -553,7 +615,8 @@ body {
     justify-content: center;
 }
 
-#mic-btn:hover, #voice-toggle-btn:hover {
+#mic-btn:hover,
+#voice-toggle-btn:hover {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
 }
@@ -570,9 +633,17 @@ body {
 }
 
 @keyframes pulse-red {
-    0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(255, 71, 87, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(255, 71, 87, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 71, 87, 0);
+    }
 }
 
 #send-btn {
@@ -810,4 +881,186 @@ body {
 
 .btn-modal.danger:hover {
     box-shadow: 0 0 10px rgba(255, 71, 87, 0.3);
+}
+
+/* --- CORTEX DETAILS PANEL --- */
+.details-panel {
+    position: absolute;
+    top: 60px;
+    /* Below toolbar */
+    right: 0;
+    bottom: 0;
+    width: 350px;
+    background: rgba(15, 15, 20, 0.95);
+    backdrop-filter: blur(15px);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+}
+
+.details-panel.active {
+    transform: translateX(0);
+}
+
+.panel-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.panel-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+    margin: 0;
+}
+
+.panel-content {
+    padding: 20px;
+    overflow-y: auto;
+    font-family: var(--font-ui);
+    color: #cbd5e1;
+    line-height: 1.6;
+}
+
+.detail-item {
+    margin-bottom: 15px;
+}
+
+.detail-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.detail-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    /* Preserve formatting */
+}
+
+/* Code block in details */
+.detail-value code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: var(--font-code);
+    font-size: 12px;
+}
+
+/* Approvals Sidebar */
+.approvals-list {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    height: calc(100% - 50px);
+}
+
+.approval-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 12px;
+    animation: fadeIn 0.3s ease;
+}
+
+.approval-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+.approval-type {
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #64b5f6;
+    /* Default Blue */
+}
+
+.type-insight_fix {
+    color: #ffca28;
+}
+
+/* Amber */
+.type-suggestion {
+    color: #66bb6a;
+}
+
+/* Green */
+
+.approval-desc {
+    font-size: 0.9em;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.approval-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.approval-actions button {
+    flex: 1;
+    padding: 6px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-family: inherit;
+    transition: background 0.2s;
+}
+
+.btn-approve {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.btn-approve:hover {
+    background: rgba(76, 175, 80, 0.4);
+}
+
+.btn-deny {
+    background: rgba(244, 67, 54, 0.2);
+    color: #e57373;
+    border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.btn-deny:hover {
+    background: rgba(244, 67, 54, 0.4);
+}
+
+/* Badge */
+.badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #e91e63;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    line-height: 1;
+}
+
+.badge.hidden {
+    display: none;
 }

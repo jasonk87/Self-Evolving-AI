@@ -101,7 +101,8 @@ class ToolSystem:
             if name.startswith("_"): # Skip private/internal functions
                 continue
             # Ensure the function is defined in the module being inspected, not imported into it
-            if func_object.__module__ != module_to_inspect.__name__:
+            # We also allow it if it's a submodule (e.g. ai_assistant.custom_tools.generated.weather_tool inside ai_assistant.custom_tools.generated)
+            if func_object.__module__ != module_to_inspect.__name__ and not func_object.__module__.startswith(module_to_inspect.__name__ + "."):
                 continue
 
             # Check if this specific tool (name + module_path) is already registered (e.g., from persisted data)

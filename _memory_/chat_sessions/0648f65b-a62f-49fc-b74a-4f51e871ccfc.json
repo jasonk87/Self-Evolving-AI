@@ -1,0 +1,16 @@
+{
+  "id": "0648f65b-a62f-49fc-b74a-4f51e871ccfc",
+  "title": "what is the weather today?",
+  "created_at": 1765596820.292178,
+  "updated_at": 1765596827.8276398,
+  "history": [
+    {
+      "role": "user",
+      "content": "what is the weather today?"
+    },
+    {
+      "role": "assistant",
+      "content": "I don't have access to real-time weather information. However, I can tell you the current time: it's 9:33 PM on December 12th, 2025."
+    }
+  ]
+}

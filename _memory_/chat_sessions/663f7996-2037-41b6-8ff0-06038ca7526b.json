@@ -1,0 +1,24 @@
+{
+  "id": "663f7996-2037-41b6-8ff0-06038ca7526b",
+  "title": "How many tools do you have",
+  "created_at": 1765588984.665328,
+  "updated_at": 1765589015.7419715,
+  "history": [
+    {
+      "role": "user",
+      "content": "How many tools do you have"
+    },
+    {
+      "role": "assistant",
+      "content": "I have 53 tools available."
+    },
+    {
+      "role": "user",
+      "content": "Are all of those tools needed"
+    },
+    {
+      "role": "assistant",
+      "content": "To best answer your question about whether all 53 tools are \"needed,\" I need a little more clarification. Could you tell me if you're asking: (A) if all 53 tools are currently being used, (B) if they are all essential, even if not frequently used, or (C) something else?"
+    }
+  ]
+}

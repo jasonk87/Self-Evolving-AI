@@ -68,7 +68,11 @@ def search_duckduckgo(*args, **kwargs) -> str:
     results = []
     try:
         with DDGS() as ddgs:
-            search_results = ddgs.text(query, max_results=5)
+            # Attempt to use 'html' backend which is often more robust against rate limits than 'api'
+            search_results = ddgs.text(query, max_results=5, backend='html')
+            if not search_results:
+                 # Fallback to default backend if html fails or returns nothing
+                 search_results = ddgs.text(query, max_results=5)
         
         if search_results:
             for r in search_results:
@@ -78,12 +82,28 @@ def search_duckduckgo(*args, **kwargs) -> str:
                         "href": r['href'],
                         "body": r['body']
                     })
-                else:
-                    print(f"Warning: search_duckduckgo received an unexpected result format: {r}")
-            
     except Exception as e:
         print(f"Error during DuckDuckGo search for query '{query}': {e}")
     
+    # Fallback to Google Custom Search if DDG failed or returned no results
+    if not results:
+        print("DuckDuckGo returned no results. Attempting Google Custom Search fallback...")
+        try:
+            google_res_json = search_google_custom_search(query, num_results=5)
+            google_res = json.loads(google_res_json)
+            if google_res:
+                return google_res_json
+        except Exception as e:
+            print(f"Google fallback failed: {e}")
+
+    # If still no results, return a helpful error object so the Agent knows what happened
+    if not results:
+        return json.dumps([{
+            "title": "Search Failed",
+            "href": "#",
+            "body": "Could not retrieve search results from DuckDuckGo or Google. verify internet connection or configure GOOGLE_API_KEY and GOOGLE_CSE_ID."
+        }])
+
     try:
         return json.dumps(results)
     except TypeError as te:

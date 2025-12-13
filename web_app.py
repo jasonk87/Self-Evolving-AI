@@ -34,6 +34,7 @@ from ai_assistant.custom_tools.file_system_tools import list_project_files, get_
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.core.background_service import run_background_services_forever
+from ai_assistant.voice.tts import generate_speech # Import TTS service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -50,12 +51,18 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 class SocketIOLogHandler(logging.Handler):
     def emit(self, record):
         try:
+            # Filter out noisy logs
+            if record.name in ['werkzeug', 'engineio.server', 'socketio.server', 'urllib3.connectionpool']:
+                return
+
             log_entry = self.format(record)
-            # Emit to 'log_event' which the frontend listens to
-            # We use distinct levels so frontend can colorize
+            
+            # Send structured data for better UI handling
             socketio.emit('log_event', {
-                'message': log_entry,
-                'level': record.levelname
+                'message': record.getMessage(),
+                'logger': record.name,
+                'level': record.levelname,
+                'timestamp': record.created
             })
         except Exception:
             self.handleError(record)
@@ -166,6 +173,10 @@ run_init()
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    return app.send_static_file('favicon.ico')
 
 # --- Session Management Endpoints ---
 
@@ -427,7 +438,7 @@ def run_script():
             [sys.executable, full_path],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=60,
             cwd=cwd
         )
 
@@ -443,7 +454,7 @@ def run_script():
         return jsonify({"output": output, "success": True})
 
     except subprocess.TimeoutExpired:
-        return jsonify({"output": "Error: Execution timed out (limit: 10s)", "success": False}), 200
+        return jsonify({"output": "Error: Execution timed out (limit: 60s)", "success": False}), 200
     except Exception as e:
         logger.error(f"Error executing script {path}: {e}")
         return jsonify({"output": f"Error: {str(e)}", "success": False}), 500
@@ -560,6 +571,21 @@ def delete_insight(insight_id):
         logger.error(f"Error deleting insight {insight_id}: {e}")
         return jsonify({"error": str(e), "success": False}), 500
 
+@app.route('/api/speak', methods=['POST'])
+def api_speak():
+    data = request.json
+    text = data.get('text')
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+    
+    audio_data = generate_speech(text)
+    if audio_data:
+        from flask import Response
+        return Response(audio_data, mimetype="audio/mpeg")
+    else:
+        # Fallback or error
+        return jsonify({"error": "TTS generation failed"}), 500
+
 # SocketIO Event Handlers
 @socketio.on('connect')
 def handle_connect():
@@ -650,9 +676,126 @@ def watch_telemetry():
 
         socketio.sleep(1)
 
+# --- Approval Management Endpoints ---
+from ai_assistant.core.approval_manager import approval_manager
+# ... (imports)
+from ai_assistant.learning.learning import ActionableInsight, InsightType
+from dataclasses import asdict
+
+def serialize_approval_data(data):
+    if isinstance(data, ActionableInsight):
+        d = asdict(data)
+        d['type'] = data.type.name # Enum to string
+        return d
+    return data
+
+@app.route('/api/approvals', methods=['GET'])
+def get_approvals():
+    """Lists all pending approval requests, including persistent Actionable Insights."""
+    try:
+        # 1. Get transient requests from ApprovalManager
+        requests = approval_manager.get_pending_requests()
+        serialized_requests = []
+        for req in requests:
+            req_copy = req.copy()
+            if 'execute_func' in req_copy:
+                del req_copy['execute_func']
+            req_copy['data'] = serialize_approval_data(req_copy['data'])
+            # Ensure it has a source tag
+            req_copy['source'] = 'approval_manager'
+            serialized_requests.append(req_copy)
+
+        # 2. Get persistent 'NEW' insights from LearningAgent
+        # We access the global orchestrator instance
+        if orchestrator and orchestrator.learning_agent:
+            pending_insights = [
+                i for i in orchestrator.learning_agent.insights 
+                if i.status in ["NEW", "SELF_HEALING_PROPOSED"] 
+                and i.type in [
+                    InsightType.TOOL_BUG_SUSPECTED, 
+                    InsightType.TOOL_ENHANCEMENT_SUGGESTED
+                ]
+            ]
+            
+            for insight in pending_insights:
+                # Map Insight to Approval Request Format temporarily for UI
+                insight_req = {
+                    "id": insight.insight_id, # Standardize on 'id' for frontend
+                    "type": "insight_fix" if insight.type.name == "TOOL_BUG_SUSPECTED" else "suggestion",
+                    "description": insight.description,
+                    "created_at": insight.creation_timestamp,
+                    "data": serialize_approval_data(insight),
+                    "source": "learning_agent"
+                }
+                serialized_requests.append(insight_req)
+
+        return jsonify({"approvals": serialized_requests, "success": True})
+    except Exception as e:
+        logger.error(f"Error listing approvals: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/approvals/<req_id>/approve', methods=['POST'])
+async def approve_request(req_id):
+    """Approves a request (either transient or persistent insight)."""
+    try:
+        # 1. Try ApprovalManager first
+        if approval_manager.get_request(req_id):
+            success = await approval_manager.approve_request(req_id)
+            if success: return jsonify({"success": True})
+
+        # 2. Try LearningAgent Insights
+        if orchestrator and orchestrator.learning_agent:
+            insight = next((i for i in orchestrator.learning_agent.insights if i.insight_id == req_id), None)
+            if insight:
+                # Trigger immediate execution
+                if insight.type == InsightType.TOOL_BUG_SUSPECTED:
+                     success = await orchestrator.learning_agent.execute_self_healing_for_insight(insight)
+                else:
+                    # For other types, maybe just mark as acknowledged or implement if handled?
+                    # For now, let's treat generic suggestions as "Mark as Approved/Implemented" placeholder
+                    # OR if it's a tool enhancement, we might have logic for that.
+                    # Creating a generic 'execute' if possible.
+                    success = True # Placeholder for non-bug insights
+                    insight.status = "APPROVED_BY_USER" # Update status
+                    orchestrator.learning_agent._save_insights()
+                
+                if success:
+                     return jsonify({"success": True, "message": "Insight execution triggered."})
+                else:
+                     return jsonify({"success": False, "error": "Insight execution failed."}), 500
+
+        return jsonify({"error": "Request not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error approving request {req_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/approvals/<req_id>/deny', methods=['POST'])
+def deny_request(req_id):
+    """Denies a request."""
+    try:
+        # 1. Try ApprovalManager
+        if approval_manager.get_request(req_id):
+            success = approval_manager.deny_request(req_id)
+            if success: return jsonify({"success": True})
+
+        # 2. Try LearningAgent Insights
+        if orchestrator and orchestrator.learning_agent:
+            insight = next((i for i in orchestrator.learning_agent.insights if i.insight_id == req_id), None)
+            if insight:
+                insight.status = "REJECTED_BY_USER"
+                orchestrator.learning_agent._save_insights()
+                return jsonify({"success": True})
+
+        return jsonify({"error": "Request not found", "success": False}), 404
+    except Exception as e:
+        logger.error(f"Error denying request {req_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+
 if __name__ == '__main__':
     socketio.start_background_task(watch_telemetry)
     # Start the autonomous background services loop (insights, self-healing, etc.)
     socketio.start_background_task(run_background_services_forever)
-    logger.info("Starting Web App on port 5000...")
-    socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
+

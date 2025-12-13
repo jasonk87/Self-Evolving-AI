@@ -1,0 +1,16 @@
+{
+  "id": "dc6dcb46-9498-494e-9157-a0d26a0273af",
+  "title": "Let's draw this one more time ...",
+  "created_at": 1765588889.1752558,
+  "updated_at": 1765588910.0655098,
+  "history": [
+    {
+      "role": "user",
+      "content": "Let's draw this one more time are we actually working now"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not sure what you mean by \"draw this one more time.\" Could you please clarify if you're referring to a previous image I created, or if you have a new drawing task in mind?"
+    }
+  ]
+}

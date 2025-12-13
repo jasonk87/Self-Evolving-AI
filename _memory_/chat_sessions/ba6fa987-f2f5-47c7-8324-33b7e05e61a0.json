@@ -1,0 +1,16 @@
+{
+  "id": "ba6fa987-f2f5-47c7-8324-33b7e05e61a0",
+  "title": "Are you",
+  "created_at": 1765588016.715672,
+  "updated_at": 1765588025.7140968,
+  "history": [
+    {
+      "role": "user",
+      "content": "Are you"
+    },
+    {
+      "role": "assistant",
+      "content": "I have processed your request. The detailed technical summary is available if needed."
+    }
+  ]
+}

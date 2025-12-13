@@ -45,6 +45,7 @@ from ..core.notification_manager import NotificationManager # Made unconditional
 from ai_assistant.core.reflection import ReflectionLogEntry
 from ai_assistant.memory.persistent_memory import save_actionable_insights, load_actionable_insights, ACTIONABLE_INSIGHTS_FILEPATH
 from ai_assistant.execution.action_executor import ActionExecutor
+from ai_assistant.tools.tool_system import get_tool
 
 class InsightType(Enum):
     TOOL_BUG_SUSPECTED = auto()
@@ -238,6 +239,14 @@ class LearningAgent:
                             break
 
             if related_tool_name:
+                # Fallback: If module_path is missing, try to look it up in the ToolRegistry
+                if "module_path" not in metadata_for_insight:
+                    tool_info = get_tool(related_tool_name)
+                    if tool_info:
+                        metadata_for_insight["module_path"] = tool_info.get("module_path")
+                        metadata_for_insight["function_name"] = tool_info.get("function_name")
+                        print(f"LearningAgent: Resolved module path for '{related_tool_name}' via ToolRegistry: {metadata_for_insight['module_path']}")
+
                 generated_insight = ActionableInsight(
                     type=insight_type_to_use,
                     description=description,
@@ -302,6 +311,15 @@ class LearningAgent:
 
         if selected_insight.type == InsightType.TOOL_BUG_SUSPECTED or selected_insight.type == InsightType.TOOL_ENHANCEMENT_SUGGESTED:
             if selected_insight.related_tool_name:
+                # JIT Fix for existing insights with missing metadata
+                if "module_path" not in selected_insight.metadata:
+                     tool_info = get_tool(selected_insight.related_tool_name)
+                     if tool_info:
+                         selected_insight.metadata["module_path"] = tool_info.get("module_path")
+                         selected_insight.metadata["function_name"] = tool_info.get("function_name")
+                         print(f"LearningAgent: JIT resolved module path for '{selected_insight.related_tool_name}' in existing insight: {selected_insight.metadata['module_path']}")
+                         self._save_insights() # Persist the fix
+
                 proposed_action["action_type"] = "PROPOSE_TOOL_MODIFICATION"
                 proposed_action["details"] = {
                     "module_path": selected_insight.metadata.get("module_path"),
@@ -347,6 +365,96 @@ class LearningAgent:
         self._save_insights()
         return proposed_action, execution_success
 
+    async def execute_self_healing_for_insight(self, insight: ActionableInsight) -> bool:
+        """
+        Executes self-healing action for a single insight.
+        """
+        print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (staging mode).")
+
+        # Construct the action
+        # JIT Fix for existing insights with missing metadata (Self-Healing Context)
+        if not insight.related_tool_name:
+             print(f"LearningAgent: Cannot execute self-healing for insight {insight.insight_id} - No related_tool_name.")
+             insight.status = "SELF_HEALING_SKIPPED_NO_TOOL"
+             insight.metadata["self_healing_skip_reason"] = "No related_tool_name"
+             self._save_insights()
+             return False
+
+        if "module_path" not in insight.metadata:
+             tool_info = get_tool(insight.related_tool_name)
+             if tool_info:
+                 insight.metadata["module_path"] = tool_info.get("module_path")
+                 insight.metadata["function_name"] = tool_info.get("function_name")
+                 print(f"LearningAgent: JIT resolved module path for '{insight.related_tool_name}' in self-healing: {insight.metadata['module_path']}")
+                 self._save_insights()
+             else:
+                 print(f"LearningAgent: Could not resolve module path for '{insight.related_tool_name}' in self-healing. Skipping.")
+                 insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                 self._save_insights()
+                 return False
+
+        # Construct the action
+        action = {
+            "source_insight_id": insight.insight_id,
+            "action_type": "PROPOSE_TOOL_MODIFICATION",
+            "details": {
+                "module_path": insight.metadata.get("module_path"),
+                "function_name": insight.metadata.get("function_name"),
+                "tool_name": insight.related_tool_name,
+                "suggested_change_description": insight.description,
+                "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
+                "reason": f"Self-healing trigger from insight {insight.insight_id}",
+                "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
+                "staging_mode": True # Critical flag for self-healing
+            }
+        }
+
+        # Update status *before* execution to avoid repeated processing if crash
+        insight.status = "PROCESSING_SELF_HEALING"
+        insight.metadata["self_healing_start"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        self._save_insights()
+
+        success = False
+        try:
+            success = await self.action_executor.execute_action(action)
+            if success:
+                insight.status = "SELF_HEALING_PROPOSED" # Indicates a suggestion was created
+            else:
+                insight.status = "SELF_HEALING_FAILED"
+        except Exception as e:
+            print(f"LearningAgent: Error during self-healing for {insight.insight_id}: {e}")
+            insight.status = "SELF_HEALING_EXCEPTION"
+            insight.metadata["exception"] = str(e)
+
+        insight.metadata["self_healing_end"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        self._save_insights()
+        return success
+
+    async def execute_architect_proposal(self, proposal: Dict[str, Any]) -> bool:
+        """
+        Executes an Evolutionary Architect proposal.
+        """
+        target_file = proposal.get('target_file')
+        summary = proposal.get('proposal', {}).get('summary', 'No summary')
+        plan = proposal.get('proposal', {}).get('plan', 'No plan')
+
+        print(f"LearningAgent: Executing architect proposal for {target_file}")
+        
+        action = {
+             "action_type": "APPLY_ARCHITECT_PROPOSAL",
+             "details": {
+                 "target_file": target_file,
+                 "proposal_summary": summary,
+                 "proposal_plan": plan
+             }
+        }
+        
+        try:
+            return await self.action_executor.execute_action(action)
+        except Exception as e:
+             print(f"LearningAgent: Error executing architect proposal: {e}")
+             return False
+
     async def process_self_healing_insights(self) -> int:
         """
         Scans for 'TOOL_BUG_SUSPECTED' insights and attempts to generate fixes
@@ -366,45 +474,12 @@ class LearningAgent:
 
         print(f"LearningAgent: Found {len(bug_insights)} bug insights for self-healing.")
 
+        processed_count = 0
         for insight in bug_insights:
-            print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (staging mode).")
+            await self.execute_self_healing_for_insight(insight)
+            processed_count += 1
 
-            # Construct the action
-            action = {
-                "source_insight_id": insight.insight_id,
-                "action_type": "PROPOSE_TOOL_MODIFICATION",
-                "details": {
-                    "module_path": insight.metadata.get("module_path"),
-                    "function_name": insight.metadata.get("function_name"),
-                    "tool_name": insight.related_tool_name,
-                    "suggested_change_description": insight.description,
-                    "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
-                    "reason": f"Self-healing trigger from insight {insight.insight_id}",
-                    "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
-                    "staging_mode": True # Critical flag for self-healing
-                }
-            }
-
-            # Update status *before* execution to avoid repeated processing if crash
-            insight.status = "PROCESSING_SELF_HEALING"
-            insight.metadata["self_healing_start"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            self._save_insights()
-
-            try:
-                success = await self.action_executor.execute_action(action)
-                if success:
-                    insight.status = "SELF_HEALING_PROPOSED" # Indicates a suggestion was created
-                else:
-                    insight.status = "SELF_HEALING_FAILED"
-            except Exception as e:
-                print(f"LearningAgent: Error during self-healing for {insight.insight_id}: {e}")
-                insight.status = "SELF_HEALING_EXCEPTION"
-                insight.metadata["exception"] = str(e)
-
-            insight.metadata["self_healing_end"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            self._save_insights()
-
-        return len(bug_insights)
+        return processed_count
 
 if __name__ == '__main__': # pragma: no cover
     # import uuid # uuid is already imported at the top of the module

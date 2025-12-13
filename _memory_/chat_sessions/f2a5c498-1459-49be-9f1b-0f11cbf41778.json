@@ -1,0 +1,16 @@
+{
+  "id": "f2a5c498-1459-49be-9f1b-0f11cbf41778",
+  "title": "Can you remind",
+  "created_at": 1765587784.6904306,
+  "updated_at": 1765587800.0790246,
+  "history": [
+    {
+      "role": "user",
+      "content": "Can you remind"
+    },
+    {
+      "role": "assistant",
+      "content": "I have processed your request. The detailed technical summary is available if needed."
+    }
+  ]
+}

@@ -99,7 +99,15 @@ DEBUG_MODE = True
 # Load Google API Key from environment variable GOOGLE_API_KEY
 GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 # Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
+# Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
+
+# --- ElevenLabs TTS Configuration ---
+ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY', '') # User provided key
+ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" # Rachel (American, Calm) - Good default
+ELEVENLABS_MODEL_ID = "eleven_turbo_v2" # Low latency model
+MW_TTS_ENABLED = True
+
 
 def is_debug_mode() -> bool:
     """Returns True if debug mode is enabled in config."""
