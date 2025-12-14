@@ -538,3 +538,45 @@ def get_learnings_from_reflections(max_entries: int = 50) -> List[str]:
 
 # Original __main__ block is removed to prevent accidental execution with test data
 # and because it would need significant updates to test persistence.
+
+from enum import Enum, auto
+
+class InsightType(Enum):
+    TOOL_BUG_SUSPECTED = auto()
+    TOOL_USAGE_ERROR = auto()
+    TOOL_ENHANCEMENT_SUGGESTED = auto()
+    NEW_TOOL_SUGGESTED = auto()
+    KNOWLEDGE_GAP_IDENTIFIED = auto()
+    LEARNED_FACT_CORRECTION = auto()
+    PLANNING_HEURISTIC_SUGGESTION = auto()
+    SELF_CORRECTION_SUCCESS = auto()
+    SELF_CORRECTION_FAILURE = auto()
+    USER_PREFERENCE_LEARNED = auto()
+    USER_FRUSTRATION = auto()
+
+@dataclass
+class ActionableInsight:
+    type: InsightType
+    description: str
+    source_reflection_entry_ids: List[str]
+    insight_id: Optional[str] = None
+    related_tool_name: Optional[str] = None
+    suggested_code_change: Optional[str] = None
+    suggested_tool_description: Optional[str] = None
+    new_tool_requirements: Optional[str] = None
+    knowledge_to_learn: Optional[str] = None
+    incorrect_fact_to_correct: Optional[str] = None
+    corrected_fact: Optional[str] = None
+    planning_heuristic_details: Optional[Dict[str, Any]] = None
+    priority: int = 5
+    status: str = "NEW"
+    creation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.insight_id:
+            # Generate a new UUID-based insight_id if not provided or empty
+            self.insight_id = f"{self.type.name}_{uuid.uuid4().hex[:8]}"
+            
+    def to_dict(self) -> Dict[str, Any]:
+         return asdict(self)

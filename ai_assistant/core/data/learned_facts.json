@@ -1,50 +1,210 @@
 [
     {
-        "fact_id": "fact_b1101e01",
-        "text": "The AI can access and process information from the real world through Google Search.",
+        "fact_id": "fact_7e244f20",
+        "text": "The user lives in Smiths Grove, KY.",
         "category": "uncategorized",
         "source": "migrated_from_old_format",
-        "created_at": "2025-12-08T01:57:50.028845+00:00",
-        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
     },
     {
-        "fact_id": "fact_2b1b973a",
-        "text": "The AI can perform various tasks using tools.",
+        "fact_id": "fact_cc7a5b91",
+        "text": "The user's name is Jason T. Kinslow",
         "category": "uncategorized",
         "source": "migrated_from_old_format",
-        "created_at": "2025-12-08T01:57:50.028845+00:00",
-        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
     },
     {
-        "fact_id": "fact_aae546d4",
-        "text": "The AI is under development and learning.",
+        "fact_id": "fact_2299453e",
+        "text": "The user lives near Smiths Grove/Horse Cave, Kentucky.",
         "category": "uncategorized",
         "source": "migrated_from_old_format",
-        "created_at": "2025-12-08T01:57:50.028845+00:00",
-        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
     },
     {
-        "fact_id": "fact_84f99f7d",
-        "text": "The user lives in Glasgow, KY.",
+        "fact_id": "fact_5d479b57",
+        "text": "The user is family-oriented and regularly talks about his wife Monica, his sons Gabriel and Thomas, and his niece Kenlynn.",
         "category": "uncategorized",
         "source": "migrated_from_old_format",
-        "created_at": "2025-12-08T01:57:50.028845+00:00",
-        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
     },
     {
-        "fact_id": "fact_552ca2ec",
-        "text": "The user's name is Jason Kinslow.",
+        "fact_id": "fact_273dc659",
+        "text": "Family matters to the user, and he likes weaving them into creative projects.",
         "category": "uncategorized",
         "source": "migrated_from_old_format",
-        "created_at": "2025-12-08T01:57:50.028845+00:00",
-        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
     },
     {
-        "fact_id": "fact_5fc50107",
-        "text": "Python is a popular language.",
+        "fact_id": "fact_cc85869d",
+        "text": "The user works in utility line clearance / tree trimming as a General Foreman.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_6aab1c11",
+        "text": "The user's responsibilities include crew scheduling, equipment logistics, jobsite safety, span production, debris handling, and coordination with utility partners.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_87b7b67f",
+        "text": "The user typically works 4x10 shifts, with rotating Friday and weekend standby coverage.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_e5b05728",
+        "text": "The user's career goal is promotion to supervisor and expanding long-term career options.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_5c4e9343",
+        "text": "The user is deeply into AI-first development and simulation.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_21b423dd",
+        "text": "The user's core interests are neural networks & reinforcement learning, multi-agent systems, emergent behavior, and simulation depth.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_9c89dc26",
+        "text": "The user builds Python-based AI simulations with ambitions, rumors, ledgers, criminal records, daily planning, role transitions, social dynamics, and AI agents acting independently.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_6b464f11",
+        "text": "The user prefers restarting clean over endlessly patching old designs.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_2e9b888c",
+        "text": "The user's tooling preferences include local LLMs, Ollama setups, models like Qwen, LLaMA, Gemma, Autogen-style orchestration, CrewAI-like role assignment, asynchronous agents, memory, reflection, RAG, and self-improving loops.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_260bade0",
+        "text": "The user integrates APIs easily.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_4798fb35",
+        "text": "The user loves games and simulations with systems that interact with each other, crew management and simulation realism, co-op or multi-role control, and games where AI or systems feel alive.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_2d7aed84",
+        "text": "The user's favorite games include Rocket League, Ark: Survival Ascended, Dwarf Fortress, X4 Foundations, Elite Dangerous: Odyssey, Star Citizen, Space Engineers, Tropico series, No Man's Sky, and Starfield.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_656bf02b",
+        "text": "The user constantly invents AI-driven mobile games, family dashboards and smart-home assistants, simulation games where the player observes rather than controls everything, and hybrid projects blending real-world logic with game mechanics.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_31312558",
+        "text": "The user is comfortable jumping between code, UX ideas, game design, and real-world operational logic.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_4fabfc02",
+        "text": "The user wants direct, structured answers, appreciates depth and reasoning, expects follow-through and consistency, and often pushes back when something sounds shallow or incomplete.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_7c2038d0",
+        "text": "The user thinks in systems, values realism and emergent behavior, balances a demanding real-world job with serious technical creativity, uses AI as a tool and collaborator, and cares deeply about family, growth, and building things that actually matter.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-14T11:06:34.221070+00:00",
+        "updated_at": "2025-12-14T11:06:34.221070+00:00"
+    },
+    {
+        "fact_id": "fact_20a99e15",
+        "text": "User rejected insight 'Tool execution failed or partially failed for goal 'let me know what the reviewers say and if it is approved.'. Error: ToolExecutionError - Error during execution of tool 'request_code_review_tool': request_code_review_tool() missing 1 required positional argument: 'original_requirements'. The failure occurred at the step involving tool 'request_code_review_tool'.\n\nROOT CAUSE ANALYSIS:\nThe error occurred because the `request_code_review_tool` function was called without providing the required `original_requirements` argument.' with reason: this would probably have been better for a scheduler to handle since it would have to monitor the outcomes and notice when a particular thing has happened probably by just regex or something like that",
         "category": "manual",
         "source": "user_interface",
-        "created_at": "2025-12-11T11:12:20.531287+00:00",
-        "updated_at": "2025-12-11T11:12:20.531305+00:00"
+        "created_at": "2025-12-14T15:37:00.602959+00:00",
+        "updated_at": "2025-12-14T15:37:00.602959+00:00"
+    },
+    {
+        "fact_id": "fact_815ba46d",
+        "text": "User rejected insight 'ISSUE DETECTED: Suspect bug in self-modification mechanism related to 'get_weather' tool. Modifications are failing, and the council rejected a modification attempt, stating 'The failed modification attempt despite identical code indicates a critical flaw in the self-modification mechanism, requiring urgent investigation'. (Evidence: CRITIC_REVIEW_REJECTED notification because the council rejected a modification attempt, stating \"The failed modification attempt despite identical code indicates a critical flaw in the self-modification mechanism, requiring urgent investigation\")' with reason: This is being denied because the code is already fixed and if you're applying identical code there is no point in approving it because it's already doing",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T15:38:25.351054+00:00",
+        "updated_at": "2025-12-14T15:38:25.351054+00:00"
+    },
+    {
+        "fact_id": "fact_d9c57af6",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'list_project_files' tool failed when trying to find reviewer comments for the newly created 'generate_div_table_html' tool. (Evidence: I ran into a few issues trying to get the reviewer comments and approval status. First, I had a problem listing the project files using the `list_project_files` tool.)' with reason: This should be fixed already",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T15:40:44.545071+00:00",
+        "updated_at": "2025-12-14T15:40:44.545071+00:00"
+    },
+    {
+        "fact_id": "fact_273371cd",
+        "text": "User Approved Insight TOOL_BUG_SUSPECTED_f8dde7ab with feedback: P this is an error that I don't understand yet. The stage agent tool modification returning false. I don't know if it's consistent or not but it's something to look into",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T15:42:03.622106+00:00",
+        "updated_at": "2025-12-14T15:42:03.622106+00:00"
+    },
+    {
+        "fact_id": "fact_27d48ace",
+        "text": "The Council rejected modification to tool 'learn_fact' because: The proposal doesn't fix the underlying issue of the system failing to learn new facts. The critique correctly points out that the problem likely lies in the `_curate_and_update_fact_store` function, which needs to be investigated and corrected.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T16:07:58.906651+00:00",
+        "updated_at": "2025-12-14T16:07:58.906651+00:00"
     }
 ]

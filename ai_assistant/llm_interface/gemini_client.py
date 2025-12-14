@@ -5,9 +5,18 @@ import json
 import logging
 import aiohttp
 import asyncio
+import re
 from typing import Optional, Dict, Any, List
+# Import config
+from ai_assistant.config import (
+    GOOGLE_API_KEY, 
+    ENABLE_RATE_LIMITING,
+    ENABLE_THINKING,
+    THINKING_SUPPORTED_MODELS,
+    VERBOSE_LLM_LOGGING
+)
 
-from ai_assistant.config import GOOGLE_API_KEY
+THINKING_SYSTEM_INSTRUCTION = "You are a deep thinking AI. You MUST first think through the Logic, Edge cases, and Plan in a <think> block before answering. <think> ... </think>"
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +34,19 @@ class RateLimiter:
     def __init__(self, rpm=15):
         self.interval = 60.0 / rpm
         self.last_call = 0
-        self._lock = asyncio.Lock()
+        # lazy init for async locks to handle multiple event loops (e.g. threads)
+        self._locks: Dict[asyncio.AbstractEventLoop, asyncio.Lock] = {} 
         self._sync_lock = asyncio.Lock() # Not strictly thread-safe for sync across threads but okay for this context
 
     async def wait_async(self):
-        async with self._lock:
+        if not ENABLE_RATE_LIMITING:
+            return
+
+        loop = asyncio.get_running_loop()
+        if loop not in self._locks:
+            self._locks[loop] = asyncio.Lock()
+            
+        async with self._locks[loop]:
             now = time.time()
             wait_time = self.last_call + self.interval - now
             if wait_time > 0:
@@ -37,6 +54,9 @@ class RateLimiter:
             self.last_call = time.time()
 
     def wait_sync(self):
+        if not ENABLE_RATE_LIMITING:
+            return
+
         # detailed sync locking is complex, simple blocking sleep is safer for single-threaded or low-concurrency sync usage
         now = time.time()
         wait_time = self.last_call + self.interval - now
@@ -47,6 +67,25 @@ class RateLimiter:
 # Global Rate Limiter
 # Setting conservative limit to avoid 429s (Gemini Free Tier is ~15 RPM)
 GLOBAL_RATE_LIMITER = RateLimiter(rpm=10) 
+
+def _extract_and_log_thinking(text: str) -> str:
+    """
+    Extracts content within <think> tags, logs it, and returns the simplified text.
+    """
+    if not text:
+        return text
+        
+    thinking_pattern = r'<think>(.*?)</think>'
+    match = re.search(thinking_pattern, text, re.DOTALL)
+    
+    if match:
+        thinking_content = match.group(1).strip()
+        logger.info(f"Gemini Thought Process: {thinking_content}")
+        # Remove the thinking block from the text
+        cleaned_text = re.sub(thinking_pattern, '', text, flags=re.DOTALL).strip()
+        return cleaned_text
+    
+    return text 
 
 def invoke_gemini_model(
     prompt: str,
@@ -80,6 +119,19 @@ def invoke_gemini_model(
         }
     }
 
+    # Inject system instruction for thinking models if enabled
+    if ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS:
+        payload["system_instruction"] = {
+            "parts": [{"text": THINKING_SYSTEM_INSTRUCTION}]
+        }
+
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [GEMINI SYNC REQUEST] Model: {model_name}")
+        print(f"{'-'*60}")
+        print(f"PROMPT:\n{prompt}")
+        print(f"{'-'*60}\n")
+
     try:
         response = requests.post(
             url, 
@@ -101,7 +153,16 @@ def invoke_gemini_model(
         if "candidates" in data and len(data["candidates"]) > 0:
             candidate = data["candidates"][0]
             if "content" in candidate and "parts" in candidate["content"]:
-                 return candidate["content"]["parts"][0]["text"]
+                 raw_text = candidate["content"]["parts"][0]["text"]
+                 
+                 if VERBOSE_LLM_LOGGING:
+                     print(f"\n{'-'*60}")
+                     print(f" [GEMINI SYNC RESPONSE] Model: {model_name}")
+                     print(f"{'-'*60}")
+                     print(f"RESPONSE:\n{raw_text}")
+                     print(f"{'-'*60}\n")
+                     
+                 return _extract_and_log_thinking(raw_text)
             elif "finishReason" in candidate:
                 logger.warning(f"Gemini finished with reason: {candidate['finishReason']}")
                 return None
@@ -145,38 +206,74 @@ async def invoke_gemini_model_async(
         }
     }
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(
-                url, 
-                headers=headers, 
-                json=payload, 
-                params={"key": api_key},
-                timeout=60
-            ) as response:
-                if response.status == 429:
-                     logger.warning("Gemini API Rate Limit Hit (Async). Backing off...")
-                     await asyncio.sleep(5) # Extra backoff
-                
-                response.raise_for_status()
-                data = await response.json()
-                
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    candidate = data["candidates"][0]
-                    if "content" in candidate and "parts" in candidate["content"]:
-                         return candidate["content"]["parts"][0]["text"]
-                    elif "finishReason" in candidate:
-                        logger.warning(f"Gemini finished with reason: {candidate['finishReason']}")
-                        return None
-                
-                logger.warning(f"Unexpected response structure from Gemini (async): {data}")
-                return None
+    # Inject system instruction for thinking models if enabled
+    if ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS:
+        payload["system_instruction"] = {
+            "parts": [{"text": THINKING_SYSTEM_INSTRUCTION}]
+        }
 
-        except aiohttp.ClientError as e:
-            return None
-        except Exception as e:
-             logger.error(f"Unexpected error in Gemini async call: {e}")
-             return None
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [GEMINI ASYNC REQUEST] Model: {model_name}")
+        print(f"{'-'*60}")
+        print(f"PROMPT:\n{prompt}")
+        print(f"{'-'*60}\n")
+
+    async with aiohttp.ClientSession() as session:
+        retries = 3
+        base_delay = 2
+        
+        for attempt in range(retries + 1):
+            try:
+                async with session.post(
+                    url, 
+                    headers=headers, 
+                    json=payload, 
+                    params={"key": api_key},
+                    timeout=60
+                ) as response:
+                    if response.status == 429:
+                         logger.warning(f"Gemini API Rate Limit Hit (Async). Attempt {attempt+1}/{retries+1}. Backing off...")
+                         if attempt < retries:
+                             await asyncio.sleep(base_delay * (2 ** attempt)) # Exponential backoff
+                             continue
+                         else:
+                             # Retries exhausted
+                             logger.error("Gemini API Rate Limit Retries Exhausted.")
+                             return None
+                    
+                    response.raise_for_status()
+                    data = await response.json()
+                    
+                    if "candidates" in data and len(data["candidates"]) > 0:
+                        candidate = data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                             raw_text = candidate["content"]["parts"][0]["text"]
+                             
+                             if VERBOSE_LLM_LOGGING:
+                                 print(f"\n{'-'*60}")
+                                 print(f" [GEMINI ASYNC RESPONSE] Model: {model_name}")
+                                 print(f"{'-'*60}")
+                                 print(f"RESPONSE:\n{raw_text}")
+                                 print(f"{'-'*60}\n")
+                                 
+                             return _extract_and_log_thinking(raw_text)
+                        elif "finishReason" in candidate:
+                            logger.warning(f"Gemini finished with reason: {candidate['finishReason']}")
+                            return None
+                    
+                    logger.warning(f"Unexpected response structure from Gemini (async): {data}")
+                    return None
+
+            except aiohttp.ClientError as e:
+                logger.error(f"ClientError in Gemini async call: {e}")
+                if attempt < retries:
+                     await asyncio.sleep(base_delay)
+                     continue
+                return None
+            except Exception as e:
+                 logger.error(f"Unexpected error in Gemini async call: {e}")
+                 return None
 
 async def get_embeddings_async(text: str, model_name: str = "text-embedding-004") -> Optional[List[float]]:
     """

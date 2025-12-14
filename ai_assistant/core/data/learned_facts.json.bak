@@ -1,0 +1,50 @@
+[
+    {
+        "fact_id": "fact_b1101e01",
+        "text": "The AI can access and process information from the real world through Google Search.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-08T01:57:50.028845+00:00",
+        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_2b1b973a",
+        "text": "The AI can perform various tasks using tools.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-08T01:57:50.028845+00:00",
+        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_aae546d4",
+        "text": "The AI is under development and learning.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-08T01:57:50.028845+00:00",
+        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_84f99f7d",
+        "text": "The user lives in Glasgow, KY.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-08T01:57:50.028845+00:00",
+        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_552ca2ec",
+        "text": "The user's name is Jason Kinslow.",
+        "category": "uncategorized",
+        "source": "migrated_from_old_format",
+        "created_at": "2025-12-08T01:57:50.028845+00:00",
+        "updated_at": "2025-12-08T01:57:50.028845+00:00"
+    },
+    {
+        "fact_id": "fact_5fc50107",
+        "text": "Python is a popular language.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-11T11:12:20.531287+00:00",
+        "updated_at": "2025-12-11T11:12:20.531305+00:00"
+    }
+]

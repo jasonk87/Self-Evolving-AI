@@ -59,7 +59,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="approval-time">${new Date(req.timestamp * 1000).toLocaleTimeString()}</span>
                 </div>
                 <div class="approval-body">
+                    ${req.data.related_tool_name ? `<div class="target-name">Target Tool: <code>${req.data.related_tool_name}</code></div>` : ''}
+                    ${req.data.details && req.data.details.target_file ? `<div class="target-name">Target File: <code>${req.data.details.target_file}</code></div>` : ''}
                     <p class="approval-desc">${req.description}</p>
+                    <textarea class="approval-feedback-input" placeholder="Optional feedback (e.g., reason for denial, or instructions)..." style="width:100%; margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); color:#eee; font-size:12px; resize:vertical; min-height:60px;"></textarea>
                 </div>
                 <div class="approval-actions">
                     <button class="btn-deny" data-id="${req.id}">Deny</button>
@@ -68,8 +71,16 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
 
             // Listeners
-            card.querySelector('.btn-approve').addEventListener('click', () => handleAction(req.id, 'approve'));
-            card.querySelector('.btn-deny').addEventListener('click', () => handleAction(req.id, 'deny'));
+            const feedbackInput = card.querySelector('.approval-feedback-input');
+
+            card.querySelector('.btn-approve').addEventListener('click', () => {
+                const feedback = feedbackInput.value;
+                handleAction(req.id, 'approve', feedback);
+            });
+            card.querySelector('.btn-deny').addEventListener('click', () => {
+                const feedback = feedbackInput.value;
+                handleAction(req.id, 'deny', feedback);
+            });
 
             approvalsList.appendChild(card);
         });
@@ -86,12 +97,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return type.replace(/_/g, ' ').toUpperCase();
     }
 
-    async function handleAction(id, action) {
+    async function handleAction(id, action, feedback) {
         const btn = document.querySelector(`button[data-id="${id}"].btn-${action}`);
         if (btn) btn.disabled = true;
 
         try {
-            const res = await fetch(`/api/approvals/${id}/${action}`, { method: 'POST' });
+            const res = await fetch(`/api/approvals/${id}/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ feedback: feedback })
+            });
             const data = await res.json();
             if (data.success) {
                 fetchApprovals();

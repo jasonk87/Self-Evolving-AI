@@ -1,0 +1,16 @@
+{
+  "id": "666806dd-4b68-4c6a-a8d1-047fdaa5094d",
+  "title": "Where do I work at",
+  "created_at": 1765710389.2032893,
+  "updated_at": 1765710395.2359896,
+  "history": [
+    {
+      "role": "user",
+      "content": "Where do I work at"
+    },
+    {
+      "role": "assistant",
+      "content": "I found that you work in utility line clearance / tree trimming as a General Foreman. Your responsibilities include crew scheduling, equipment logistics, jobsite safety, span production, debris handling, and coordination with utility partners. You typically work 4x10 shifts, with rotating Friday and weekend standby coverage."
+    }
+  ]
+}

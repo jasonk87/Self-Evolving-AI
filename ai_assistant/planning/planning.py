@@ -195,7 +195,8 @@ class PlannerAgent:
         available_tools: Dict[str, str], # This will be Dict[str, Dict[str, Any]] from ToolSystem.list_tools_with_sources()
         project_context_summary: Optional[str] = None,
         project_name_for_context: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        last_action_report: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """ (Async)
         Creates a plan to achieve the goal_description using an LLM to generate the plan steps.
@@ -273,8 +274,18 @@ When generating the plan, consider this existing project context. For example, i
                 history_lines.append(f"- {role}: {content}")
             conversation_history_section_str = "\n".join(history_lines) + "\n"
 
+        last_action_report_section_str = ""
+        if last_action_report:
+            last_action_report_section_str = f"""
+=== RECENT TECHNICAL CONTEXT (CRITICAL) ===
+The user's request might be related to these recent tool activities/errors:
+{last_action_report}
+===========================================
+"""
+
         LLM_PLANNING_PROMPT_TEMPLATE = """Given the user's goal: "{goal}"
 {conversation_history_section}
+{last_action_report_section}
 {project_context_section}
 {relevant_memory_section}
 
@@ -282,6 +293,9 @@ When generating the plan, consider this existing project context. For example, i
 - If a "Current Project Context" (e.g., code from existing files) is provided, use it to understand the current state and how the user's goal relates to it.
 - If "Relevant Learned Facts", "Knowledge Snippets", or "Relevant Past Experiences" are provided, review them carefully.
 - These facts represent information the assistant already knows or lessons from the past.
+- **CRITICAL:** You MUST prioritize "Relevant Learned Facts" and "Relevant Past Experiences" over asking the user for information.
+    - If the user's name, location, or preference is listed in the facts, **USE IT**. Do NOT plan a step to ask the user "Where are you?" if the fact "User Location: Smiths Grove, KY" is present.
+    - Trust the learned facts as the primary source of truth for context.
 - Use these facts to:
     - Inform your choice of tools and arguments.
     - Avoid asking for information already known.
@@ -297,6 +311,14 @@ Each step dictionary *MUST* contain the following keys:
 - "tool_name": string (must be one of the available tools listed above)
 - "args": list of strings (positional arguments for the tool). If an argument value cannot be inferred from the goal, use an empty string "" or a placeholder like "TODO_infer_arg_value".
 - "kwargs": dictionary (key-value pairs of strings for keyword arguments, e.g., {{"key": "value"}}). If no keyword arguments, use an empty dictionary {{}}.
+
+**Handling Capability Inquiries (Meta-Questions)**
+If the user asks if you have a certain ability or tool (e.g., "Do you have the ability to send text messages?", "Can you check the weather?", "Are you able to create files?"), check the `Available Tools` list.
+- **If the tool exists**: Do NOT try to execute the tool immediately if the user hasn't provided the necessary arguments (like recipient or message body). instead, plan to use the `get_self_awareness_info_and_converse` tool to confirm the capability conversationally (e.g., answering "Yes, I have a tool for that").
+- **If the tool does NOT exist**: Plan to use `get_self_awareness_info_and_converse` to inform the user that you don't have that specific capability yet.
+
+**Answering from Memory:**
+If the user asks a question (e.g., 'Where am I?') and the answer is explicitly present in the 'Relevant Learned Facts', do NOT assume you need to call a search or retrieval tool. Instead, use the `get_self_awareness_info_and_converse` tool to state the fact directly (e.g. args=["I know from our past conversations that you are in Smiths Grove, KY."]). This prevents unnecessary tool usage and proves you are paying attention.
 
 **Critical First Step: Determine User's Intent for "Creation" Tasks**
 Before planning any "creation" task (e.g., "create a ...", "make a ...", "build a ..."), you *MUST* first determine if the user is requesting:
@@ -322,6 +344,23 @@ For tasks related to software project creation, code generation for specific fil
 3.  `execute_project_coding_plan(project_name: str)`:
     *   Use when the user wants to generate all remaining planned code for an *existing* project according to its coding plan.
     *   Identify the `project_name` from the user's request.
+
+**Contextual Intent Analysis (CRITICAL):**
+Before generating a plan, you MUST analyze the *flow* of the specific conversation to determine the user's true intent. Use the `Conversation History` provided above as your primary guide.
+1.  **Exploration Mode** (Brainstorming, "What if...", "How about...", asking for ideas):
+    *   **Goal**: The user is thinking, not doing.
+    *   **Action**: Your plan should prioritize **CONVERSATION**. Use `get_self_awareness_info_and_converse` to discuss the ideas, offer suggestions, or ask clarifying questions.
+    *   **Restriction**: Do NOT plan heavy-handed actions like `initiate_ai_project` or `write_to_file` during this phase, even if the user mentions a specific app idea. "Talking about it" != "Building it".
+2.  **Instruction Mode** (Directives, "Go ahead", "Fix it", "Start X", "Make Y"):
+    *   **Goal**: The user has decided on a course of action.
+    *   **Action**: Plan the necessary tools to execute the request (e.g., `initiate_ai_project`, `generate_code`).
+
+**Example of Intent Distinction:**
+*   User: "I'm thinking about a to-do app." -> **Exploration**. Plan: `get_self_awareness_info_and_converse` (Discuss features).
+*   User: "That sounds good, let's make the to-do app." -> **Instruction**. Plan: `initiate_ai_project`.
+
+**Project Initiation Safety:**
+Do NOT call `initiate_ai_project` unless the user has moved from **Exploration** to **Instruction**. If in doubt, assume Exploration.
 
 **IMPORTANT DIRECTIVE FOR TOOL CREATION:**
 If the user's goal is to "create a tool", "make a tool", "generate a tool", or a similar request implying the creation of new functionality that is not met by existing tools, your primary plan *MUST* be to use the "generate_new_tool_from_description" tool.
@@ -523,6 +562,7 @@ JSON Plan:
         current_prompt = LLM_PLANNING_PROMPT_TEMPLATE.format(
             goal=goal_description, 
             conversation_history_section=conversation_history_section_str,
+            last_action_report_section=last_action_report_section_str,
             project_context_section=project_context_section_str,
             relevant_memory_section=relevant_memory_section,
             tools_json_string=tools_json_string

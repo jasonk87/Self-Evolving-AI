@@ -59,10 +59,16 @@ Original Function Code:
 ```
 
 Your task is to provide a corrected version of this Python function.
-- Only output the complete, raw Python code for the corrected function.
-- Do NOT include any explanations, markdown formatting (like ```python), or any text other than the function code itself.
-- Ensure the function signature (name, parameters, type hints) remains the same unless the problem description explicitly requires changing it.
-- If you cannot determine a fix or the original code is not a single function, return only the text: "// NO_CODE_SUGGESTION_POSSIBLE"
+
+CRITICAL INSTRUCTIONS:
+1.  **Analyze the Problem**: Understand exactly what is wrong based on the description.
+2.  **Make Changes**: The code you output MUST be different from the original code to address the issue. Identical code will be REJECTED.
+3.  **Preserve Interface**: Ensure the function signature (name, parameters, type hints) remains compatible unless the fix clearly requires a signature change (e.g. adding a missing argument or making one optional).
+4.  **NO MOCKING**: Do NOT replace real logic (API calls, DB queries) with "simulations", "mocks", or hardcoded data. You must FIX the actual logic. Lower quality "stub" implementations will be REJECTED.
+5.  **No Markdown/Explanations**: Only output the raw Python code for the function. Do not wrap in ```python blocks.
+
+Failure to fix the issue or returning identical code will result in system failure.
+Fix the code now.
 
 Corrected Python function code:
 """

@@ -1,0 +1,24 @@
+{
+  "id": "010e64ac-d4ff-4992-90c6-12b4b007bf04",
+  "title": "What all do you have going on ...",
+  "created_at": 1765631854.5535893,
+  "updated_at": 1765631939.0611157,
+  "history": [
+    {
+      "role": "user",
+      "content": "What all do you have going on right now"
+    },
+    {
+      "role": "assistant",
+      "content": "I encountered an issue processing your request for 'What all do you have going on right now'. The technical details are: Could not create a plan for the given prompt.\n\nNo actions were planned or taken."
+    },
+    {
+      "role": "user",
+      "content": "Really why is that"
+    },
+    {
+      "role": "assistant",
+      "content": "I encountered an issue processing your request for 'Really why is that'. The technical details are: Could not create a plan for the given prompt.\n\nNo actions were planned or taken."
+    }
+  ]
+}

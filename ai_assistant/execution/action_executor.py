@@ -309,6 +309,30 @@ class ActionExecutor:
                     notes=f"The Council blocked this change.",
                     is_self_modification_attempt=True, source_suggestion_id=source_insight_id
                 )
+
+                # LEARN FROM REJECTION (User Request: "AI should do the same thing")
+                try:
+                    fact_text = f"The Council rejected modification to tool '{function_name}' because: {reasoning}"
+                    # We don't have direct access to LearningAgent/MemoryManager here easily in all paths, 
+                    # but we can try to use the persistent memory functions directly.
+                    from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts
+                    current_facts = load_learned_facts()
+                    # dedup
+                    if not any(f.get("text") == fact_text for f in current_facts):
+                        new_fact = {
+                            "fact_id": f"fact_{uuid.uuid4().hex[:8]}",
+                            "text": fact_text,
+                            "category": "system_feedback",
+                            "source": "Council Review",
+                            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        }
+                        current_facts.append(new_fact)
+                        save_learned_facts(current_facts)
+                        logger.info(f"ActionExecutor: Learned from Council rejection: {fact_text}")
+                except Exception as e_learn:
+                     logger.error(f"ActionExecutor: Failed to learn from Council rejection: {e_learn}")
+
                 return False
 
             logger.info(f"The Council APPROVED the modification for {function_name}. Reasoning: {reasoning}")

@@ -1,0 +1,48 @@
+{
+  "id": "29cfa63a-a746-449f-ac1c-45f07f91dfb6",
+  "title": "what is the weather in columbi...",
+  "created_at": 1765717756.0932188,
+  "updated_at": 1765717858.1076422,
+  "history": [
+    {
+      "role": "user",
+      "content": "what is the weather in columbia ky?"
+    },
+    {
+      "role": "assistant",
+      "content": "The weather in Columbia, KY is currently 58.32 degrees Fahrenheit with overcast clouds. The humidity is 91 and the wind speed is 9.22 mph."
+    },
+    {
+      "role": "user",
+      "content": "do you have the ability to text message?"
+    },
+    {
+      "role": "assistant",
+      "content": "Yes, I can send text messages using the `send_text_message` tool."
+    },
+    {
+      "role": "user",
+      "content": "does it require an api_key?"
+    },
+    {
+      "role": "assistant",
+      "content": "Yes, the `send_text_message` tool requires an API key for Twilio to function."
+    },
+    {
+      "role": "user",
+      "content": "is it expensive?"
+    },
+    {
+      "role": "assistant",
+      "content": "The cost of the `send_text_message` tool depends on Twilio API pricing, which I don't have real-time access to. Twilio charges based on message volume and destination, so you'll need to check Twilio's website for current pricing details."
+    },
+    {
+      "role": "user",
+      "content": "you do have real time access, look it up"
+    },
+    {
+      "role": "assistant",
+      "content": "Twilio's voice call pricing starts at $0.0085/min to receive calls and $0.014/min to make calls. SMS pricing for the United States can be found on Twilio's website. WhatsApp messaging costs $0.005 per message (inbound or outbound), plus Meta's template fees. For specific SMS pricing, the Twilio Pricing API is available. Keep in mind that prices may change."
+    }
+  ]
+}

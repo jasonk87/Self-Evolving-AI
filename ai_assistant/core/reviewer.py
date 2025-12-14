@@ -6,7 +6,7 @@ from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 
 REVIEW_CODE_PROMPT_TEMPLATE = """
-You are a "NITPICKY" AI code reviewer. Your goal is NOT just to approve code, but to ensure it is 100% accurate, robust, clean, and follows best practices. You must be extremely detailed and critical.
+You are a **PRAGMATIC** AI code reviewer. Your goal is to ensure code is SAFE, FUNCTIONAL, and BETTER than before. You should catch bugs and security issues, but **avoid** blocking progress for minor style preferences.
 
 **Code to Review:**
 ```
@@ -58,10 +58,22 @@ You are a "NITPICKY" AI code reviewer. Your goal is NOT just to approve code, bu
     *   Will the code pass the provided tests?
     *   Are existing tests sufficient?
 
+6.  **Preservation of Functionality (CRITICAL)**:
+    *   **REJECT** any code that replaces real logic (API calls, database queries) with "mocks", "stubs", "hardcoded data", or "simulations" unless the requirements EXPLICITLY ask for a mock/simulation.
+    *   **REJECT** if the code deletes core logic instead of fixing it.
+    *   **REJECT** if the code implementation is lazily simplified (e.g. returning `True` blindly).
+
 **Actionable Feedback**:
-*   Do NOT just say "rejected". You must provide specific, actionable corrections for the refinement agent.
-*   If there are minor issues (typos, formatting, unused imports), use "requires_changes" instead of "approved".
-*   Only use "approved" if the code is truly excellent and 100% correct.
+*   **Prioritize SAFETY and FUNCTIONALITY.**
+*   If the code is SAFE, FIXES THE ISSUE, and is REASONABLY CLEAN, you should **APPROVE** it.
+*   Do NOT block critical self-correction for minor style nitpicks (like import ordering, docstring phrasing, or variable naming preferences).
+*   Use "requires_changes" ONLY for:
+    *   Functional bugs.
+    *   Security risks.
+    *   Syntax errors.
+    *   Missing critical requirements.
+*   If there are minor style suggestions, use "approved" and list them in the comments as "suggestions for future cleanup" rather than rejecting the change.
+*   Your goal is to IMPROVE the system, not to paralyzed it with perfectionism.
 
 **Output Structure:**
 You *MUST* respond with a single JSON object.
@@ -170,22 +182,59 @@ class ReviewerAgent:
                     "suggestions": ""
                 }
 
-            # Clean and parse the response
+            # Clean and parse the response with regex to handle CoT blocks
+            import re
             cleaned_response_str = llm_response_str.strip()
-            if cleaned_response_str.startswith("```json"):
-                cleaned_response_str = cleaned_response_str[len("```json"):].strip()
-                if cleaned_response_str.endswith("```"):
-                    cleaned_response_str = cleaned_response_str[:-len("```")].strip()
-            elif cleaned_response_str.startswith("```"):
-                cleaned_response_str = cleaned_response_str[len("```"):].strip()
-                if cleaned_response_str.endswith("```"):
-                    cleaned_response_str = cleaned_response_str[:-len("```")].strip()
+
+            # 1. Robustly remove <think>...</think> blocks and stray tags
+            # Remove matched pairs first
+            cleaned_response_str = re.sub(r'<think>.*?</think>', '', cleaned_response_str, flags=re.DOTALL)
+            # Remove stray closing tags (common if context is truncated or model is chatty)
+            cleaned_response_str = cleaned_response_str.replace('</think>', '')
+            cleaned_response_str = cleaned_response_str.strip()
             
-            review_data = json.loads(cleaned_response_str)
+            review_data = None
+
+            # 2. Strategy A: Markdown Code Block Extraction (Priority)
+            # We explicitly ask for ```json in the prompt, so this should be the first place we look.
+            try:
+                if "```json" in cleaned_response_str:
+                    temp_clean = cleaned_response_str.split("```json")[1]
+                    if "```" in temp_clean:
+                        temp_clean = temp_clean.split("```")[0]
+                    review_data = json.loads(temp_clean.strip())
+                elif "```" in cleaned_response_str:
+                    # Fallback for generic code blocks
+                    content_parts = cleaned_response_str.split("```")
+                    # Should probably look for the one that looks like JSON or check the second part
+                    if len(content_parts) >= 2:
+                        potential_json_block = content_parts[1]
+                        try:
+                            review_data = json.loads(potential_json_block.strip())
+                        except json.JSONDecodeError:
+                            pass
+            except (json.JSONDecodeError, IndexError):
+                pass
+
+            # 3. Strategy B: Naive JSON Block Searching (Fallback)
+            # Only do this if Strategy A failed.
+            if not review_data and "{" in cleaned_response_str and "}" in cleaned_response_str:
+                # Find the *first* { and *last* }
+                # Note: This is risky if the intro text contains {}, e.g. "I checked the {code}."
+                # To mitigte, we could look for the LAST { if the first one fails? 
+                # For now, keep simple but strict.
+                potential_json = cleaned_response_str[cleaned_response_str.find("{"):cleaned_response_str.rfind("}") + 1]
+                try:
+                    review_data = json.loads(potential_json)
+                except json.JSONDecodeError:
+                    # If this fails, maybe there are multiple JSON-like objects. 
+                    # Try to find the *last* complete JSON object if possible, or just fail.
+                    pass
+
             if not review_data:
                 return {
                     "status": "error",
-                    "comments": "Parsed review data is empty",
+                    "comments": f"Failed to parse review data from LLM response. Raw snippet: {cleaned_response_str[:100]}...",
                     "suggestions": ""
                 }
 

@@ -1,10 +1,10 @@
-
 import os
 import ast
 import random
 import json
 import logging
 import asyncio
+import re
 from typing import Optional, Dict, List, Any
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task, is_debug_mode
@@ -76,7 +76,8 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
             f"Your goal: Propose a refactor to simplify logic, improve readability, or enhance performance (O(n)).\n"
             f"Focus on the most complex functions.\n\n"
             f"File Content:\n```python\n{content}\n```\n\n"
-            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff)."
+            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff).\n"
+            f"IMPORTANT: Ensure the JSON is valid. Escape backslashes in strings (e.g., use \\\\n for newlines in code strings)."
         )
     elif metric == "deprecated":
         lens = "The Modernizer Lens"
@@ -85,7 +86,8 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
             f"The static analysis detected POTENTIALLY DEPRECATED or UNSAFE PATTERNS (e.g., os.system, shell=True).\n"
             f"Your goal: Propose a modern, safer alternative using `subprocess`, `shlex`, or other modern libraries.\n\n"
             f"File Content:\n```python\n{content}\n```\n\n"
-            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff)."
+            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff).\n"
+            f"IMPORTANT: Ensure the JSON is valid. Escape backslashes in strings (e.g., use \\\\n for newlines in code strings)."
         )
     elif metric == "todo":
         lens = "The Completion Lens"
@@ -94,7 +96,8 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
             f"The static analysis detected TODOs, FIXMEs, or HACKs.\n"
             f"Your goal: Propose code to implement the missing functionality or clean up the hack.\n\n"
             f"File Content:\n```python\n{content}\n```\n\n"
-            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff)."
+            f"Output a JSON object with keys: 'summary', 'plan', 'diff' (optional, concept diff).\n"
+            f"IMPORTANT: Ensure the JSON is valid. Escape backslashes in strings (e.g., use \\\\n for newlines in code strings)."
         )
     else:
         # Fallback
@@ -103,7 +106,9 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
              f"You are the 'Evolutionary Architect'. You are auditing the file `{filepath}`.\n"
              f"Propose any improvements found.\n\n"
              f"File Content:\n```python\n{content}\n```\n\n"
-             f"Output a JSON object with keys: 'summary', 'plan', 'diff'."
+             f"File Content:\n```python\n{content}\n```\n\n"
+             f"Output a JSON object with keys: 'summary', 'plan', 'diff'.\n"
+             f"IMPORTANT: Ensure the JSON is valid. Escape backslashes in strings (e.g., use \\\\n for newlines in code strings)."
         )
 
     model = get_model_for_task("code_generation")
@@ -115,6 +120,11 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
         try:
             response = await invoke_ollama_model_async(current_prompt, model_name=model)
 
+            if not response:
+                logger.warning(f"EvolutionaryArchitect: No response received from LLM (Attempt {attempt+1}/{max_retries}). Aborting.")
+                return None
+
+
             # Try to parse JSON from response
             json_str = response
             if "```json" in response:
@@ -122,7 +132,12 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
             elif "```" in response:
                 json_str = response.split("```")[1].split("```")[0]
             
-            proposal = json.loads(json_str.strip())
+            # proposal = json.loads(json_str.strip())
+            proposal = _robust_json_parse(json_str.strip())
+            
+            if not proposal:
+                raise json.JSONDecodeError("Failed to parse using robust parser", json_str, 0)
+
             
             # If successful, return immediately
             return {
@@ -205,4 +220,37 @@ async def perform_architectural_audit(effort_level: str = "normal") -> Optional[
     # 3. Phase 2: The Evolutionary Lenses
     proposal = await generate_evolution_proposal(target_file, content, analysis)
 
+
     return proposal
+
+
+def _robust_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
+    """
+    Attempts to parse JSON with multiple fallback strategies to handle LLM quirks.
+    """
+    # 1. Try standard JSON parsing
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Try ast.literal_eval (handles single quotes and some Python-specifics)
+    try:
+        # ast.literal_eval is safe for evaluating strings containing Python literals
+        return ast.literal_eval(json_str) 
+    except (ValueError, SyntaxError):
+        pass
+
+    # 3. Try to clean up common issues
+    # Handle unescaped backslashes in strings (a common LLM issue with code generation)
+    # This is a bit risky but often saves the day.
+    # We try to escape backslashes that are NOT followed by a valid escape char.
+    try:
+        cleaned_str = json_str
+        # Replace 'Unterminated string' issues due to newlines
+        cleaned_str = cleaned_str.replace('\n', '\\n') 
+        return json.loads(cleaned_str)
+    except json.JSONDecodeError:
+        pass
+        
+    return None

@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 # If advanced CLI styling is needed here, robust path handling for display_utils would be required.
 # from ...utils.display_utils import color_text, CLIColors, format_message, format_input_prompt # Example path
 
-def request_user_clarification(question_text: str, options: Optional[List[str]] = None) -> str:
+def request_user_clarification(question_text: Optional[str] = None, options: Optional[List[str]] = None, **kwargs) -> str:
     """
     Asks the user a clarifying question and returns their textual response.
     This tool is intended to be called by the AI planner when it needs more information
@@ -14,10 +14,20 @@ def request_user_clarification(question_text: str, options: Optional[List[str]] 
     Args:
         question_text: The question to ask the user.
         options: Optional. A list of suggested options for the user to choose from.
+        **kwargs: Support for LLMs that hallucinate argument names (e.g. 'question').
 
     Returns:
-        The user's textual reply.
+        The user's textual reply as a special signal dictionary to pause execution.
     """
+    # Handle LLM hallucinations for argument names
+    if not question_text and 'question' in kwargs:
+        question_text = kwargs['question']
+    
+    if not question_text:
+        return {
+            "status": "ERROR", 
+            "message": "Missing required argument 'question_text' (or 'question')."
+        }
     # Basic print statements for interaction within the tool's execution thread.
     # These will not use the main CLI's prompt_toolkit styling directly.
     print(f"\n--- AI Assistant Needs Clarification ---")

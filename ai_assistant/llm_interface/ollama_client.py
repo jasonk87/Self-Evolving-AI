@@ -15,7 +15,8 @@ from ai_assistant.config import (
     DEFAULT_TEMPERATURE_THINKING,
     DEFAULT_TEMPERATURE_RESPONSE,
     THINKING_CONFIG,
-    LLM_PROVIDER
+    LLM_PROVIDER,
+    VERBOSE_LLM_LOGGING
 )
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
@@ -139,11 +140,20 @@ def invoke_ollama_model(
     if use_chat_api: payload["think"] = True
     api_endpoint = OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT
 
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [OLLAMA SYNC REQUEST] Model: {model_name}")
+        print(f"{'-'*60}")
+        print(f"PROMPT:\n{prompt}")
+        print(f"{'-'*60}\n")
+
     try:
-        if is_debug_mode():
+        if is_debug_mode() and not VERBOSE_LLM_LOGGING:
             print(f"[DEBUG] Sending request to Ollama with model: {model_name}, prompt: '{prompt[:100]}...'")
             if enable_thinking: print(f"[DEBUG] Native thinking enabled for model {model_name}")
-        else: print(f"Sending request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
+        elif not VERBOSE_LLM_LOGGING:
+             print(f"Sending request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
+             
         response = requests.post(api_endpoint, json=payload, timeout=600)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
@@ -166,6 +176,15 @@ def invoke_ollama_model(
         result = process_llm_response(parsed_response)
         if not result: return None
         content, thinking = result
+        
+        if VERBOSE_LLM_LOGGING:
+             print(f"\n{'-'*60}")
+             print(f" [OLLAMA SYNC RESPONSE] Model: {model_name}")
+             print(f"{'-'*60}")
+             if thinking: print(f"THINKING:\n{thinking}\n{'-'*30}")
+             print(f"CONTENT:\n{content}")
+             print(f"{'-'*60}\n")
+
         if enable_thinking:
             if thinking:
                 if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
@@ -253,20 +272,42 @@ async def invoke_ollama_model_async_internal(
     }
     if use_chat_api: payload["think"] = True
 
-    if is_debug_mode():
+    if use_chat_api: payload["think"] = True
+
+    current_api_endpoint = api_endpoint_override if api_endpoint_override else (OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT)
+
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [OLLAMA ASYNC REQUEST] Model: {model_name}")
+        print(f"{'-'*60}")
+        print(f"PROMPT:\n{prompt}")
+        print(f"{'-'*60}\n")
+
+    if is_debug_mode() and not VERBOSE_LLM_LOGGING:
         print(f"[DEBUG] Sending async request to Ollama with model: {model_name}, prompt: '{prompt[:100]}...' to {current_api_endpoint}")
         if enable_thinking: print(f"[DEBUG] Native thinking enabled for model {model_name}")
-    else: print(f"Sending async request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
+    elif not VERBOSE_LLM_LOGGING:
+         print(f"Sending async request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
 
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600.0)) as session:
         try:
             async with session.post(current_api_endpoint, json=payload) as response:
                 response.raise_for_status()
                 response_data = await response.json()
-                if is_debug_mode(): print(f"[DEBUG] Ollama async response JSON: {str(response_data)[:500]}")
+                if is_debug_mode() and not VERBOSE_LLM_LOGGING: print(f"[DEBUG] Ollama async response JSON: {str(response_data)[:500]}")
+                
                 result = process_llm_response(response_data)
                 if not result: return None
                 content, thinking = result
+                
+                if VERBOSE_LLM_LOGGING:
+                     print(f"\n{'-'*60}")
+                     print(f" [OLLAMA ASYNC RESPONSE] Model: {model_name}")
+                     print(f"{'-'*60}")
+                     if thinking: print(f"THINKING:\n{thinking}\n{'-'*30}")
+                     print(f"CONTENT:\n{content}")
+                     print(f"{'-'*60}\n")
+
                 if enable_thinking:
                     if thinking:
                         if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
@@ -275,7 +316,7 @@ async def invoke_ollama_model_async_internal(
                             print(f"{THINKING_CONFIG['display']['prefix'].strip()} {thinking} {THINKING_CONFIG['display']['suffix'].strip()}")
                     elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
                         print(f"[DEBUG] Async native thinking enabled for {model_name}, but no thinking process was returned by the model.")
-                if is_debug_mode(): print(f"[DEBUG] Async final content being returned: {content[:200]}...")
+                if is_debug_mode() and not VERBOSE_LLM_LOGGING: print(f"[DEBUG] Async final content being returned: {content[:200]}...")
                 return content
         except aiohttp.ClientError as e: print(f"HTTP error occurred in async call: {e}"); return None
         except json.JSONDecodeError: print("Error: Failed to parse JSON response from Ollama (async)."); return None

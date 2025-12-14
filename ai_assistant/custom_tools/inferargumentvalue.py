@@ -3,7 +3,8 @@ from typing import Any
 
 def infer_argument_value(arg_name: str, context: dict, default: Any = None) -> Any:
     """
-    Infers the value of an argument by checking a context dictionary first, then using a default value.
+    Infers the value of an argument by checking a context dictionary first,
+    then using a default value.
     
     Parameters:
         arg_name (str): The name of the argument to infer.

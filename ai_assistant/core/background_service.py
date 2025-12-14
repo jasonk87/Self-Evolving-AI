@@ -438,11 +438,14 @@ async def _background_loop_async():
                                  # Use NotificationManager to inform user of autonomous action
                                  if learning_agent and learning_agent.notification_manager:
                                      learning_agent.notification_manager.add_notification(
-                                    title="Auto-Approved Action",
-                                    message=f"I auto-approved '{req.get('description')}' because it passed all 4 Gatekeeper checks (Safety: {eval_result['safety_score']}/10).",
-                                    priority="normal",
-                                    n_type=NotificationType.SYSTEM_ALERT
-                                )
+                                        event_type=NotificationType.SYSTEM_ALERT,
+                                        summary_message=f"Auto-Approved: I executed '{req.get('description')}' because it passed all Gatekeeper checks (Safety: {eval_result['safety_score']}/10).",
+                                        details_payload={
+                                            "title": "Auto-Approved Action",
+                                            "priority": "normal",
+                                            "gatekeeper_result": eval_result
+                                        }
+                                     )
 
                                  approval_success = await approval_manager.approve_request(req_id)
                                  if approval_success:
@@ -454,10 +457,13 @@ async def _background_loop_async():
                                  # Auto-Deny
                                  if learning_agent and learning_agent.notification_manager:
                                      learning_agent.notification_manager.add_notification(
-                                         title="Auto-Rejected Action",
-                                         message=f"I auto-denied '{req.get('description')}'. Reason: {eval_result['reason']}",
-                                         priority="normal",
-                                         n_type=NotificationType.SYSTEM_ALERT
+                                         event_type=NotificationType.SYSTEM_ALERT,
+                                         summary_message=f"Auto-Denied: I rejected '{req.get('description')}'. Reason: {eval_result['reason']}",
+                                         details_payload={
+                                             "title": "Auto-Rejected Action",
+                                             "priority": "normal",
+                                             "reason": eval_result['reason']
+                                         }
                                      )
                                  approval_manager.deny_request(req_id)
                                  logger.info(f"BackgroundService: Auto-denied request {req_id}. Reason: {eval_result['reason']}")
@@ -467,7 +473,27 @@ async def _background_loop_async():
              
              next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
         
+        # --- 6. Conversational Analysis ---
+        global _last_conversation_analysis_time, _conversation_analysis_interval_seconds
+        
+        if '_last_conversation_analysis_time' not in globals():
+             _last_conversation_analysis_time = 0.0
+        if '_conversation_analysis_interval_seconds' not in globals():
+             _conversation_analysis_interval_seconds = 1800 # 30 minutes
+
+        if current_loop_time - _last_conversation_analysis_time >= _conversation_analysis_interval_seconds:
+            _last_conversation_analysis_time = current_loop_time
+            if learning_agent:
+                logger.info("BackgroundService: Running Conversational Analysis...")
+                try:
+                    num_insights = await learning_agent.scan_recent_conversations()
+                    if num_insights > 0:
+                        logger.info(f"BackgroundService: Conversational Analysis found {num_insights} new insights.")
+                except Exception as e:
+                    logger.error(f"BackgroundService: Error during conversational analysis: {e}")
+
         # Determine sleep time until the next event
+
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')

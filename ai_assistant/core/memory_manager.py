@@ -156,6 +156,19 @@ class MemoryManager:
         """Returns all actionable insights."""
         return load_actionable_insights()
 
+    async def ingest_insight_to_rag(self, insight: Dict[str, Any]):
+        """
+        Ingests a specific insight into RAG if it is relevant for context (e.g. USER_PREFERENCE).
+        """
+        if not self.rag_system:
+            return
+
+        insight_type = insight.get("type")
+        if insight_type in ["USER_PREFERENCE_LEARNED", "USER_FRUSTRATION", "KNOWLEDGE_GAP_IDENTIFIED"]:
+             text = f"Insight ({insight_type}): {insight.get('description')}"
+             await self.rag_system.ingest_fact(text, metadata={"source": "insight", "id": insight.get("insight_id"), "type": insight_type})
+             logger.info(f"Ingested insight {insight.get('insight_id')} into RAG.")
+
     def update_insight_status(self, insight_id: str, status: str) -> Optional[Dict[str, Any]]:
         """
         Updates the status of an insight (e.g., 'DISMISSED', 'APPROVED').
@@ -179,6 +192,15 @@ class MemoryManager:
         if insight_found:
             if save_actionable_insights(insights):
                 logger.info(f"Updated insight status: {insight_id} -> {status}")
+                
+                # If approved/acknowledged, ensure it's in RAG (fire and forget if loop exists)
+                if status in ["APPROVED", "PENDING", "NEW"]: # "NEW" is default usually
+                     try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self.ingest_insight_to_rag(updated_insight))
+                     except RuntimeError:
+                        pass
+
                 return updated_insight
             else:
                 logger.error(f"Failed to save updated insight: {insight_id}")

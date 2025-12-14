@@ -7,6 +7,8 @@ import os
 import shutil
 import logging
 import sys
+import subprocess
+import tempfile
 from .diff_utils import generate_diff
 from .critical_reviewer import CriticalReviewCoordinator
 from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
@@ -23,6 +25,48 @@ if not logger.handlers: # Avoid adding multiple handlers if script is reloaded/r
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
+def _run_pylint_check(code_str: str) -> Optional[str]:
+    """Runs pylint on the code string and returns error message if 'undefined variable' is found."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
+            tmp.write(code_str)
+            tmp_path = tmp.name
+    except Exception as e:
+        logger.warning(f"Failed to create temp file for Pylint: {e}")
+        return None
+
+    try:
+        # Check for E0602 (undefined variable) and E0401 (import error)
+        # We assume pylint is installed and in path.
+        # Modified to use sys.executable for robustness per user feedback
+        result = subprocess.run(
+            [sys.executable, '-m', 'pylint', '--disable=all', '--enable=E0602,E0401', '--score=n', '--output-format=text', tmp_path],
+            capture_output=True, text=True, check=False
+        )
+        # Pylint returns non-zero on issues.
+        if result.returncode != 0:
+            lines = result.stdout.splitlines()
+            # Filter for specific errors we care about
+            errors = [line for line in lines if "E0602" in line or "E0401" in line]
+            if errors:
+                return "Static Analysis Failed (Pylint):\n" + "\n".join(errors)
+        return None
+    except FileNotFoundError:
+        logger.warning("Pylint not found. Skipping static analysis.")
+        return None
+    except Exception as e:
+        logger.warning(f"Pylint check failed to run: {e}")
+        return None
+    finally:
+        try:
+            if 'tmp_path' in locals():
+                os.remove(tmp_path)
+        except:
+            pass
+
+
+
+
 def get_function_source_code(module_path: str, function_name: str) -> Optional[str]:
     """
     Retrieves the source code of a specified function within a given module.
@@ -34,35 +78,128 @@ def get_function_source_code(module_path: str, function_name: str) -> Optional[s
     Returns:
         The source code of the function as a string, or None if an error occurs.
     """
+    # Dynamic retrieval attempt
     try:
         module = importlib.import_module(module_path)
-    except ModuleNotFoundError:
-        print(f"Error: Module '{module_path}' not found.")
-        return None
-    except Exception as e: # pragma: no cover
-        print(f"Error importing module '{module_path}': {e}")
-        return None
-
-    try:
         function_obj = getattr(module, function_name)
-    except AttributeError:
-        print(f"Error: Function '{function_name}' not found in module '{module_path}'.")
-        return None
-    except Exception as e: # pragma: no cover
-        print(f"Error getting attribute '{function_name}' from module '{module_path}': {e}")
-        return None
-
-    try:
         source_code = inspect.getsource(function_obj)
         return source_code
-    except TypeError: # pragma: no cover
-        print(f"Error: Source code for '{function_name}' in '{module_path}' is not available (e.g., C extension, built-in).")
+    except (ModuleNotFoundError, AttributeError, TypeError, OSError, Exception) as e:
+        logger.warning(f"Dynamic retrieval failed for '{module_path}.{function_name}': {e}. Attempting static retrieval.")
+        pass # Proceed to static fallback
+
+    # Static fallback
+    file_path = _resolve_file_path_robust(module_path, function_name)
+    if not file_path:
+        logger.error(f"Could not resolve file path for '{module_path}.{function_name}' statically.")
         return None
-    except OSError: # pragma: no cover
-        print(f"Error: Source file for '{module_path}' likely not found, cannot get source for '{function_name}'.")
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            source = f.read()
+        tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+                # Prioritize get_source_segment to preserve formatting/comments
+                if hasattr(ast, 'get_source_segment'):
+                    segment = ast.get_source_segment(source, node)
+                    if segment:
+                        return segment
+                # Fallback to unparse (reformats code)
+                if hasattr(ast, 'unparse'):
+                    return ast.unparse(node)
+                
+                logger.error(f"AST found function '{function_name}' but could not extract source (no get_source_segment/unparse).")
+                return None
+                
+        logger.error(f"Function '{function_name}' not found in parsed file '{file_path}'.")
         return None
-    except Exception as e: # pragma: no cover
-        print(f"Error getting source code for '{function_name}' in '{module_path}': {e}")
+    except Exception as e:
+        logger.error(f"Static retrieval failed for '{module_path}.{function_name}' in '{file_path}': {e}")
+        return None
+
+def resolve_function_file_path(module_path: str, function_name: str) -> Optional[str]:
+    """
+    Resolves the absolute file path where a function is defined using introspection.
+    """
+    try:
+        module = importlib.import_module(module_path)
+        function_obj = getattr(module, function_name)
+        file_path = inspect.getfile(function_obj)
+        return os.path.abspath(file_path)
+    except Exception as e:
+        # Don't log error yet, allow caller to handle or fallback
+        return None
+
+def _resolve_file_path_robust(module_path: str, function_name: str, project_root_path: Optional[str] = None) -> Optional[str]:
+    """
+    Attempts to resolve the file path for a function using introspection, then falling back to
+    static path construction if introspection fails.
+    """
+    # 1. Try introspection first
+    file_path = resolve_function_file_path(module_path, function_name)
+    if file_path:
+        return file_path
+
+    # 2. Fallback to naive construction
+    if not project_root_path:
+        # Try to guess project root from CWD or typical structure if not provided?
+        # Ideally, we should have it. For now, use CWD as fallback or relative to this file.
+        # But this function is imported, so let's try CWD.
+        project_root_path = os.getcwd()
+    
+    relative_module_path = os.path.join(*module_path.split('.'))
+    naive_path = os.path.join(project_root_path, relative_module_path)
+    
+    potential_paths = []
+    
+    # Check if 'naive_path' is a directory (package)
+    if os.path.isdir(naive_path):
+        # A. Function might be exposed in __init__.py of the package
+        potential_paths.append(os.path.join(naive_path, "__init__.py"))
+        
+        # B. Function might be in a file inside the directory matching its name? Unlikely but possible.
+        # C. Scan children py files for definition (Parsing)
+        for root, _, files in os.walk(naive_path):
+            for file in files:
+                if file.endswith(".py"):
+                    child_path = os.path.join(root, file)
+                    potential_paths.append(child_path)
+    else:
+        # Is a file
+        potential_paths.append(naive_path + ".py")
+        
+    # Scan potential paths for the function definition
+    for p in potential_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                # Fast check using string search before parsing
+                if f"def {function_name}" in content or f"async def {function_name}" in content:
+                    # Verify with AST
+                    try:
+                        tree = ast.parse(content)
+                        for node in tree.body:
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+                                return os.path.abspath(p)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+                
+    return None
+
+def resolve_module_file_path(module_path: str) -> Optional[str]:
+    """
+    Resolves the absolute file path of a module.
+    """
+    try:
+        module = importlib.import_module(module_path)
+        return os.path.abspath(inspect.getfile(module))
+    except Exception as e:
+        logger.error(f"Error resolving file path for module '{module_path}': {e}")
         return None
 
 def _update_parent_task(tm: Optional[TaskManager], p_task_id: Optional[str], status: ActiveTaskStatus, reason: Optional[str] = None, step: Optional[str] = None, step_desc: Optional[str] = None):
@@ -97,8 +234,28 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                  logger.error(err_msg)
                  return err_msg
 
-        relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
-        file_path = os.path.join(project_root_path, relative_module_file_path)
+        # Use robust introspection to find the file path
+        file_path = _resolve_file_path_robust(module_path, function_name, project_root_path)
+        
+        if not file_path:
+             logger.error(f"Could not resolve file path for '{module_path}.{function_name}'.")
+             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="File path resolution failed", step="Path resolution")
+             return "Error: Could not resolve file path."
+        
+        # Ensure file_path is within project_root (basic check)
+        # if not file_path.startswith(project_root_path):
+        #    logger.warning(f"Resolved file path '{file_path}' is outside project root '{project_root_path}'. This might be intended for venv libraries.")
+ 
+        # Read the original file content immediately to have it available for static analysis reconstruction
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                original_source = f.read()
+            original_ast = ast.parse(original_source, filename=file_path)
+        except Exception as e:
+            err_msg = f"Error reading or parsing original file '{file_path}': {e}"
+            logger.error(err_msg)
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Reading original file")
+            return err_msg
 
         original_function_code_for_diff = get_function_source_code(module_path, function_name)
         if original_function_code_for_diff is None:
@@ -129,19 +286,57 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             logger.info(f"Requesting critical review for '{function_name}' in '{module_path}' (Attempt {attempt+1}/{max_refinement_attempts+1})...")
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review (Attempt {attempt+1})")
 
+            # --- STATIC ANALYSIS CHECK ---
+            pylint_error = None
             try:
-                unanimous_approval, reviews = await coordinator.request_critical_review(
-                    original_code=original_function_code_for_diff,
-                    new_code_string=current_new_code,
-                    code_diff=current_code_diff,
-                    original_requirements=change_description,
-                    related_tests=None
-                )
-            except Exception as e_review:
-                err_msg = f"Error during critical review process: {e_review}"
-                logger.error(err_msg, exc_info=True)
-                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
-                return err_msg
+                # Reconstruct the full file with the new function to check for valid imports/syntax
+                temp_new_func_ast = ast.parse(current_new_code).body[0]
+                # We parse existing original_source again to avoid mutating the master 'original_ast' permanently until final success
+                temp_full_ast = ast.parse(original_source)
+                
+                # Replace function in temp AST
+                new_body = []
+                found_in_temp = False
+                for node in temp_full_ast.body:
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+                        new_body.append(temp_new_func_ast)
+                        found_in_temp = True
+                    else:
+                        new_body.append(node)
+                
+                if found_in_temp:
+                    temp_full_ast.body = new_body
+                    try:
+                        temp_full_source = ast.unparse(temp_full_ast)
+                        pylint_error = _run_pylint_check(temp_full_source)
+                    except Exception as e_unparse:
+                         logger.warning(f"AST unparse failed during static analysis prep: {e_unparse}")
+            except Exception as e_static:
+                logger.warning(f"Static analysis preparation failed: {e_static}")
+
+            if pylint_error:
+                logger.info(f"Static analysis failed: {pylint_error}")
+                unanimous_approval = False
+                reviews = [{
+                    "status": "requires_changes",
+                    "comments": f"Automatic Static Analysis Failed:\n{pylint_error}",
+                    "suggestions": "Please ensure all necessary imports are added (e.g., 'from typing import Any')."
+                }]
+                # Skip human/LLM review, go straight to refinement
+            else:
+                try:
+                    unanimous_approval, reviews = await coordinator.request_critical_review(
+                        original_code=original_function_code_for_diff,
+                        new_code_string=current_new_code,
+                        code_diff=current_code_diff,
+                        original_requirements=change_description,
+                        related_tests=None
+                    )
+                except Exception as e_review:
+                    err_msg = f"Error during critical review process: {e_review}"
+                    logger.error(err_msg, exc_info=True)
+                    _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
+                    return err_msg
 
             if unanimous_approval:
                 logger.info(f"Change to function '{function_name}' approved by critical review.")
@@ -214,9 +409,7 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
         logger.info(f"Backup of '{file_path}' created at '{backup_file_path}'.")
 
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Parsing original source file via AST")
-        with open(file_path, 'r', encoding='utf-8') as f:
-            original_source = f.read()
-
+        # We already read original_source earlier, but let's refresh original_ast just to be clean
         original_ast = ast.parse(original_source, filename=file_path)
 
         try:
@@ -233,14 +426,34 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="New code is empty or invalid")
             return err_msg
 
-        if not isinstance(new_function_ast_module.body[0], ast.FunctionDef):
-            err_msg = "Error: new_code_string does not seem to be a valid single function definition (first statement is not FunctionDef)."
+        # Enhanced Validation & Parsing: Allow Imports + Function
+        new_function_node = None
+        new_imports = []
+
+        for node in new_function_ast_module.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if new_function_node is not None:
+                     err_msg = "Error: new_code_string contains multiple function definitions. Only one is allowed."
+                     logger.error(err_msg)
+                     _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Multiple functions in new code")
+                     return err_msg
+                new_function_node = node
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                new_imports.append(node)
+            else:
+                # We could reject other types (ClassDef, Assign, etc) or just ignore them.
+                # For safety, let's reject to prevent accidental global state changes or side effects.
+                err_msg = f"Error: new_code_string contains unsupported top-level statement type: {type(node).__name__}. Only imports and a single function definition are allowed."
+                logger.error(err_msg)
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Invalid statement in new code")
+                return err_msg
+
+        if not new_function_node:
+            err_msg = "Error: new_code_string does not contain a valid function definition."
             logger.error(err_msg)
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Invalid new code structure")
+            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="No function found in new code")
             return err_msg
         
-        new_function_node = new_function_ast_module.body[0]
-
         if new_function_node.name != function_name:
             logger.warning(
                 f"The new code defines a function named '{new_function_node.name}', "
@@ -248,10 +461,34 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                 f"The function name in the new code will be used for replacement, effectively renaming the function."
             )
 
+        # 1. Merge Imports (Prepend to original AST)
+        # Naive merge: just add them to the top. AST matching for duplicates is hard, Python allows duplicate imports.
+        # To be slightly cleaner, we could try to avoid exact duplicates, but let's trust Python for now.
+        if new_imports:
+             original_ast.body = new_imports + original_ast.body
+             logger.info(f"Added {len(new_imports)} new import statements to '{file_path}'.")
+
+        # 2. Replace Function
         function_found_and_replaced = False
         new_body = []
         for node in original_ast.body:
+            # Skip the newly added imports when looking for replacement target (they are at start of list now)
+            # Actually, we are iterating `original_ast.body` which we just modified. 
+            # We should probably iterate a copy or be careful.
+            # But simpler: We rebuild `new_body`.
+            
+            # Use `is` check to avoid matching the nodes we just added (though improbable to match name/type exactly identically by object identity)
+            # A safer way is to iterate the *original* content's body nodes. 
+            # But since we just prepended, the function replacing logic below is fine as long as we don't accidentally replace the import?
+            # Imports are not FunctionDefs, so safe.
+            
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+                # Check if this is the ONE we want to replace (in case of overloads? Python doesn't support overloads in AST usually w/o decorators)
+                
+                # IMPORTANT: If we have multiple functions with same name (unlikely in valid module), this replaces all? 
+                # Standard behavior: replace first or all? Let's replace all to be safe or just first? 
+                # Usually modules have unique top level names.
+                
                 new_body.append(new_function_node)
                 function_found_and_replaced = True
                 logger.info(f"Function '{function_name}' found in '{file_path}' and marked for replacement with '{new_function_node.name}'.")
@@ -305,6 +542,35 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=err_msg, step_desc="Unexpected error during edit") # pragma: no cover
         return err_msg # pragma: no cover
 
+def _find_function_in_package_dir(package_dir: str, function_name: str) -> Optional[str]:
+    """
+    Searches for a function definition in all .py files within a directory.
+    Returns the absolute path to the file containing the function, or None if not found.
+    """
+    if not os.path.isdir(package_dir):
+        return None
+
+    for root, _, files in os.walk(package_dir):
+        for file in files:
+            if file.endswith(".py"):
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        if f"def {function_name}" in f.read():
+                             # Verify with AST to be sure (avoid comments/strings)
+                             try:
+                                 with open(file_path, 'r', encoding='utf-8') as f_ast:
+                                     source = f_ast.read()
+                                     tree = ast.parse(source)
+                                     for node in tree.body:
+                                         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+                                             return os.path.abspath(file_path)
+                             except Exception:
+                                 continue
+                except Exception:
+                    continue
+    return None
+
 def get_backup_function_source_code(module_path: str, function_name: str) -> Optional[str]:
     """
     Retrieves the source code of a specified function from its backup (.bak) file.
@@ -316,11 +582,30 @@ def get_backup_function_source_code(module_path: str, function_name: str) -> Opt
     Returns:
         The source code of the function as a string if found in the backup, otherwise None.
     """
-    file_path_py = os.path.join(*module_path.split('.')) + ".py"
-    backup_file_path = file_path_py + ".bak"
+    # Use robust path resolution
+    file_path = resolve_module_file_path(module_path)
+    if not file_path:
+        # Fallback to naive construction
+        file_path = os.path.join(*module_path.split('.')) + ".py"
+    
+    # Check if we are dealing with a package/init and the function might be in a submodule
+    if file_path.endswith("__init__.py"):
+         package_dir = os.path.dirname(file_path)
+         # Verify if function is actually in __init__.py or a submodule
+         # We can reuse the logic from edit_function_source_code or simplistically search
+         found_file = _find_function_in_package_dir(package_dir, function_name)
+         if found_file:
+             file_path = found_file
+             # Re-verify if this is the backup logic we want. 
+             # If edit_function_source_code modified 'weather_tool.py', it created 'weather_tool.py.bak'.
+             # So we want 'weather_tool.py' + '.bak'
+
+    backup_file_path = file_path + ".bak"
 
     if not os.path.exists(backup_file_path):
         print(f"Warning: Backup file '{backup_file_path}' not found for module '{module_path}'.")
+        # Fallback: check if the file_path itself is the backup (some implementations swap)
+        # But here we stick to .bak extension convention.
         return None
 
     try:
@@ -552,8 +837,10 @@ async def edit_class_method(
     if not os.path.isabs(project_root_path):
         project_root_path = os.path.abspath(project_root_path)
 
-    relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
-    file_path = os.path.join(project_root_path, relative_module_file_path)
+    file_path = resolve_module_file_path(module_path)
+    if not file_path:
+        relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
+        file_path = os.path.join(project_root_path, relative_module_file_path)
 
     if not os.path.exists(file_path):
         return f"Error: File not found: {file_path}"
@@ -676,8 +963,10 @@ async def upsert_import(
     if not os.path.isabs(project_root_path):
         project_root_path = os.path.abspath(project_root_path)
 
-    relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
-    file_path = os.path.join(project_root_path, relative_module_file_path)
+    file_path = resolve_module_file_path(module_path)
+    if not file_path:
+        relative_module_file_path = os.path.join(*module_path.split('.')) + ".py"
+        file_path = os.path.join(project_root_path, relative_module_file_path)
 
     if not os.path.exists(file_path):
         return f"Error: File not found: {file_path}"
@@ -766,7 +1055,11 @@ async def insert_code_block(
         if '.' in os.path.basename(module_path) or '/' in module_path or '\\' in module_path:
              file_path = os.path.join(project_root_path, module_path)
         else:
-             file_path = os.path.join(project_root_path, os.path.join(*module_path.split('.')) + ".py")
+             resolved_path = resolve_module_file_path(module_path)
+             if resolved_path:
+                 file_path = resolved_path
+             else:
+                 file_path = os.path.join(project_root_path, os.path.join(*module_path.split('.')) + ".py")
     else:
         file_path = os.path.abspath(module_path) # Assume absolute or relative to cwd
 

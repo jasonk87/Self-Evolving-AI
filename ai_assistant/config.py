@@ -6,19 +6,28 @@ from dotenv import load_dotenv
 import os
 
 LLM_PROVIDER = "gemini" 
-DEFAULT_MODEL = "gemini-2.0-flash-exp"  # Default model for Gemini
+
+DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 load_dotenv(env_path)
 from typing import Optional, Dict, List
 
+def _get_api_key() -> str:
+    """Retrieves the Google API Key from config or environment."""
+    # This function is now exposed for scripts
+    if GOOGLE_API_KEY:
+        return GOOGLE_API_KEY
+    return os.environ.get("GOOGLE_API_KEY", "")
+
 # Define models that support native thinking
 THINKING_SUPPORTED_MODELS: List[str] = [
     "qwen3:latest",
     "deepseek-r1:latest",
     "qwen3:8B",
-    "gemini-2.0-flash-exp"
+    "gemini-2.0-flash-exp",
+    "gemini-2.0-flash"
 ]
 
 # Enable or disable thinking capability globally (overrides per-model settings)
@@ -55,7 +64,7 @@ TASK_MODELS: Dict[str, Optional[str]] = {
     "code_generation": DEFAULT_MODEL,       # For generating new tool code via LLM
     "planning": DEFAULT_MODEL,              # For LLM-based planning
     "reflection": DEFAULT_MODEL,            # For LLM-based reflection, pattern identification, suggestion generation
-    "conversation_intelligence": DEFAULT_MODEL, # For detecting missed tool opportunities, formulating descriptions
+    "conversation_intelligence": "gemini-1.5-pro", # Use Pro for better analysis, it has decent limits too
     "argument_population": DEFAULT_MODEL,   # For populating tool arguments from goal descriptions
     "goal_preprocessing": DEFAULT_MODEL,    # For preprocessing user goals
     "summarization": DEFAULT_MODEL,              # For summarizing text, e.g., search results
@@ -93,6 +102,9 @@ CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP = False # Default to False to preserve data
 # Debug mode flag (set in config file)
 DEBUG_MODE = True
 
+# Verbose Logging for LLM (Prints full prompts and responses to console)
+VERBOSE_LLM_LOGGING = True
+
 # --- Google Custom Search API Configuration ---
 # IMPORTANT: For security, it is recommended to set your GOOGLE_API_KEY and
 # GOOGLE_CSE_ID as environment variables in your deployment environment.
@@ -108,10 +120,15 @@ GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 
 # --- ElevenLabs TTS Configuration ---
-ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY') # User provided key
-ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" # Rachel (American, Calm) - Good default
+ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY', 'sk_d9e48139e28969d63940d026c8a62013f956fe764d64a94c') # User provided key
+ELEVENLABS_VOICE_ID = "vGWWh1bodhwwi4yHd6qZ" # Marcus (Deep, Authoritative) - Morgan Freeman style approximation
 ELEVENLABS_MODEL_ID = "eleven_turbo_v2" # Low latency model
 MW_TTS_ENABLED = True
+
+# Rate Limiting Configuration
+# Set to True to enable rate limiting for API calls (recommended for Free Tier)
+# Set to False to disable rate limiting (recommended for Paid Tier)
+ENABLE_RATE_LIMITING = False
 
 
 def is_debug_mode() -> bool:

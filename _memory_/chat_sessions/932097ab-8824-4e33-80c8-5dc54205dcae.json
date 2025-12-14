@@ -1,0 +1,16 @@
+{
+  "id": "932097ab-8824-4e33-80c8-5dc54205dcae",
+  "title": "what is the weather today?",
+  "created_at": 1765708234.7227013,
+  "updated_at": 1765708239.9373996,
+  "history": [
+    {
+      "role": "user",
+      "content": "what is the weather today?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm having a little trouble figuring out exactly what you mean by \"what is the weather today?\". I'm going to try rephrasing the question internally to see if that helps. If it still doesn't work, I'll log the issue so the team can investigate. Could you please try again in a moment?"
+    }
+  ]
+}

@@ -42,59 +42,88 @@ from dataclasses import dataclass, field, asdict
 from ..core.task_manager import TaskManager
 from ..core.notification_manager import NotificationManager # Made unconditional
 
-from ai_assistant.core.reflection import ReflectionLogEntry
+from ai_assistant.core.reflection import ReflectionLogEntry, InsightType, ActionableInsight
 from ai_assistant.memory.persistent_memory import save_actionable_insights, load_actionable_insights, ACTIONABLE_INSIGHTS_FILEPATH
 from ai_assistant.execution.action_executor import ActionExecutor
 from ai_assistant.tools.tool_system import get_tool
+from ai_assistant.core.chat_manager import ChatSessionManager
+from ai_assistant.config import get_projects_dir, get_data_dir # Assuming chat sessions are in data dir or similar
+from ai_assistant.core import self_modification # For code reading
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async # For root cause analysis
 
-class InsightType(Enum):
-    TOOL_BUG_SUSPECTED = auto()
-    TOOL_USAGE_ERROR = auto()
-    TOOL_ENHANCEMENT_SUGGESTED = auto()
-    NEW_TOOL_SUGGESTED = auto()
-    KNOWLEDGE_GAP_IDENTIFIED = auto()
-    LEARNED_FACT_CORRECTION = auto()
-    PLANNING_HEURISTIC_SUGGESTION = auto()
-    SELF_CORRECTION_SUCCESS = auto()
-    SELF_CORRECTION_FAILURE = auto()
 
-@dataclass
-class ActionableInsight:
-    type: InsightType
-    description: str
-    source_reflection_entry_ids: List[str]
-    insight_id: Optional[str] = None
-    related_tool_name: Optional[str] = None
-    suggested_code_change: Optional[str] = None
-    suggested_tool_description: Optional[str] = None
-    new_tool_requirements: Optional[str] = None
-    knowledge_to_learn: Optional[str] = None
-    incorrect_fact_to_correct: Optional[str] = None
-    corrected_fact: Optional[str] = None
-    planning_heuristic_details: Optional[Dict[str, Any]] = None
-    priority: int = 5
-    status: str = "NEW"
-    creation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        if not self.insight_id:
-            # Generate a new UUID-based insight_id if not provided or empty
-            self.insight_id = f"{self.type.name}_{uuid.uuid4().hex[:8]}"
 class LearningAgent:
     def __init__(self, insights_filepath: Optional[str] = None,
                  task_manager: Optional[TaskManager] = None,
-                 notification_manager: Optional[NotificationManager] = None): # Type hint updated
+                 notification_manager: Optional[NotificationManager] = None,
+                 memory_manager: Any = None): # Type hint updated
         self.insights: List[ActionableInsight] = []
         self.insights_filepath = insights_filepath if insights_filepath is not None else ACTIONABLE_INSIGHTS_FILEPATH
         self.task_manager = task_manager
         self.notification_manager = notification_manager # Store it
+        self.memory_manager = memory_manager # Store it
         self.action_executor = ActionExecutor(
             learning_agent=self,
             task_manager=self.task_manager,
             notification_manager=self.notification_manager # Pass it
         )
+        from ai_assistant.learning.conversation_analyst import ConversationalAnalyst
+        self.conversational_analyst = ConversationalAnalyst()
+        # Path to chat sessions - Needs to be consistent with web_app.py
+        # Web App uses: os.path.join(project_root, "_memory_", "chat_sessions")
+        # We should probably get this from config or pass it in. 
+        # For now, let's derive it relative to a known location or use a default.
+        # Assuming project_root is parent of ai_assistant.
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self.chat_storage_dir = os.path.join(base_dir, "_memory_", "chat_sessions")
+        self.chat_manager = ChatSessionManager(self.chat_storage_dir)
+
         self._load_insights()
+
+    async def scan_recent_conversations(self) -> int:
+        """
+        Scans recent chat sessions for insights using the ConversationalAnalyst.
+        Returns the number of new insights found.
+        """
+        print(f"LearningAgent: Scanning chat sessions in {self.chat_storage_dir}...")
+        sessions = self.chat_manager.list_sessions()
+        # Limit to recent or specific count to save tokens?
+        # For now, just analyze the most recent one if it hasn't been analyzed recently.
+        # Ideally, we track 'last_analyzed' per session.
+        
+        count = 0
+        for session_summary in sessions[:3]: # Look at top 3 active sessions
+            session_id = session_summary.get("id")
+            session_data = self.chat_manager.get_session(session_id)
+            if not session_data: continue
+
+            # Optimization: Check if we already analyzed this session state?
+            # We could store a hash of history in metadata of an insight?
+            # Or just rely on the Analyst to be somewhat idempotent or okay with redundant partial insights.
+            # Let's run it.
+            
+            new_insights = await self.conversational_analyst.analyze_session_transcript(session_data)
+            
+            for insight in new_insights:
+                # Deduplicate based on description/source
+                is_duplicate = False
+                for existing in self.insights:
+                     # Check if similar description
+                     # Crude check
+                     if insight.description == existing.description:
+                         is_duplicate = True
+                         break
+                
+                if not is_duplicate:
+                    self.insights.append(insight)
+                    count += 1
+                    print(f"LearningAgent: Found new conversational insight: {insight.description}")
+
+        if count > 0:
+            self._save_insights()
+        
+        return count
+
 
     def _load_insights(self):
         print(f"LearningAgent: Loading insights from '{self.insights_filepath}'...")
@@ -195,7 +224,108 @@ class LearningAgent:
             print(f"LearningAgent: Ingested {count} suggestions from reflection cycle.")
         return count
 
-    def process_reflection_entry(self, entry: ReflectionLogEntry) -> Optional[ActionableInsight]:
+    async def _analyze_root_cause(self, tool_name: str, code: str, error_context: str) -> str:
+        """
+        Uses the LLM to analyze the source code and error to determine the root cause.
+        """
+        prompt = f"""
+You are an expert code debugger.
+The tool `{tool_name}` failed with the following error:
+{error_context}
+
+Here is the source code for the tool:
+```python
+{code}
+```
+
+Analyze the code and the error to determine the specific root cause.
+Explain EXACTLY why the error occurred based on the code logic.
+Be concise and specific (e.g., "Line 45 assumes `x` is a list, but it is None because...").
+Do not provide a full fix, just the diagnosis.
+"""
+        response = await invoke_gemini_model_async(prompt, temperature=0.0)
+        return response if response else "Could not generate root cause analysis."
+
+    async def _deduce_tool_from_description(self, description: str) -> Optional[str]:
+        """
+        Uses the LLM to deduce the most likely tool name from the insight description.
+        """
+        import json
+        
+        # Hardcoded aliases for common hallucinations/guesses
+        KNOWN_TOOL_ALIASES = {
+            "tool_code_generator": "generate_new_tool_from_description",
+            "tool_creator": "generate_new_tool_from_description",
+            "create_tool": "generate_new_tool_from_description",
+            "modify_tool": "stage_agent_tool_modification",
+            "tool_modifier": "stage_agent_tool_modification",
+            "search_web": "search_duckduckgo", # Common alias
+            "web_search": "search_duckduckgo",
+            "google_search": "search_duckduckgo" # Prefer DDG unless forced
+        }
+        
+        # System Action Types that should NEVER be identified as tools
+        SYSTEM_ACTION_TYPES = {
+            "PROPOSE_TOOL_MODIFICATION", "ADD_LEARNED_FACT", "REVIEW_MANUALLY", 
+            "APPLY_ARCHITECT_PROPOSAL", "EXECUTE_ACTION", "TASK_FAILED_UNKNOWN"
+        }
+        
+        json_prompt = f"""
+You are an intelligent system assistant.
+An actionable insight has been generated, but the specific tool it refers to is missing.
+Based on the description below, identify the exact name of the tool closest to the issue.
+
+Insight Description:
+"{description}"
+
+Output a valid JSON object with a single key 'tool_name'.
+Example: {{ "tool_name": "get_weather" }}
+If no tool is clearly referenced, set 'tool_name' to null.
+
+CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFICATION", "ADD_LEARNED_FACT") as the tool name. Only return registered agent tools.
+"""
+        response = await self.action_executor.code_service.llm_provider.invoke_ollama_model_async(json_prompt, temperature=0.0)
+        
+        deduced_name = None
+        if response:
+            try:
+                # Try to find JSON in the response (it might be wrapped in ```json ... ```)
+                cleaned_response = response.strip()
+                if "```" in cleaned_response:
+                     parts = cleaned_response.split("```")
+                     if len(parts) > 1:
+                        cleaned_response = parts[1]
+                        if cleaned_response.startswith("json"):
+                            cleaned_response = cleaned_response[4:]
+                
+                data = json.loads(cleaned_response.strip())
+                deduced_name = data.get("tool_name")
+            except Exception as e:
+                print(f"Error parsing tool deduction JSON: {e}")
+                pass
+        
+        if deduced_name:
+            # 0. Check Blacklist
+            if deduced_name in SYSTEM_ACTION_TYPES:
+                print(f"LearningAgent: Deduced name '{deduced_name}' is a System Action Type, not a tool. Discarding.")
+                return None
+
+            # 1. Check Aliases
+            if deduced_name in KNOWN_TOOL_ALIASES:
+                print(f"LearningAgent: Mapped deduced tool '{deduced_name}' to alias '{KNOWN_TOOL_ALIASES[deduced_name]}'.")
+                deduced_name = KNOWN_TOOL_ALIASES[deduced_name]
+            
+            # 2. Validate against Registry
+            tool_info = get_tool(deduced_name)
+            if tool_info:
+                return deduced_name
+            else:
+                print(f"LearningAgent: Deduced tool '{deduced_name}' does not exist in registry. Discarding.")
+                return None
+
+        return None
+
+    async def process_reflection_entry(self, entry: ReflectionLogEntry) -> Optional[ActionableInsight]:
         # Use the new unique entry_id from ReflectionLogEntry
         source_entry_ref_id = entry.entry_id # NEW WAY
         generated_insight: Optional[ActionableInsight] = None
@@ -205,6 +335,14 @@ class LearningAgent:
         # This will be used by ActionExecutor to find the original failing plan for re-testing
         metadata_for_insight["original_reflection_entry_ref_id"] = source_entry_ref_id
 
+
+        # Check specifically for user-rejected insights for this tool
+        if entry.status in ["FAILURE", "PARTIAL_SUCCESS"] and entry.error_type:
+            
+            # Heuristic: Check if we are trying to fix something the user said is fixed.
+            # We need the tool name first, which is extracted below. 
+            # So we will insert the check after tool name extraction.
+            pass
 
         if entry.status in ["FAILURE", "PARTIAL_SUCCESS"] and entry.error_type:
             description = f"Tool execution failed or partially failed for goal '{entry.goal_description}'. Error: {entry.error_type} - {entry.error_message}."
@@ -246,6 +384,40 @@ class LearningAgent:
                         metadata_for_insight["module_path"] = tool_info.get("module_path")
                         metadata_for_insight["function_name"] = tool_info.get("function_name")
                         print(f"LearningAgent: Resolved module path for '{related_tool_name}' via ToolRegistry: {metadata_for_insight['module_path']}")
+
+                # --- REGRESSION CHECK ---
+                if self.memory_manager:
+                    # 1. Check for explicit "Fixed" facts
+                    facts = self.memory_manager.get_all_facts()
+                    # Simple semantic check (could be improved with embedding search)
+                    is_fixed_according_to_memory = any(
+                        related_tool_name in fact["text"] and "fixed" in fact["text"].lower() and "not" not in fact["text"].lower()
+                        for fact in facts
+                    )
+                    
+                    if is_fixed_according_to_memory:
+                        print(f"LearningAgent: SKIPPING insight generation for '{related_tool_name}'. Memory says it is fixed.")
+                        return None
+
+                    # 2. Check for recent User Rejections matches
+                    rejected_insights = [i for i in self.insights if i.status == "REJECTED_BY_USER" and i.related_tool_name == related_tool_name]
+                    if rejected_insights:
+                        print(f"LearningAgent: SKIPPING insight generation for '{related_tool_name}'. User recently rejected fixes for this tool.")
+                        return None
+                # ------------------------
+
+                # Root Cause Analysis
+                if "module_path" in metadata_for_insight and "function_name" in metadata_for_insight:
+                    try:
+                        code = self_modification.get_function_source_code(metadata_for_insight["module_path"], metadata_for_insight["function_name"])
+                        if code:
+                            error_ctx = f"Error: {entry.error_type} - {entry.error_message}"
+                            print(f"LearningAgent: Analyzing root cause for failure in {related_tool_name}...")
+                            analysis = await self._analyze_root_cause(related_tool_name, code, error_ctx)
+                            description += f"\n\nROOT CAUSE ANALYSIS:\n{analysis}"
+                            metadata_for_insight["root_cause_analysis"] = analysis
+                    except Exception as e:
+                        print(f"LearningAgent: Failed to perform root cause analysis: {e}")
 
                 generated_insight = ActionableInsight(
                     type=insight_type_to_use,
@@ -365,33 +537,65 @@ class LearningAgent:
         self._save_insights()
         return proposed_action, execution_success
 
-    async def execute_self_healing_for_insight(self, insight: ActionableInsight) -> bool:
+    async def execute_self_healing_for_insight(self, insight: ActionableInsight, apply_immediately: bool = False) -> bool:
         """
         Executes self-healing action for a single insight.
+        Args:
+            sight: The insight to process.
+            apply_immediately: If True, disables staging mode (verification-only) and applies the fix if verified.
         """
-        print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (staging mode).")
+        print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (apply_immediately={apply_immediately}).")
 
         # Construct the action
         # JIT Fix for existing insights with missing metadata (Self-Healing Context)
         if not insight.related_tool_name:
-             print(f"LearningAgent: Cannot execute self-healing for insight {insight.insight_id} - No related_tool_name.")
-             insight.status = "SELF_HEALING_SKIPPED_NO_TOOL"
-             insight.metadata["self_healing_skip_reason"] = "No related_tool_name"
-             self._save_insights()
-             return False
-
-        if "module_path" not in insight.metadata:
-             tool_info = get_tool(insight.related_tool_name)
-             if tool_info:
-                 insight.metadata["module_path"] = tool_info.get("module_path")
-                 insight.metadata["function_name"] = tool_info.get("function_name")
-                 print(f"LearningAgent: JIT resolved module path for '{insight.related_tool_name}' in self-healing: {insight.metadata['module_path']}")
+             print(f"LearningAgent: Insight {insight.insight_id} missing tool name. Attempting deduction...")
+             deduced_name = await self._deduce_tool_from_description(insight.description)
+             if deduced_name:
+                 print(f"LearningAgent: Deduced tool name '{deduced_name}' from description.")
+                 insight.related_tool_name = deduced_name
                  self._save_insights()
              else:
-                 print(f"LearningAgent: Could not resolve module path for '{insight.related_tool_name}' in self-healing. Skipping.")
-                 insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                 print(f"LearningAgent: Cannot execute self-healing for insight {insight.insight_id} - No related_tool_name and deduction failed.")
+                 insight.status = "SELF_HEALING_SKIPPED_NO_TOOL"
+                 insight.metadata["self_healing_skip_reason"] = "No related_tool_name and deduction failed"
                  self._save_insights()
                  return False
+
+        tool_info = get_tool(insight.related_tool_name)
+        if tool_info:
+            registry_module_path = tool_info.get("module_path")
+            registry_function_name = tool_info.get("function_name")
+            
+            # Robustness: Always prefer registry path if available
+            if "module_path" in insight.metadata and insight.metadata["module_path"] != registry_module_path:
+                print(f"LearningAgent: Warning - Overriding metadata module path '{insight.metadata['module_path']}' with registry path '{registry_module_path}'.")
+            
+            insight.metadata["module_path"] = registry_module_path
+            insight.metadata["function_name"] = registry_function_name
+            print(f"LearningAgent: JIT resolved module path for '{insight.related_tool_name}' in self-healing: {insight.metadata['module_path']}")
+            self._save_insights()
+        else:
+            print(f"LearningAgent: Tool '{insight.related_tool_name}' not found in registry. Attempting deduction from description...")
+            deduced_name = await self._deduce_tool_from_description(insight.description)
+            if deduced_name:
+                print(f"LearningAgent: Deduced correct tool name '{deduced_name}' (was '{insight.related_tool_name}').")
+                insight.related_tool_name = deduced_name
+                tool_info_deduced = get_tool(deduced_name)
+                if tool_info_deduced:
+                    insight.metadata["module_path"] = tool_info_deduced.get("module_path")
+                    insight.metadata["function_name"] = tool_info_deduced.get("function_name")
+                    self._save_insights()
+                else:
+                     print(f"LearningAgent: Deduced name '{deduced_name}' also not found in registry. Skipping.")
+                     insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                     self._save_insights()
+                     return False
+            else:
+                print(f"LearningAgent: Could not resolve module path for '{insight.related_tool_name}' in self-healing. Skipping.")
+                insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                self._save_insights()
+                return False
 
         # Construct the action
         action = {
@@ -405,7 +609,7 @@ class LearningAgent:
                 "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
                 "reason": f"Self-healing trigger from insight {insight.insight_id}",
                 "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
-                "staging_mode": True # Critical flag for self-healing
+                "staging_mode": not apply_immediately # Critical flag: True = Evaluate & Revert; False = Evaluate & Keep
             }
         }
 
@@ -520,7 +724,7 @@ if __name__ == '__main__': # pragma: no cover
             plan=[], # Required non-optional field
             execution_results=[] # Required non-optional field
         )
-        processed_insight = agent.process_reflection_entry(mock_entry_for_processing)
+        processed_insight = await agent.process_reflection_entry(mock_entry_for_processing)
         assert processed_insight is not None
         assert len(processed_insight.source_reflection_entry_ids) == 1
         assert processed_insight.source_reflection_entry_ids[0] == mock_entry_for_processing.entry_id

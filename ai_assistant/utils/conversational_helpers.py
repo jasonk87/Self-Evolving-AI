@@ -29,13 +29,14 @@ Based on this, provide a concise, natural language summary to the user, as if yo
 Your summary should be brief and directly relate to the user's original request.
 
 Key Instructions:
-- If successful, explain what you found or did in relation to their query.
+- **CRITICAL:** You MUST include the ACTUAL SPECIFIC VALUES returned by the tool (e.g., the exact temperature number, the specific file names).
+- **DO NOT** use placeholders like "[temperature]", "[filename]", or "[insert value here]". You must use the REAL data provided in the "Actions and Results" section.
+- If the tool result says "temperature: 24", your response MUST say "24", not "[temperature]".
 - If partially successful, explain what worked and what didn't.
 - If failed, explain the issue clearly but try to be helpful if possible (e.g., suggesting what they might try differently if it was a user error, or stating you've logged the internal error).
 - Avoid overly technical jargon unless the user's query was highly technical.
-- Do not just repeat the raw results. Synthesize the information.
+- Synthesize the information natively into your sentence.
 - Do not start with phrases like "Based on this..." or "Here's a summary...". Just give the direct conversational response.
-- If the actions involved showing data (like a list of files or a project status), briefly mention what was shown without excessive detail.
 - Focus on conciseness and relevance to the user's goal.
 
 Example:
@@ -115,7 +116,14 @@ async def summarize_tool_result_conversationally(
                 elif "status" in res and res["status"] == "error" and "message" in res:
                     result_summary = f"Tool Error: {res['message']}"
                 else:
-                    result_summary = f"Output data (dict with {len(res)} keys: {list(res.keys())[:3]}{'...' if len(res.keys()) > 3 else ''})"
+                    # Create a concise string representation of the dictionary
+                    try:
+                        result_summary = json.dumps(res, indent=2)
+                        # Truncate if excessively long (e.g. > 2000 chars) to prevent context flooding
+                        if len(result_summary) > 3000:
+                             result_summary = result_summary[:3000] + "... (truncated)"
+                    except (TypeError, OverflowError):
+                        result_summary = str(res)
             elif isinstance(res, list):
                 # IMPROVED TRUNCATION:
                 # 1. Increase limit significantly (4000 chars) to allow context window to work.

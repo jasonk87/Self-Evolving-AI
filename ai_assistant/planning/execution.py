@@ -57,7 +57,7 @@ class ExecutionAgent:
                         overall_success=False, notes="Initial plan was empty."
                     )
                     if learning_agent:
-                        learning_agent.process_reflection_entry(reflection_entry_obj_empty) # type: ignore
+                        await learning_agent.process_reflection_entry(reflection_entry_obj_empty) # type: ignore
                 return [], [] # MODIFIED: Return empty plan and results
 
             print(f"\nExecutionAgent: Starting execution of {'re-plan' if replan_attempts > 0 else 'plan'} for goal '{goal_description}' (Attempt {replan_attempts + 1}) with {len(current_plan)} steps.")
@@ -94,39 +94,25 @@ class ExecutionAgent:
                     if not isinstance(args, tuple): args = tuple(args) if isinstance(args, list) else (args,)
                     if not isinstance(kwargs, dict): kwargs = {}
 
-                    processed_args = list(args)
-                    for i_arg, arg_val in enumerate(processed_args):
-                        if isinstance(arg_val, str):
-                            match = re.fullmatch(r"\[\[step_(\d+)_output\]\]", arg_val)
-                            if match:
-                                ref_step_num = int(match.group(1))
-                                if 1 <= ref_step_num <= len(plan_results):
-                                    plan_result_to_sub = plan_results[ref_step_num - 1]
-                                    if not isinstance(plan_result_to_sub, str):
-                                        print(f"Warning: Step {ref_step_num} result is not a string ('{type(plan_result_to_sub).__name__}'). Using its string representation for placeholder '{arg_val}'.")
-                                        processed_args[i_arg] = str(plan_result_to_sub)
-                                    else:
-                                        processed_args[i_arg] = plan_result_to_sub
-                                else:
-                                    print(f"ExecutionAgent: Warning - Invalid step reference {arg_val} for step {i+1}. Placeholder passed as is.")
+                    processed_args = []
+                    for arg_val in args:
+                         processed_args.append(self._resolve_value_with_substitution(arg_val, plan_results, i+1, "arg"))
                     final_args_for_tool = tuple(processed_args)
 
-                    processed_kwargs = kwargs.copy()
-                    for kw_key, kw_val in processed_kwargs.items():
-                        if isinstance(kw_val, str):
-                            match = re.fullmatch(r"\[\[step_(\d+)_output\]\]", kw_val)
-                            if match:
-                                ref_step_num = int(match.group(1))
-                                if 1 <= ref_step_num <= len(plan_results):
-                                    kw_plan_result_to_sub = plan_results[ref_step_num-1]
-                                    if not isinstance(kw_plan_result_to_sub, str):
-                                        print(f"Warning: Step {ref_step_num} result for kwarg '{kw_key}' is not str. Using str().")
-                                        processed_kwargs[kw_key] = str(kw_plan_result_to_sub)
-                                    else:
-                                        processed_kwargs[kw_key] = kw_plan_result_to_sub
-                                else:
-                                    print(f"ExecutionAgent: Warning - Invalid step reference {kw_val} for kwarg '{kw_key}' in step {i+1}. Placeholder passed as is.")
+                    processed_kwargs = {}
+                    for kw_key, kw_val in kwargs.items():
+                        processed_kwargs[kw_key] = self._resolve_value_with_substitution(kw_val, plan_results, i+1, f"kwarg '{kw_key}'")
                     final_kwargs_for_tool = processed_kwargs
+
+                    # VALIDATION CHECK: Fail fast if "TODO_infer_arg_value" is present
+                    # This triggers the re-planning loop by raising an exception that is caught below.
+                    if any("TODO_infer_arg_value" in str(arg) for arg in final_args_for_tool) or \
+                       any("TODO_infer_arg_value" in str(val) for val in final_kwargs_for_tool.values()):
+                        reason = "Planner failed to infer argument value (placeholder 'TODO_infer_arg_value' found)."
+                        print(f"ExecutionAgent: {reason} Raising error to trigger re-planning.")
+                        raise RuntimeError(f"{reason} Execution halted to trigger re-planning.")
+
+
 
                     for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
                         try:
@@ -201,7 +187,7 @@ class ExecutionAgent:
                         first_traceback_snippet=first_critical_error_details["traceback_snippet"]
                     )
                     if learning_agent:
-                        learning_agent.process_reflection_entry(reflection_entry_obj_fail)
+                        await learning_agent.process_reflection_entry(reflection_entry_obj_fail)
                     plan_failed_critically = True # Mark that this plan attempt had a critical failure
 
                     if replan_attempts < self.MAX_REPLAN_ATTEMPTS:
@@ -252,7 +238,7 @@ class ExecutionAgent:
                     first_error_type=None, first_error_message=None, first_traceback_snippet=None
                 )
                 if learning_agent:
-                    learning_agent.process_reflection_entry(reflection_entry_obj_success) # type: ignore
+                    await learning_agent.process_reflection_entry(reflection_entry_obj_success) # type: ignore
                 # Record tool-goal associations only if this final plan was successful
                 for step in current_plan:
                     tool_name = step.get("tool_name")
@@ -318,6 +304,54 @@ class ExecutionAgent:
         # This path implies MAX_REPLAN_ATTEMPTS was 0 and the first plan failed, or some other edge case.
         print(f"ExecutionAgent: Exiting execute_plan for goal '{goal_description}' after exhausting plan attempts.")
         return current_plan, plan_results # MODIFIED: Return the last plan and its results, even if loop exhausted
+
+
+    def _resolve_value_with_substitution(self, val: Any, plan_results: List[Any], current_step_num: int, context_desc: str) -> Any:
+        """
+        Resolves a string value that might contain a placeholder like [[step_1_output]] or [[step_1_output.property]].
+        Supports dot notation for dictionary keys and object attributes.
+        """
+        if not isinstance(val, str):
+            return val
+
+        # Regex to capture step number and optional property path
+        # Group 1: step number
+        # Group 2: optional property path (e.g., .key.subkey)
+        match = re.fullmatch(r"\[\[step_(\d+)_output((?:\.[\w_]+)*)\]\]", val)
+        if match:
+            ref_step_num = int(match.group(1))
+            property_path = match.group(2)
+
+            if 1 <= ref_step_num <= len(plan_results):
+                result_obj = plan_results[ref_step_num - 1]
+                
+                # If there's a property path, traverse it
+                if property_path:
+                    # Remove leading dot and split
+                    props = property_path.lstrip('.').split('.')
+                    current_val = result_obj
+                    
+                    try:
+                        for prop in props:
+                            if isinstance(current_val, dict):
+                                current_val = current_val[prop]
+                            elif hasattr(current_val, prop):
+                                current_val = getattr(current_val, prop)
+                            else:
+                                print(f"ExecutionAgent: Warning - Property '{prop}' not found on result of step {ref_step_num} for {context_desc}. Placeholder passed as is.")
+                                return val # Return original if path fails
+                        return current_val
+                    except (KeyError, AttributeError, TypeError) as e:
+                         print(f"ExecutionAgent: Warning - Failed to traverse path '{property_path}' on result of step {ref_step_num} for {context_desc}. Error: {e}. Placeholder passed as is.")
+                         return val
+
+                # No property path, just return the result (or stringify if needed, preserving legacy behavior mostly)
+                return result_obj
+            else:
+                print(f"ExecutionAgent: Warning - Invalid step reference {val} for step {current_step_num}. Placeholder passed as is.")
+                return val
+        
+        return val
 
 
 if __name__ == '__main__':
@@ -393,7 +427,7 @@ if __name__ == '__main__':
 
         # Mock LearningAgent for testing ExecutionAgent's calls
         class MockLearningAgent(LearningAgent): # Inherit from LearningAgent
-            def process_reflection_entry(self, entry):
+            async def process_reflection_entry(self, entry):
                 print(f"MockLearningAgent: process_reflection_entry called for entry ID {entry.entry_id}, Goal: '{entry.goal_description[:30]}...'")
 
         mock_learning_agent_instance = MockLearningAgent()

@@ -799,5 +799,45 @@
         "description": "Schedules a reminder to print a message at a specified time.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "send_text_message": {
+        "tool_name": "send_text_message",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "send_text_message",
+        "description": "Sends a text message to the specified recipient using Twilio.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_two_responses": {
+        "tool_name": "generate_two_responses",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_two_responses",
+        "description": "Generates two back-to-back responses from the AI for a given prompt.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_location_by_ip": {
+        "tool_name": "get_location_by_ip",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "get_location_by_ip",
+        "description": "Gets the user's location based on their IP address using the ipinfo.io API.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_div_table_html": {
+        "tool_name": "generate_div_table_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_div_table_html",
+        "description": "Generates HTML code for displaying data in a table-like format using divs and CSS.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_safe_html": {
+        "tool_name": "generate_safe_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_safe_html",
+        "description": "Generates safe HTML content from a given HTML string. It uses the bleach library to sanitize the HTML,",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

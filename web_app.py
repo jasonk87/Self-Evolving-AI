@@ -45,7 +45,20 @@ from ai_assistant.core.chat_manager import ChatSessionManager
 
 # Initialize SocketIO
 # Initialize SocketIO with threading mode to avoid eventlet/asyncio conflicts
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+app.config['SECRET_KEY'] = 'secret!'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading') # Enable CORS for tunneling
+from flask_login import LoginManager, UserMixin
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User(user_id)
 
 # --- Custom Log Handler for SocketIO ---
 class SocketIOLogHandler(logging.Handler):
@@ -141,7 +154,8 @@ async def init_orchestrator():
     learning_agent = LearningAgent(
         insights_filepath=insights_file_path,
         task_manager=task_manager,
-        notification_manager=notification_manager
+        notification_manager=notification_manager,
+        memory_manager=memory_manager # Inject memory_manager
     )
 
     action_executor = ActionExecutor(
@@ -835,8 +849,13 @@ def get_approvals():
 async def approve_request(req_id):
     """Approves a request (either transient or persistent insight)."""
     try:
+        feedback = request.json.get('feedback') if request.json else None
+
         # 1. Try ApprovalManager first
         if approval_manager.get_request(req_id):
+            # Pass feedback if ApprovalManager supports it, or log it
+            if feedback:
+                logger.info(f"User approved request {req_id} with feedback: {feedback}")
             success = await approval_manager.approve_request(req_id)
             if success: return jsonify({"success": True})
 
@@ -844,22 +863,28 @@ async def approve_request(req_id):
         if orchestrator and orchestrator.learning_agent:
             insight = next((i for i in orchestrator.learning_agent.insights if i.insight_id == req_id), None)
             if insight:
+                # Store feedback in metadata
+                if feedback:
+                    if not insight.metadata: insight.metadata = {}
+                    insight.metadata['user_feedback_on_approval'] = feedback
+                    # Also try to learn from it as a fact immediately?
+                    memory_manager.add_fact(f"User Approved Insight {req_id} with feedback: {feedback}")
+
                 # Trigger immediate execution
-                if insight.type == InsightType.TOOL_BUG_SUSPECTED:
-                     success = await orchestrator.learning_agent.execute_self_healing_for_insight(insight)
+                if insight.type in [InsightType.TOOL_BUG_SUSPECTED, InsightType.TOOL_ENHANCEMENT_SUGGESTED]:
+                     # Pass apply_immediately=True since the user manually approved it
+                     success = await orchestrator.learning_agent.execute_self_healing_for_insight(insight, apply_immediately=True)
                 else:
-                    # For other types, maybe just mark as acknowledged or implement if handled?
-                    # For now, let's treat generic suggestions as "Mark as Approved/Implemented" placeholder
-                    # OR if it's a tool enhancement, we might have logic for that.
-                    # Creating a generic 'execute' if possible.
-                    success = True # Placeholder for non-bug insights
-                    insight.status = "APPROVED_BY_USER" # Update status
+                    # For other types (like NEW_TOOL_SUGGESTED or KNOWLEDGE_GAP), we might need different handling.
+                    # For now, stick to marking as approved for those.
                     orchestrator.learning_agent._save_insights()
                 
                 if success:
                      return jsonify({"success": True, "message": "Insight execution triggered."})
                 else:
-                     return jsonify({"success": False, "error": "Insight execution failed."}), 500
+                     # Return 400 Bad Request instead of 500 to allow UI to handle it gracefully
+                     # This usually happens if the insight is missing metadata (like related_tool_name)
+                     return jsonify({"success": False, "error": "Insight execution failed. The insight might be missing required information like the target tool name."}), 400
 
         return jsonify({"error": "Request not found", "success": False}), 404
     except Exception as e:
@@ -870,8 +895,12 @@ async def approve_request(req_id):
 def deny_request(req_id):
     """Denies a request."""
     try:
+        feedback = request.json.get('feedback') if request.json else None
+
         # 1. Try ApprovalManager
         if approval_manager.get_request(req_id):
+            if feedback:
+                logger.info(f"User denied request {req_id} with feedback: {feedback}")
             success = approval_manager.deny_request(req_id)
             if success: return jsonify({"success": True})
 
@@ -880,6 +909,13 @@ def deny_request(req_id):
             insight = next((i for i in orchestrator.learning_agent.insights if i.insight_id == req_id), None)
             if insight:
                 insight.status = "REJECTED_BY_USER"
+                
+                if feedback:
+                    if not insight.metadata: insight.metadata = {}
+                    insight.metadata['user_rejection_reason'] = feedback
+                    # IMPORTANT: Add explicit negative memory/fact so we stop suggesting it.
+                    memory_manager.add_fact(f"User rejected insight '{insight.description}' with reason: {feedback}")
+                
                 orchestrator.learning_agent._save_insights()
                 return jsonify({"success": True})
 
@@ -890,9 +926,18 @@ def deny_request(req_id):
 
 
 if __name__ == '__main__':
-    socketio.start_background_task(watch_telemetry)
-    # Start the autonomous background services loop (insights, self-healing, etc.)
-    socketio.start_background_task(run_background_services_forever)
+    # Use standard threading for background tasks to avoid blocking the main Flask app
+    # threading.Thread(target=watch_telemetry, daemon=True).start()
+    # threading.Thread(target=run_background_services_forever, daemon=True).start()
+    
+    # Actually, we can just use the threading module directly and start them before running the app.
+    t1 = threading.Thread(target=watch_telemetry, daemon=True)
+    t1.start()
+    
+    t2 = threading.Thread(target=run_background_services_forever, daemon=True)
+    t2.start()
+
     port = int(os.environ.get('PORT', 5000))
+    # use_reloader=False is important when using threads to avoid spawning twice
     socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
 

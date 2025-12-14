@@ -5,3 +5,7 @@ dist/
 build/
 venv/
 *.env
+*.pem
+logs/
+*_output.txt
+git_*.txt

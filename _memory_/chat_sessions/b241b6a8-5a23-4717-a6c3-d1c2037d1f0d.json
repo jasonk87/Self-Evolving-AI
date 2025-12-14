@@ -1,0 +1,16 @@
+{
+  "id": "b241b6a8-5a23-4717-a6c3-d1c2037d1f0d",
+  "title": "can you please tell me the wea...",
+  "created_at": 1765716983.747627,
+  "updated_at": 1765716986.3923779,
+  "history": [
+    {
+      "role": "user",
+      "content": "can you please tell me the weather in glasgow ky today?"
+    },
+    {
+      "role": "assistant",
+      "content": "The weather in Glasgow, KY today is snow, with a temperature of -0.6 degrees Celsius, 93% humidity, and a wind speed of 6.17 m/s."
+    }
+  ]
+}

@@ -6,11 +6,13 @@ import json
 import inspect
 import asyncio
 # traceback removed - no longer needed for this specific issue
-from typing import Callable, Dict, Any, Optional, Tuple, List # TYPE_CHECKING removed
+from typing import Callable, Dict, Any, Optional, Tuple, List, TYPE_CHECKING # TYPE_CHECKING added
 from ai_assistant.config import is_debug_mode, get_data_dir # Import get_data_dir
 from ai_assistant.core.self_modification import get_function_source_code
-from ..core.task_manager import TaskManager # Added for type hinting
-from ..core.notification_manager import NotificationManager # Made unconditional
+
+if TYPE_CHECKING:
+    from ..core.task_manager import TaskManager
+    from ..core.notification_manager import NotificationManager
 
 # --- Constants ---
 DEFAULT_TOOLS_FILE_DIR = get_data_dir() # Use centralized data directory from config
@@ -329,8 +331,8 @@ class ToolSystem:
         return self._tool_registry.get(name)
 
     async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
-                         task_manager: Optional[TaskManager] = None,
-                         notification_manager: Optional[NotificationManager] = None,
+                         task_manager: Optional['TaskManager'] = None,
+                         notification_manager: Optional['NotificationManager'] = None,
                          action_executor: Optional[Any] = None) -> Any: # Type hint updated
         """
         Executes a registered tool by its name.
@@ -637,8 +639,8 @@ def get_tool(name: str) -> Optional[Dict[str, Any]]:
 # Update module-level wrapper if it's intended for external use and needs this new param.
 # For now, assuming direct tool_system_instance.execute_tool is used more internally where task_manager is available.
 async def execute_tool(name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
-                       task_manager: Optional[TaskManager] = None,
-                       notification_manager: Optional[NotificationManager] = None,
+                       task_manager: Optional['TaskManager'] = None,
+                       notification_manager: Optional['NotificationManager'] = None,
                        action_executor: Optional[Any] = None) -> Any: # Type hint updated
     return await tool_system_instance.execute_tool(name, args, kwargs,
                                                   task_manager=task_manager,

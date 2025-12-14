@@ -228,12 +228,51 @@ class DynamicOrchestrator:
                 else:
                     final_context_for_planner = learned_facts_section_str
 
+            # --- Last Action Context Extraction ---
+            last_action_report = None
+            last_results = self.context.get('last_results')
+            last_success = self.context.get('last_success')
+            
+            if last_results:
+                report_lines = []
+                if last_success is False:
+                    report_lines.append(f"PREVIOUS PLAN EXECUTION FAILED (Success={last_success})")
+                else:
+                    report_lines.append(f"Previous Plan Results (Success={last_success})")
+                
+                for idx, res in enumerate(last_results):
+                    if isinstance(res, Exception):
+                        report_lines.append(f"Step {idx+1} Error: {type(res).__name__}: {str(res)}")
+                    elif isinstance(res, dict):
+                        if res.get('error'):
+                             report_lines.append(f"Step {idx+1} Error: {res.get('error')}")
+                        elif res.get('ran_successfully') is False:
+                             report_lines.append(f"Step {idx+1} Failed: {res.get('stderr', res.get('error', 'Unknown failure'))}")
+                        else:
+                             # Summary of success, maybe truncate to avoid overwhelming context
+                             # But for fixing tools, we might need the output?
+                             summary = str(res)
+                             if len(summary) > 500:
+                                 summary = summary[:500] + "... (truncated)"
+                             report_lines.append(f"Step {idx+1} Result: {summary}")
+                    else:
+                        summary = str(res)
+                        if len(summary) > 500:
+                             summary = summary[:500] + "... (truncated)"
+                        report_lines.append(f"Step {idx+1} Result: {summary}")
+                        
+                last_action_report = "\n".join(report_lines)
+                if is_debug_mode():
+                    print(f"DynamicOrchestrator: Extracted last_action_report: {last_action_report[:100]}...")
+            # --------------------------------------
+
             self.current_plan = await self.planner.create_plan_with_llm(
                 goal_description=prompt,
                 available_tools=available_tools_rich,
                 project_context_summary=final_context_for_planner,
                 project_name_for_context=project_name_for_context,
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
+                last_action_report=last_action_report
             )
 
             use_hierarchical_planner = False
