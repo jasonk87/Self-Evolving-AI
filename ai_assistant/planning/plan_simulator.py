@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import List, Dict, Any, Optional, Set
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
+# Removed direct import of invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 
 logger = logging.getLogger(__name__)
@@ -43,10 +43,25 @@ Analyze the step and return the JSON.
 """
 
 class PlanSimulator:
-    def __init__(self, initial_files: Optional[List[str]] = None):
-        # We track files as a set of paths for quick lookup
-        self.virtual_files: Set[str] = set(initial_files) if initial_files else set()
+    def __init__(self, initial_files: Optional[List[str]] = None, llm_provider: Any = None):
+        """
+        Initializes the PlanSimulator.
+        Args:
+            initial_files: List of file paths representing the starting state.
+            llm_provider: Instance of the LLM provider (e.g. OllamaProvider).
+        """
+        self.initial_files_snapshot: Set[str] = set(initial_files) if initial_files else set()
+        self.virtual_files: Set[str] = self.initial_files_snapshot.copy()
         self.simulation_log: List[Dict[str, Any]] = []
+        self.llm_provider = llm_provider
+
+    def reset_state(self):
+        """
+        Resets the virtual file system to the initial snapshot.
+        Useful for retrying simulations.
+        """
+        self.virtual_files = self.initial_files_snapshot.copy()
+        self.simulation_log = []
 
     async def simulate_plan(self, plan: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -55,11 +70,6 @@ class PlanSimulator:
         """
         issues = []
         logger.info(f"Starting Plan Simulation for {len(plan)} steps.")
-
-        # Reset log for new run, but keep virtual_files if initialized externally?
-        # Actually, usually we want to simulate from the *current* real state.
-        # So we should probably re-initialize virtual_files here if passed, or assume __init__ was enough.
-        # Let's assume the caller sets up the simulator with the current state.
 
         for step in plan:
             result = await self._simulate_step(step)
@@ -74,9 +84,6 @@ class PlanSimulator:
                     "risk_level": result["risk_level"],
                     "reason": result["risk_reason"]
                 })
-                # Update virtual state based on prediction (best effort)
-                # Even if risky, we proceed to see cascading failures?
-                # Or stop? Let's proceed to catch all errors.
 
             # Update virtual file state
             self._apply_state_changes(result)
@@ -113,12 +120,20 @@ class PlanSimulator:
         model_name = get_model_for_task("reasoning") # Use a smart model for simulation
 
         try:
-            response = await invoke_ollama_model_async(
-                prompt,
-                model_name=model_name,
-                temperature=0.1, # Low temp for deterministic logic
-                max_tokens=500
-            )
+            if self.llm_provider:
+                response = await self.llm_provider.invoke_ollama_model_async(
+                    prompt,
+                    model_name=model_name,
+                    temperature=0.1, # Low temp for deterministic logic
+                    max_tokens=500
+                )
+            else:
+                 # Fallback for tests if provider not passed (though tests should mock it)
+                 logger.warning("PlanSimulator: No LLM provider configured.")
+                 return {
+                    "files_added": [], "files_removed": [], "files_modified": [],
+                    "risk_level": "LOW", "risk_reason": "No LLM Provider", "predicted_outcome": "Skipped"
+                 }
 
             # Parse JSON
             result = self._parse_json_response(response)
@@ -140,7 +155,7 @@ class PlanSimulator:
                 "files_added": [],
                 "files_removed": [],
                 "files_modified": [],
-                "risk_level": "LOW", # Default to low risk on error to avoid blocking valid plans due to flaky LLM
+                "risk_level": "LOW", # Default to low risk on error
                 "risk_reason": f"Simulation Exception: {e}",
                 "predicted_outcome": "Simulation Failed"
             }
@@ -155,7 +170,6 @@ class PlanSimulator:
         for f in result.get("files_removed", []):
             if f in self.virtual_files:
                 self.virtual_files.remove(f)
-            # If not in files, maybe it was a mistake in prediction or files were missing from context. Ignore.
 
     def _parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:
         """
