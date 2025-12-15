@@ -74,8 +74,6 @@ class RAGSystem:
         # With Chroma, we can just upsert everything; it handles duplicates by ID.
         if all_facts:
             logger.info(f"Syncing {len(all_facts)} facts to RAG system (upsert)...")
-            texts = []
-            metadatas = []
 
             # To be efficient, we might want to batch this, but for now simple loop or bulk add
             # Note: We need embeddings for all of them. This might be slow if we do it one by one.

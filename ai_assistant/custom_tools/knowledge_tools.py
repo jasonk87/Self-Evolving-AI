@@ -38,30 +38,28 @@ JSON object with keys:
 Respond ONLY with the JSON object.
 """
 
+_rag_system_cache = None
+
 async def _get_rag_system():
     """
-    Helper to get the RAG system from the global MemoryManager.
+    Helper to get the RAG system.
+    Uses a simple cache to avoid re-instantiation overhead.
     """
-    # This assumes web_app.py or similar has initialized it.
-    # If we are running in a script (like tests), we might need to rely on what's available.
-    # In the current architecture, MemoryManager is often a singleton or instantiated in core.
-    # However, `ai_assistant.core.memory_manager` defines the class, not the instance.
-    # We will try to instantiate a temporary one if needed, but that might be heavy.
-    # A better approach is to rely on `ai_assistant.core.memory_manager` having a way to get the instance,
-    # or pass it in.
-    # For now, let's look at `ai_assistant/core/memory_manager.py` again.
-    # It seems it doesn't expose a global instance directly.
-    # But `web_app.py` does.
-    # Let's try to create a lightweight connection or reuse.
+    global _rag_system_cache
+    if _rag_system_cache:
+        return _rag_system_cache
 
-    # Since we can't easily import `memory_manager` instance from `web_app` due to circular imports or context,
-    # we will instantiate a fresh RAGSystem using the default OllamaProvider.
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
     from ai_assistant.memory.rag_system import RAGSystem
 
-    provider = OllamaProvider()
-    rag = RAGSystem(provider)
-    return rag
+    try:
+        provider = OllamaProvider()
+        rag = RAGSystem(provider)
+        _rag_system_cache = rag
+        return rag
+    except Exception as e:
+        logger.error(f"Failed to initialize RAG system: {e}")
+        raise
 
 async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool:
     """
