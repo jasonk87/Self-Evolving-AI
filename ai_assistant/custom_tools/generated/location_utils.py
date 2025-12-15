@@ -1,6 +1,5 @@
 import requests
 from typing import Dict
-import requests
 from typing import Dict, Optional
 
 def get_location_by_ip() -> Dict:

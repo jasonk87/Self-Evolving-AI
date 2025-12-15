@@ -3,46 +3,6 @@ from typing import Optional, Dict
 import requests
 import json
 import bleach
-import os
-from typing import Optional, Dict
-import requests
-import json
-import bleach
-import os
-from typing import Optional, Dict
-import requests
-import json
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
-import os
-import requests
-import json
-from typing import Optional, Dict
-import bleach
 
 def get_weather(location: str, api_key: Optional[str]=None) -> Optional[Dict]:
     """

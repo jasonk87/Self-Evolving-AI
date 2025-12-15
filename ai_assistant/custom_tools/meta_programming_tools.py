@@ -58,45 +58,113 @@ async def generate_new_tool_from_description(tool_description: str, suggested_to
             llm = action_executor.code_service.llm_provider
         if not llm:
             return 'Error: Could not find LLM provider in ActionExecutor.'
-        max_retries = 3
+
+        # --- Redundancy Guardrail ---
+        try:
+            from ai_assistant.tools.tool_system import tool_system_instance
+            existing_tools = await asyncio.to_thread(tool_system_instance.list_tools)
+            
+            # Filter tools to check (skip system tools if desired, but redundant custom tools are the main issue)
+            # We'll check all of them.
+            tool_summaries = []
+            for name, details in existing_tools.items():
+                desc = details.get('description', 'No description')
+                tool_summaries.append(f"- {name}: {desc[:150]}...")
+            
+            tool_list_str = "\n".join(tool_summaries)
+            
+            check_prompt = f"""
+You are an AI governance system.
+A user wants to create a new tool.
+Description: "{tool_description}"
+
+Here is a list of existing tools:
+{tool_list_str}
+
+Is the requested tool redundant with any existing tool? 
+If there is a tool that ALREADY performs the requested functionality (e.g. creating a notification, setting a reminder), output "YES: <Tool Name>". 
+If the requested tool is sufficiently unique or specialized, output "NO".
+
+Answer:
+"""
+            # Use quick check with LLM
+            # We can use the same llm instance.
+            check_response = ""
+            if hasattr(llm, 'send_request'):
+                check_response = await llm.send_request(prompt=check_prompt, model_name=get_model_for_task('fast_task'), temperature=0.0)
+            elif hasattr(llm, 'invoke_ollama_model_async'):
+                check_response = await llm.invoke_ollama_model_async(check_prompt, model_name=get_model_for_task('fast_task'), temperature=0.0)
+            
+            if "YES:" in check_response:
+                match = re.search(r"YES:\s*([\w_]+)", check_response)
+                existing_tool_name = match.group(1) if match else "an existing tool"
+                logger.warning(f"Redundancy Guardrail blocked tool creation. Existing: {existing_tool_name}")
+                return f"ABORTED: A similar tool already exists: '{existing_tool_name}'. Please use that tool instead of creating a duplicate."
+                
+        except Exception as e:
+            logger.warning(f"Redundancy Guardrail check failed (proceeding with creation): {e}")
+        # ----------------------------
+
         generated_code = ''
         final_filename = ''
         last_error = ''
+        
+        # --- Council Review Loop ---
+        try:
+            from ai_assistant.core.reviewer import ReviewerAgent
+            from ai_assistant.core.critical_reviewer import CriticalReviewCoordinator
+        except ImportError:
+            logger.warning("Could not import ReviewerAgent or CriticalReviewCoordinator. Skipping Council Review.")
+            ReviewerAgent = None
+            CriticalReviewCoordinator = None
+
+        council_feedback = ""
+        
         for attempt in range(max_retries):
             current_prompt = base_prompt
+            
+            # Append previous error or Council feedback to the prompt
             if attempt > 0:
-                current_prompt += f'\n\nIMPORTANT: Your previous attempt failed verification with the following error:\n{last_error}\nPlease fix the code and ensure it is valid Python.'
+                failure_context = ""
+                if last_error:
+                    failure_context += f"Previous attempt failed verification/parsing: {last_error}\n"
+                if council_feedback:
+                    failure_context += f"The Council rejected the previous code with this reasoning:\n{council_feedback}\n"
+                
+                current_prompt += f'\n\nIMPORTANT: Your previous attempt failed. Please fix the code based on this feedback:\n{failure_context}'
+
             logger.info(f'Tool generation attempt {attempt + 1}/{max_retries}')
+            
             if hasattr(llm, 'send_request'):
                 llm_response = await llm.send_request(prompt=current_prompt, model_name=model_name, temperature=0.2)
             elif hasattr(llm, 'invoke_ollama_model_async'):
                 llm_response = await llm.invoke_ollama_model_async(current_prompt, model_name=model_name, temperature=0.2)
             else:
                 return f"Error: LLM provider {llm} has neither 'send_request' nor 'invoke_ollama_model_async'."
+            
             if not isinstance(llm_response, str) or not llm_response.strip():
                 last_error = 'LLM returned empty response.'
                 continue
+                
             code_match = re.search('```(?:python)?\\s*\\n(.*?)\\n```', llm_response, re.DOTALL | re.IGNORECASE)
             filename_match = re.search('Suggested Filename:\\s*([\\w_.-]+\\.py)', llm_response)
+            
             if not code_match:
                 last_error = 'LLM did not provide a Python code block.'
                 continue
+                
             candidate_code = code_match.group(1).strip()
+            
+            # Filename extraction logic
             if 'Suggested Filename:' in candidate_code:
                 internal_filename_match = re.search('Suggested Filename:\\s*([\\w_.-]+\\.py)', candidate_code)
                 if internal_filename_match and (not suggested_filename) and (not filename_match):
                     filename_match = internal_filename_match
                 candidate_code = re.sub('^Suggested Filename:.*$', '', candidate_code, flags=re.MULTILINE).strip()
+            
+            # Syntax Check
             try:
                 ast.parse(candidate_code)
-                generated_code = candidate_code
-                if suggested_filename:
-                    final_filename = os.path.basename(suggested_filename)
-                    if not final_filename.endswith('.py'):
-                        final_filename += '.py'
-                elif filename_match:
-                    final_filename = filename_match.group(1).strip()
-                break
             except SyntaxError as e:
                 lines = candidate_code.splitlines()
                 if e.lineno and 0 <= e.lineno - 1 < len(lines):
@@ -104,18 +172,83 @@ async def generate_new_tool_from_description(tool_description: str, suggested_to
                     last_error = f"SyntaxError on line {e.lineno}: {e.msg}\nFailing Line: '{failing_line}'"
                 else:
                     last_error = f'SyntaxError: {e}'
-                logger.warning(f'Generated code failed syntax check on attempt {attempt + 1}: {e}\nContext: {last_error}')
+                logger.warning(f'Generated code failed syntax check on attempt {attempt + 1}: {e}')
                 continue
+                
+            # Deduplicate Imports (Deterministic pass before review)
+            def deduplicate_imports(code_str: str) -> str:
+                try:
+                    ast.parse(code_str) # Re-verify syntax just in case
+                    lines = code_str.splitlines()
+                    seen_imports = set()
+                    new_lines = []
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped.startswith("import ") or stripped.startswith("from "):
+                            if stripped in seen_imports: continue
+                            seen_imports.add(stripped)
+                        new_lines.append(line)
+                    return "\n".join(new_lines)
+                except Exception: return code_str
+
+            candidate_code = deduplicate_imports(candidate_code)
+            
+            # --- Council Review Step ---
+            if CriticalReviewCoordinator and ReviewerAgent:
+                try:
+                    # Dynamically instantiate reviewers for this session
+                    skeptic = ReviewerAgent("council_skeptic")
+                    judge = ReviewerAgent("council_judge")
+                    coordinator = CriticalReviewCoordinator(skeptic, judge)
+                    
+                    logger.info(f"Convening The Council for new tool review (Attempt {attempt + 1})...")
+                    is_approved, reasoning = await coordinator.execute_council_debate(
+                        proposed_code=candidate_code,
+                        proposal_description=f"New Tool Creation: {tool_description}",
+                        original_code="# New File Creation", 
+                        module_path="new_tool.py", # Placeholder for context
+                        llm_provider=llm
+                    )
+                    
+                    if not is_approved:
+                        logger.warning(f"Council REJECTED the new tool code (Attempt {attempt+1}). Reasoning: {reasoning}")
+                        council_feedback = reasoning
+                        last_error = "" # Clear syntax error as this is a review rejection
+                        continue # Retry loop
+                    
+                    logger.info(f"Council APPROVED the new tool code. Reasoning: {reasoning}")
+                    
+                except Exception as e_review:
+                    logger.error(f"Error during Council Review: {e_review}. Proceeding with caution (Fail-Open or logging).")
+                    pass
+            # ---------------------------
+
+            # If we got here, it passed syntax and (if applicable) Council review
+            generated_code = candidate_code
+            
+            if suggested_filename:
+                final_filename = os.path.basename(suggested_filename)
+            elif filename_match:
+                final_filename = filename_match.group(1).strip()
+                
+            break # Success!
+
         if not generated_code:
-            return f'Error: Failed to generate valid Python tool code after {max_retries} attempts. Last error: {last_error}'
+            final_reason = f"Last Syntax Error: {last_error}" if last_error else f"Council Rejection: {council_feedback}"
+            return f'Error: Failed to generate valid tool code after {max_retries} attempts. {final_reason}'
+
         if not final_filename:
             func_name_match = re.search('def\\s+([\\w_]+)\\s*\\(', generated_code)
             base_name = func_name_match.group(1) if func_name_match else f'generated_tool_{int(time.time())}'
             final_filename = f'{base_name}.py'
             logger.warning(f'No filename suggested by LLM or user. Using fallback: {final_filename}')
+        
         final_filename = re.sub('[^\\w_.-]', '', final_filename)
         if not final_filename or not final_filename.endswith('.py'):
             final_filename = f'tool_{int(time.time())}.py'
+        
+
+
         generated_tools_dir = get_generated_tools_path()
         file_path = os.path.join(generated_tools_dir, final_filename)
         init_py_path = os.path.join(generated_tools_dir, '__init__.py')
