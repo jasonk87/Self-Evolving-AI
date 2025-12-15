@@ -370,6 +370,9 @@ async def _background_loop_async():
                                         # Create Insight
                                         if learning_agent:
                                             from ai_assistant.core.reflection import ActionableInsight, InsightType
+                                            # Ensure NotificationType is available if needed, though it is imported globally
+                                            from ai_assistant.core.notification_manager import NotificationType
+
                                             insight = ActionableInsight(
                                                 type=InsightType.VISUAL_DEFECT_DETECTED,
                                                 description=f"Visual Audit failed for project '{project_name}'.",

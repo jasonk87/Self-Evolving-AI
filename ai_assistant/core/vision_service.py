@@ -18,7 +18,7 @@ class VisionService:
     """
 
     def __init__(self):
-        self.browser_launched = False
+        pass
 
     async def capture_page_screenshot(self, file_path_or_url: str) -> Optional[str]:
         """
