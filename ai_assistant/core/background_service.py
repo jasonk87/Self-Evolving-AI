@@ -4,6 +4,8 @@ import asyncio
 import time
 import json
 import os # Added
+import sys # Added for subprocess execution
+
 import re
 import logging
 from typing import Optional, List
@@ -409,6 +411,103 @@ async def _background_loop_async():
                  logger.error(f"BackgroundService: Error during Evolutionary Architect audit: {e}", exc_info=True)
                  # Retry later to avoid rapid error loop
                  next_architect_audit_run_time = time.time() + 3600
+
+        # --- DREAM MODE (Autonomous Deep Simulation) ---
+        global _last_dream_time, _dream_interval_seconds
+        if '_last_dream_time' not in globals(): _last_dream_time = 0.0
+        if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 300 # 5 minutes
+
+        if current_loop_time >= _last_dream_time + _dream_interval_seconds:
+            logger.info("BackgroundService: Entering Dream Mode...")
+            try:
+                # Lazy init Dreamer
+                if 'dreamer_agent' not in locals():
+                    from ai_assistant.dreaming.dreamer import DreamerAgent
+                    dreamer_agent = DreamerAgent()
+                
+                # Pick a random tool
+                available_tools = tool_system.tool_system_instance.list_tools()
+                if available_tools:
+                    import random
+                    target_tool = random.choice(list(available_tools.keys()))
+                    
+                    logger.info(f"BackgroundService: Dreaming about '{target_tool}'...")
+                    dream_result = await dreamer_agent.realize_dream(target_tool)
+                    
+                    if dream_result and "verification_script" in dream_result:
+                        # Execute the Dream
+                        script_content = dream_result["verification_script"]
+                        logger.info(f"BackgroundService: Running verification for dream '{dream_result.get('scenario_name')}'")
+                        
+                        # Save to temp file
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp_script:
+                            tmp_script.write(script_content)
+                            tmp_script_path = tmp_script.name
+                        
+                        # Run it
+                        proc = await asyncio.create_subprocess_exec(
+                            sys.executable, tmp_script_path,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await proc.communicate()
+                        stdout_str = stdout.decode().strip()
+                        stderr_str = stderr.decode().strip()
+                        
+                        # Cleanup
+                        try: os.unlink(tmp_script_path)
+                        except: pass
+                        
+                        # Analyze Result
+                        if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
+                            logger.warning(f"BackgroundService: Nightmare realized! Tool '{target_tool}' failed hypothetical scenario.")
+                            
+                            # Create Insight
+                            if learning_agent:
+                                from ai_assistant.core.reflection import ActionableInsight, InsightType
+                                new_insight = ActionableInsight(
+                                    type=InsightType.HYPOTHETICAL_SCENARIO,
+                                    description=f"Dream Scenario '{dream_result.get('scenario_name')}' failed for tool '{target_tool}'.\nFailure Output: {stdout_str}\nStderr: {stderr_str}",
+                                    source_reflection_entry_ids=[],
+                                    related_tool_name=target_tool,
+                                    priority=5,
+                                    status="NEW",
+                                    metadata={
+                                        "dream_scenario": dream_result,
+                                        "failure_output": stdout_str
+                                    }
+                                )
+                                learning_agent.insights.append(new_insight)
+                                learning_agent._save_insights()
+                                logger.info("BackgroundService: Saved HYPOTHETICAL_SCENARIO insight.")
+
+                        else:
+                            logger.info(f"BackgroundService: Tool '{target_tool}' survived the dream scenario.")
+                    
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during Dream Mode: {e}", exc_info=True)
+                # Capture general dream mode errors as insights
+                if learning_agent:
+                    from ai_assistant.core.reflection import ActionableInsight, InsightType
+                    new_insight = ActionableInsight(
+                        type=InsightType.TOOL_BUG_SUSPECTED,
+                        description=f"Error encountered during Dream Mode execution: {str(e)}",
+                        source_reflection_entry_ids=[],
+                        related_tool_name="dream_mode_runner",
+                        priority=4,
+                        status="NEW",
+                        metadata={
+                            "error_category": "DREAM_MODE_SYSTEM_ERROR",
+                            "exception_details": str(e)
+                        }
+                    )
+                    learning_agent.insights.append(new_insight)
+                    learning_agent._save_insights()
+                    logger.info("BackgroundService: Saved DREAM_MODE_SYSTEM_ERROR insight.")
+
+            
+            _last_dream_time = time.time()
 
         # --- Auto-Approval Task ---
         if current_loop_time >= next_auto_approve_check_time:

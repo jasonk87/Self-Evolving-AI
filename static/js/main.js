@@ -522,14 +522,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!targetId) return;
 
             // Handle Main Stage Switches (Chat / Editor / Cortex)
-            if (targetId === 'view-chat' || targetId === 'view-editor-main' || targetId === 'view-cortex') {
+            if (targetId === 'view-chat' || targetId === 'view-editor-main' || targetId === 'view-cortex' || targetId === 'view-mission-control') {
                 // Switch Main View
                 mainViews.forEach(v => v.classList.remove('active'));
                 const main = document.getElementById(targetId);
                 if (main) main.classList.add('active');
 
                 // If chat, AUTO-COLLAPSE SIDEBAR as requested
-                if (targetId === 'view-chat') {
+                if (targetId === 'view-chat' || targetId === 'view-mission-control') {
                     chatInput.focus();
                     sidebarPanel.classList.add('collapsed'); // Collapse sidebar
                     // Deselect sidebar tools
@@ -1047,13 +1047,41 @@ document.addEventListener('DOMContentLoaded', () => {
         msgDiv.className = `message ${role}`;
         let avatarText = role === 'user' ? '👤' : 'AI';
 
-        // Better markdown formatting (basic)
-        let formattedText = text
-            .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/\n/g, '<br>');
+        // Split by html-dynamic blocks
+        let parts = text.split(/(```html-dynamic[\s\S]*?```)/g);
+        let finalHtml = "";
 
-        msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${formattedText}</div>`;
+        parts.forEach(part => {
+            // Check if it is our special block
+            if (part.startsWith("```html-dynamic") && part.endsWith("```")) {
+                // Extract raw HTML
+                // Remove the first line (marker) and the last line (ticks) more robustly
+                let rawHtml = part.replace(/^```html-dynamic\s*/, "").replace(/```$/, "");
+
+                // Sanitize
+                // We assume DOMPurify is loaded globally from index.html
+                let cleanHtml = "";
+                if (typeof DOMPurify !== 'undefined') {
+                    cleanHtml = DOMPurify.sanitize(rawHtml);
+                } else {
+                    cleanHtml = "<i>(DOMPurify not loaded - HTML suppressed for safety)</i>";
+                }
+
+                finalHtml += `<div class="dynamic-html-wrapper">${cleanHtml}</div>`;
+            } else {
+                // Normal text processing (Basic Markdown)
+                let md = part
+                    // Handle normal code blocks
+                    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                    // Inline code
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    // Newlines
+                    .replace(/\n/g, '<br>');
+                finalHtml += md;
+            }
+        });
+
+        msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${finalHtml}</div>`;
         chatContainer.appendChild(msgDiv);
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }

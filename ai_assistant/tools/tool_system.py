@@ -330,6 +330,10 @@ class ToolSystem:
         """Retrieves tool metadata from the registry."""
         return self._tool_registry.get(name)
 
+    def get_tool_info(self, name: str) -> Optional[Dict[str, Any]]:
+        """Alias for get_tool for backward compatibility."""
+        return self.get_tool(name)
+
     async def execute_tool(self, name: str, args: Tuple = (), kwargs: Optional[Dict[str, Any]] = None,
                          task_manager: Optional['TaskManager'] = None,
                          notification_manager: Optional['NotificationManager'] = None,

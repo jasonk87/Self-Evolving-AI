@@ -96,8 +96,12 @@ class MemoryManager:
                     loop = asyncio.get_running_loop()
                     loop.create_task(self.rag_system.ingest_fact(new_fact['text'], metadata=new_fact))
                 except RuntimeError:
-                    # No running loop, skipping async ingest (sync fallback not implemented here to keep add_fact sync)
-                    logger.warning(f"Could not ingest fact '{new_fact['fact_id']}' into RAG: no active event loop.")
+                    # No running loop, run synchronously with a temporary loop
+                    # This ensures facts are ingested even when called from sync contexts
+                    try:
+                        asyncio.run(self.rag_system.ingest_fact(new_fact['text'], metadata=new_fact))
+                    except Exception as e:
+                        logger.warning(f"Could not ingest fact '{new_fact['fact_id']}' into RAG (sync fallback failed): {e}")
 
             return new_fact
         else:
@@ -199,7 +203,11 @@ class MemoryManager:
                         loop = asyncio.get_running_loop()
                         loop.create_task(self.ingest_insight_to_rag(updated_insight))
                      except RuntimeError:
-                        pass
+                        # No running loop, run synchronously with a temporary loop
+                        try:
+                            asyncio.run(self.ingest_insight_to_rag(updated_insight))
+                        except Exception as e:
+                            logger.warning(f"So could not ingest insight '{insight_id}' into RAG (sync fallback failed): {e}")
 
                 return updated_insight
             else:

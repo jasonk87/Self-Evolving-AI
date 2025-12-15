@@ -137,6 +137,40 @@ class ActionExecutor:
                 event_type, summary_message, related_item_id, related_item_type, details_payload
             )
 
+    def _is_core_system_path(self, file_path: str) -> bool:
+        """
+        Determines if a file path belongs to the core system which requires manual approval for modifications.
+        """
+        if not file_path:
+            return False
+            
+        normalized_path = file_path.replace("\\", "/").lower()
+        
+        # Define protected directories
+        # Note: custom_tools is explicitly EXCLUDED from protection to allow standard self-healing.
+        protected_segments = [
+            "/ai_assistant/core/",
+            "/ai_assistant/learning/",
+            "/ai_assistant/memory/",
+            "/ai_assistant/planning/",
+            "/ai_assistant/execution/",
+            "/ai_assistant/llm_interface/",
+            "/ai_assistant/utils/",
+            "/ai_assistant/code_services/"
+        ]
+        
+        for segment in protected_segments:
+            if segment in normalized_path:
+                return True
+                
+        # Also protect root files like main.py or web_app.py if needed, 
+        # but usually tool modification targets defined modules.
+        # Let's check for direct matches in the package root if provided.
+        if "/ai_assistant/main.py" in normalized_path:
+            return True
+            
+        return False
+
     async def handle_telemetry_update(self, project_name: str, telemetry_data: Dict[str, Any]) -> Optional[str]:
         """
         Analyzes telemetry updates from a running project and decides if a proactive response is needed.
@@ -261,7 +295,7 @@ class ActionExecutor:
         staging_mode: bool = False, # Added parameter
         modification_strategy: str = "full_replace", # Added parameter
         target_node_pattern: Optional[str] = None # Added parameter
-    ) -> bool: # Return just success/failure
+    ) -> Tuple[bool, str, Optional[str]]: # Return (success, notes, failure_code)
         tool_name = function_name
         source_of_code = "CodeService_LLM" if "CodeService generated code" in original_description else "Insight"
 
@@ -286,6 +320,19 @@ class ActionExecutor:
 
             # Get original code for context
             original_code_content = self_modification.get_function_source_code(module_path, function_name) or ""
+
+            # NO-OP CHECK: Prevent identical modifications
+            def normalize_code(c): return "".join(c.split())
+            if normalize_code(original_code_content) == normalize_code(code_to_apply):
+                logger.warning(f"ActionExecutor: Proposed code for {function_name} is identical to existing code. Skipping.")
+                global_reflection_log.log_execution(
+                    goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
+                    plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": function_name}}],
+                    execution_results=["Skipped: Proposed code is identical to existing code."], overall_success=False,
+                    notes=f"Aborted no-op modification.",
+                    is_self_modification_attempt=True, source_suggestion_id=source_insight_id
+                )
+                return False, "Aborted no-op modification.", "NO_OP"
 
             # Execute Debate
             is_approved, reasoning = await coordinator.execute_council_debate(
@@ -333,7 +380,7 @@ class ActionExecutor:
                 except Exception as e_learn:
                      logger.error(f"ActionExecutor: Failed to learn from Council rejection: {e_learn}")
 
-                return False
+                return False, f"Council Rejection: {reasoning}", "COUNCIL_REJECTED"
 
             logger.info(f"The Council APPROVED the modification for {function_name}. Reasoning: {reasoning}")
 
@@ -361,7 +408,7 @@ class ActionExecutor:
         try:
             if modification_strategy == "surgical_replace_node":
                 if not target_node_pattern:
-                    return False # Error: Missing pattern
+                    return False, "Missing target_node_pattern for surgical edit.", "PRECONDITION_FAILED"
                 
                 modification_result_msg = await self_modification.surgical_edit_function(
                     module_path=module_path,
@@ -432,7 +479,9 @@ class ActionExecutor:
             else:
                 test_run_notes = "Test not run as code edit failed."
 
-            final_overall_success = edit_success and (test_passed_status is True)
+            # If tests were skipped (None), we consider it a success if the edit succeeded, 
+            # but we note that verification was skipped.
+            final_overall_success = edit_success and (test_passed_status is not False)
 
             # If in staging mode and success, create a suggestion
             if staging_mode and final_overall_success:
@@ -482,11 +531,21 @@ class ActionExecutor:
                         related_item_type="agent_tool",
                         details_payload={"module_path": module_path, "function_name": function_name, "reversion_notes": reversion_notes}
                     )
-                return final_overall_success
+                
+                failure_reason = None
+                if not final_overall_success:
+                    if edit_success and test_passed_status is False:
+                        failure_reason = "TEST_FAILED"
+                    elif edit_success and staging_mode:
+                        failure_reason = "STAGING_VERIFIED" # Not really a failure, but reason for False
+                    else:
+                        failure_reason = "EDIT_FAILED"
+
+                return final_overall_success, test_run_notes, failure_reason
 
             except Exception as e_log: # pragma: no cover
                 print(f"ActionExecutor: CRITICAL - Failed to log successful/failed modification: {e_log}")
-                return final_overall_success if 'final_overall_success' in locals() else False
+                return (final_overall_success if 'final_overall_success' in locals() else False), f"Logging exception: {e_log}", "LOGGING_FAILED"
 
 
         except Exception as e_main_apply: # pragma: no cover
@@ -499,7 +558,7 @@ class ActionExecutor:
                 notes=f"Major exception for {tool_name} from {source_of_code}: {e_main_apply}",
                 is_self_modification_attempt=True, source_suggestion_id=source_insight_id
             )
-            return False
+            return False, f"Exception: {e_main_apply}", "EXCEPTION"
 
     async def _is_fact_valuable(self, fact_to_assess: str) -> Tuple[bool, str]:
         """
@@ -620,6 +679,9 @@ class ActionExecutor:
             elif action_type == "EXECUTE_EPHEMERAL_AGENT":
                 task_type = ActiveTaskType.EPHEMERAL_AGENT_TASK
                 related_item = details.get("task_description", "Unknown agent task")[:70]
+            elif action_type == "EXECUTE_SUGGESTED_TOOL":
+                task_type = ActiveTaskType.AGENT_TOOL_EXECUTION
+                related_item = details.get("tool_name", "Unknown Tool")
 
             action_task = self.task_manager.add_task(
                 description=task_description, # Corrected order
@@ -652,59 +714,154 @@ class ActionExecutor:
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Precondition check failed")
                 return False
 
+            # --- CORE SYSTEM PROTECTION GATE ---
+            # Check if this modification targets a core system file.
+            if self._is_core_system_path(module_path):
+                warning_msg = f"Modification target '{module_path}' is identified as a CORE SYSTEM FILE."
+                print(f"ActionExecutor: [CORE GATE] {warning_msg} Blocking auto-execution.")
+                
+                # Create a specialized suggestion for user approval
+                from ai_assistant.core.suggestion_manager import add_new_suggestion
+                
+                suggestion_description = (
+                    f"Core System Modification Proposal: Modify '{function_name}' in '{module_path}'.\n"
+                    f"Reason: {original_description}\n"
+                    f"Source Insight: {source_insight_id}"
+                )
+                
+                new_sugg = add_new_suggestion(
+                    type="CORE_SYSTEM_MODIFICATION", 
+                    description=suggestion_description,
+                    source_reflection_id=source_insight_id,
+                    notification_manager=self.notification_manager,
+                    source="ActionExecutor Guard",
+                    action_details=details # Pass the full execution context including code and test IDs
+                )
+                
+                log_note = f"Blocked core modification. Queued as Suggestion ID: {new_sugg['suggestion_id'] if new_sugg else 'Error'}"
+                
+                global_reflection_log.log_execution(
+                    goal_description=f"Self-modification attempt for insight {source_insight_id}",
+                    plan=[{"action_type": action_type, "details": details}], 
+                    execution_results=["Blocked by Code Gate: Core System Modification requires manual approval."],
+                    overall_success=True, # Considered success because the system handled it correctly by queuing it
+                    notes=log_notes_prefix + log_note,
+                    status_override="QUEUED_FOR_APPROVAL"
+                )
+                
+                self._update_task_if_manager(
+                    action_task_id, 
+                    ActiveTaskStatus.WAITING_FOR_USER, 
+                    reason="Core system modifications require user approval.", 
+                    step_desc="Queued for Approval"
+                )
+                
+                self._add_notification_if_manager(
+                    NotificationType.REQUIRE_USER_APPROVAL,
+                    f"Core system modification blocked and queued: {function_name}",
+                    related_item_id=new_sugg['suggestion_id'] if new_sugg else None,
+                    related_item_type="suggestion",
+                    details_payload={"module_path": module_path, "function_name": function_name}
+                )
+                
+                return True # We return True to indicate the action was processed (handoff to queue)
+
+            # --- END CORE SYSTEM PROTECTION GATE ---
+
+
             suggested_code_or_llm_generated_code: Optional[str] = suggested_code
+            last_failure_notes: str = ""
+            
+            # AUTO-FIX RETRY LOOP (Max 3 attempts)
+            MAX_RETRIES = 3
+            final_success = False
 
-            if not suggested_code_or_llm_generated_code:
-                print(f"ActionExecutor: No direct code for {tool_name}. Requesting CodeService for fix. Task ID: {action_task_id}")
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="CodeService: Generating code fix")
-                code_service_result = await self.code_service.modify_code(
-                    context="SELF_FIX_TOOL",
-                    modification_instruction=original_description,
-                    existing_code=None,
-                    module_path=module_path,
-                    function_name=function_name
-                )
-                if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
-                    suggested_code_or_llm_generated_code = code_service_result.get("modified_code_string")
-                    logger.info(f"CodeService generated code for {function_name}. Length: {len(suggested_code_or_llm_generated_code) if suggested_code_or_llm_generated_code else 0}. Task ID: {action_task_id}")
-                else:
-                    err_msg = f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}"
-                    logger.error(f"{err_msg}. Task ID: {action_task_id}")
-                    global_reflection_log.log_execution(
-                        goal_description=f"CodeService code generation for insight {source_insight_id}",
-                        plan=[{"action_type": "CODE_SERVICE_MODIFY_CODE", "details": {"module": module_path, "func": function_name}}],
-                        execution_results=[err_msg], overall_success=False, status_override="CODE_SERVICE_GEN_FAILED"
+            for attempt in range(MAX_RETRIES):
+                if attempt > 0:
+                     print(f"ActionExecutor: Auto-Fix Retry Attempt {attempt + 1}/{MAX_RETRIES} for '{tool_name}'...")
+                     self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc=f"Generating Fix (Attempt {attempt+1})")
+
+                # Generate code if missing or if this is a retry
+                if not suggested_code_or_llm_generated_code:
+                    context_prompt = original_description
+                    if last_failure_notes:
+                        context_prompt += f"\n\nPREVIOUS ATTEMPT ALLIED BUT FAILED TESTS.\nFailure Notes: {last_failure_notes}\n\nPlease analyze the failure and generate a CORRECTED version of the code that fixes the issue."
+
+                    code_service_result = await self.code_service.modify_code(
+                        context="SELF_FIX_TOOL",
+                        modification_instruction=context_prompt,
+                        existing_code=None, # CodeService fetches current file content
+                        module_path=module_path,
+                        function_name=function_name
                     )
-                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err_msg, step_desc="CodeService failed")
-                    return False
+                    
+                    if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
+                        suggested_code_or_llm_generated_code = code_service_result.get("modified_code_string")
+                        logger.info(f"CodeService generated code for {function_name}. Attempt {attempt+1}.")
+                    else:
+                        err_msg = f"CodeService failed to generate code. Status: {code_service_result.get('status')}, Error: {code_service_result.get('error')}"
+                        logger.error(f"{err_msg}. Task ID: {action_task_id}")
+                        # If we can't generate code, we can't retry.
+                        self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason=err_msg, step_desc="CodeService failed")
+                        return False
 
-            if suggested_code_or_llm_generated_code:
-                # Check for staging mode (Self-Healing Loop)
-                staging_mode = details.get("staging_mode", False)
-                modification_strategy = details.get("modification_strategy", "full_replace")
-                target_node_pattern = details.get("target_node_pattern")
+                if suggested_code_or_llm_generated_code:
+                    # Check for staging mode (Self-Healing Loop)
+                    staging_mode = details.get("staging_mode", False)
+                    modification_strategy = details.get("modification_strategy", "full_replace")
+                    target_node_pattern = details.get("target_node_pattern")
 
-                edit_success = await self._apply_test_and_revert_code(
-                    module_path, function_name, suggested_code_or_llm_generated_code,
-                    original_description,
-                    str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
-                    action_task_id=action_task_id,
-                    original_reflection_id_for_test=details.get("original_reflection_entry_id"),
-                    staging_mode=staging_mode,
-                    modification_strategy=modification_strategy, # Pass new param
-                    target_node_pattern=target_node_pattern # Pass new param
-                )
-                if edit_success:
-                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Tool modification process completed successfully.")
+                    # If this is a retry (and successful), we should update the 'suggested_code_change' 
+                    # in the details so that if we create a PR (staging mode), it uses the WORKING code, not the original broken one.
+                    if attempt > 0:
+                        details["suggested_code_change"] = suggested_code_or_llm_generated_code
+
+                    edit_success, run_notes, failure_code = await self._apply_test_and_revert_code(
+                        module_path, function_name, suggested_code_or_llm_generated_code,
+                        original_description,
+                        str(source_insight_id) if source_insight_id else "NO_INSIGHT_ID",
+                        action_task_id=action_task_id,
+                        original_reflection_id_for_test=details.get("original_reflection_entry_id"),
+                        staging_mode=staging_mode,
+                        modification_strategy=modification_strategy, 
+                        target_node_pattern=target_node_pattern
+                    )
+                    
+                    if edit_success:
+                        self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc=f"Tool modification verified (Attempt {attempt+1}).")
+                        final_success = True
+                        break # Success!
+                    else:
+                        # Handle Failure
+                        last_failure_notes = run_notes
+                        print(f"ActionExecutor: Attempt {attempt + 1} failed. Reason: {failure_code}. Notes: {run_notes}")
+                        
+                        if failure_code == "TEST_FAILED":
+                            # Retryable failure
+                            suggested_code_or_llm_generated_code = None # Force regeneration in next loop
+                            continue 
+                        
+                        elif failure_code == "COUNCIL_REJECTED" or failure_code == "NO_OP":
+                             # Non-retryable
+                             final_success = False
+                             break
+                        
+                        else:
+                             # Other errors (exception, logging, etc) -> try once more maybe? no, unsafe.
+                             final_success = False
+                             break
                 else:
-                    if self.task_manager and action_task_id:
-                        task = self.task_manager.get_task(action_task_id) # Get current task to check status
-                        if task and task.status not in [ActiveTaskStatus.POST_MOD_TEST_FAILED, ActiveTaskStatus.FAILED_DURING_APPLY, ActiveTaskStatus.CRITIC_REVIEW_REJECTED]: # Avoid overriding specific failure
-                             self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="Tool modification process failed at some stage.", step_desc="Tool modification process failed.")
-                return edit_success
-            else:
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="No code available to apply.", step_desc="No code to apply")
-                return False
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="No code available to apply.", step_desc="No code to apply")
+                    return False
+            
+            # End of loop
+            if not final_success:
+                if self.task_manager and action_task_id:
+                     task = self.task_manager.get_task(action_task_id) # Get current task to check status
+                     if task and task.status not in [ActiveTaskStatus.POST_MOD_TEST_FAILED, ActiveTaskStatus.FAILED_DURING_APPLY, ActiveTaskStatus.CRITIC_REVIEW_REJECTED]: 
+                          self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Tool modification failed after {MAX_RETRIES} attempts.", step_desc="Final failure")
+            
+            return final_success
 
 
         elif action_type == "ADD_LEARNED_FACT":
@@ -776,6 +933,70 @@ class ActionExecutor:
                 return False
         elif action_type == "EXECUTE_EPHEMERAL_AGENT":
             return await self._execute_ephemeral_agent_task(details, action_task_id)
+
+        elif action_type == "EXECUTE_SUGGESTED_TOOL":
+            tool_name = details.get("tool_name")
+            tool_args = details.get("args", {})
+            
+            if not tool_name:
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing tool name.", step_desc="Tool name check")
+                return False
+                
+            from ai_assistant.custom_tools.code_execution_tools import install_python_package
+            
+            # Security/Safety check: strictly limit which tools can be auto-executed this way
+            # Only allow specific maintenance tools for now.
+            ALLOWED_AUTO_TOOLS = {
+                "install_python_package": install_python_package
+            }
+            
+            if tool_name not in ALLOWED_AUTO_TOOLS:
+                fail_msg = f"Tool '{tool_name}' is not allowed for autonomous execution via EXECUTE_SUGGESTED_TOOL action."
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=fail_msg, step_desc="Security check")
+                print(f"ActionExecutor: Security Error - {fail_msg}")
+                return False
+
+            try:
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.RUNNING, step_desc=f"Executing {tool_name}")
+                tool_func = ALLOWED_AUTO_TOOLS[tool_name]
+                
+                # Execute the tool
+                # Assuming simple kwargs mapping.
+                print(f"ActionExecutor: Executing suggested tool '{tool_name}' with args {tool_args}")
+                result = tool_func(**tool_args)
+                
+                success = result.get("status") == "success"
+                if success:
+                    log_msg = f"Successfully executed {tool_name}. Result: {result.get('stdout', '')[:100]}..."
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc=f"{tool_name} completed.")
+                    
+                    if source_insight_id:
+                         mark_suggestion_implemented(source_insight_id, f"Tool {tool_name} executed successfully.", notification_manager=self.notification_manager)
+                         
+                    self._add_notification_if_manager(
+                        NotificationType.GENERAL_INFO, # Or a specific TOOL_EXECUTED type
+                        f"Self-healing: Executed '{tool_name}' successfully.",
+                        related_item_id=source_insight_id,
+                        related_item_type="insight",
+                        details_payload={"tool_name": tool_name, "args": tool_args, "result": result}
+                    )
+                else:
+                    err_msg = result.get("error_message") or result.get("stderr") or "Unknown error"
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc=f"{tool_name} execution failed.")
+                    
+                global_reflection_log.log_execution(
+                    goal_description=f"Execute suggested tool {tool_name} for insight {source_insight_id}",
+                    plan=[{"action_type": action_type, "details": details}],
+                    execution_results=[result],
+                    overall_success=success,
+                    notes=f"Tool execution result: {result}",
+                    is_self_modification_attempt=False 
+                )
+                return success
+
+            except Exception as e:
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc=f"Exception executing {tool_name}")
+                return False
 
         elif action_type == "APPLY_ARCHITECT_PROPOSAL":
             target_file = details.get("target_file")

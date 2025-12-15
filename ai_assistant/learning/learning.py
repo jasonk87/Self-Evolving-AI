@@ -191,7 +191,8 @@ class LearningAgent:
             insight_type = InsightType.TOOL_ENHANCEMENT_SUGGESTED
             
             # Map action types to InsightTypes
-            if action_type == "MODIFY_TOOL_CODE":
+            # Map action types to InsightTypes
+            if action_type == "MODIFY_TOOL_CODE" or action_type == "CORE_SYSTEM_MODIFICATION":
                  insight_type = InsightType.TOOL_BUG_SUSPECTED # Treat code mods as high priority bugs/fixes
             elif action_type == "CREATE_NEW_TOOL":
                 insight_type = InsightType.NEW_TOOL_SUGGESTED
@@ -199,22 +200,36 @@ class LearningAgent:
             # Map fields
             details = suggestion.get("action_details", {})
             
+            # Restore source reflection IDs
+            source_ref_id = suggestion.get("source_reflection_id")
+            source_ids = [source_ref_id] if source_ref_id else []
+
+            metadata = {
+                "source_suggestion_id": s_id,
+                "action_type_from_reflection": action_type,
+                "module_path": details.get("module_path"),
+                "function_name": details.get("function_name"),
+                "reviewer_confidence": suggestion.get("reviewer_confidence"),
+                # Critical for testing: Restore the original log entry ID if it was preserved in details
+                "original_reflection_entry_ref_id": details.get("original_reflection_entry_ref_id") 
+            }
+            
+            # Determine priority
+            # Core system mods approved by user are high priority
+            priority = 3
+            if action_type == "CORE_SYSTEM_MODIFICATION":
+                priority = 5
+
             new_insight = ActionableInsight(
                 type=insight_type,
                 description=suggestion.get("suggestion_text", "No description"),
-                source_reflection_entry_ids=[], 
+                source_reflection_entry_ids=source_ids, 
                 related_tool_name=details.get("tool_name") or details.get("function_name"),
                 suggested_code_change=details.get("suggested_code_change"),
                 new_tool_requirements=details.get("tool_description_prompt") if action_type == "CREATE_NEW_TOOL" else None,
-                priority=3, # Default priority
+                priority=priority,
                 status="NEW",
-                metadata={
-                    "source_suggestion_id": s_id,
-                    "action_type_from_reflection": action_type,
-                    "module_path": details.get("module_path"),
-                    "function_name": details.get("function_name"),
-                    "reviewer_confidence": suggestion.get("reviewer_confidence")
-                }
+                metadata=metadata
             )
             self.insights.append(new_insight)
             count += 1
@@ -361,19 +376,64 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
                         if entry.plan[i] and isinstance(entry.plan[i], dict):
                             failed_step_details = entry.plan[i]
                             related_tool_name = failed_step_details.get("tool_name")
-
-                            if related_tool_name in ["subtract_numbers", "echo_message"]:
+                            
+                            # --- NEW: Check for ModuleNotFoundError ---
+                            error_msg = str(entry.error_message) if entry.error_message else ""
+                            traceback_str = str(entry.traceback_snippet) if entry.traceback_snippet else ""
+                            full_error_context = error_msg + " " + traceback_str
+                            
+                            import re
+                            # Regex to capture "No module named 'xyz'"
+                            module_match = re.search(r"No module named ['\"]([^'\"]+)['\"]", full_error_context)
+                            
+                            if module_match:
+                                missing_module = module_match.group(1)
+                                # Create a specific DEPENDENCY_MISSING insight/action
+                                print(f"LearningAgent: Detected missing dependency '{missing_module}' for tool '{related_tool_name}'.")
+                                
+                                description = f"Tool '{related_tool_name}' failed due to missing Python dependency: '{missing_module}'. Suggesting installation via tool."
+                                
+                                metadata_for_insight["missing_dependency"] = missing_module
+                                metadata_for_insight["suggested_tool_call"] = {
+                                    "tool_name": "install_python_package",
+                                    "args": {"package_name": missing_module}
+                                }
+                                
+                                # We can treat this as a TOOL_BUG_SUSPECTED but with specific remediation data
+                                # The ActionExecutor needs to know how to handle this.
+                                insight_type_to_use = InsightType.TOOL_BUG_SUSPECTED 
+                                metadata_for_insight["error_category"] = "DEPENDENCY_ERROR"
+                            
+                            elif related_tool_name in ["subtract_numbers", "echo_message"]:
                                 metadata_for_insight["module_path"] = "ai_assistant.custom_tools.my_extra_tools"
                                 metadata_for_insight["function_name"] = related_tool_name
                             elif failed_step_details.get("module_path") and failed_step_details.get("function_name_in_module"): # pragma: no cover
                                 metadata_for_insight["module_path"] = failed_step_details.get("module_path")
                                 metadata_for_insight["function_name"] = failed_step_details.get("function_name_in_module")
 
-                            if not failed_step_details.get("args") and not failed_step_details.get("kwargs"):
+                            if not failed_step_details.get("args") and not failed_step_details.get("kwargs") and metadata_for_insight.get("error_category") != "DEPENDENCY_ERROR":
                                 insight_type_to_use = InsightType.TOOL_USAGE_ERROR
                                 description += f" The tool '{related_tool_name}' was called without arguments, suggesting a usage error."
-                            else:
+                            if related_tool_name:
                                 description += f" The failure occurred at the step involving tool '{related_tool_name}'."
+                                # --- Deduplication/Rejection Check ---
+                                # Check if we have recently failed to fix this tool or if usage was rejected.
+                                for existing_insight in self.insights:
+                                    if existing_insight.related_tool_name == related_tool_name:
+                                        if existing_insight.status in ["REJECTED_BY_USER", "BLOCKED_BY_COUNCIL"]:
+                                            # Found a previous REJECTION for this tool.
+                                            # This means the user or system policy explicitly blocked it. Do not retry.
+                                            print(f"LearningAgent: Skipping insight creation for '{related_tool_name}' because a previous attempt ({existing_insight.insight_id}) was BLOCKED/REJECTED ({existing_insight.status}).")
+                                            return None
+                                        
+                                        # Note: We ALLOW retries for SELF_HEALING_FAILED or ACTION_FAILED per user request,
+                                        # assuming the new insight might lead to a better fix.
+                                        
+                                        # Also deduplicate pending insights
+                                        if existing_insight.status in ["NEW", "PENDING", "PENDING_MANUAL_REVIEW"]:
+                                             print(f"LearningAgent: Skipping insight creation for '{related_tool_name}' because a similar insight ({existing_insight.insight_id}) is already pending.")
+                                             return None
+
                             break
 
             if related_tool_name:
@@ -481,8 +541,25 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
             "action_type": "TBD", "details": {}
         }
 
-        if selected_insight.type == InsightType.TOOL_BUG_SUSPECTED or selected_insight.type == InsightType.TOOL_ENHANCEMENT_SUGGESTED:
-            if selected_insight.related_tool_name:
+        if selected_insight.type == InsightType.TOOL_BUG_SUSPECTED or selected_insight.type == InsightType.TOOL_ENHANCEMENT_SUGGESTED or selected_insight.type == InsightType.HYPOTHETICAL_SCENARIO:
+            # Check for Caller/usage errors first
+            desc_lower = selected_insight.description.lower()
+            is_caller_error = "takes" in desc_lower and "arguments but" in desc_lower and "given" in desc_lower
+            is_keyword_error = "unexpected keyword argument" in desc_lower
+
+            if is_caller_error or is_keyword_error:
+                 print(f"LearningAgent: Insight {selected_insight.insight_id} detected as CALLER ERROR (invalid usage), not tool bug.")
+                 # Convert to planning heuristic or manual review
+                 proposed_action["action_type"] = "ADD_PLANNING_HEURISTIC" # Or REVIEW_MANUALLY if not implemented
+                 proposed_action["details"] = {
+                     "heuristic": f"When using tool '{selected_insight.related_tool_name}', ensure you pass the correct arguments. Error context: {selected_insight.description}",
+                     "trigger_context": f"tool_usage error ({selected_insight.related_tool_name})"
+                 }
+                 # Change type to persist this shift
+                 selected_insight.type = InsightType.PLANNING_HEURISTIC_SUGGESTION
+                 self._save_insights()
+
+            elif selected_insight.related_tool_name:
                 # JIT Fix for existing insights with missing metadata
                 if "module_path" not in selected_insight.metadata:
                      tool_info = get_tool(selected_insight.related_tool_name)
@@ -547,71 +624,89 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (apply_immediately={apply_immediately}).")
 
         # Construct the action
-        # JIT Fix for existing insights with missing metadata (Self-Healing Context)
-        if not insight.related_tool_name:
-             print(f"LearningAgent: Insight {insight.insight_id} missing tool name. Attempting deduction...")
-             deduced_name = await self._deduce_tool_from_description(insight.description)
-             if deduced_name:
-                 print(f"LearningAgent: Deduced tool name '{deduced_name}' from description.")
-                 insight.related_tool_name = deduced_name
-                 self._save_insights()
-             else:
-                 print(f"LearningAgent: Cannot execute self-healing for insight {insight.insight_id} - No related_tool_name and deduction failed.")
-                 insight.status = "SELF_HEALING_SKIPPED_NO_TOOL"
-                 insight.metadata["self_healing_skip_reason"] = "No related_tool_name and deduction failed"
-                 self._save_insights()
-                 return False
+        action = {}
 
-        tool_info = get_tool(insight.related_tool_name)
-        if tool_info:
-            registry_module_path = tool_info.get("module_path")
-            registry_function_name = tool_info.get("function_name")
-            
-            # Robustness: Always prefer registry path if available
-            if "module_path" in insight.metadata and insight.metadata["module_path"] != registry_module_path:
-                print(f"LearningAgent: Warning - Overriding metadata module path '{insight.metadata['module_path']}' with registry path '{registry_module_path}'.")
-            
-            insight.metadata["module_path"] = registry_module_path
-            insight.metadata["function_name"] = registry_function_name
-            print(f"LearningAgent: JIT resolved module path for '{insight.related_tool_name}' in self-healing: {insight.metadata['module_path']}")
-            self._save_insights()
+        # 1. Check for PRE-DEFINED TOOL CALL (e.g., dependency fix)
+        if "suggested_tool_call" in insight.metadata:
+            tool_call_info = insight.metadata["suggested_tool_call"]
+            print(f"LearningAgent: Insight {insight.insight_id} suggests specific tool call: {tool_call_info.get('tool_name')}")
+            action = {
+                "action_type": "EXECUTE_SUGGESTED_TOOL",
+                "source_insight_id": insight.insight_id,
+                "details": {
+                    "tool_name": tool_call_info.get("tool_name"),
+                    "args": tool_call_info.get("args", {}),
+                    "reason": insight.description
+                }
+            }
+        
+        # 2. Standard Self-Correction (Code Modification) logic
         else:
-            print(f"LearningAgent: Tool '{insight.related_tool_name}' not found in registry. Attempting deduction from description...")
-            deduced_name = await self._deduce_tool_from_description(insight.description)
-            if deduced_name:
-                print(f"LearningAgent: Deduced correct tool name '{deduced_name}' (was '{insight.related_tool_name}').")
-                insight.related_tool_name = deduced_name
-                tool_info_deduced = get_tool(deduced_name)
-                if tool_info_deduced:
-                    insight.metadata["module_path"] = tool_info_deduced.get("module_path")
-                    insight.metadata["function_name"] = tool_info_deduced.get("function_name")
-                    self._save_insights()
-                else:
-                     print(f"LearningAgent: Deduced name '{deduced_name}' also not found in registry. Skipping.")
-                     insight.status = "SELF_HEALING_SKIPPED_METADATA"
+            # JIT Fix for existing insights with missing metadata (Self-Healing Context)
+            if not insight.related_tool_name:
+                 print(f"LearningAgent: Insight {insight.insight_id} missing tool name. Attempting deduction...")
+                 deduced_name = await self._deduce_tool_from_description(insight.description)
+                 if deduced_name:
+                     print(f"LearningAgent: Deduced tool name '{deduced_name}' from description.")
+                     insight.related_tool_name = deduced_name
+                     self._save_insights()
+                 else:
+                     print(f"LearningAgent: Cannot execute self-healing for insight {insight.insight_id} - No related_tool_name and deduction failed.")
+                     insight.status = "SELF_HEALING_SKIPPED_NO_TOOL"
+                     insight.metadata["self_healing_skip_reason"] = "No related_tool_name and deduction failed"
                      self._save_insights()
                      return False
-            else:
-                print(f"LearningAgent: Could not resolve module path for '{insight.related_tool_name}' in self-healing. Skipping.")
-                insight.status = "SELF_HEALING_SKIPPED_METADATA"
-                self._save_insights()
-                return False
 
-        # Construct the action
-        action = {
-            "source_insight_id": insight.insight_id,
-            "action_type": "PROPOSE_TOOL_MODIFICATION",
-            "details": {
-                "module_path": insight.metadata.get("module_path"),
-                "function_name": insight.metadata.get("function_name"),
-                "tool_name": insight.related_tool_name,
-                "suggested_change_description": insight.description,
-                "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
-                "reason": f"Self-healing trigger from insight {insight.insight_id}",
-                "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
-                "staging_mode": not apply_immediately # Critical flag: True = Evaluate & Revert; False = Evaluate & Keep
+            tool_info = get_tool(insight.related_tool_name)
+            if tool_info:
+                registry_module_path = tool_info.get("module_path")
+                registry_function_name = tool_info.get("function_name")
+                
+                # Robustness: Always prefer registry path if available
+                if "module_path" in insight.metadata and insight.metadata["module_path"] != registry_module_path:
+                    # check if metadata path matches registry path to avoid warning spam if identical
+                    pass 
+                
+                insight.metadata["module_path"] = registry_module_path
+                insight.metadata["function_name"] = registry_function_name
+                self._save_insights()
+            else:
+                print(f"LearningAgent: Tool '{insight.related_tool_name}' not found in registry. Attempting deduction from description...")
+                deduced_name = await self._deduce_tool_from_description(insight.description)
+                if deduced_name:
+                    print(f"LearningAgent: Deduced correct tool name '{deduced_name}' (was '{insight.related_tool_name}').")
+                    insight.related_tool_name = deduced_name
+                    tool_info_deduced = get_tool(deduced_name)
+                    if tool_info_deduced:
+                        insight.metadata["module_path"] = tool_info_deduced.get("module_path")
+                        insight.metadata["function_name"] = tool_info_deduced.get("function_name")
+                        self._save_insights()
+                    else:
+                         print(f"LearningAgent: Deduced name '{deduced_name}' also not found in registry. Skipping.")
+                         insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                         self._save_insights()
+                         return False
+                else:
+                    print(f"LearningAgent: Could not resolve module path for '{insight.related_tool_name}' in self-healing. Skipping.")
+                    insight.status = "SELF_HEALING_SKIPPED_METADATA"
+                    self._save_insights()
+                    return False
+
+            # Construct the PROPOSE_TOOL_MODIFICATION action
+            action = {
+                "source_insight_id": insight.insight_id,
+                "action_type": "PROPOSE_TOOL_MODIFICATION",
+                "details": {
+                    "module_path": insight.metadata.get("module_path"),
+                    "function_name": insight.metadata.get("function_name"),
+                    "tool_name": insight.related_tool_name,
+                    "suggested_change_description": insight.description,
+                    "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
+                    "reason": f"Self-healing trigger from insight {insight.insight_id}",
+                    "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
+                    "staging_mode": not apply_immediately # Critical flag: True = Evaluate & Revert; False = Evaluate & Keep
+                }
             }
-        }
 
         # Update status *before* execution to avoid repeated processing if crash
         insight.status = "PROCESSING_SELF_HEALING"

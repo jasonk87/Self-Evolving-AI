@@ -798,6 +798,33 @@ def serialize_approval_data(data):
         d = asdict(data)
         d['type'] = data.type.name # Enum to string
         return d
+
+# --- Mission Control Endpoints ---
+
+@app.route('/api/tasks', methods=['GET'])
+def list_active_tasks():
+    """Returns a list of all active tasks."""
+    global orchestrator
+    if not orchestrator:
+         # Attempt to return empty list or error if system not ready
+         return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        # Filter options
+        # type_filter = request.args.get('type')
+        # status_filter = request.args.get('status')
+        
+        # Get active tasks
+        tasks = orchestrator.task_manager.list_active_tasks()
+        
+        # Serialize
+        tasks_data = [t.to_dict() for t in tasks]
+        
+        return jsonify({"tasks": tasks_data, "success": True})
+    except Exception as e:
+        logger.error(f"Error listing active tasks: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
     return data
 
 @app.route('/api/approvals', methods=['GET'])

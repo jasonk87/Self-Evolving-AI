@@ -133,6 +133,18 @@
                         </svg>
                     </span>
                 </div>
+                <!-- Mission Control Button -->
+                <div class="activity-item" title="Mission Control" data-target="view-mission-control"
+                    data-label="Mission Control">
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                    </span>
+                </div>
             </div>
 
             <div class="activity-bottom">
@@ -280,6 +292,20 @@
                 </div>
             </div>
 
+            <!-- Mission Control (Task Board) -->
+            <div id="view-mission-control" class="view-container">
+                <header class="stage-header glass-panel">
+                    <span class="title">MISSION CONTROL</span>
+                    <div class="actions">
+                        <button id="refresh-tasks-btn" class="btn-icon">↻</button>
+                    </div>
+                </header>
+                <div id="mission-control-board" class="mission-board">
+                    <!-- Task Cards will be injected here -->
+                    <div class="loading">Scanning for active directives...</div>
+                </div>
+            </div>
+
             <!-- Editor Interface -->
             <div id="view-editor-main" class="view-container">
                 <header class="stage-header glass-panel">
@@ -317,6 +343,8 @@
         </main>
     </div>
 
+    <!-- DOMPurify for HTML sanitization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
     <!-- Socket.IO -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <!-- CodeMirror -->
@@ -332,6 +360,7 @@
     <!-- Council JS -->
     <script src="{{ url_for('static', filename='js/council.js') }}"></script>
     <script src="{{ url_for('static', filename='js/approvals.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/mission_control.js') }}"></script>
     <!-- 4. CUSTOM MODAL -->
     <div id="custom-modal" class="modal-overlay">
         <div class="modal-content">

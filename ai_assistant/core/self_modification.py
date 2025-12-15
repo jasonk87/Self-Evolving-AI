@@ -313,6 +313,7 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                          logger.warning(f"AST unparse failed during static analysis prep: {e_unparse}")
             except Exception as e_static:
                 logger.warning(f"Static analysis preparation failed: {e_static}")
+                pylint_error = f"Static Analysis Preparation Failed (Syntax/AST Error): {e_static}"
 
             if pylint_error:
                 logger.info(f"Static analysis failed: {pylint_error}")

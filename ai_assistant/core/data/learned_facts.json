@@ -206,5 +206,141 @@
         "source": "Council Review",
         "created_at": "2025-12-14T16:07:58.906651+00:00",
         "updated_at": "2025-12-14T16:07:58.906651+00:00"
+    },
+    {
+        "fact_id": "fact_b57556ce",
+        "text": "The Council rejected modification to tool 'get_weather' because: The proposed code is identical to the existing code and does not address the reported issue. The Skeptic's critique correctly identifies that the proposed change is ineffective and the AI's reasoning for the change is flawed.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T16:47:23.894922+00:00",
+        "updated_at": "2025-12-14T16:47:23.894922+00:00"
+    },
+    {
+        "fact_id": "fact_efb1c08a",
+        "text": "The Council rejected modification to tool 'get_weather' because: The proposal describes a problem (difficulty modifying tools) but doesn't offer a solution. The Skeptic correctly points this out. The core issue seems to be with the AI's self-modification capabilities, which needs further investigation before any code changes can be proposed. Therefore, there's nothing to approve or reject at this stage.\n\n\nReasoning: The proposal identifies a problem but doesn't offer a solution or code change. The difficulty in modifying tools suggests an underlying issue with the self-modification mechanism itself, which requires further investigation before any action can be taken.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T16:47:33.976447+00:00",
+        "updated_at": "2025-12-14T16:47:33.976447+00:00"
+    },
+    {
+        "fact_id": "fact_a4688595",
+        "text": "User rejected insight 'ISSUE DETECTED: The user implies the need to fix the `get_weather` tool, suggesting a bug or deficiency in its original implementation. (Evidence: i have made some more modifications and your get weather should be fixed now)' with reason: this is fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T17:18:50.450386+00:00",
+        "updated_at": "2025-12-14T17:18:50.451915+00:00"
+    },
+    {
+        "fact_id": "fact_0160368d",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'get_weather' tool is failing to utilize the OpenWeather API as requested by the user. (Evidence: ASSISTANT: I'm having a little trouble setting up the weather tool to use the OpenWeather API as requested. I've logged the issue, and the team will investigate.)' with reason: this is fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T17:18:56.488537+00:00",
+        "updated_at": "2025-12-14T17:18:56.488537+00:00"
+    },
+    {
+        "fact_id": "fact_041a53a0",
+        "text": "The Council rejected modification to tool 'generate_safe_html' because: The critique correctly points out the absence of the proposed code changes. Without the code, it's impossible to evaluate the security, robustness, or functionality of the modification to the `generate_safe_html` tool. Therefore, the proposal must be rejected until the code is provided for review.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T17:21:20.006121+00:00",
+        "updated_at": "2025-12-14T17:21:20.006121+00:00"
+    },
+    {
+        "fact_id": "fact_a0db04a8",
+        "text": "The Council rejected modification to tool 'execute_safe_terminal_command' because: The critique correctly identifies that the proposal fails to address the AI's misuse of the `execute_safe_terminal_command` tool. The AI is passing multiple arguments to a function expecting only one, and the proposed change does not rectify this issue.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T18:18:20.411471+00:00",
+        "updated_at": "2025-12-14T18:18:20.411471+00:00"
+    },
+    {
+        "fact_id": "fact_13a13f0d",
+        "text": "The Council rejected modification to tool 'get_weather' because: The proposed code does not address the reported issue of the weather tool failing to find the location \"Glasgow, KY\". The critique correctly identifies that the code is identical to the existing code, thus not resolving the 404 error.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T18:18:44.725460+00:00",
+        "updated_at": "2025-12-14T18:18:44.725460+00:00"
+    },
+    {
+        "fact_id": "fact_b73d5b3a",
+        "text": "The Council rejected modification to tool 'execute_safe_terminal_command' because: The Skeptic's critique correctly identifies that the proposed code change is a no-op and does not address the root cause of the issue, which is the AI incorrectly calling the `execute_safe_terminal_command` function with multiple arguments. The change fails to improve robustness or fix the reported error.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T18:48:52.423933+00:00",
+        "updated_at": "2025-12-14T18:48:52.423933+00:00"
+    },
+    {
+        "fact_id": "fact_f56efd09",
+        "text": "The Council rejected modification to tool 'get_weather' because: The Skeptic's critique highlights a critical regression in the `weather_tool.py` modification. The removal of the 'cod' key check could lead to `KeyError` exceptions and system instability.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T20:41:09.170780+00:00",
+        "updated_at": "2025-12-14T20:41:09.170780+00:00"
+    },
+    {
+        "fact_id": "fact_b987f260",
+        "text": "The Council rejected modification to tool 'execute_safe_terminal_command' because: The Skeptic's critique is valid. The proposed change introduces no modifications to the code, thus failing to address the reported bug in argument validation.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T20:41:15.904810+00:00",
+        "updated_at": "2025-12-14T20:41:15.904810+00:00"
+    },
+    {
+        "fact_id": "fact_a0206af6",
+        "text": "The Council rejected modification to tool 'execute_safe_terminal_command' because: The proposed change does not address the root cause of the error, which is the AI providing the wrong number of arguments to the `execute_safe_terminal_command` tool. The critique correctly identifies that the AI should pass the entire command as a single string argument.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-14T21:01:26.865262+00:00",
+        "updated_at": "2025-12-14T21:01:26.865262+00:00"
+    },
+    {
+        "fact_id": "fact_97e08070",
+        "text": "User Approved Insight TOOL_BUG_SUSPECTED_a78da71b with feedback: I think this is because you have to include US in it. ",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T21:26:04.217138+00:00",
+        "updated_at": "2025-12-14T21:26:04.217138+00:00"
+    },
+    {
+        "fact_id": "fact_813e4aa4",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'execute_safe_terminal_command' tool seems to have a bug where it only accepts one argument, despite the AI attempting to provide four. (Evidence: Okay, I tried to run the HTML tool for you. First, I attempted to upgrade the 'bleach' library but encountered an error: the 'execute_safe_terminal_command' tool only accepts one argument, but I provided four.)' with reason: Then you should only provide one argument",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T21:27:31.565166+00:00",
+        "updated_at": "2025-12-14T21:27:31.565166+00:00"
+    },
+    {
+        "fact_id": "fact_63656c91",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'execute_safe_terminal_command' tool seems to have an issue with the number of arguments it accepts. (Evidence: First, I attempted to upgrade the 'bleach' library but encountered an error: the 'execute_safe_terminal_command' tool only accepts one argument, but I provided four.)' with reason: The argument that it accepts should be a terminal command that you would type in which would literally be one argument",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T23:08:52.291657+00:00",
+        "updated_at": "2025-12-14T23:08:52.291657+00:00"
+    },
+    {
+        "fact_id": "fact_1b3bde98",
+        "text": "Test fact for RAG sync fallback.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T23:13:06.781280+00:00",
+        "updated_at": "2025-12-14T23:13:06.781289+00:00"
+    },
+    {
+        "fact_id": "fact_3857ec04",
+        "text": "User rejected insight 'ISSUE DETECTED: The weather tool incorrectly identified the country as 'GB' (Great Britain) instead of 'US' (United States) despite the location being Glasgow, Kentucky. (Evidence: ASSISTANT: The weather in Glasgow, Kentucky, US is currently 49.82 degrees with light rain, 88% humidity, and a wind speed of 12.66. Note that the country is listed as GB, which seems to be an error and should likely be US.)' with reason: this should be fixed now.",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-14T23:29:17.923895+00:00",
+        "updated_at": "2025-12-14T23:29:17.923895+00:00"
+    },
+    {
+        "fact_id": "fact_87b0436d",
+        "text": "User rejected insight 'ISSUE DETECTED: The `chat_dynamic_html` tool initially failed due to a missing module 'ai_assistant.custom_tools.awareness_tools'. (Evidence: I tried to show you an example of the `chat_dynamic_html` tool in action, but I encountered an error: the module 'ai_assistant.custom_tools.awareness_tools' was not found, so I couldn't load the tool.)' with reason: we dont have this tool no more, it has been replaced",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-15T00:45:44.699847+00:00",
+        "updated_at": "2025-12-15T00:45:44.699847+00:00"
     }
 ]

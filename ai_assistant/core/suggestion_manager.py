@@ -168,7 +168,8 @@ def add_new_suggestion(
     description: str,
     source_reflection_id: Optional[str] = None,
     notification_manager: Optional[NotificationManager] = None, # Type hint updated
-    source: str = "AI"
+    source: str = "AI",
+    action_details: Optional[Dict[str, Any]] = None # Added parameter
 ) -> Optional[Dict[str, Any]]:
     """
     Adds a new suggestion to the system.
@@ -181,6 +182,7 @@ def add_new_suggestion(
         source_reflection_id: Optional ID of the reflection that generated this.
         notification_manager: Optional manager to send notifications.
         source: Origin of the suggestion (e.g., "AI", "USER"). Defaults to "AI".
+        action_details: Optional dictionary containing rich context (e.g. proposed code, test IDs).
     """
     suggestions = _load_suggestions()
     normalized_new_description = _normalize_description(description)
@@ -200,7 +202,8 @@ def add_new_suggestion(
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "reason_for_status": "",
         "source_reflection_id": source_reflection_id,
-        "source": source
+        "source": source,
+        "action_details": action_details or {}
     }
     suggestions.append(new_suggestion)
     if _save_suggestions(suggestions):

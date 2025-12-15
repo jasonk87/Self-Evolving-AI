@@ -1,28 +1,53 @@
 import bleach
-from typing import Optional
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
+import html
+import bleach
 
-def generate_safe_html(html_content: str) -> Optional[str]:
+def generate_safe_html(input_string: str) -> str:
     """
-    Generates safe HTML content from a given HTML string. It uses the bleach library to sanitize the HTML,
-    removing potentially malicious tags and attributes.
+    Generates safe HTML from a given input string by escaping and sanitizing it.
 
     Args:
-        html_content (str): The HTML content to sanitize.
+        input_string: The string to convert to safe HTML.
 
     Returns:
-        Optional[str]: The sanitized HTML content, or None if an error occurred during sanitization.
+        A string containing safe HTML.
     """
-    try:
-        # Define allowed tags and attributes for sanitization.  This is a conservative list.
-        allowed_tags = bleach.ALLOWED_TAGS + ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'blockquote']
-        allowed_attributes = bleach.ALLOWED_ATTRIBUTES
-        allowed_attributes['a'] = ['href', 'title', 'target']  # Allow target attribute for links
-        allowed_attributes['img'] = ['src', 'alt', 'title'] # Allow image attributes
-        allowed_protocols = bleach.ALLOWED_PROTOCOLS + ['data'] # Allow data urls for images
-
-        sanitized_html = bleach.clean(html_content, tags=allowed_tags, attributes=allowed_attributes, protocols=allowed_protocols, strip=False)
-        return sanitized_html
-    except Exception as e:
-        # Handle any potential errors during sanitization.
-        print(f"Error sanitizing HTML: {e}")  # Consider using a logger here
-        return None
+    if input_string is None:
+        return ''
+    allowed_tags = ['div', 'span', 'p', 'br', 'a', 'b', 'i', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'button', 'hr', 'pre', 'code', 'blockquote']
+    allowed_attrs = {'*': ['class', 'style', 'id', 'title', 'data-toggle', 'data-target'], 'a': ['href', 'target', 'rel'], 'img': ['src', 'alt', 'width', 'height'], 'button': ['type', 'disabled']}
+    safe_html = bleach.clean(input_string, tags=allowed_tags, attributes=allowed_attrs, strip=True)
+    return safe_html
+if __name__ == '__main__':
+    input_string = "<script>alert('XSS');</script><p style='color:red;'>Hello, world!</p>"
+    safe_html = generate_safe_html(input_string)
+    print(f'Original string: {input_string}')
+    print(f'Safe HTML: {safe_html}')

@@ -1,0 +1,32 @@
+{
+  "id": "ff09f180-16d0-453a-a1a0-86a7c134be4f",
+  "title": "now lets try this shit again, ...",
+  "created_at": 1765730743.7713435,
+  "updated_at": 1765732110.38495,
+  "history": [
+    {
+      "role": "user",
+      "content": "now lets try this shit again, use your get weather tool and see what the weather is going to be today in glasgow ky"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, the weather in Glasgow, Kentucky is currently cloudy with a temperature of 32 degrees Fahrenheit, but it feels like 25 degrees. Earlier, there may have been scattered rain and snow. The forecast for today is sunny and cold, with a high near 18 or 19 degrees Fahrenheit."
+    },
+    {
+      "role": "user",
+      "content": "i have made some more modifications and your get weather should be fixed now as well as a new tool or two that i added myself"
+    },
+    {
+      "role": "assistant",
+      "content": "I encountered an error when trying to understand your modifications using the `get_self_awareness_info_and_converse` tool. It seems there was an issue with the tool's arguments. I've requested more details from you about the changes to the `get_weather` tool and the new tools you added, but I'm still waiting for that information. Please provide the names of the new tools and specifics on the `get_weather` fix so I can proceed."
+    },
+    {
+      "role": "user",
+      "content": "i gave you a sandbox you could use. a pip installer and installed bleach for the get weather tool"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, I understand that you've provided me with a sandboxed environment including a pip installer and that you have installed the 'bleach' library, presumably for use with the 'get_weather' tool, and I will keep this in mind."
+    }
+  ]
+}

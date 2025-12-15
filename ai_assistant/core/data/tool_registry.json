@@ -839,5 +839,65 @@
         "description": "Generates safe HTML content from a given HTML string. It uses the bleach library to sanitize the HTML,",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "execute_safe_terminal_command": {
+        "tool_name": "execute_safe_terminal_command",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "execute_safe_terminal_command",
+        "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "execute_safe_terminal_command",
+            "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
+            "parameters": [
+                {
+                    "name": "command",
+                    "type": "str",
+                    "description": "The command string to execute."
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr', 'error_message'."
+            }
+        }
+    },
+    "install_python_package": {
+        "tool_name": "install_python_package",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "install_python_package",
+        "description": "Installs a Python package using the current environment's pip.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "install_python_package",
+            "description": "Installs a Python package using the current environment's pip.",
+            "parameters": [
+                {
+                    "name": "package_name",
+                    "type": "str",
+                    "description": "The name of the package to install."
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr'."
+            }
+        }
+    },
+    "schedule_notification": {
+        "tool_name": "schedule_notification",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "schedule_notification",
+        "description": "Schedules a desktop notification to be displayed after a specified delay.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "chat_dynamic_html": {
+        "tool_name": "chat_dynamic_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "chat_dynamic_html",
+        "description": "Generates safe HTML, CSS, and JavaScript code based on a given idea, suitable for inline inclusion in a chat response.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

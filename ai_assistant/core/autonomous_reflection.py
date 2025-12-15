@@ -15,6 +15,8 @@ This allows the assistant to make informed decisions about which self-improvemen
 tasks to undertake.
 """
 import json 
+import ast
+ 
 import time
 from typing import List, Dict, Any, Optional
 import re
@@ -28,6 +30,7 @@ from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEnt
 from ..memory.event_logger import log_event
 from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
+from ai_assistant.memory.persistent_memory import load_actionable_insights
 from datetime import datetime, timezone, timedelta 
 from .notification_manager import NotificationManager
 
@@ -81,6 +84,16 @@ Identified Patterns (JSON list):
 Available Tools (JSON - Name: Description):
 ---
 {available_tools_json_str}
+---
+
+Recently Rejected Suggestions (Do NOT repeat these):
+---
+{rejected_suggestions_str}
+---
+
+Recent Execution Failures (You MAY retry these, but you MUST change the approach/code to fix the failure):
+---
+{failed_suggestions_str}
 ---
 
 Based on the "Identified Patterns" and your "Available Tools":
@@ -321,6 +334,36 @@ def get_reflection_log_summary_for_analysis(
 
     return "\n\n".join(formatted_summary_parts)
 
+def _robust_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
+    """
+    Attempts to parse JSON with multiple fallback strategies to handle LLM quirks.
+    """
+    # 1. Try standard JSON parsing
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Try ast.literal_eval (handles single quotes and some Python-specifics)
+    try:
+        # ast.literal_eval is safe for evaluating strings containing Python literals
+        val = ast.literal_eval(json_str)
+        if isinstance(val, dict):
+            return val
+    except (ValueError, SyntaxError):
+        pass
+
+    # 3. Try to clean up common issues
+    try:
+        cleaned_str = json_str
+        # Replace 'Unterminated string' issues due to newlines
+        cleaned_str = cleaned_str.replace('\n', '\\n') 
+        return json.loads(cleaned_str)
+    except json.JSONDecodeError:
+        pass
+        
+    return None
+
 def repair_json(json_str: str) -> str:
     """
     Attempts to repair truncated JSON by closing open brackets/braces.
@@ -362,15 +405,21 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
         else:
             cleaned_response = llm_response_str.strip()
     
-    try:
-        data = json.loads(cleaned_response)
-        if not isinstance(data, dict):
-            logger.warning(f"LLM response for pattern identification was not a dictionary. Response: {cleaned_response}")
-            return None
+    data = _robust_json_parse(cleaned_response)
+    if not data:
+         # Try logic in except block as last resort or rely on _robust_json_parse returning None
+         # Actually _robust_json_parse handles standard loads. If it returns proper dict, we are good.
+         pass
+    
+    if isinstance(data, dict):
         if "identified_patterns" not in data or not isinstance(data["identified_patterns"], list):
             logger.warning(f"LLM response for pattern identification missing 'identified_patterns' list or incorrect type. Response: {cleaned_response}")
             return None
         return data
+        
+    try:
+        if not data:
+             data = json.loads(cleaned_response) # This will raise if bad, jumping to except
     except json.JSONDecodeError as e:
         logger.info(f"JSONDecodeError in pattern id, attempting repair. Error: {e}")
         try:
@@ -383,11 +432,13 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
             logger.error(f"Error decoding JSON (even after repair) from pattern identification LLM: {e2}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
             return None
 
-def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, available_tools_json_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, available_tools_json_str: str, rejected_suggestions_str: str, failed_suggestions_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     model_to_use = llm_model_name if llm_model_name is not None else get_model_for_task("reflection")
     prompt = GENERATE_IMPROVEMENT_SUGGESTIONS_PROMPT_TEMPLATE.format(
         identified_patterns_json_list_str=identified_patterns_json_list_str,
-        available_tools_json_str=available_tools_json_str
+        available_tools_json_str=available_tools_json_str,
+        rejected_suggestions_str=rejected_suggestions_str,
+        failed_suggestions_str=failed_suggestions_str
     )
     llm_response_str = invoke_ollama_model(prompt, model_name=model_to_use)
 
@@ -406,15 +457,16 @@ def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, av
         else:
             cleaned_response = llm_response_str.strip()
 
-    try:
-        data = json.loads(cleaned_response)
-        if not isinstance(data, dict):
-            logger.warning(f"LLM response for suggestion generation was not a dictionary. Response: {cleaned_response}")
-            return None
+    data = _robust_json_parse(cleaned_response)
+    if isinstance(data, dict):
         if "improvement_suggestions" not in data or not isinstance(data["improvement_suggestions"], list):
             logger.warning(f"LLM response for suggestion generation missing 'improvement_suggestions' list or incorrect type. Response: {cleaned_response}")
             return None
         return data
+
+    try:
+        if not data:
+            data = json.loads(cleaned_response)
     except json.JSONDecodeError as e:
         logger.info(f"JSONDecodeError in suggestion generation, attempting repair. Error: {e}")
         try:
@@ -647,6 +699,26 @@ def run_self_reflection_cycle(
 
     logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} pattern(s). Generating improvement suggestions...")
 
+    # Fetch rejected insights to prevent duplicates, and failed ones to guide retries
+    all_insights = load_actionable_insights()
+    
+    rejected_insights = [i for i in all_insights if i.get("status") in ["REJECTED_BY_USER", "BLOCKED_BY_COUNCIL"]]
+    failed_insights = [i for i in all_insights if i.get("status") in ["SELF_HEALING_FAILED", "ACTION_FAILED"]]
+
+    # Sort by recent first
+    rejected_insights.sort(key=lambda x: x.get("creation_timestamp", ""), reverse=True)
+    failed_insights.sort(key=lambda x: x.get("creation_timestamp", ""), reverse=True)
+
+    rejected_summary_lines = []
+    for ri in rejected_insights[:10]:
+         rejected_summary_lines.append(f"- [{ri.get('status')}] Tool: {ri.get('related_tool_name', 'N/A')}. Reason/Desc: {ri.get('description')}")
+    rejected_suggestions_str = "\n".join(rejected_summary_lines) if rejected_summary_lines else "None."
+
+    failed_summary_lines = []
+    for fi in failed_insights[:10]:
+         failed_summary_lines.append(f"- [{fi.get('status')}] Tool: {fi.get('related_tool_name', 'N/A')}. Failure Reason: {fi.get('description')}")
+    failed_suggestions_str = "\n".join(failed_summary_lines) if failed_summary_lines else "None."
+
     try:
         patterns_json_list_str = json.dumps(identified_patterns_list, indent=2)
         available_tools_json_str = json.dumps(available_tools, indent=2)
@@ -663,6 +735,8 @@ def run_self_reflection_cycle(
     suggestions_data = _invoke_suggestion_generation_llm(
         patterns_json_list_str, 
         available_tools_json_str, 
+        rejected_suggestions_str,
+        failed_suggestions_str,
         llm_model_name=llm_model_name
     )
 
