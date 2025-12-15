@@ -2,9 +2,11 @@
 import re
 import json # Added for __main__ printing
 from typing import List, Any, Optional, Dict # Added Dict
+import os
 # Assuming a generic LLM service interface or a specific one like OllamaProvider
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
 from ai_assistant.memory.persistent_memory import load_learned_facts
+from ai_assistant.planning.plan_simulator import PlanSimulator
 # For __main__ example, we'll mock this.
 
 # TypedDict for ProjectPlanStep can be formally defined if preferred,
@@ -431,6 +433,44 @@ class HierarchicalPlanner:
                 print(f"[HP]   Successfully elaborated step {project_plan_step['step_id']} of type '{project_plan_step['type']}'.")
 
         print(f"[HP] Finished generating full project plan. Total steps: {len(full_plan)}")
+
+        # --- Shadow Mode Simulation ---
+        print("[HP] Entering Shadow Mode: Simulating generated plan...")
+
+        # Capture current file state
+        current_files = []
+        try:
+             # Basic walk to get file paths relative to CWD
+             for root, dirs, files in os.walk("."):
+                 if ".git" in dirs: dirs.remove(".git")
+                 if "__pycache__" in dirs: dirs.remove("__pycache__")
+                 for f in files:
+                     current_files.append(os.path.relpath(os.path.join(root, f), "."))
+        except Exception as e:
+            print(f"[HP] Warning: Could not scan current directory for simulation: {e}")
+
+        simulator = PlanSimulator(initial_files=current_files)
+        sim_report = await simulator.simulate_plan(full_plan)
+
+        if not sim_report["success"]:
+            print(f"[HP] SHADOW MODE ALERT: Found {len(sim_report['issues'])} issues in the plan.")
+            for issue in sim_report["issues"]:
+                print(f"  - Step {issue['step_id']}: [{issue['risk_level']}] {issue['reason']}")
+
+            # Inject a warning step at the beginning
+            warning_step = {
+                "step_id": "0.0",
+                "description": "Shadow Mode Simulation Warning",
+                "type": "human_review_gate",
+                "details": {
+                    "prompt_to_user": f"SHADOW MODE detected {len(sim_report['issues'])} risks in this plan (e.g., {sim_report['issues'][0]['reason']}). Please review the plan carefully before proceeding."
+                },
+                "outline_group": "Plan Validation"
+            }
+            full_plan.insert(0, warning_step)
+        else:
+            print("[HP] Shadow Mode Simulation passed with no critical issues.")
+
         return full_plan
 
 
