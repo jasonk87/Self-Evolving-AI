@@ -840,6 +840,7 @@ class CodeService:
             code_gen_model = current_llm_config.get("model_name", get_model_for_task("code_modification"))
             temperature = current_llm_config.get("temperature", 0.2)
             max_tokens = current_llm_config.get("max_tokens", 2048)
+            task_name = current_llm_config.get("task_name", None)
 
             prompt = ""
             if context == "SELF_FIX_TOOL":
@@ -905,7 +906,7 @@ class CodeService:
             logs.append(f"Sending prompt to LLM ({code_gen_model}). Instruction: {modification_instruction[:50]}...")
 
             llm_response = await self.llm_provider.invoke_ollama_model_async(
-                prompt, model_name=code_gen_model, temperature=temperature, max_tokens=max_tokens
+                prompt, model_name=code_gen_model, temperature=temperature, max_tokens=max_tokens, task_name=task_name
             )
 
             no_suggestion_marker = "// NO_CODE_SUGGESTION_POSSIBLE"
