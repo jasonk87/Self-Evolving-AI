@@ -226,10 +226,11 @@ async def invoke_ollama_model_async_internal(
             return await gemini_client.invoke_parallel_thinking(
                 prompt,
                 model_name=model_name,
-                temperature=temperature,
+                temperature=PARALLEL_THINKING_CONFIG.get("temperature_branches", temperature),
                 max_tokens=max_tokens,
                 num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3),
-                merge_model=PARALLEL_THINKING_CONFIG.get("merge_model")
+                merge_model=PARALLEL_THINKING_CONFIG.get("merge_model"),
+                temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2)
             )
         else:
             return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
@@ -345,7 +346,17 @@ async def invoke_ollama_model_async_internal(
         except json.JSONDecodeError: print("Error: Failed to parse JSON response from Ollama (async)."); return None
         except Exception as e: print(f"An unexpected error occurred during the async request: {e}"); return None
 
-invoke_ollama_model_async = retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)
+async def invoke_ollama_model_async(
+    prompt: str,
+    model_name: str = DEFAULT_OLLAMA_MODEL,
+    temperature: float = 0.7,
+    max_tokens: int = 1500,
+    api_endpoint_override: Optional[str] = None,
+    task_name: Optional[str] = None
+) -> Optional[str]:
+    return await retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)(
+        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_name
+    )
 
 class OllamaProvider:
     """

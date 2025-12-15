@@ -84,9 +84,11 @@ TASK_MODELS: Dict[str, Optional[str]] = {
 # "PARALLEL": Parallel Thinking (3 passes + Merge).
 REASONING_STRATEGIES: Dict[str, str] = {
     "planning": "PARALLEL",
-    "code_generation": "STANDARD",
-    "conversation_intelligence": "STANDARD",
-    "reviewer": "PARALLEL",
+    "code_generation": "PARALLEL",
+    "conversation_intelligence": "PARALLEL",
+    "council_judge": "PARALLEL",
+    "reviewing": "PARALLEL",
+    "summarization": "STANDARD",
     "default": "STANDARD"
 }
 
@@ -94,7 +96,8 @@ REASONING_STRATEGIES: Dict[str, str] = {
 PARALLEL_THINKING_CONFIG = {
     "num_branches": 3,
     "merge_model": "gemini-2.0-flash-exp", # Using the experimental model for better reasoning
-    "temperature": 0.7
+    "temperature_branches": 0.7,
+    "temperature_merge": 0.2
 }
 
 # Number of recent conversational turns (user/AI exchanges) to include in LLM prompts for context

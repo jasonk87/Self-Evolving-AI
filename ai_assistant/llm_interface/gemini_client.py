@@ -334,7 +334,9 @@ Your Task:
 1. Analyze the logic and solutions from all branches.
 2. Resolve any conflicts or discrepancies.
 3. Synthesize the best possible final answer.
-4. If the branches suggest using tools (outputting JSON), you MUST preserve the correct tool format in your final answer.
+4. CRITICAL: If the original prompt requested a specific output format (e.g., JSON, Python code block, SQL), you MUST preserve that exact format in your final answer. Do not output a summary of the code or JSON; output the ACTUAL code or JSON.
+   - If the branches provided tools/JSON, output the best JSON tool call.
+   - If the branches provided Python code, output the best Python code block.
 5. Provide a cohesive, high-quality response that represents the best of all thinking paths.
 
 Start with a brief <thinking> block explaining your synthesis decision, then provide the Final Answer.
@@ -346,7 +348,8 @@ async def invoke_parallel_thinking(
     temperature: float = 0.7,
     max_tokens: int = 1500,
     num_branches: int = 3,
-    merge_model: Optional[str] = None
+    merge_model: Optional[str] = None,
+    temperature_merge: Optional[float] = None
 ) -> Optional[str]:
     """
     Executes 'Parallel Thinking' by invoking the model multiple times concurrently
@@ -360,8 +363,7 @@ async def invoke_parallel_thinking(
     # 1. Branching: Asynchronously fire separate calls
     tasks = []
     for i in range(num_branches):
-        # Slightly vary temperature if possible to encourage diversity?
-        # For now, keeping it same, relying on model stochasticity.
+        # Use the branch temperature
         tasks.append(invoke_gemini_model_async(
             prompt,
             model_name=model_name,
@@ -403,7 +405,7 @@ async def invoke_parallel_thinking(
     final_response = await invoke_gemini_model_async(
         merger_prompt,
         model_name=merge_model or model_name,
-        temperature=temperature, # Keep standard temp for merge
+        temperature=temperature_merge if temperature_merge is not None else 0.2, # Lower temp for merge/judge
         max_tokens=max_tokens
     )
 

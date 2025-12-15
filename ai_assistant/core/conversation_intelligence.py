@@ -251,7 +251,11 @@ async def detect_missed_tool_opportunity(
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] About to call invoke_ollama_model_async for tool detection. Model: {model_to_use}")
 
-    llm_response = await invoke_ollama_model_async(prompt, model_name=model_to_use)
+    llm_response = await invoke_ollama_model_async(
+        prompt,
+        model_name=model_to_use,
+        task_name="conversation_intelligence"
+    )
 
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] Raw LLM response for missed tool detection:\n'{llm_response}'")
@@ -539,7 +543,11 @@ async def formulate_tool_description_from_conversation(user_raw_request: str, ll
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] About to call invoke_ollama_model_async for tool formulation. Model: {model_to_use}")
 
-    llm_response = await invoke_ollama_model_async(prompt, model_name=model_to_use)
+    llm_response = await invoke_ollama_model_async(
+        prompt,
+        model_name=model_to_use,
+        task_name="conversation_intelligence"
+    )
 
     if is_debug_mode(): # pragma: no cover
          print(f"[DEBUG CONV_INTEL] Raw LLM response for tool formulation:\n'{llm_response}'")
@@ -627,7 +635,12 @@ async def generate_conversational_response(user_input: str, conversation_history
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] About to call invoke_ollama_model_async for conversational response. Model: {model_to_use}")
 
-    llm_response = await invoke_ollama_model_async(prompt, model_name=model_to_use, max_tokens=2048)
+    llm_response = await invoke_ollama_model_async(
+        prompt,
+        model_name=model_to_use,
+        max_tokens=2048,
+        task_name="conversation_intelligence"
+    )
 
     if is_debug_mode(): # pragma: no cover
         print(f"[DEBUG CONV_INTEL] Raw LLM response for conversational response:\n'{llm_response}'")
