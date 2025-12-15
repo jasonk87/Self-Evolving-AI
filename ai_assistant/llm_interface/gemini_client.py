@@ -345,7 +345,8 @@ async def invoke_parallel_thinking(
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
     max_tokens: int = 1500,
-    num_branches: int = 3
+    num_branches: int = 3,
+    merge_model: Optional[str] = None
 ) -> Optional[str]:
     """
     Executes 'Parallel Thinking' by invoking the model multiple times concurrently
@@ -401,7 +402,7 @@ async def invoke_parallel_thinking(
     # The merger acts as the final judge.
     final_response = await invoke_gemini_model_async(
         merger_prompt,
-        model_name=model_name,
+        model_name=merge_model or model_name,
         temperature=temperature, # Keep standard temp for merge
         max_tokens=max_tokens
     )

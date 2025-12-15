@@ -77,10 +77,13 @@ def invoke_ollama_model(
     prompt: str,
     model_name: str = DEFAULT_OLLAMA_MODEL,
     temperature: float = 0.7,
-    max_tokens: int = 1500
+    max_tokens: int = 1500,
+    task_name: Optional[str] = None
 ) -> Optional[str]:
 
     if LLM_PROVIDER == "gemini":
+        # Note: Synchronous parallel thinking is not currently supported.
+        # If task_name implies parallel, it will fall back to standard sync call.
         return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens)
 
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
@@ -225,7 +228,8 @@ async def invoke_ollama_model_async_internal(
                 model_name=model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3)
+                num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3),
+                merge_model=PARALLEL_THINKING_CONFIG.get("merge_model")
             )
         else:
             return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
@@ -416,14 +420,16 @@ class OllamaProvider:
         prompt: str,
         model_name: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1500
+        max_tokens: int = 1500,
+        task_name: Optional[str] = None
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         return invoke_ollama_model(
             prompt=prompt,
             model_name=effective_model_name,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            task_name=task_name
         )
 
     async def list_models_async(self) -> List[Dict[str, Any]]:
