@@ -78,6 +78,25 @@ TASK_MODELS: Dict[str, Optional[str]] = {
     # "translation": "another_model:latest",
 }
 
+# Reasoning Strategies Configuration
+# Maps specific tasks to a strategy: "STANDARD" or "PARALLEL".
+# "STANDARD": Singular call (with <think> if enabled).
+# "PARALLEL": Parallel Thinking (3 passes + Merge).
+REASONING_STRATEGIES: Dict[str, str] = {
+    "planning": "PARALLEL",
+    "code_generation": "STANDARD",
+    "conversation_intelligence": "STANDARD",
+    "reviewer": "PARALLEL",
+    "default": "STANDARD"
+}
+
+# Parallel Thinking Configuration
+PARALLEL_THINKING_CONFIG = {
+    "num_branches": 3,
+    "merge_model": "gemini-2.0-flash-exp", # Using the experimental model for better reasoning
+    "temperature": 0.7
+}
+
 # Number of recent conversational turns (user/AI exchanges) to include in LLM prompts for context
 CONVERSATION_HISTORY_TURNS = 5
 

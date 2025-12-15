@@ -321,6 +321,93 @@ async def get_embeddings_async(text: str, model_name: str = "text-embedding-004"
             logger.error(f"Error getting embeddings from Gemini: {e}")
             return None
 
+MERGER_PROMPT_TEMPLATE = """You are a "Judge" and "Merger" AI. You have been provided with {num_branches} independent thought paths and solutions to a problem.
+
+Original Prompt:
+{original_prompt}
+
+---
+{branches_text}
+---
+
+Your Task:
+1. Analyze the logic and solutions from all branches.
+2. Resolve any conflicts or discrepancies.
+3. Synthesize the best possible final answer.
+4. If the branches suggest using tools (outputting JSON), you MUST preserve the correct tool format in your final answer.
+5. Provide a cohesive, high-quality response that represents the best of all thinking paths.
+
+Start with a brief <thinking> block explaining your synthesis decision, then provide the Final Answer.
+"""
+
+async def invoke_parallel_thinking(
+    prompt: str,
+    model_name: str = "gemini-2.0-flash-exp",
+    temperature: float = 0.7,
+    max_tokens: int = 1500,
+    num_branches: int = 3
+) -> Optional[str]:
+    """
+    Executes 'Parallel Thinking' by invoking the model multiple times concurrently
+    and then merging the results using a 'Judge/Merger' call.
+    """
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [PARALLEL THINKING STARTED] Branches: {num_branches}")
+        print(f"{'-'*60}\n")
+
+    # 1. Branching: Asynchronously fire separate calls
+    tasks = []
+    for i in range(num_branches):
+        # Slightly vary temperature if possible to encourage diversity?
+        # For now, keeping it same, relying on model stochasticity.
+        tasks.append(invoke_gemini_model_async(
+            prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens
+        ))
+
+    # Wait for all branches to complete
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    valid_responses = []
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.error(f"Parallel Branch {i+1} failed: {res}")
+        elif res:
+            valid_responses.append(f"Branch {i+1} Output:\n{res}\n")
+        else:
+            logger.warning(f"Parallel Branch {i+1} returned None.")
+
+    if not valid_responses:
+        logger.error("All parallel branches failed.")
+        return None
+
+    # 2. Merging
+    branches_text = "\n---\n".join(valid_responses)
+    merger_prompt = MERGER_PROMPT_TEMPLATE.format(
+        num_branches=len(valid_responses),
+        original_prompt=prompt,
+        branches_text=branches_text
+    )
+
+    if VERBOSE_LLM_LOGGING:
+        print(f"\n{'-'*60}")
+        print(f" [PARALLEL THINKING MERGE STEP]")
+        print(f"{'-'*60}\n")
+
+    # Recursive call to standard invoke for the merge step
+    # The merger acts as the final judge.
+    final_response = await invoke_gemini_model_async(
+        merger_prompt,
+        model_name=model_name,
+        temperature=temperature, # Keep standard temp for merge
+        max_tokens=max_tokens
+    )
+
+    return final_response
+
 if __name__ == "__main__":
     # Test block
     print("Testing Gemini Client...")
