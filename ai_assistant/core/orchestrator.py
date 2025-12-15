@@ -106,13 +106,37 @@ class DynamicOrchestrator:
                 f"{outcome_str}")
         return "\n".join(summary_lines)
 
-    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None) -> Tuple[bool, str]:
+    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None) -> Tuple[bool, str]:
         """
         Process a user prompt by creating and executing a dynamic plan.
         Returns (success, response_message)
         """
         try:
             self.current_goal = prompt
+
+            # Use VisionService to analyze images if present
+            if images and len(images) > 0:
+                print(f"DynamicOrchestrator: Received {len(images)} images. Analyzing...")
+                try:
+                    from ai_assistant.core.vision_service import VisionService
+                    vision_service = VisionService()
+
+                    # Analyze the first image for now (multimodal usually single focus)
+                    # We pass the prompt as context so it knows what to look for
+                    analysis_result = await vision_service.analyze_visuals(images[0], context=prompt)
+
+                    if analysis_result:
+                        analysis_summary = f"\n[Visual Context Analysis]:\n" \
+                                           f"The user uploaded an image. Analysis: {analysis_result.get('suggestion', 'No suggestion')} " \
+                                           f"Issues detected: {', '.join(analysis_result.get('issues', []))}"
+
+                        # Append to prompt to give context to Planner
+                        prompt += analysis_summary
+                        print(f"DynamicOrchestrator: Enriched prompt with visual context: {analysis_summary}")
+
+                except Exception as e_vis:
+                    logger.error(f"Error processing user image: {e_vis}")
+                    # Proceed with original prompt if vision fails
             available_tools_rich = tool_system_instance.list_tools_with_sources()
 
             log_event(

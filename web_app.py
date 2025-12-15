@@ -258,11 +258,17 @@ async def chat():
 
     data = request.json
     message = data.get('message')
+    images = data.get('images') # List of base64 strings
     context = data.get('context', {})
     session_id = data.get('session_id')
 
-    if not message:
-        return jsonify({"error": "No message provided"}), 400
+    # Allow processing if either message OR images are present (multimodal)
+    if not message and not images:
+        return jsonify({"error": "No message or images provided"}), 400
+
+    # Ensure message is not None for safety downstream
+    if message is None:
+        message = ""
 
     # Handle Session
     if not session_id:
@@ -328,7 +334,12 @@ async def chat():
     
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(full_message, conversation_history=current_history_list, session_id=session_id)
+        success, response = await orchestrator.process_prompt(
+            full_message,
+            conversation_history=current_history_list,
+            session_id=session_id,
+            images=images
+        )
         
         # Add assistant response to history (and storage)
         if response:
