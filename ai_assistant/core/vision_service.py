@@ -72,7 +72,7 @@ class VisionService:
             page = await browser.new_page()
 
             logger.info(f"VisionService: Scraping text from {url}")
-            await page.goto(url, wait_until="networkidle", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it
 
             # Extract text
             text_content = await page.inner_text("body")

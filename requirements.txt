@@ -11,3 +11,4 @@ pytest
 chromadb
 playwright
 pillow
+nest_asyncio
