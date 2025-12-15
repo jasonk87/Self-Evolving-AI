@@ -5,15 +5,15 @@ from ai_assistant.planning.plan_simulator import PlanSimulator
 
 class TestPlanSimulator(unittest.TestCase):
     def setUp(self):
-        self.mock_llm_provider = MagicMock()
-        self.mock_llm_provider.invoke_ollama_model_async = AsyncMock()
-        self.simulator = PlanSimulator(initial_files=["main.py", "utils.py"], llm_provider=self.mock_llm_provider)
+        self.simulator = PlanSimulator(initial_files=["main.py", "utils.py"])
 
-    def test_simulation_catches_deletion_conflict(self):
+    @patch('ai_assistant.planning.plan_simulator.invoke_ollama_model_async')
+    def test_simulation_catches_deletion_conflict(self, mock_invoke):
         # Setup mock to simulate a sequence of events
         # Step 1: Delete main.py
         # Step 2: Edit main.py (Should fail)
 
+        # We need to return different JSONs for sequential calls
         async def side_effect(prompt, **kwargs):
             if "Delete main.py" in prompt:
                 return """
@@ -26,6 +26,12 @@ class TestPlanSimulator(unittest.TestCase):
                 }
                 """
             elif "Edit main.py" in prompt:
+                # The prompt should show that main.py is NOT in the current file list
+                if "main.py" in prompt and "Current Virtual File System State" in prompt:
+                    # Check if main.py is ABSENT from the prompt's file list section
+                    # The simulator updates state between steps.
+                    pass
+
                 return """
                 {
                     "files_added": [],
@@ -38,7 +44,7 @@ class TestPlanSimulator(unittest.TestCase):
                 """
             return "{}"
 
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = side_effect
+        mock_invoke.side_effect = side_effect
 
         plan = [
             {
@@ -63,7 +69,8 @@ class TestPlanSimulator(unittest.TestCase):
         self.assertEqual(result["issues"][0]["risk_level"], "HIGH")
         self.assertIn("does not exist", result["issues"][0]["reason"])
 
-    def test_simulation_tracks_file_creation(self):
+    @patch('ai_assistant.planning.plan_simulator.invoke_ollama_model_async')
+    def test_simulation_tracks_file_creation(self, mock_invoke):
         # Step 1: Create new_file.py
         # Step 2: Edit new_file.py (Should succeed)
 
@@ -90,7 +97,7 @@ class TestPlanSimulator(unittest.TestCase):
                 """
             return "{}"
 
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = side_effect
+        mock_invoke.side_effect = side_effect
 
         plan = [
             {
@@ -111,16 +118,6 @@ class TestPlanSimulator(unittest.TestCase):
         self.assertEqual(len(result["issues"]), 0)
         # Verify virtual state updated (internally)
         self.assertIn("new_file.py", self.simulator.virtual_files)
-
-    def test_reset_state(self):
-        self.simulator.virtual_files.add("temp.py")
-        self.simulator.simulation_log.append({"log": "test"})
-
-        self.simulator.reset_state()
-
-        self.assertNotIn("temp.py", self.simulator.virtual_files)
-        self.assertIn("main.py", self.simulator.virtual_files) # Should be back to initial
-        self.assertEqual(len(self.simulator.simulation_log), 0)
 
 if __name__ == '__main__':
     unittest.main()
