@@ -196,7 +196,7 @@ class CriticalReviewCoordinator:
 
         emit_system_event("council_judge_thinking", {"message": "The Judge is deliberating..."})
         if hasattr(llm_provider, 'invoke_ollama_model_async'):
-             judge_response = await llm_provider.invoke_ollama_model_async(judge_prompt, model_name=judge_model, temperature=0.3)
+             judge_response = await llm_provider.invoke_ollama_model_async(judge_prompt, model_name=judge_model, temperature=0.3, task_name="council_judge")
         else:
              judge_response = "Status: REJECTED\nReasoning: LLM provider unavailable for judgment."
 

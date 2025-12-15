@@ -8622,5 +8622,26 @@
             "session_id": "47b8a431-c698-44bc-851a-f5077e3d1399",
             "suggestion_text": "Investigate why the 'ai_assistant.custom_tools.awareness_tools' module failed to load. Check for missing files, incorrect import paths, or dependency issues."
         }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Error encountered during Dream Mode execution: 'MockToolSystemInstance' object has no attribute 'get_tool'",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_BUG_SUSPECTED_69c96f50",
+        "related_tool_name": "dream_mode_runner",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-15T18:57:28.966977+00:00",
+        "metadata": {
+            "error_category": "DREAM_MODE_SYSTEM_ERROR",
+            "exception_details": "'MockToolSystemInstance' object has no attribute 'get_tool'"
+        }
     }
 ]

@@ -463,7 +463,115 @@ async def _background_loop_async():
                         if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
                             logger.warning(f"BackgroundService: Nightmare realized! Tool '{target_tool}' failed hypothetical scenario.")
                             
-                            # Create Insight
+                            # ACTIVE IMMUNE SYSTEM: Attempt to fix
+                            if learning_agent and learning_agent.action_executor and learning_agent.action_executor.code_service:
+                                logger.info(f"BackgroundService: Initiating Autonomous Immune Response for '{target_tool}'...")
+
+                                # 1. Generate Fix
+                                tool_info = tool_system.tool_system_instance.get_tool(target_tool)
+                                if tool_info:
+                                    module_path = tool_info.get("module_path")
+                                    function_name = tool_info.get("function_name")
+
+                                    # Use CodeService with Parallel Mode
+                                    fix_result = await learning_agent.action_executor.code_service.modify_code(
+                                        context="SELF_FIX_TOOL",
+                                        modification_instruction=f"Fix the following crash detected during dream simulation: {stdout_str}\nStderr: {stderr_str}",
+                                        module_path=module_path,
+                                        function_name=function_name,
+                                        llm_config={"task_name": "code_generation"} # Parallel Thinking
+                                    )
+
+                                    if fix_result.get("status") == "SUCCESS_CODE_GENERATED":
+                                        suggested_code = fix_result.get("modified_code_string")
+
+                                        # 2. Verify Fix (Ephemeral Test)
+                                        # We need to temporarily apply the code to the file on disk to run the verification script
+                                        # This is risky, but we use a backup. Or we can write the modified code to a temp file?
+                                        # The verification script imports the module. So we must modify the module.
+
+                                        from ai_assistant.core import self_modification
+                                        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+                                        # Backup original code
+                                        original_code = self_modification.get_function_source_code(module_path, function_name)
+
+                                        # Apply Fix
+                                        apply_msg = await self_modification.edit_function_source_code(
+                                            module_path=module_path,
+                                            function_name=function_name,
+                                            new_code_string=suggested_code,
+                                            project_root_path=project_root,
+                                            change_description="Temporary application for Immune System verification.",
+                                            task_manager=tm, # Reuse task manager
+                                        )
+
+                                        if "success" in apply_msg.lower():
+                                            # Re-run Verification
+                                            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp_verify:
+                                                tmp_verify.write(script_content)
+                                                tmp_verify_path = tmp_verify.name
+
+                                            proc_verify = await asyncio.create_subprocess_exec(
+                                                sys.executable, tmp_verify_path,
+                                                stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.PIPE
+                                            )
+                                            stdout_v, stderr_v = await proc_verify.communicate()
+                                            stdout_str_v = stdout_v.decode().strip()
+
+                                            try: os.unlink(tmp_verify_path)
+                                            except: pass
+
+                                            # Revert Code immediately
+                                            await self_modification.edit_function_source_code(
+                                                module_path=module_path,
+                                                function_name=function_name,
+                                                new_code_string=original_code,
+                                                project_root_path=project_root,
+                                                change_description="Reverting Immune System temporary fix.",
+                                                task_manager=tm
+                                            )
+
+                                            # Check Verification Result
+                                            if "DREAM_SURVIVED" in stdout_str_v:
+                                                 logger.info(f"BackgroundService: Immune Response Successful! Fix verified for '{target_tool}'.")
+
+                                                 # 3. Submit Proposal
+                                                 approval_manager.add_request(
+                                                     req_type="tool_modification", # or PROPOSE_TOOL_MODIFICATION if handled
+                                                     data={
+                                                         "module_path": module_path,
+                                                         "function_name": function_name,
+                                                         "tool_name": target_tool,
+                                                         "suggested_code_change": suggested_code,
+                                                         "suggested_change_description": f"Autonomous Immune Response: Detected crash in '{target_tool}' during dream simulation. Generated and VERIFIED a fix."
+                                                     },
+                                                     description=f"Autonomous Immune Response: Fix for '{target_tool}' (Verified)",
+                                                     # We need a callback to actually apply it permanently if approved.
+                                                     # ActionExecutor can handle this via PROPOSE_TOOL_MODIFICATION logic usually.
+                                                     # For now, let's assume the approval manager or UI handles tool_modification requests.
+                                                     # Or we can use the LearningAgent's way.
+                                                     execute_func=lambda: learning_agent.action_executor.execute_action({
+                                                         "action_type": "PROPOSE_TOOL_MODIFICATION",
+                                                         "details": {
+                                                             "module_path": module_path,
+                                                             "function_name": function_name,
+                                                             "tool_name": target_tool,
+                                                             "suggested_code_change": suggested_code,
+                                                             "suggested_change_description": f"Autonomous Immune Response: Detected crash in '{target_tool}' during dream simulation. Generated and VERIFIED a fix.",
+                                                             "staging_mode": False # It's already verified
+                                                         }
+                                                     })
+                                                 )
+                                            else:
+                                                 logger.warning(f"BackgroundService: Immune Response failed verification. Fix did not survive dream.")
+                                        else:
+                                             logger.error(f"BackgroundService: Failed to apply temporary fix: {apply_msg}")
+                                    else:
+                                         logger.error(f"BackgroundService: Failed to generate fix: {fix_result.get('error')}")
+
+                            # Create Insight (Still log it as backup)
                             if learning_agent:
                                 from ai_assistant.core.reflection import ActionableInsight, InsightType
                                 new_insight = ActionableInsight(
