@@ -33,7 +33,7 @@ from ai_assistant.core.project_manager import list_projects
 from ai_assistant.custom_tools.file_system_tools import list_project_files, get_project_file_content, save_project_file_content
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.core.memory_manager import MemoryManager
-from ai_assistant.core.background_service import run_background_services_forever
+from ai_assistant.core.background_service import run_background_services_forever, set_orchestrator
 from ai_assistant.voice.tts import generate_speech # Import TTS service
 
 # Configure logging
@@ -178,6 +178,9 @@ async def init_orchestrator():
         memory_manager=memory_manager # Inject memory_manager
     )
     logger.info("Orchestrator initialized successfully.")
+
+    # Connect orchestrator to background service for autonomous goal execution
+    set_orchestrator(orchestrator)
 
 # Initialize Memory Manager
 memory_manager = MemoryManager()

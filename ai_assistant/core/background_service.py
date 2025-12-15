@@ -29,6 +29,11 @@ from ai_assistant.learning.evolutionary_architect import perform_architectural_a
 from ai_assistant.config import get_data_dir, AUTO_APPROVE_DELAY_SECONDS
 from ai_assistant.core.reviewer import ReviewerAgent
 
+# Import goal management for autonomous goal processing
+from ai_assistant.goals import goal_management
+# Fix: Import NotificationType to avoid NameError in autonomous goal processor
+from ai_assistant.core.notification_manager import NotificationType
+
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,84 @@ _auto_approve_check_interval_seconds = 60 # Check frequently, but action depends
 # Vision Service State
 _last_visual_audit_time: float = 0.0
 _visual_audit_interval_seconds = 900 # 15 minutes
+
+# Orchestrator Injection
+_orchestrator = None
+
+# Autonomous Goal Processing State
+_last_autonomous_goal_check_time: float = 0.0
+_autonomous_goal_check_interval_seconds = 30 # Check every 30 seconds
+
+def set_orchestrator(orchestrator_instance):
+    """Sets the orchestrator instance for autonomous goal processing."""
+    global _orchestrator
+    _orchestrator = orchestrator_instance
+    logger.info("BackgroundService: Orchestrator instance set.")
+
+async def run_autonomous_goal_processor():
+    """
+    Checks for pending goals in GoalManager and triggers the Orchestrator to execute them.
+    This acts as a bridge between passive GoalManager and active DynamicOrchestrator.
+    """
+    global _orchestrator
+
+    if not _orchestrator:
+        return # Orchestrator not yet ready
+
+    try:
+        # Check for pending goals using direct module access
+        # Since goal_management is synchronous, we wrap it if needed, but simple dict lookups are fast.
+        pending_goals = goal_management.list_goals(status="pending")
+
+        if pending_goals:
+            logger.info(f"BackgroundService: Found {len(pending_goals)} pending goals.")
+
+            for goal in pending_goals:
+                goal_id = goal.get("id")
+                goal_desc = goal.get("description")
+
+                if not goal_id or not goal_desc:
+                    logger.warning(f"BackgroundService: Skipping invalid goal structure: {goal}")
+                    continue
+
+                # Mark as in_progress immediately to prevent double processing
+                # We use the new update_goal_status function that persists to disk
+                success = goal_management.update_goal_status(goal_id, status="in_progress")
+
+                if success:
+                    logger.info(f"BackgroundService: Autonomous Mission Started: {goal_desc}")
+
+                    # Trigger Execution
+                    # We spawn this as a background task so we don't block the service loop
+                    # waiting for the entire goal to complete.
+                    # We pass a specific session_id to track this execution context.
+                    session_id = f"autonomous_goal_{goal_id}"
+
+                    # Log event
+                    if hasattr(_orchestrator, 'learning_agent') and _orchestrator.learning_agent and _orchestrator.learning_agent.notification_manager:
+                         _orchestrator.learning_agent.notification_manager.add_notification(
+                             event_type=NotificationType.SYSTEM_ALERT, # or a new type for MISSION_STARTED
+                             summary_message=f"Mission Started: {goal_desc}",
+                             details_payload={
+                                 "title": "Autonomous Goal Execution",
+                                 "goal_id": goal_id,
+                                 "description": goal_desc
+                             }
+                         )
+
+                    # Create task for orchestrator processing
+                    asyncio.create_task(
+                        _orchestrator.process_prompt(
+                            prompt=goal_desc,
+                            session_id=session_id
+                        )
+                    )
+                else:
+                    logger.error(f"BackgroundService: Failed to update status for goal {goal_id}. Execution aborted to avoid loops.")
+
+    except Exception as e:
+        logger.error(f"BackgroundService: Error in autonomous goal processor: {e}", exc_info=True)
+
 
 def sanitize_project_name(name: str) -> str:
     """
@@ -177,13 +260,14 @@ def _save_architect_state():
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
 
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time, _last_autonomous_goal_check_time
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
     _last_self_healing_time = time.time()
     _last_auto_approve_check_time = time.time()
     _last_visual_audit_time = time.time()
+    _last_autonomous_goal_check_time = time.time()
     
     _load_architect_state()
 
@@ -205,6 +289,7 @@ async def _background_loop_async():
     next_self_healing_run_time = time.time() + _self_healing_interval_seconds
     next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
     next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
+    next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
 
     # Logic to run architect audit immediately if overdue
     if time.time() - _last_architect_audit_timestamp > _architect_audit_interval_seconds:
@@ -326,6 +411,12 @@ async def _background_loop_async():
                 _last_fact_curation_time = time.time()
                 next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
         
+        # --- Autonomous Goal Processing Task ---
+        if current_loop_time >= next_autonomous_goal_check_time:
+            await run_autonomous_goal_processor()
+            _last_autonomous_goal_check_time = time.time()
+            next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
+
         # --- Visual Audit Task ---
         if vision_service and current_loop_time >= next_visual_audit_run_time:
             logger.info("BackgroundService: Running Visual Audit...")
@@ -804,8 +895,9 @@ async def _background_loop_async():
         time_until_next_audit = max(0, next_architect_audit_run_time - time.time())
         time_until_next_auto_approve = max(0, next_auto_approve_check_time - time.time())
         time_until_next_visual_audit = max(0, next_visual_audit_run_time - time.time())
+        time_until_next_goal_check = max(0, next_autonomous_goal_check_time - time.time())
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, time_until_next_goal_check, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover

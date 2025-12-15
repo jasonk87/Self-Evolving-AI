@@ -159,6 +159,22 @@ def list_goals(status: Optional[str] = None) -> List[Dict]:
         return [goal for goal in _goals_db.values() if goal["status"] == status]
     return list(_goals_db.values())
 
+def update_goal_status(goal_id: str, status: str) -> bool:
+    """
+    Updates the status of a goal and immediately saves changes to disk.
+
+    Args:
+        goal_id: The ID of the goal to update.
+        status: The new status ("pending", "in_progress", "completed", "failed").
+
+    Returns:
+        True if the goal was found, updated, and saved. False otherwise.
+    """
+    updated_goal = update_goal(goal_id, status=status)
+    if updated_goal:
+        return save_current_goals()
+    return False
+
 # --- Initialization ---
 _initialize_goals_db() # Load goals when module is imported
 
