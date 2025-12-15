@@ -59,6 +59,34 @@ class VisionService:
             if playwright:
                 await playwright.stop()
 
+    async def scrape_page_text(self, url: str) -> Optional[str]:
+        """
+        Navigates to the URL and extracts the visible text content from the body.
+        Useful for reading documentation or articles efficiently.
+        """
+        playwright = None
+        browser = None
+        try:
+            playwright = await async_playwright().start()
+            browser = await playwright.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            logger.info(f"VisionService: Scraping text from {url}")
+            await page.goto(url, wait_until="networkidle", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it
+
+            # Extract text
+            text_content = await page.inner_text("body")
+            return text_content
+
+        except Exception as e:
+            logger.error(f"VisionService: Error scraping text from {url}: {e}")
+            return None
+        finally:
+            if browser:
+                await browser.close()
+            if playwright:
+                await playwright.stop()
+
     async def analyze_visuals(self, image_data: str, context: str) -> Dict[str, Any]:
         """
         Analyzes the provided base64 image data using Gemini.
