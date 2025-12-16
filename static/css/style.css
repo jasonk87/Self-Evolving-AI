@@ -1626,3 +1626,18 @@ body {
     overflow: hidden;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
+
+/* Poltergeist Glitch Effect */
+.glitch-effect {
+    animation: glitch-anim 0.3s cubic-bezier(.25, .46, .45, .94) both infinite;
+    filter: invert(10%) hue-rotate(180deg);
+}
+
+@keyframes glitch-anim {
+    0% { transform: translate(0); }
+    20% { transform: translate(-2px, 2px); }
+    40% { transform: translate(-2px, -2px); }
+    60% { transform: translate(2px, 2px); }
+    80% { transform: translate(2px, -2px); }
+    100% { transform: translate(0); }
+}

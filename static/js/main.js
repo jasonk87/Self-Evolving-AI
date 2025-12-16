@@ -238,6 +238,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- The Poltergeist (Remote Navigation) ---
+    socket.on('force_navigation', (data) => {
+        console.log("Force Navigation Received:", data);
+        const targetId = data.target;
+        const pageName = data.page;
+
+        // Visual "Glitch" Effect
+        document.body.classList.add('glitch-effect');
+        setTimeout(() => {
+            document.body.classList.remove('glitch-effect');
+
+            // Perform Navigation
+            // Re-use sidebar click logic
+            const item = document.querySelector(`.activity-item[data-target="${targetId}"]`);
+            if (item) {
+                item.click();
+            } else {
+                // If no sidebar item (e.g. Settings), handle manually or warn
+                console.warn(`Target ID ${targetId} not found in sidebar.`);
+                // Fallback for known views not in sidebar
+                if (document.getElementById(targetId)) {
+                    // Manually switch views
+                     mainViews.forEach(v => v.classList.remove('active'));
+                     sidebarViews.forEach(v => v.classList.add('hidden'));
+                     const view = document.getElementById(targetId);
+                     view.classList.remove('hidden'); // if sidebar view
+                     view.classList.add('active'); // if main view
+                }
+            }
+
+            // Notify user
+            appendMessage('system', `<div class="bubble">System navigated to ${pageName}.</div>`);
+        }, 300); // 300ms glitch duration
+    });
+
     function notifyIfHidden(title, body) {
         // Notify if document is hidden OR not focused
         if ((document.hidden || !document.hasFocus()) && notificationPermission === 'granted') {
