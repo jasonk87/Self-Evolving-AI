@@ -133,14 +133,15 @@ class VisionService:
         try:
             if config.GHOST_MODE:
                 # 1. Move mouse to element to trigger Ghost Cursor
-                box = await page.locator(selector).bounding_box()
+                locator = page.locator(selector).first
+                box = await locator.bounding_box()
                 if box:
                     x = box['x'] + box['width'] / 2
                     y = box['y'] + box['height'] / 2
                     await page.mouse.move(x, y)
 
-                # 2. Highlight target
-                await page.evaluate(f"highlightTarget('{selector}')")
+                # 2. Highlight target using element handle (works with complex selectors)
+                await locator.evaluate("el => window.highlightTargetElement(el)")
 
                 # 3. Wait for visual effect
                 await page.wait_for_timeout(300)
@@ -159,14 +160,15 @@ class VisionService:
         try:
             if config.GHOST_MODE:
                  # 1. Move mouse to element
-                box = await page.locator(selector).bounding_box()
+                locator = page.locator(selector).first
+                box = await locator.bounding_box()
                 if box:
                     x = box['x'] + box['width'] / 2
                     y = box['y'] + box['height'] / 2
                     await page.mouse.move(x, y)
 
                 # 2. Highlight target
-                await page.evaluate(f"highlightTarget('{selector}')")
+                await locator.evaluate("el => window.highlightTargetElement(el)")
                 await page.wait_for_timeout(300)
 
             # 3. Click to focus

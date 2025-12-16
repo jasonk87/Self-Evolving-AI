@@ -67,22 +67,33 @@
         cursor.style.top = e.clientY + 'px';
     });
 
-    // 5. Public Function to Highlight Targets
+    // 5. Public Functions to Highlight Targets
+
+    // Highlight a specific DOM element directly
+    window.highlightTargetElement = function(element) {
+        if (!element) return;
+        try {
+            // Cleanup previous locks
+            document.querySelectorAll('.ai-target-locked').forEach(el => el.classList.remove('ai-target-locked'));
+
+            element.classList.add('ai-target-locked');
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Auto-remove after animation
+            setTimeout(() => {
+                element.classList.remove('ai-target-locked');
+            }, 1000);
+        } catch (e) {
+            console.error("AI HUD Error:", e);
+        }
+    };
+
+    // Highlight by selector string (Legacy/Simple support)
     window.highlightTarget = function(selector) {
         try {
             const element = document.querySelector(selector);
             if (element) {
-                // Remove class from previous targets if needed, or just let them fade (animation handles it somewhat)
-                // Better to cleanup previous locks
-                document.querySelectorAll('.ai-target-locked').forEach(el => el.classList.remove('ai-target-locked'));
-
-                element.classList.add('ai-target-locked');
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-                // Auto-remove after animation
-                setTimeout(() => {
-                    element.classList.remove('ai-target-locked');
-                }, 1000);
+                window.highlightTargetElement(element);
             }
         } catch (e) {
             console.error("AI HUD Error:", e);
