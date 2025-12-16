@@ -1,0 +1,16 @@
+{
+  "id": "902cf417-70ec-432e-86d8-5a1e2d2ffa1f",
+  "title": "Research quantum computing",
+  "created_at": 1765900247.0226958,
+  "updated_at": 1765900247.0306988,
+  "history": [
+    {
+      "role": "user",
+      "content": "Research quantum computing"
+    },
+    {
+      "role": "assistant",
+      "content": "AI stopped responding."
+    }
+  ]
+}
