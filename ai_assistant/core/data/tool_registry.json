@@ -947,5 +947,35 @@
         "description": "Triggers the System Architect's self-diagnosis and goal proposal cycle.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "navigate_interface": {
+        "tool_name": "navigate_interface",
+        "module_path": "ai_assistant.custom_tools.navigation_tools",
+        "function_name": "navigate_interface",
+        "description": "Remotely navigates the user's interface to a specific page.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "navigate_interface",
+            "description": "Remotely navigates the user's interface to a specific page.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "string",
+                        "description": "The page to navigate to. Valid options: 'dashboard', 'logs', 'settings', 'chat', 'memory_viewer'.",
+                        "enum": [
+                            "dashboard",
+                            "logs",
+                            "settings",
+                            "chat",
+                            "memory_viewer"
+                        ]
+                    }
+                },
+                "required": [
+                    "page"
+                ]
+            }
+        }
     }
 }
