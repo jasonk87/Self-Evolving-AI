@@ -4,31 +4,37 @@ import re
 import os
 import asyncio
 import uuid
+import json
+import logging
 from typing import Dict, List, Optional, Any, Tuple
+
+from ai_assistant.core.enums import ExecutionMode
+from ai_assistant.core.router import TaskRouter
+from ai_assistant.config import DEFAULT_EXECUTION_MODE, is_debug_mode
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_parallel_thinking
+from ai_assistant.tools.tool_system import tool_system_instance
+from ai_assistant.utils.display_utils import CLIColors, color_text
+from ai_assistant.memory.event_logger import log_event
+
+# Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
 from ..planning.execution import ExecutionAgent 
-from ..memory.event_logger import log_event
-from ..core.reflection import global_reflection_log, analyze_last_failure
 from ..learning.learning import LearningAgent
-from ..tools.tool_system import tool_system_instance
-from ..config import is_debug_mode
-from ..utils.display_utils import CLIColors, color_text
 from ..execution.action_executor import ActionExecutor
-from ..memory.persistent_memory import load_learned_facts
 from .task_manager import TaskManager
 from .notification_manager import NotificationManager
-from ..utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
-from ..llm_interface.ollama_client import OllamaProvider
 from ..planning.hierarchical_planner import HierarchicalPlanner
-import uuid
-import logging
+from ..utils.conversational_helpers import summarize_tool_result_conversationally
 
 logger = logging.getLogger(__name__)
+
+# Constants
+MAX_REACT_STEPS = 10
 
 class DynamicOrchestrator:
     """
     Orchestrates the dynamic planning and execution of user prompts.
-    Handles multi-step tasks, maintains context, and adapts plans based on feedback.
+    Implements a Tri-State Execution Architecture (Direct, Fast ReAct, Thinking Pro).
     """
 
     def __init__(self, 
@@ -39,7 +45,8 @@ class DynamicOrchestrator:
                  task_manager: Optional[TaskManager] = None,
                  notification_manager: Optional[NotificationManager] = None,
                  hierarchical_planner: Optional[HierarchicalPlanner] = None,
-                 memory_manager: Optional[Any] = None): # Added memory_manager
+                 memory_manager: Optional[Any] = None):
+
         self.planner = planner
         self.executor = executor
         self.learning_agent = learning_agent
@@ -52,576 +59,288 @@ class DynamicOrchestrator:
         # Inject memory manager into planner if not already set
         if self.planner and self.memory_manager and hasattr(self.planner, 'memory_manager') and self.planner.memory_manager is None:
             self.planner.memory_manager = self.memory_manager
+
+        self.router = TaskRouter()
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
 
-    def _generate_execution_summary(self, plan: Optional[List[Dict[str, Any]]], results: List[Any]) -> str:
-        if not plan:
-            return "\n\nNo actions were planned or taken."
-
-        summary_lines = [
-            color_text("\n\nHere's a summary of what I did:", CLIColors.SYSTEM_MESSAGE)
-        ]
-
-        if not plan:
-             summary_lines.append("No plan was executed.")
-             return "\n".join(summary_lines)
-
-        for i, step in enumerate(plan):
-            tool_name = step.get("tool_name", "Unknown Tool")
-            args = step.get("args", ())
-
-            outcome_str = ""
-            if i < len(results):
-                result_item = results[i]
-                if isinstance(result_item, Exception):
-                    outcome_str = color_text(
-                        f"Failed (Error: {type(result_item).__name__}: {str(result_item)[:100]})",
-                        CLIColors.FAILURE
-                    )
-                elif isinstance(result_item, dict) and result_item.get("error"):
-                    outcome_str = color_text(
-                        f"Failed (Reported Error: {str(result_item.get('error'))[:100]})",
-                        CLIColors.FAILURE
-                    )
-                elif isinstance(result_item, dict) and result_item.get("ran_successfully") is False:
-                    err_detail = result_item.get("stderr", result_item.get("error", "Unknown error from tool"))
-                    outcome_str = color_text(
-                        f"Failed (Return Code: {result_item.get('return_code')}, Detail: {str(err_detail)[:100]})",
-                        CLIColors.FAILURE
-                    )
-                else:
-                    outcome_str = color_text(
-                        f"Succeeded (Result: {str(result_item)[:100]}{'...' if len(str(result_item)) > 100 else ''})",
-                        CLIColors.SUCCESS
-                    )
-            else:
-                outcome_str = color_text("No result recorded for this step.", CLIColors.WARNING)
-            
-            args_display_parts = [f"'{str(arg_val)[:25]}{'...' if len(str(arg_val)) > 25 else ''}'" if not (isinstance(arg_val, list) or isinstance(arg_val, dict)) else f"{type(arg_val).__name__}(len:{len(arg_val)})" for arg_val in args]
-            summary_lines.append(
-                f"- Ran '{color_text(tool_name, CLIColors.TOOL_NAME)}' "
-                f"with arguments ({color_text(', '.join(args_display_parts), CLIColors.TOOL_ARGS)}): "
-                f"{outcome_str}")
-        return "\n".join(summary_lines)
-
     async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None) -> Tuple[bool, str]:
         """
-        Process a user prompt by creating and executing a dynamic plan.
+        Process a user prompt by routing it to the appropriate execution engine.
         Returns (success, response_message)
         """
         try:
             self.current_goal = prompt
-
-            # Use VisionService to analyze images if present
-            if images and len(images) > 0:
-                print(f"DynamicOrchestrator: Received {len(images)} images. Analyzing...")
-                try:
-                    from ai_assistant.core.vision_service import VisionService
-                    vision_service = VisionService()
-
-                    # Analyze the first image for now (multimodal usually single focus)
-                    # We pass the prompt as context so it knows what to look for
-                    analysis_result = await vision_service.analyze_visuals(images[0], context=prompt)
-
-                    if analysis_result:
-                        analysis_summary = f"\n[Visual Context Analysis]:\n" \
-                                           f"The user uploaded an image. Analysis: {analysis_result.get('suggestion', 'No suggestion')} " \
-                                           f"Issues detected: {', '.join(analysis_result.get('issues', []))}"
-
-                        # Append to prompt to give context to Planner
-                        prompt += analysis_summary
-                        print(f"DynamicOrchestrator: Enriched prompt with visual context: {analysis_summary}")
-
-                except Exception as e_vis:
-                    logger.error(f"Error processing user image: {e_vis}")
-                    # Proceed with original prompt if vision fails
-            available_tools_rich = tool_system_instance.list_tools_with_sources()
-
-            log_event(
-                event_type="ORCHESTRATOR_START_PROCESSING",
-                description=f"Starting to process prompt: {prompt}",
-                source="DynamicOrchestrator.process_prompt",
-                metadata={"goal": prompt, "session_id": session_id}
-            )
-
-            # ... (Existing logic for RAG and Contextualization) ...
-
-            # --- Fact Retrieval (Semantic RAG) ---
-            relevant_facts_for_prompt = []
-            learned_facts_section_str = ""
             
-            if self.memory_manager:
-                try:
-                    # Retrieve relevant facts using Semantic Search
-                    # We query with the full prompt to find conceptually similar facts
-                    rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=5)
-                    
-                    if rag_results:
-                        # RAG results structure: [{'text': '...', 'metadata': {...}, 'score': 0.8}, ...]
-                        relevant_facts_for_prompt = rag_results
-                        
-                        facts_str_list = []
-                        for res in rag_results:
-                            fact_text = res.get('text', '')
-                            metadata = res.get('metadata', {})
-                            category = metadata.get('category', 'N/A') if metadata else 'N/A'
-                            score = res.get('score', 0.0)
-                            facts_str_list.append(f"- {fact_text} (Category: {category}, Relevance: {score:.2f})")
-                            
-                        learned_facts_section_str = "\nRelevant Learned Facts (Semantic Search):\n" + "\n".join(facts_str_list)
-                        if is_debug_mode():
-                            print(f"DynamicOrchestrator: Retrieved {len(rag_results)} facts via RAG.")
-                except Exception as e_rag:
-                    logger.error(f"Error during RAG retrieval: {e_rag}")
-                    # Fallback or just proceed without facts
+            # 1. Vision Analysis (Common for all modes if images exist)
+            prompt_with_context = await self._enrich_prompt_with_vision(prompt, images)
+
+            # 2. Context Gathering (RAG, Project Context)
+            # We do this before routing because context might influence routing (e.g. complexity)
+            # But strictly, DIRECT mode shouldn't need heavy context.
+            # Let's do a lightweight check or just gather it. For now, gather it as it helps even in Fast mode.
+            full_context_str, context_metadata = await self._gather_context(prompt_with_context)
+
+            # 3. Determine Mode
+            mode = ExecutionMode.FAST_REACT # Default
+            if DEFAULT_EXECUTION_MODE == "AUTO":
+                mode = await self.router.determine_mode(prompt_with_context, context=context_metadata)
             else:
-                 if is_debug_mode():
-                     print("DynamicOrchestrator: MemoryManager not available for RAG.")
-
-            # --- End Fact Retrieval ---
-
-            # --- Contextualization Phase (Simulated for Project Files) ---
-            project_context_summary = None
-            project_name_for_context = None
-            prompt_lower = prompt.lower()
-            
-            py_file_match = re.search(r"([\w_/-]+\.py)", prompt)
-
-            ai_assistant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            simulated_project_base = os.path.join(ai_assistant_dir, "ai_generated_projects")
-            custom_tools_base = os.path.join(ai_assistant_dir, "custom_tools")
-
-            if py_file_match:
-                tool_filename_from_prompt = py_file_match.group(1)
-                safe_tool_basename = os.path.basename(tool_filename_from_prompt)
-                abs_path_to_tool_file = os.path.join(custom_tools_base, safe_tool_basename)
-
-                if os.path.exists(abs_path_to_tool_file) and os.path.isfile(abs_path_to_tool_file):
-                    project_name_for_context = f"Tool: {safe_tool_basename}"
-                    if is_debug_mode():
-                        print(f"DynamicOrchestrator: Detected request related to '{project_name_for_context}'. Attempting to gather context from {abs_path_to_tool_file}.")
-                    
-                    content = await tool_system_instance.execute_tool("read_text_from_file", args=(abs_path_to_tool_file,))
-                    if not content.startswith("Error:"):
-                        project_context_summary = f"Context for {project_name_for_context}:\n### START FILE: {safe_tool_basename} ###\n{content}\n### END FILE: {safe_tool_basename} ###"
-                    else:
-                        project_context_summary = f"Context for {project_name_for_context}: Error reading file: {content}"
-                else:
-                    if is_debug_mode():
-                        print(f"DynamicOrchestrator: Tool file '{safe_tool_basename}' (from '{tool_filename_from_prompt}') mentioned, but not found at expected path '{abs_path_to_tool_file}'. No specific tool context loaded.")
-            
-            project_keywords = ["project", "game", "app", "application", "webapp"] # Moved definition higher
-            is_project_request = any(pk in prompt_lower for pk in project_keywords)
-            tool_action_keywords = ["update", "fix", "modify", "add to", "change", "enhance", "improve", "debug"]
-            is_tool_action_request = any(tak in prompt_lower for tak in tool_action_keywords)
-
-            if project_context_summary is None and is_project_request and ("hangman game" in prompt_lower and is_tool_action_request):
-                project_name_for_context = "myhangmangame" 
-                if is_debug_mode():
-                    print(f"DynamicOrchestrator: Detected request related to project '{project_name_for_context}'. Attempting to gather context.")
-                
-                context_parts = [f"Project: {project_name_for_context}\nFile Structure & Content (simplified for example):"]
-                
-                files_to_read_in_project = {
-                    "src/game.py": os.path.join(simulated_project_base, project_name_for_context, "src", "game.py"),
-                    "src/graphics.py": os.path.join(simulated_project_base, project_name_for_context, "src", "graphics.py"),
-                    "src/user_input.py": os.path.join(simulated_project_base, project_name_for_context, "src", "user_input.py")
-                }
-
-                for rel_path, abs_path_to_read in files_to_read_in_project.items():
-                    if os.path.exists(abs_path_to_read) and os.path.isfile(abs_path_to_read):
-                        content = await tool_system_instance.execute_tool("read_text_from_file", args=(abs_path_to_read,))
-                        if not content.startswith("Error:"):
-                            context_parts.append(f"\n### START FILE: {rel_path} ###\n{content[:1000]}{'...' if len(content) > 1000 else ''}\n### END FILE: {rel_path} ###")
-                        else:
-                            context_parts.append(f"\n### FILE: {rel_path} - Error reading: {content} ###")
-                    else:
-                        context_parts.append(f"\n### FILE: {rel_path} - Not found at {abs_path_to_read} ###")
-                project_context_summary = "\n".join(context_parts)
-            # --- END Contextualization Phase ---
-
-            if is_debug_mode():
-                print(f"DynamicOrchestrator: Creating initial plan for: {prompt}")
-
-            final_context_for_planner = project_context_summary if project_context_summary else ""
-            if learned_facts_section_str:
-                if final_context_for_planner:
-                    final_context_for_planner += "\n\n" + learned_facts_section_str
-                else:
-                    final_context_for_planner = learned_facts_section_str
-
-            # --- Last Action Context Extraction ---
-            last_action_report = None
-            last_results = self.context.get('last_results')
-            last_success = self.context.get('last_success')
-            
-            if last_results:
-                report_lines = []
-                if last_success is False:
-                    report_lines.append(f"PREVIOUS PLAN EXECUTION FAILED (Success={last_success})")
-                else:
-                    report_lines.append(f"Previous Plan Results (Success={last_success})")
-                
-                for idx, res in enumerate(last_results):
-                    if isinstance(res, Exception):
-                        report_lines.append(f"Step {idx+1} Error: {type(res).__name__}: {str(res)}")
-                    elif isinstance(res, dict):
-                        if res.get('error'):
-                             report_lines.append(f"Step {idx+1} Error: {res.get('error')}")
-                        elif res.get('ran_successfully') is False:
-                             report_lines.append(f"Step {idx+1} Failed: {res.get('stderr', res.get('error', 'Unknown failure'))}")
-                        else:
-                             # Summary of success, maybe truncate to avoid overwhelming context
-                             # But for fixing tools, we might need the output?
-                             summary = str(res)
-                             if len(summary) > 500:
-                                 summary = summary[:500] + "... (truncated)"
-                             report_lines.append(f"Step {idx+1} Result: {summary}")
-                    else:
-                        summary = str(res)
-                        if len(summary) > 500:
-                             summary = summary[:500] + "... (truncated)"
-                        report_lines.append(f"Step {idx+1} Result: {summary}")
-                        
-                last_action_report = "\n".join(report_lines)
-                if is_debug_mode():
-                    print(f"DynamicOrchestrator: Extracted last_action_report: {last_action_report[:100]}...")
-            # --------------------------------------
-
-            self.current_plan = await self.planner.create_plan_with_llm(
-                goal_description=prompt,
-                available_tools=available_tools_rich,
-                project_context_summary=final_context_for_planner,
-                project_name_for_context=project_name_for_context,
-                conversation_history=conversation_history,
-                last_action_report=last_action_report
-            )
-
-            use_hierarchical_planner = False
-            if not self.current_plan:
-                # ... (Logic for hierarchical check) ...
-                complex_keywords = ["project", "develop", "create a game", "build an app", "design a system", "implement a feature", "refactor module"]
-                prompt_lower_for_check = prompt.lower()
-                if any(keyword in prompt_lower_for_check for keyword in complex_keywords):
-                    if self.hierarchical_planner:
-                        use_hierarchical_planner = True
-                        if is_debug_mode():
-                            print("DynamicOrchestrator: Initial plan empty for complex prompt, attempting Hierarchical Planning.")
-                    else:
-                        if is_debug_mode():
-                            print("DynamicOrchestrator: HierarchicalPlanner not available, cannot attempt complex planning for empty initial plan.")
-
-            if use_hierarchical_planner and self.hierarchical_planner:
-                log_event(
-                    event_type="ORCHESTRATOR_HIERARCHICAL_PLANNING_TRIGGERED",
-                    description=f"Hierarchical planning triggered for goal: {prompt}",
-                    source="DynamicOrchestrator.process_prompt",
-                    metadata={"original_prompt": prompt}
-                )
-                if is_debug_mode():
-                    print(f"DEBUG: Hierarchical Planner invoked for: {prompt}")
-
-                generated_project_plan = await self.hierarchical_planner.generate_full_project_plan(
-                    user_goal=prompt,
-                    project_context=final_context_for_planner
-                )
-
-                if not generated_project_plan:
-                    logger.warning(f"HierarchicalPlanner failed to generate a project plan for goal: {prompt}")
-                    self.current_plan = []
-                    self.context['last_error_info'] = "Hierarchical planner failed to produce a detailed project plan."
-                else:
-                    if not self.task_manager:
-                        logger.critical("TaskManager not available. Cannot create ActiveTask for hierarchical project execution.")
-                        self.current_plan = []
-                        self.context['last_error_info'] = "TaskManager not available, cannot execute complex project."
-                    else:
-                        active_hierarchical_task = self.task_manager.add_task(
-                            description=f"Executing hierarchical project: {prompt[:100]}...", # Corrected order
-                            task_type=ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION,
-                            details={
-                                "project_plan": generated_project_plan,
-                                "user_goal": prompt,
-                                "project_name": project_name_for_context or "Unnamed Project"
-                            },
-                            session_id=session_id
-                        )
-                        hierarchical_task_id = active_hierarchical_task.task_id
-
-                        self.current_plan = [{
-                            "tool_name": "execute_project_plan",
-                            "args": {
-                                "project_plan": generated_project_plan,
-                                "parent_task_id": hierarchical_task_id,
-                                "task_manager_instance": self.task_manager
-                            },
-                            "description": f"Execute the multi-step project plan for: {prompt[:70]}...",
-                            "reasoning": "Hierarchical planner generated a detailed project breakdown, now executing it."
-                        }]
-                        # ...
-
-            elif not self.current_plan:
-                # ... (Handle No Plan) ...
-                technical_error_msg = self.context.get('last_error_info', "Could not create a plan for the given prompt.")
-                user_friendly_response_final = technical_error_msg # Default to technical
-                summary_for_no_plan = self._generate_execution_summary(self.current_plan, [])
-
-                if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
-                    try:
-                        rephrased_content = await rephrase_error_message_conversationally(
-                            technical_error_message=technical_error_msg,
-                            original_user_query=prompt,
-                            llm_provider=self.action_executor.code_service.llm_provider
-                        )
-                        if rephrased_content: # Only use if rephrasing returned something non-empty
-                            user_friendly_response_final = rephrased_content
-                    except Exception as e_rephrase: # pragma: no cover
-                        logger.error(f"Error rephrasing plan creation failure: {e_rephrase}", exc_info=True)
-                        # user_friendly_response_final remains technical_error_msg
-                return False, user_friendly_response_final + summary_for_no_plan
-
-
-            if is_debug_mode():
-                print(f"DynamicOrchestrator: Executing plan with {len(self.current_plan)} steps")
-
-            final_plan_attempted, results_of_final_attempt = await self.executor.execute_plan(
-                prompt,
-                self.current_plan,
-                tool_system_instance,
-                self.planner,
-                self.learning_agent,
-                task_manager=self.task_manager,
-                notification_manager=self.notification_manager,
-                action_executor=self.action_executor
-            )
-            self.current_plan = final_plan_attempted
-
-            processed_results = []
-            overall_success_of_plan = True
-
-            if not results_of_final_attempt and final_plan_attempted :
-                overall_success_of_plan = False
-            elif not final_plan_attempted and not results_of_final_attempt:
-                overall_success_of_plan = False
-
-            for i, res_item in enumerate(results_of_final_attempt):
-                if isinstance(res_item, dict) and res_item.get("action_type_for_executor") == "PROPOSE_TOOL_MODIFICATION":
-                    action_details = res_item.get("action_details_for_executor")
-                    if action_details:
-                        proposed_action_for_ae = {
-                            "action_type": "PROPOSE_TOOL_MODIFICATION",
-                            "details": action_details,
-                            "source_insight_id": f"planner_staged_mod_{str(uuid.uuid4())[:8]}"
-                        }
-                        log_event(
-                            event_type="ORCHESTRATOR_DISPATCH_TO_ACTION_EXECUTOR",
-                            description=f"Dispatching staged self-modification to ActionExecutor for tool: {action_details.get('tool_name', 'unknown_tool')}",
-                            source="DynamicOrchestrator.process_prompt",
-                            metadata={"action_details": action_details}
-                        )
-                        if not self.action_executor:
-                             logger.error("ActionExecutor not initialized in DynamicOrchestrator. Cannot execute staged modification.")
-                             processed_results.append({"error": "ActionExecutor not available.", "ran_successfully": False})
-                             overall_success_of_plan = False
-                             continue
-
-                        ae_success = await self.action_executor.execute_action(proposed_action_for_ae, session_id=session_id)
-
-                        processed_results.append({
-                            "tool_name_original_staged": action_details.get('tool_name', 'unknown_tool_from_stage'),
-                            "action_executor_result": ae_success,
-                            "summary": f"Self-modification attempt for '{action_details.get('tool_name')}' {'succeeded' if ae_success else 'failed'}"
-                        })
-                        if not ae_success:
-                            overall_success_of_plan = False
-                    else: # pragma: no cover
-                        processed_results.append({"error": "Invalid staged action structure from tool", "ran_successfully": False})
-                        overall_success_of_plan = False
-                else:
-                    processed_results.append(res_item)
-                    if isinstance(res_item, Exception) or \
-                       (isinstance(res_item, dict) and (
-                           res_item.get("error") or \
-                           res_item.get("ran_successfully") is False or \
-                           res_item.get("overall_status") == "failed" )):
-                        overall_success_of_plan = False
-
-            if final_plan_attempted and len(processed_results) < len(final_plan_attempted): # pragma: no cover
-                overall_success_of_plan = False
-
-            self.context.update({
-                'last_results': processed_results,
-                'last_success': overall_success_of_plan,
-                'completed_goal': prompt if overall_success_of_plan else None
-            })
-
-            num_steps_in_final_plan = len(self.current_plan) if self.current_plan else 0
-
-            log_event(
-                event_type="ORCHESTRATOR_COMPLETE_PROCESSING",
-                description=f"Completed processing prompt: {prompt}",
-                source="DynamicOrchestrator.process_prompt",
-                metadata={
-                    "goal": prompt,
-                    "success": overall_success_of_plan,
-                    "num_steps": num_steps_in_final_plan
-                }
-            )
-
-            response = ""
-            conversational_response = None
-            if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
-                if self.current_plan or processed_results:
-                    try:
-                        print("ORCHESTRATOR_DEBUG: Attempting to call summarize_tool_result_conversationally")
-                        conversational_response = await summarize_tool_result_conversationally(
-                            original_user_query=prompt,
-                            executed_plan_steps=self.current_plan if self.current_plan else [],
-                            tool_results=processed_results,
-                            overall_success=overall_success_of_plan,
-                            llm_provider=self.action_executor.code_service.llm_provider
-                        )
-                        print(f"ORCHESTRATOR_DEBUG: Call to summarize_tool_result_conversationally SUCCEEDED. conversational_response='{conversational_response}'")
-                    except Exception as sum_ex: # pragma: no cover
-                        logger.error(f"Orchestrator: EXCEPTION during summarize_tool_result_conversationally: {sum_ex}", exc_info=True)
-                        conversational_response = f"DEBUG_SUMMARIZER_CALL_EXCEPTION: Type={type(sum_ex).__name__}, Msg='{str(sum_ex)}'"
-            else: # pragma: no cover
-                logger.warning("LLM provider not available via ActionExecutor/CodeService for conversational summary.")
-                print("ORCHESTRATOR_DEBUG: LLM provider for summarizer not available.") # Added for clarity
-
-            print(f"ORCHESTRATOR_DEBUG_CONV_RESPONSE: Type={type(conversational_response)}, Value='{conversational_response}'")
-
-            if conversational_response and not (isinstance(conversational_response, str) and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION")):
-                response = conversational_response
-            else: # conversational_response is None OR it's our debug exception string
-                if conversational_response and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION"):
-                    print(f"ORCHESTRATOR_DEBUG: Summarizer failed with exception, proceeding with debug string: {conversational_response}")
-                else: # conversational_response was None (e.g. mock returned None, or summarizer feature off)
-                    print("ORCHESTRATOR_DEBUG: conversational_response is None (or empty), proceeding to generate technical fallback.")
-
-                execution_summary_val = "" # Default to empty string
                 try:
-                    # ORCHESTRATOR_DEBUG print kept, but call signature reverted
-                    print("ORCHESTRATOR_DEBUG: Attempting to call _generate_execution_summary with correct ARGS")
-                    execution_summary_val = self._generate_execution_summary(self.current_plan, processed_results) # Reverted call
-                except Exception as es_ex:
-                    logger.error(f"Error generating execution summary: {es_ex}", exc_info=True)
-                    execution_summary_val = "[Execution summary generation failed]" # No leading space for placeholder
-                print(f"ORCHESTRATOR_DEBUG: execution_summary_val after call = '{execution_summary_val}'")
+                    mode = ExecutionMode[DEFAULT_EXECUTION_MODE]
+                except KeyError:
+                    mode = ExecutionMode.FAST_REACT
 
-                if overall_success_of_plan:
-                    response_parts = ["Successfully completed the task."]
-                    if self.current_plan and len(self.current_plan) == 1 and processed_results:
-                         if not (isinstance(processed_results[0], dict) and "action_executor_result" in processed_results[0]):
-                            result_single_str = str(processed_results[0])[:200] if processed_results else "No specific result."
-                            response_parts.append(f"Result: {result_single_str}")
-                    elif processed_results: # Not single step, but still success
-                        final_res_item = processed_results[-1]
-                        if isinstance(final_res_item, dict) and "summary" in final_res_item:
-                            result_str = final_res_item["summary"]
-                        elif not isinstance(final_res_item, Exception): # Avoid printing raw exceptions here
-                            result_str = str(final_res_item)[:100]
-                        else:
-                            result_str = "details available in summary" # Placeholder
-                        response_parts.append(f"Final step result: {result_str}")
+            logger.info(f"DynamicOrchestrator: Routing to {mode.value} for prompt: {prompt[:50]}...")
+            print(color_text(f"--> Mode Selected: {mode.value}", CLIColors.SYSTEM_MESSAGE))
 
-                    response = " ".join(response_parts)
-                    if response and not response.endswith(('.', '\n', '!', '?')): response += "."
-                    response += execution_summary_val # Use the resilient value
-                else: # overall_success_of_plan is False, and conversational_summary was None or debug string
-                    technical_error_detail = "An unspecified error occurred during task execution."
-                    if processed_results:
-                        for res_item in processed_results: # Find the first error
-                            if isinstance(res_item, Exception):
-                                technical_error_detail = f"An error occurred: {type(res_item).__name__}: {str(res_item)}"
-                                break
-                            if isinstance(res_item, dict):
-                                if "action_executor_result" in res_item and res_item["action_executor_result"] is False:
-                                    technical_error_detail = f"A self-modification step reported: {res_item.get('summary', 'Failed')}"
-                                    break
-                                if res_item.get("error") or res_item.get("ran_successfully") is False:
-                                    err_detail = res_item.get("stderr", res_item.get("error", "Unknown error from tool"))
-                                    technical_error_detail = f"A tool reported an error: {str(err_detail)}"
-                                    break
-
-                    current_error_response = "Default error before rephrasing logic" # Initialize for debug
-                    if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
-                        try:
-                            print("ORCHESTRATOR_DEBUG: Attempting to call rephrase_error_message_conversationally (was _handle_failed_plan_execution_or_step)")
-                            # If conversational_response was the debug string, use original technical_error_detail for rephrasing
-                            # Otherwise, if it was None, technical_error_detail is already set.
-                            error_to_rephrase = technical_error_detail
-                            if conversational_response and conversational_response.startswith("DEBUG_SUMMARIZER_EXCEPTION"):
-                                # This implies the summarizer itself failed, not the plan. The error to rephrase is in conversational_response.
-                                error_to_rephrase = conversational_response # Pass the debug string itself for rephrasing
-
-                            rephrased_error_val = await rephrase_error_message_conversationally(
-                                technical_error_message=error_to_rephrase,
-                                original_user_query=prompt,
-                                llm_provider=self.action_executor.code_service.llm_provider
-                            )
-                            if rephrased_error_val: # Use rephrased error if available
-                                current_error_response = rephrased_error_val
-                            else: # Rephraser returned None or empty
-                                current_error_response = technical_error_detail # Fallback to technical error if rephrasing yields nothing
-                            print(f"ORCHESTRATOR_DEBUG: Call to rephrase_error_message_conversationally SUCCEEDED. current_error_response='{current_error_response}'")
-                        except Exception as hfp_ex: # pragma: no cover
-                            logger.error(f"Orchestrator: EXCEPTION during rephrase_error_message_conversationally: {hfp_ex}", exc_info=True)
-                            current_error_response = f"DEBUG_HANDLE_FAILED_PLAN_CALL_EXCEPTION: Type={type(hfp_ex).__name__}, Msg='{str(hfp_ex)}'"
-                    else:
-                        current_error_response = technical_error_detail # No LLM for rephrasing, use technical detail
-
-                    print(f"ORCHESTRATOR_DEBUG_CURRENT_ERROR_RESPONSE_AFTER_HANDLE: Type={type(current_error_response)}, Value='{current_error_response}'")
-                    response_to_build = current_error_response
-
-                    try:
-                        if response_to_build and isinstance(response_to_build, str) and response_to_build.strip() and \
-                           not response_to_build.endswith(('.', '!', '?', '\n', ':')):
-                            response_to_build += "."
-
-                        if execution_summary_val:
-                            response_to_build += execution_summary_val
-
-                        response = response_to_build
-
-                    except Exception as inner_ex:
-                        logger.error(f"Orchestrator: INNER EXCEPTION during summary append: {inner_ex}", exc_info=True)
-                        response = f"DEBUG_INNER_EXCEPTION_CAUGHT: Type={type(inner_ex).__name__}, Msg='{str(inner_ex)}'. SummaryValWas='{execution_summary_val}'"
-
-            return overall_success_of_plan, response
+            # 4. Dispatch
+            if mode == ExecutionMode.DIRECT:
+                return await self._run_direct_mode(prompt_with_context, conversation_history)
+            elif mode == ExecutionMode.FAST_REACT:
+                return await self._run_fast_react_mode(prompt_with_context, full_context_str, conversation_history, session_id)
+            elif mode == ExecutionMode.THINKING_PRO:
+                return await self._run_thinking_pro_mode(prompt_with_context, full_context_str, conversation_history, session_id)
+            else:
+                # Fallback
+                return await self._run_fast_react_mode(prompt_with_context, full_context_str, conversation_history, session_id)
 
         except Exception as e:
-            technical_error_msg = f"Error during orchestration: {str(e)}"
-            user_friendly_response = technical_error_msg
-            log_event(
-                event_type="ORCHESTRATOR_ERROR",
-                description=technical_error_msg,
-                source="DynamicOrchestrator.process_prompt",
-                metadata={"error": str(e), "goal": prompt}
-            )
-            if self.action_executor and self.action_executor.code_service and self.action_executor.code_service.llm_provider:
+            logger.error(f"Error in process_prompt: {e}", exc_info=True)
+            return False, f"An unexpected error occurred: {str(e)}"
+
+    async def _run_direct_mode(self, prompt: str, history: Optional[List[Dict[str, str]]]) -> Tuple[bool, str]:
+        """
+        Engine 1: Direct Mode (Non-ReAct). Zero overhead.
+        """
+        # Construct simple conversation context
+        messages = []
+        if history:
+            # Flatten history to text or use as is if client supports it.
+            # Our gemini client mainly takes a string prompt, so we append.
+            pass
+
+        # Simple generation
+        response = await invoke_gemini_model_async(
+            prompt=prompt,
+            model_name="gemini-2.0-flash", # Use fast model
+            temperature=0.7
+        )
+
+        if response:
+            return True, response
+        return False, "Failed to generate response in Direct Mode."
+
+    async def _run_fast_react_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str]:
+        """
+        Engine 2: Fast ReAct Mode. Standard loop (Think -> Act -> Observe).
+        """
+        return await self._execute_react_loop(
+            prompt,
+            context,
+            history,
+            session_id,
+            use_parallel_thinking=False,
+            model_name="gemini-2.0-flash"
+        )
+
+    async def _run_thinking_pro_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str]:
+        """
+        Engine 3: Thinking Pro Mode. Parallel Branching ReAct.
+        """
+        return await self._execute_react_loop(
+            prompt,
+            context,
+            history,
+            session_id,
+            use_parallel_thinking=True,
+            model_name="gemini-2.0-flash-exp" # Use stronger model for thinking
+        )
+
+    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_parallel_thinking: bool, model_name: str) -> Tuple[bool, str]:
+        """
+        Shared ReAct loop logic.
+        """
+        current_steps = []
+        max_steps = MAX_REACT_STEPS
+
+        tools_desc = tool_system_instance.get_tools_description()
+
+        system_prompt = f"""You are a capable AI Assistant.
+Goal: {prompt}
+
+Context:
+{context}
+
+Available Tools:
+{tools_desc}
+
+Instructions:
+1. Analyze the goal and context.
+2. Decide on the next step.
+3. OUTPUT FORMAT:
+   - If you need to use a tool, output a JSON block:
+     ```json
+     {{
+       "action": "tool_name",
+       "args": [arg1, arg2],
+       "kwargs": {{ "key": "value" }},
+       "thought": "Reasoning for this action"
+     }}
+     ```
+   - If you have the final answer or are done, output:
+     FINAL ANSWER: [Your Answer]
+
+4. Loop until you achieve the goal or hit the limit.
+"""
+
+        execution_history = ""
+        final_answer = ""
+        success = False
+
+        for step_i in range(max_steps):
+            step_prompt = f"{system_prompt}\n\nExecution History:\n{execution_history}\n\nStep {step_i+1}:"
+
+            if use_parallel_thinking:
+                response = await invoke_parallel_thinking(
+                    prompt=step_prompt,
+                    model_name=model_name,
+                    num_branches=3
+                )
+            else:
+                response = await invoke_gemini_model_async(
+                    prompt=step_prompt,
+                    model_name=model_name
+                )
+
+            if not response:
+                return False, "AI stopped responding."
+
+            # Parse Response
+            tool_call = self._parse_tool_call(response)
+
+            if "FINAL ANSWER:" in response:
+                final_answer = response.split("FINAL ANSWER:")[-1].strip()
+                success = True
+                break
+
+            if tool_call:
+                # Execute Tool
+                tool_name = tool_call.get("action")
+                args = tool_call.get("args", [])
+                kwargs = tool_call.get("kwargs", {})
+                thought = tool_call.get("thought", "")
+
+                print(color_text(f"Step {step_i+1}: {thought}", CLIColors.THOUGHT))
+                print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
+
                 try:
-                    user_friendly_error = await rephrase_error_message_conversationally(
-                        technical_error_message=str(e),
-                        original_user_query=prompt,
-                        llm_provider=self.action_executor.code_service.llm_provider
+                    # Convert args/kwargs if needed
+                    result = await tool_system_instance.execute_tool(
+                        tool_name,
+                        args=tuple(args),
+                        kwargs=kwargs,
+                        task_manager=self.task_manager,
+                        notification_manager=self.notification_manager,
+                        action_executor=self.action_executor
                     )
-                    user_friendly_response = user_friendly_error
-                except Exception as e_rephrase: # pragma: no cover
-                    logger.error(f"Error rephrasing top-level orchestrator error: {e_rephrase}", exc_info=True)
-            # Defensive check: Ensure a string is always returned for the message
-            if user_friendly_response is None:
-                logger.error(f"Orchestrator's user_friendly_response was None unexpectedly. Defaulting to original technical_error_msg. Original error: {str(e)}")
-                user_friendly_response = technical_error_msg # Fallback to the original technical message
-            return False, user_friendly_response
+                    result_str = str(result)
+                except Exception as e:
+                    result_str = f"Error: {str(e)}"
+
+                # Append to history
+                step_record = f"Step {step_i+1}:\nThought: {thought}\nAction: {tool_name}({args}, {kwargs})\nResult: {result_str[:1000]}\n"
+                execution_history += step_record
+                current_steps.append({
+                    "tool_name": tool_name,
+                    "args": args,
+                    "result": result_str
+                })
+
+            else:
+                # No tool call found, assume text response or query
+                # If the model didn't say FINAL ANSWER but just talked, treat as answer
+                final_answer = response
+                success = True
+                break
+
+        if not success and not final_answer:
+            final_answer = "Maximum steps reached without definitive completion."
+
+        return success, final_answer
+
+    def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Extracts JSON tool call from text.
+        """
+        try:
+            # Look for ```json ... ``` or just { ... }
+            json_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r"(\{.*\})", text, re.DOTALL)
+
+            if json_match:
+                json_str = json_match.group(1)
+                return json.loads(json_str)
+        except Exception:
+            pass
+        return None
+
+    async def _enrich_prompt_with_vision(self, prompt: str, images: Optional[List[str]]) -> str:
+        """Analyze images and append context to prompt."""
+        if not images:
+            return prompt
+
+        try:
+            print(f"DynamicOrchestrator: Analyzing {len(images)} images...")
+            from ai_assistant.core.vision_service import VisionService
+            vision_service = VisionService()
+            analysis_result = await vision_service.analyze_visuals(images[0], context=prompt)
+
+            if analysis_result:
+                summary = f"\n[Visual Analysis]: {analysis_result.get('suggestion', 'No suggestion')} Issues: {', '.join(analysis_result.get('issues', []))}"
+                return prompt + summary
+        except Exception as e:
+            logger.error(f"Vision analysis failed: {e}")
+
+        return prompt
+
+    async def _gather_context(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
+        """
+        Gathers RAG facts and Project context.
+        """
+        context_parts = []
+        metadata = {}
+
+        # 1. RAG
+        if self.memory_manager:
+            try:
+                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=3)
+                if rag_results:
+                    facts = [f"- {res.get('text', '')}" for res in rag_results]
+                    context_parts.append("Learned Facts:\n" + "\n".join(facts))
+                    metadata['rag_count'] = len(rag_results)
+            except Exception as e:
+                logger.error(f"RAG failed: {e}")
+
+        # 2. Project Context (Simplified from original)
+        prompt_lower = prompt.lower()
+        if "project" in prompt_lower or ".py" in prompt_lower:
+            # This is a basic placeholder for the complex project context gathering in the original
+            # In a full refactor, we'd extract the ProjectContextManager into a separate class
+            # For now, we rely on tools to read files if the model decides to.
+            # But we can add a hint.
+            context_parts.append("Note: If this is a project request, use file tools to explore the codebase.")
+            metadata['project_context_hint'] = True
+
+        return "\n\n".join(context_parts), metadata
 
     async def get_current_progress(self) -> Dict[str, Any]:
         """Get the current progress and context of task execution."""
         return {
             'current_goal': self.current_goal,
-            'current_plan': self.current_plan,
+            'current_plan': self.current_plan, # Might be None in new modes
             'context': self.context,
             'last_success': self.context.get('last_success')
         }

@@ -25,7 +25,8 @@ class CLIColors:
     BORDER = '\033[38;5;240m'          # Dark grey for borders/separators
     TOOL_NAME = "\033[94m"     # Bright Blue (same as SYSTEM_MESSAGE, can be distinct e.g. Light Blue \033[94m)
     TOOL_ARGS = "\033[36m"     # Cyan (regular, distinct from TOOL_OUTPUT if desired)
-    
+    THOUGHT = '\033[38;5;147m' # Added THOUGHT attribute
+
     BLUE = '\033[34m'          # Standard ANSI blue for the new prompt
     # Component-specific colors (for debug mode)
     PLANNER = '\033[38;5;105m'    # Purple for planner
