@@ -9822,5 +9822,139 @@
             "session_id": "7225d800-a3b4-478d-8ec4-14ab82f7e05d",
             "suggestion_text": "Integrate image processing capabilities.  When a user refers to 'the picture I gave you', the AI should attempt to retrieve and analyze the image, rather than asking the user to describe it."
         }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "ISSUE DETECTED: The AI failed to respond to a simple research request, indicating a potential bug or unhandled exception in its core processing or a tool it attempted to use. (Evidence: USER: Research quantum computing\nASSISTANT: AI stopped responding.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_BUG_SUSPECTED_e3568f4c",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:34.251973+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "902cf417-70ec-432e-86d8-5a1e2d2ffa1f",
+            "suggestion_text": "Investigate the cause of the AI's unresponsiveness. Focus on debugging error handling, resource management, and any tools that might have been invoked for the research task. Add logging to identify the exact point of failure."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user was frustrated by the AI's repeated requests for a 'project identifier' when the user was referring to the AI's core code and interface. (Evidence: USER: You're not hearing me buddy. This is not a specific project that you have created. This is the code that actually runs you that I'm talking about)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_d4b03ee9",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:39.502232+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "a12060bc-7b16-49e8-8c51-6274b241999e",
+            "suggestion_text": "When a user mentions 'code' or 'interface' without specifying a project, prioritize understanding if they are referring to the AI's own internal workings or the current user interface."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user was frustrated that the clarification requests were not being displayed in the UI, leading to confusion about what information the AI needed. (Evidence: USER: Do you see how the last thing that you wrote was I'm waiting for you to provide the project identifier so I can adjust the chat interfaces requested. Well, I don't know what you said or needed before that because you didn't put it on the screen. So that's the only result I have from what you just did)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_554b7b10",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:39.502232+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "a12060bc-7b16-49e8-8c51-6274b241999e",
+            "suggestion_text": "Ensure that all clarification requests are clearly displayed to the user in the UI, even if it means modifying the tool's output or adding a separate UI element for clarification requests."
+        }
+    },
+    {
+        "type": "USER_PREFERENCE_LEARNED",
+        "description": "The user prefers friendly, conversational, and concise responses over long, drawn-out, and formal explanations. (Evidence: USER: Do you see how your answer was very long and drawn out and not very conversational and friendly.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_PREFERENCE_LEARNED_6d0cad86",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:39.502232+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "a12060bc-7b16-49e8-8c51-6274b241999e",
+            "suggestion_text": "Prioritize generating responses that are concise, friendly, and conversational. Avoid lengthy explanations unless explicitly requested. Explore techniques for injecting humor and personality into responses."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "When requesting clarification, the AI should use the `request_user_clarification` tool as the last step in the process to ensure the user sees the request directly. (Evidence: USER: But the problem is is what you actually wanted clarification on. Does it make it to the UI and when I see it it just says awaiting for user input so realistically instead of using that like no opt tool or whatever you're using last, you could probably just use the you know clarification or whatever tool last and then I would be able to see it)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_0aaee24b",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Modify the planning algorithm to prioritize using the `request_user_clarification` tool as the final action in a sequence when the goal is to obtain more information from the user."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:39.502232+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "a12060bc-7b16-49e8-8c51-6274b241999e",
+            "suggestion_text": "Modify the planning algorithm to prioritize using the `request_user_clarification` tool as the final action in a sequence when the goal is to obtain more information from the user."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the ability to set and manage real-time reminders. (Evidence: USER: Is your schedule reminder? Actually finally working like right now. Could you tell me when it turns 4:40 please?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_64cd2d47",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop a 'set_reminder' tool that allows the AI to schedule notifications for specific times. Explore integration with existing calendar or notification services.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-16T23:55:39.502232+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "a12060bc-7b16-49e8-8c51-6274b241999e",
+            "suggestion_text": "Develop a 'set_reminder' tool that allows the AI to schedule notifications for specific times. Explore integration with existing calendar or notification services."
+        }
     }
 ]
