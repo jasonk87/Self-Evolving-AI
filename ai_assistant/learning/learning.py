@@ -290,6 +290,65 @@ class LearningAgent:
         self._save_insights()
         return proposed_action, execution_success
 
+    async def process_self_healing_insights(self) -> int:
+        """
+        Scans for 'TOOL_BUG_SUSPECTED' insights and attempts to generate fixes
+        using the ActionExecutor in 'staging_mode'.
+        Returns the number of insights processed.
+        """
+        # Filter for relevant insights
+        bug_insights = [
+            insight for insight in self.insights
+            if insight.type == InsightType.TOOL_BUG_SUSPECTED
+            and insight.status == "NEW"
+            and insight.related_tool_name # Must have a tool target
+        ]
+
+        if not bug_insights:
+            return 0
+
+        print(f"LearningAgent: Found {len(bug_insights)} bug insights for self-healing.")
+
+        for insight in bug_insights:
+            print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (staging mode).")
+
+            # Construct the action
+            action = {
+                "source_insight_id": insight.insight_id,
+                "action_type": "PROPOSE_TOOL_MODIFICATION",
+                "details": {
+                    "module_path": insight.metadata.get("module_path"),
+                    "function_name": insight.metadata.get("function_name"),
+                    "tool_name": insight.related_tool_name,
+                    "suggested_change_description": insight.description,
+                    "suggested_code_change": insight.suggested_code_change, # Likely None, will trigger generation
+                    "reason": f"Self-healing trigger from insight {insight.insight_id}",
+                    "original_reflection_entry_ref_id": insight.source_reflection_entry_ids[0] if insight.source_reflection_entry_ids else None,
+                    "staging_mode": True # Critical flag for self-healing
+                }
+            }
+
+            # Update status *before* execution to avoid repeated processing if crash
+            insight.status = "PROCESSING_SELF_HEALING"
+            insight.metadata["self_healing_start"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self._save_insights()
+
+            try:
+                success = await self.action_executor.execute_action(action)
+                if success:
+                    insight.status = "SELF_HEALING_PROPOSED" # Indicates a suggestion was created
+                else:
+                    insight.status = "SELF_HEALING_FAILED"
+            except Exception as e:
+                print(f"LearningAgent: Error during self-healing for {insight.insight_id}: {e}")
+                insight.status = "SELF_HEALING_EXCEPTION"
+                insight.metadata["exception"] = str(e)
+
+            insight.metadata["self_healing_end"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self._save_insights()
+
+        return len(bug_insights)
+
 if __name__ == '__main__': # pragma: no cover
     # import uuid # uuid is already imported at the top of the module
     # Removed local MockReflectionLogEntry, will use the actual one.

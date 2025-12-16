@@ -1,206 +1,174 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Assistant Cockpit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- Using Google Fonts for a futuristic look -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Segoe+UI&family=Roboto:wght@300;400;500&family=Consolas&display=swap"
+        rel="stylesheet">
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
 </head>
+
 <body>
-    <div class="cockpit-container">
-        <!-- Left Sidebar: Navigation -->
-        <nav class="sidebar glass-panel">
-            <div class="logo">
-                <div class="logo-icon">AI</div>
-            </div>
-            <ul class="nav-links">
-                <li class="active" title="Chat" data-view="chat-panel"><span class="icon">💬</span></li>
-                <li title="Projects" data-view="projects-view"><span class="icon">📁</span></li> <!-- Projects toggles file tree expansion or specific view -->
-                <li title="Tools" data-view="tools-panel"><span class="icon">🛠️</span></li>
-                <li title="Settings" data-view="settings-panel"><span class="icon">⚙️</span></li>
-                <li title="Profile" data-view="profile-panel"><span class="icon">👤</span></li>
-            </ul>
-        </nav>
-
-        <!-- Center Panel: Chat Interface -->
-        <main class="chat-interface glass-panel" id="chat-panel">
-            <header class="chat-header">
-                <h1>Command Center</h1>
-                <div class="status-indicator online">Online</div>
-            </header>
-
-            <div class="chat-history" id="chat-history">
-                <div class="message system-message">
-                    <div class="bubble">System initialized. Welcome to the AI Cockpit.</div>
+    <div class="app-layout">
+        <!-- 1. LEFT: Activity Bar (Icons) -->
+        <aside class="activity-bar glass-panel">
+            <div class="activity-top">
+                <div class="activity-item active" title="Chat" data-target="view-chat">
+                    <span class="icon">💬</span>
                 </div>
-                <!-- Messages will be appended here -->
+                <!-- Tools that open the Sidebar Panel -->
+                <div class="activity-item" title="Project Files" data-target="view-sidebar-files">
+                    <span class="icon">📁</span>
+                </div>
+                <div class="activity-item" title="Terminal" data-target="view-sidebar-terminal">
+                    <span class="icon">💻</span>
+                </div>
+                <div class="activity-item" title="Council" data-target="view-sidebar-council">
+                    <span class="icon">🔮</span>
+                </div>
+                <div class="activity-item" title="Memory" data-target="view-sidebar-memory">
+                    <span class="icon">🧠</span>
+                </div>
+                <div class="activity-item" title="Settings" data-target="view-sidebar-settings">
+                    <span class="icon">⚙️</span>
+                </div>
             </div>
 
-            <div class="chat-input-area">
-                <div class="input-wrapper glass-input">
-                    <textarea id="user-input" placeholder="Enter command or message..." rows="1"></textarea>
-                    <button id="send-btn">Send</button>
-                </div>
-            </div>
-        </main>
-
-        <!-- Center Panel: Code Editor (Initially Hidden) -->
-        <main class="editor-interface glass-panel hidden" id="editor-panel">
-            <header class="editor-header">
-                <h1 id="editor-filename">filename.py</h1>
-                <div class="editor-actions">
-                    <button id="run-file-btn" class="primary-btn run-btn">Run</button>
-                    <button id="save-file-btn" class="primary-btn">Save</button>
-                    <button id="close-editor-btn" class="secondary-btn">Close</button>
-                </div>
-            </header>
-            <div class="editor-container">
-                <textarea id="file-editor" spellcheck="false"></textarea>
-                <div id="terminal-container">
-                    <div id="terminal-output"></div>
-                </div>
-            </div>
-        </main>
-
-        <!-- Tools Panel -->
-        <main class="tools-interface glass-panel hidden" id="tools-panel">
-            <header class="panel-header-main">
-                <h1>System Tools</h1>
-            </header>
-            <div class="tools-container">
-                <div class="tool-card">
-                    <div class="tool-icon">🔍</div>
-                    <div class="tool-info">
-                        <h3>Codebase Search</h3>
-                        <p>Semantic search across the entire project.</p>
-                    </div>
-                    <button class="tool-action-btn">Active</button>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-icon">🧠</div>
-                    <div class="tool-info">
-                        <h3>Memory Manager</h3>
-                        <p>View and edit AI long-term memory.</p>
-                    </div>
-                    <button class="tool-action-btn">Manage</button>
-                </div>
-                 <div class="tool-card">
-                    <div class="tool-icon">🚀</div>
-                    <div class="tool-info">
-                        <h3>Task Autonomy</h3>
-                        <p>Autonomous agent task execution engine.</p>
-                    </div>
-                    <button class="tool-action-btn">Configure</button>
-                </div>
-            </div>
-        </main>
-
-        <!-- Settings Panel -->
-        <main class="settings-interface glass-panel hidden" id="settings-panel">
-             <header class="panel-header-main">
-                <h1>Settings</h1>
-            </header>
-            <div class="settings-container">
-                <div class="setting-group">
-                    <h3>Appearance</h3>
-                    <div class="setting-item">
-                        <span>Theme</span>
-                        <select class="glass-select">
-                            <option value="deep-space">Deep Space</option>
-                            <option value="matrix">Matrix</option>
-                            <option value="light">Light (Experimental)</option>
-                        </select>
-                    </div>
-                </div>
-                 <div class="setting-group">
-                    <h3>System</h3>
-                    <div class="setting-item">
-                        <span>Notifications</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <span>Auto-Save</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <!-- Profile Panel -->
-        <main class="profile-interface glass-panel hidden" id="profile-panel">
-             <header class="panel-header-main">
-                <h1>User Profile</h1>
-            </header>
-            <div class="profile-container">
-                <div class="profile-header">
-                    <div class="profile-avatar">👨‍💻</div>
-                    <div class="profile-details">
-                        <h2>Jason</h2>
-                        <span class="role-badge">Admin</span>
-                    </div>
-                </div>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <span class="stat-value">42</span>
-                        <span class="stat-label">Tasks Completed</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-value">12h</span>
-                        <span class="stat-label">Uptime</span>
-                    </div>
-                     <div class="stat-card">
-                        <span class="stat-value">850</span>
-                        <span class="stat-label">Lines Written</span>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <!-- Right Panel: Context Panel (Collapsible) -->
-        <aside class="context-panel glass-panel" id="context-panel">
-            <div class="panel-header">
-                <h2>Context</h2>
-                <button id="toggle-context" class="toggle-btn">›</button>
-            </div>
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="files">Files</button>
-                <button class="tab-btn" data-tab="terminal">Terminal</button>
-                <button class="tab-btn" data-tab="memory">Memory</button>
-                <button class="tab-btn" data-tab="council">The Council</button>
-            </div>
-            <div class="tab-content" id="tab-files">
-                <div id="file-tree" class="file-tree">
-                    <!-- File tree will be rendered here -->
-                    <div class="loading">Loading projects...</div>
-                </div>
-            </div>
-            <div class="tab-content hidden" id="tab-terminal">
-                <div class="terminal-view">
-                    <div class="line">User@System:~$ ready</div>
-                </div>
-            </div>
-            <div class="tab-content hidden" id="tab-memory">
-                <div class="empty-state">Memory access ready</div>
-            </div>
-            <div class="tab-content hidden" id="tab-council">
-                <div class="council-view" id="council-view">
-                    <div class="empty-state">Waiting for review session...</div>
+            <div class="activity-bottom">
+                <div class="activity-item" title="Code Editor" data-target="view-editor-main">
+                    <span class="icon">📝</span>
                 </div>
             </div>
         </aside>
+
+        <!-- 2. LEFT: Sidebar Panel (Context Content) -->
+        <!-- This panel is visible when a "sidebar tool" is active. -->
+        <aside class="sidebar-panel glass-panel" id="sidebar-panel">
+
+            <!-- Files View -->
+            <div id="view-sidebar-files" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>EXPLORER</h3>
+                    <button class="btn-icon" onclick="loadProjects()" title="Refresh">↻</button>
+                </div>
+                <div id="file-tree" class="file-tree-container">
+                    <!-- Populated by JS -->
+                    <div class="loading">Loading projects...</div>
+                </div>
+            </div>
+
+            <!-- Terminal View -->
+            <div id="view-sidebar-terminal" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>TERMINAL</h3>
+                    <button class="btn-icon" id="clear-terminal">🚫</button>
+                </div>
+                <div id="terminal-output" class="terminal-output">
+                    <div class="line system">Terminal Online...</div>
+                </div>
+                <div class="terminal-input-wrapper">
+                    <span class="prompt">$</span>
+                    <input type="text" id="terminal-input" placeholder="Command...">
+                </div>
+            </div>
+
+            <!-- Council View (Logs) -->
+            <div id="view-sidebar-council" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>THE COUNCIL</h3>
+                </div>
+                <div id="council-logs" class="council-container">
+                    <div class="log-entry system">Listening to Agent Swarm...</div>
+                </div>
+            </div>
+
+            <!-- Memory View (Facts) -->
+            <div id="view-sidebar-memory" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>LONG-TERM MEMORY</h3>
+                    <button class="btn-icon" id="add-fact-btn" title="Add Fact">➕</button>
+                </div>
+                <div class="memory-wrapper">
+                    <div id="memory-list" class="memory-list">
+                        <!-- Facts go here -->
+                        <div class="loading">Fetching engrams...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="view-sidebar-settings" class="sidebar-view hidden">
+                <div class="panel-header">
+                    <h3>SETTINGS</h3>
+                </div>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label>LLM Provider</label>
+                        <select id="setting-llm">
+                            <option value="ollama">Ollama (Local)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Notifications</label>
+                        <button id="test-notify-btn" class="btn-primary">Test Notification</button>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- 3. MAIN STAGE (Right) -->
+        <main class="main-stage">
+
+            <!-- Chat Interface (Default) -->
+            <div id="view-chat" class="view-container active">
+                <header class="stage-header glass-panel">
+                    <span class="title">AI ASSISTANT</span>
+                </header>
+                <div id="chat-container">
+                    <div class="message system">
+                        <div class="bubble">Systems Nominal. Ready.</div>
+                    </div>
+                </div>
+                <div class="input-area glass-panel">
+                    <textarea id="chat-input" placeholder="Instructions..." rows="1"></textarea>
+                    <button id="send-btn">SEND</button>
+                </div>
+            </div>
+
+            <!-- Editor Interface -->
+            <div id="view-editor-main" class="view-container">
+                <header class="stage-header glass-panel">
+                    <span class="title" id="current-file-name">No File Open</span>
+                    <div class="actions">
+                        <button id="save-file-btn" class="btn-icon">💾</button>
+                        <button id="run-file-btn" class="btn-icon">▶️</button>
+                        <button id="close-file-btn" class="btn-icon">❌</button>
+                    </div>
+                </header>
+                <div id="editor-container"></div>
+            </div>
+
+        </main>
     </div>
 
-    <!-- Socket.IO Client -->
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
-    <!-- Main Application Logic -->
+    <!-- Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <!-- CodeMirror -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
+    <!-- Main JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
+
 </html>

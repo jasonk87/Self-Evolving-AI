@@ -13,6 +13,10 @@ from ai_assistant.tools import tool_system # To get available tools
 # Modified: Import the specific curation function and config for interval
 from ai_assistant.custom_tools.knowledge_tools import run_periodic_fact_store_curation_async
 from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
+# Added for self-healing
+from ai_assistant.learning.learning import LearningAgent
+from ai_assistant.core.task_manager import TaskManager
+from ai_assistant.core.notification_manager import NotificationManager
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -45,6 +49,8 @@ _background_task: Optional[asyncio.Task] = None
 _polling_interval_seconds = 300  # For self-reflection # FACT_CURATION_INTERVAL_SECONDS will be used from config
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0 # New state for project execution
+_last_self_healing_time: float = 0.0 # State for self-healing
+_self_healing_interval_seconds = 600 # Check every 10 minutes
 
 def sanitize_project_name(name: str) -> str:
     """
@@ -128,15 +134,27 @@ def read_text_from_file(filepath: str) -> str:
 
 # --- Asyncio Version ---
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
+    _last_self_healing_time = time.time()
 
     next_reflection_run_time = time.time() + _polling_interval_seconds
     next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
     next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
+    next_self_healing_run_time = time.time() + _self_healing_interval_seconds
 
+    # Initialize LearningAgent for self-healing
+    # We create local instances as this service might run independently or alongside web_app
+    try:
+        nm = NotificationManager()
+        tm = TaskManager(notification_manager=nm)
+        learning_agent = LearningAgent(task_manager=tm, notification_manager=nm)
+        logger.info("BackgroundService: LearningAgent initialized for self-healing.")
+    except Exception as e: # pragma: no cover
+        logger.error(f"BackgroundService: Failed to initialize LearningAgent: {e}")
+        learning_agent = None
 
     while _background_service_active:
         current_loop_time = time.time()
@@ -231,13 +249,29 @@ async def _background_loop_async():
                 logger.error(f"BackgroundService: Error during autonomous project execution scan: {e}", exc_info=True)
             _last_project_execution_scan_time = time.time()
             next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
+
+        # --- Autonomous Self-Healing Task ---
+        if learning_agent and current_loop_time >= next_self_healing_run_time:
+            current_time_str_healing = time.strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"BackgroundService: Running self-healing cycle (current time: {current_time_str_healing})...")
+            try:
+                processed_count = await learning_agent.process_self_healing_insights()
+                if processed_count > 0:
+                    logger.info(f"BackgroundService: Self-healing processed {processed_count} insights.")
+                else:
+                    logger.info("BackgroundService: No insights found for self-healing.")
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
+            _last_self_healing_time = time.time()
+            next_self_healing_run_time = time.time() + _self_healing_interval_seconds
         
         # Determine sleep time until the next event
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
+        time_until_next_healing = max(0, next_self_healing_run_time - time.time()) if learning_agent else float('inf')
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover
@@ -246,6 +280,8 @@ async def _background_loop_async():
                 debug_msg_parts.append(f"next curation in {time_until_next_curation:.0f}s")
                 if PROJECT_TOOLS_AVAILABLE:
                     debug_msg_parts.append(f"next project exec scan in {time_until_next_project_exec:.0f}s")
+                if learning_agent:
+                    debug_msg_parts.append(f"next self-healing in {time_until_next_healing:.0f}s")
                 logger.debug(f"[DEBUG BACKGROUND_SERVICE] {', '.join(debug_msg_parts)}.")
             await asyncio.sleep(sleep_duration)
         except asyncio.CancelledError: # pragma: no cover
@@ -256,7 +292,7 @@ async def _background_loop_async():
 
 # Renamed and made synchronous as it just creates a task
 def start_background_services():
-    global _background_service_active, _background_task, _last_fact_curation_time, _last_project_execution_scan_time
+    global _background_service_active, _background_task, _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time
     # Ensure is_debug_mode is available or imported if used here
 
     if _background_service_active and isinstance(_background_task, asyncio.Task) and not _background_task.done():
@@ -266,6 +302,7 @@ def start_background_services():
     _background_service_active = True
     _last_fact_curation_time = 0.0 
     _last_project_execution_scan_time = 0.0 # Reset this too
+    _last_self_healing_time = 0.0
     if is_debug_mode():
         logger.info("BackgroundService: Attempting to start service...")
     try:

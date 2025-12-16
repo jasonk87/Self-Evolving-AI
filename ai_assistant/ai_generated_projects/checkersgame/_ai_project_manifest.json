@@ -1,0 +1,166 @@
+{
+    "project_name": "CheckersGame",
+    "sanitized_project_name": "checkersgame",
+    "project_directory": "c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\ai_generated_projects\\checkersgame",
+    "project_description": "A new checkers game project",
+    "creation_timestamp": "2025-12-10T09:24:37.680786+00:00",
+    "last_modified_timestamp": "2025-12-10T09:27:08.832121+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for main.py",
+            "details": {
+                "filename": "main.py",
+                "original_description": "The main entry point of the checkers game, handling game setup and the main game loop.",
+                "key_components": [
+                    "Game initialization",
+                    "Main game loop",
+                    "Player turn management",
+                    "Telemetry writing"
+                ],
+                "file_dependencies": [
+                    "board.py",
+                    "player.py",
+                    "rules.py",
+                    "telemetry.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:26:29.945734+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK002",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for board.py",
+            "details": {
+                "filename": "board.py",
+                "original_description": "Defines the game board and its operations.",
+                "key_components": [
+                    "Board class",
+                    "Board initialization",
+                    "Piece placement",
+                    "Move validation",
+                    "Board display"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:26:35.752042+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK003",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for player.py",
+            "details": {
+                "filename": "player.py",
+                "original_description": "Defines the Player class and handles player input.",
+                "key_components": [
+                    "Player class",
+                    "Player type (human/AI)",
+                    "Move selection",
+                    "Input handling"
+                ],
+                "file_dependencies": [
+                    "board.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:26:41.984635+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK004",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for rules.py",
+            "details": {
+                "filename": "rules.py",
+                "original_description": "Implements the rules of checkers, determining valid moves and game outcomes.",
+                "key_components": [
+                    "Move validation rules",
+                    "Jump logic",
+                    "King movement",
+                    "Game over conditions"
+                ],
+                "file_dependencies": [
+                    "board.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:26:53.419687+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK005",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for telemetry.py",
+            "details": {
+                "filename": "telemetry.py",
+                "original_description": "Handles writing game state and logs to the telemetry file.",
+                "key_components": [
+                    "Telemetry writing function",
+                    "Data formatting",
+                    "File handling"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:26:57.918487+00:00",
+            "error_message": null,
+            "notes": null
+        },
+        {
+            "task_id": "TASK006",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for ai.py",
+            "details": {
+                "filename": "ai.py",
+                "original_description": "Implements the AI logic for computer players.",
+                "key_components": [
+                    "AI move selection algorithm",
+                    "Minimax/Alpha-beta pruning",
+                    "Evaluation function"
+                ],
+                "file_dependencies": [
+                    "board.py",
+                    "rules.py",
+                    "player.py"
+                ]
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-10T09:27:08.769521+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

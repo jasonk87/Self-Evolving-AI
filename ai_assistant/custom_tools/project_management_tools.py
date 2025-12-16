@@ -120,6 +120,36 @@ async def initiate_ai_project(project_name: str, project_description: str = None
     except Exception as e_dir:
         return f"Error: Failed to create basic directory structure (src, tests, README.md) in '{project_dir_path}'. Detail: {e_dir}"
 
+    # --- Registration with Project Manager (Web App Visibility) ---
+    try:
+        from ai_assistant.core.project_manager import create_project, set_project_root_path, find_project
+        
+        # Check if project already exists in the manager's list
+        existing_project = find_project(project_name)
+        project_id = None
+        
+        if not existing_project:
+            # Register new project
+            logger.info(f"Registering new project '{project_name}' with Project Manager...")
+            created_proj = create_project(project_name, description=project_description)
+            if created_proj:
+                project_id = created_proj['project_id']
+        else:
+            # Project exists, update path just in case
+            logger.info(f"Project '{project_name}' already registered (ID: {existing_project['project_id']}). Updating path...")
+            project_id = existing_project['project_id']
+            
+        if project_id:
+             # CRITICAL: Link the UI to the actual file path
+             set_project_root_path(project_id, project_dir_path)
+             logger.info(f"Successfully linked project '{project_name}' (ID: {project_id}) to path '{project_dir_path}'")
+        else:
+             print(f"Warning: Failed to obtain Project ID for '{project_name}'. It may not appear in the UI list.")
+
+    except Exception as e_reg:
+        print(f"Warning: Failed to register project '{project_name}' with Project Manager. Tool execution continues, but project might not be visible in UI. Detail: {e_reg}")
+    # ----------------------------------------------------------------
+
     prompt = PROJECT_PLANNING_PROMPT_TEMPLATE.format(project_description=project_description)
     llm_model = get_model_for_task("planning")
 
@@ -288,7 +318,40 @@ async def generate_code_for_project_file(project_name: str, filename: str = None
             break
     
     if not file_task_entry:
-        return f"Error: File task for '{filename}' not found in project development tasks for '{project_name}'."
+        logger.info(f"Task for '{filename}' not found in plan. Creating a new task dynamically.")
+        
+        # Determine new task ID
+        existing_ids = [int(t.task_id.replace("TASK", "")) for t in manifest_instance.development_tasks if t.task_id.startswith("TASK") and t.task_id[4:].isdigit()]
+        next_id_num = max(existing_ids) + 1 if existing_ids else 1
+        new_task_id = f"TASK{next_id_num:03d}"
+
+        # Get details from kwargs or defaults
+        new_description = kwargs.get("description", f"Dynamically added task to generate {filename}")
+        new_key_components = kwargs.get("key_components", [])
+        new_dependencies = kwargs.get("dependencies", [])
+
+        file_task_entry = DevelopmentTask(
+            task_id=new_task_id,
+            task_type="CREATE_FILE",
+            description=new_description,
+            details={
+                "filename": filename,
+                "original_description": new_description,
+                "key_components": new_key_components,
+                "file_dependencies": new_dependencies
+            },
+            status="planned"
+        )
+        manifest_instance.development_tasks.append(file_task_entry)
+        
+        # Save manifest with new task immediately
+        try:
+            updated_manifest = manifest_instance.to_json_dict()
+            write_result = write_text_to_file(manifest_filepath, json.dumps(updated_manifest, indent=4))
+            if write_result.startswith("Error:"):
+                 print(f"Warning: Failed to save manifest after adding dynamic task {new_task_id}. {write_result}")
+        except Exception as e_dyn_save:
+            print(f"Warning: Error saving manifest for dynamic task {new_task_id}: {e_dyn_save}")
 
     if file_task_entry.status == "generated":
         return f"Info: Code for '{filename}' in project '{project_name}' (Task ID: {file_task_entry.task_id}) has already been generated. Overwrite functionality is not yet supported."
