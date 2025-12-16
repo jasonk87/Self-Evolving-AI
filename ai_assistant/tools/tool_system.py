@@ -61,6 +61,7 @@ class ToolSystem:
             ("ai_assistant.custom_tools.meta_programming_tools", "meta_programming_tools.py"),
             ("ai_assistant.custom_tools.suggestion_management_tools", "suggestion_management_tools.py"),
             ("ai_assistant.custom_tools.agent_tools", "agent_tools.py"),
+            ("ai_assistant.custom_tools.calendar_tools", "calendar_tools.py"),
             ("ai_assistant.custom_tools.generated", "generated_tools_module"),
         ]
 
