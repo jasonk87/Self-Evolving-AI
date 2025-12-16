@@ -5,6 +5,7 @@ from ai_assistant.core.vision_service import VisionService
 from ai_assistant.custom_tools.search_tools import google_custom_search
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.config import DEEP_RESEARCH_MAX_URLS, DEEP_RESEARCH_TIMEOUT
+import ai_assistant.config as config
 from ai_assistant.tools.base import ToolBase
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ class DeepResearcher(ToolBase):
         Returns:
             Dict[str, Any]: A dictionary containing the 'summary' and 'sources'.
         """
-        self.emit_status(f"Starting research for '{query}'...")
+        ghost_status = "ENABLED" if config.GHOST_MODE else "DISABLED"
+        self.emit_status(f"Starting research for '{query}'... (Ghost Mode: {ghost_status})")
 
         # Step 1: Search
         self.emit_status("Searching Google for relevant sources...")

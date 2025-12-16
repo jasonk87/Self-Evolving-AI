@@ -7,6 +7,7 @@ import json
 from typing import Optional, Dict, Any
 from playwright.async_api import async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+import ai_assistant.config as config
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,16 @@ class VisionService:
         browser = None
         try:
             playwright = await async_playwright().start()
-            browser = await playwright.chromium.launch(headless=True)
-            page = await browser.new_page()
+
+            headless_mode = not config.GHOST_MODE
+            slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
+
+            browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
+
+            if config.GHOST_MODE:
+                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+            else:
+                page = await browser.new_page()
 
             # Handle local files specifically if needed, or assume standard URL structure
             target_url = file_path_or_url
@@ -68,8 +77,16 @@ class VisionService:
         browser = None
         try:
             playwright = await async_playwright().start()
-            browser = await playwright.chromium.launch(headless=True)
-            page = await browser.new_page()
+
+            headless_mode = not config.GHOST_MODE
+            slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
+
+            browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
+
+            if config.GHOST_MODE:
+                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+            else:
+                page = await browser.new_page()
 
             logger.info(f"VisionService: Scraping text from {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it

@@ -272,3 +272,5 @@ if __name__ == '__main__':
 # --- Deep Research Configuration ---
 DEEP_RESEARCH_MAX_URLS = 3
 DEEP_RESEARCH_TIMEOUT = 60
+GHOST_MODE = False  # If True, the browser will be visible (headless=False)
+BROWSER_SLOW_MO = 100  # Milliseconds to slow down operations in Ghost Mode

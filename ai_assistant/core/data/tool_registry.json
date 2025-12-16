@@ -931,5 +931,13 @@
         "description": "Schedules a new event on the user's Google Calendar.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "toggle_ghost_mode": {
+        "tool_name": "toggle_ghost_mode",
+        "module_path": "ai_assistant.custom_tools.system_tools",
+        "function_name": "toggle_ghost_mode",
+        "description": "Toggles 'Ghost Mode' (visible browser execution) for DeepResearcher and VisionService.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }
