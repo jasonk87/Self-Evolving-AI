@@ -35,6 +35,7 @@ ENABLE_THINKING = True  # Set to False to disable thinking output globally
 
 # Chain of thought settings for models that don't support native thinking
 ENABLE_CHAIN_OF_THOUGHT = True  # Enable chain of thought prompting for non-thinking models
+DEFAULT_EXECUTION_MODE = "AUTO"  # Options: AUTO, DIRECT, FAST_REACT, THINKING_PRO
 DEFAULT_TEMPERATURE_THINKING = 0.7  # Temperature for thinking phase
 DEFAULT_TEMPERATURE_RESPONSE = 0.5  # Temperature for response phase (slightly lower for more focused responses)
 
