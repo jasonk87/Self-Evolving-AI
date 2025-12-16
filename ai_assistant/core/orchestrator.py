@@ -25,6 +25,7 @@ from .task_manager import TaskManager
 from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
 from ..utils.conversational_helpers import summarize_tool_result_conversationally
+from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class DynamicOrchestrator:
         self.notification_manager = notification_manager
         self.hierarchical_planner = hierarchical_planner
         self.memory_manager = memory_manager
+        self.episodic_manager = EpisodicMemoryManager()
 
         # Inject memory manager into planner if not already set
         if self.planner and self.memory_manager and hasattr(self.planner, 'memory_manager') and self.planner.memory_manager is None:
@@ -162,6 +164,12 @@ class DynamicOrchestrator:
         """
         Shared ReAct loop logic.
         """
+        # Step A: Recall Failures
+        failure_warning = await self.episodic_manager.recall_failures(prompt)
+        if failure_warning:
+            print(color_text(f"--> Episodic Memory: {failure_warning}", CLIColors.WARNING))
+            context = f"{failure_warning}\n\n{context}"
+
         current_steps = []
         max_steps = MAX_REACT_STEPS
 
@@ -268,6 +276,19 @@ Instructions:
 
         if not success and not final_answer:
             final_answer = "Maximum steps reached without definitive completion."
+
+        # Step B: Record Experience
+        tools_used_names = [step['tool_name'] for step in current_steps if 'tool_name' in step]
+        outcome = "SUCCESS" if success else "FAILURE"
+
+        # Fire-and-forget logging (or await if strict consistency needed, but plan said background)
+        # Using asyncio.create_task to run in background
+        asyncio.create_task(self.episodic_manager.record_experience(
+            prompt=prompt,
+            plan=current_steps,
+            outcome=outcome,
+            tools_used=tools_used_names
+        ))
 
         return success, final_answer
 

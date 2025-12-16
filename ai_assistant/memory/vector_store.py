@@ -16,8 +16,9 @@ class VectorStore:
     """
     A persistent vector store using ChromaDB.
     """
-    def __init__(self, storage_path: str):
+    def __init__(self, storage_path: str, collection_name: str = "learned_facts"):
         self.storage_path = storage_path
+        self.collection_name = collection_name
 
         # Determine the directory for ChromaDB
         # If storage_path is a file path (like rag_vector_store.json),
@@ -39,10 +40,10 @@ class VectorStore:
 
             # Get or create the collection
             self.collection = self.client.get_or_create_collection(
-                name="learned_facts",
+                name=self.collection_name,
                 metadata={"hnsw:space": "cosine"} # Use cosine similarity
             )
-            logger.info(f"Initialized ChromaDB at {self.persist_directory}")
+            logger.info(f"Initialized ChromaDB at {self.persist_directory} (Collection: {self.collection_name})")
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
             self.client = None
