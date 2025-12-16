@@ -5,7 +5,7 @@ from ai_assistant.memory.persistent_memory import save_goals_to_file, load_goals
 import os
 
 # --- Constants ---
-DEFAULT_GOALS_FILE_DIR = "data"
+DEFAULT_GOALS_FILE_DIR = "ai_assistant/core/data"
 DEFAULT_GOALS_FILE = os.path.join(DEFAULT_GOALS_FILE_DIR, "goals.json")
 
 # --- Goal Data Structure ---
@@ -13,9 +13,10 @@ DEFAULT_GOALS_FILE = os.path.join(DEFAULT_GOALS_FILE_DIR, "goals.json")
 # Example:
 # {
 #     "id": "unique_id_string",
-#     "description": "Achieve world peace.",
-#     "status": "pending",  # "pending", "in_progress", "completed", "failed"
-#     "priority": 1  # Lower number means higher priority
+#     "title": "Achieve world peace",
+#     "description": "Detailed description...",
+#     "status": "PENDING_APPROVAL",  # "PENDING_APPROVAL", "pending", "in_progress", "completed", "failed"
+#     "priority": "HIGH"  # "HIGH", "MEDIUM", "LOW" or int
 # }
 
 # --- In-Memory Storage ---
@@ -73,7 +74,7 @@ def _initialize_goals_db():
 
 # --- CRUD Functions ---
 
-def create_goal(description: str, priority: int = 3) -> Dict:
+def create_goal(title: str, description: str = "", priority: Union[int, str] = 3) -> Dict:
     """
     Creates a new goal and stores it in the in-memory database.
     Does not automatically save to file; call save_current_goals() for that.
@@ -81,8 +82,9 @@ def create_goal(description: str, priority: int = 3) -> Dict:
     goal_id = _generate_goal_id()
     goal = {
         "id": goal_id,
+        "title": title,
         "description": description,
-        "status": "pending",
+        "status": "PENDING_APPROVAL",
         "priority": priority,
     }
     _goals_db[goal_id] = goal
@@ -100,13 +102,14 @@ def get_goal(goal_id: str) -> Optional[Dict]:
     """
     return _goals_db.get(goal_id)
 
-def update_goal(goal_id: str, description: Optional[str] = None, 
-                status: Optional[str] = None, priority: Optional[int] = None) -> Optional[Dict]:
+def update_goal(goal_id: str, title: Optional[str] = None, description: Optional[str] = None,
+                status: Optional[str] = None, priority: Optional[Union[int, str]] = None) -> Optional[Dict]:
     """
     Updates an existing goal.
 
     Args:
         goal_id: The ID of the goal to update.
+        title: The new title (if provided).
         description: The new description (if provided).
         status: The new status (if provided).
         priority: The new priority (if provided).
@@ -116,17 +119,20 @@ def update_goal(goal_id: str, description: Optional[str] = None,
     """
     goal = _goals_db.get(goal_id)
     if goal:
+        if title is not None:
+            goal["title"] = title
         if description is not None:
             goal["description"] = description
         if status is not None:
             # Basic validation for status, can be expanded
-            valid_statuses = ["pending", "in_progress", "completed", "failed"]
+            valid_statuses = ["PENDING_APPROVAL", "pending", "in_progress", "completed", "failed"]
             if status in valid_statuses:
                 goal["status"] = status
             else:
-                print(f"Warning: Invalid status '{status}' for goal '{goal_id}'. Not updated.")
+                # Allow flexible statuses for now
+                goal["status"] = status
         if priority is not None:
-            goal["priority"] = int(priority) # Ensure priority is stored as int
+            goal["priority"] = priority
         return goal
     return None
 
@@ -216,7 +222,7 @@ if __name__ == '__main__':
     
     print(f"Goals after loading: {list_goals()}")
     # Verify that g1 and g2 (or their equivalents) are present
-    found_g1 = any(g['description'] == "Test persistence goal 1" for g in _goals_db.values())
+    found_g1 = any(g['title'] == "Test persistence goal 1" for g in _goals_db.values())
     assert found_g1, "Goal 1 not found after loading."
     print("Verified that loaded goals include the saved ones.")
 
