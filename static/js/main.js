@@ -722,7 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Populate History
                 if (data.session.history && data.session.history.length > 0) {
                     data.session.history.forEach(msg => {
-                        appendMessage(msg.role, msg.content);
+                        appendMessage(msg.role, msg.content, msg.images);
                     });
                 } else {
                     appendMessage('system', '<div class="bubble">New conversation started.</div>');
@@ -1047,10 +1047,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('run-file-btn')?.addEventListener('click', runFileCorrected);
 
     // --- Chat Logic ---
-    function appendMessage(role, text) {
+    function appendMessage(role, text, images = null) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role}`;
         let avatarText = role === 'user' ? '👤' : 'AI';
+
+        // Handle images
+        let imagesHtml = '';
+        if (images && images.length > 0) {
+            images.forEach(imgB64 => {
+                 // Check if it already has the prefix or not. Backend stores whatever we sent.
+                 // In sendMessage we stripped the prefix. So we likely need to add it back if missing.
+                 let src = imgB64;
+                 if (!src.startsWith('data:image')) {
+                     src = `data:image/png;base64,${imgB64}`;
+                 }
+                 imagesHtml += `<div class="user-uploaded-image"><img src="${src}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>`;
+            });
+        }
 
         // Split by html-dynamic blocks
         let parts = text.split(/(```html-dynamic[\s\S]*?```)/g);
@@ -1086,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${finalHtml}</div>`;
+        msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${imagesHtml}${finalHtml}</div>`;
         chatContainer.appendChild(msgDiv);
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }

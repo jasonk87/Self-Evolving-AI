@@ -326,7 +326,7 @@ async def chat():
     # Here we are appending to `conversation_history` which is used by `orchestrator`.
     # So we MUST append the full message here for the AI to see it.
     # We update the Persistent Session FIRST
-    updated_session = chat_manager.add_message(session_id, "user", message)
+    updated_session = chat_manager.add_message(session_id, "user", message, images=images)
     if not updated_session:
          # Fallback if add failed?
          updated_session = session_data # Just use what we had
