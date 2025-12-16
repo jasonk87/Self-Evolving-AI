@@ -113,8 +113,7 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     import json
     from ai_assistant.config import get_data_dir
     import os
-    from ai_assistant.fact_manager import load_learned_facts
-    from ai_assistant.system_status import get_system_status_summary
+    # load_learned_facts and get_system_status_summary are already imported at top level
     status_summary = get_system_status_summary(task_manager=task_manager, notification_manager=notification_manager, active_limit=3, archived_limit=5, unread_notifications_limit=3)
     facts = load_learned_facts()
     facts_summary = '\nLearned Facts:\n'

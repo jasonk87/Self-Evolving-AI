@@ -1,4 +1,8 @@
 import subprocess
+import sys
+from typing import Dict, Any
+import re
+import subprocess
 import shlex
 from typing import Dict, Any
 import os
@@ -179,6 +183,36 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
         return {'status': 'error', 'error_message': f'Unexpected error during installation: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 INSTALL_PYTHON_PACKAGE_SCHEMA = {'name': 'install_python_package', 'description': "Installs a Python package using the current environment's pip.", 'parameters': [{'name': 'package_name', 'type': 'str', 'description': 'The name of the package to install.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}}
 EXECUTE_SANDBOXED_PYTHON_SCRIPT_SCHEMA = {'name': 'execute_sandboxed_python_script', 'description': 'Executes a given Python script string in a temporary, somewhat isolated environment. WARNING: Basic PoC sandbox with minimal security. Use with extreme caution.', 'parameters': [{'name': 'script_content', 'type': 'str', 'description': 'The Python script content as a string.'}, {'name': 'input_files', 'type': 'dict', 'description': 'Optional. Filename:content map for files to create in the execution dir.'}, {'name': 'output_filenames', 'type': 'list', 'description': 'Optional. List of filenames expected to be created by the script, whose content will be returned.'}, {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout for script execution (default 10s).'}, {'name': 'python_executable', 'type': 'str', 'description': "Optional. Path to python interpreter (e.g., 'python' or '/usr/bin/python3'). Defaults to 'python'."}], 'returns': {'type': 'dict', 'description': "A dict with 'status' ('success', 'timeout', 'error'), 'return_code', 'stdout', 'stderr', 'output_files' (dict), 'error_message'."}}
+
+def run_all_tests() -> Dict[str, Any]:
+    """
+    Runs all tests available in the project by discovering and executing them.
+    Typically runs 'pytest'.
+
+    Returns:
+        A dictionary containing the test results.
+    """
+    import sys
+    try:
+        # We assume pytest is installed and available.
+        process_result = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True, timeout=300)
+        return {
+            'status': 'success' if process_result.returncode == 0 else 'failure',
+            'return_code': process_result.returncode,
+            'stdout': process_result.stdout.strip(),
+            'stderr': process_result.stderr.strip()
+        }
+    except FileNotFoundError:
+        return {'status': 'error', 'error_message': 'pytest not found. Please ensure it is installed.', 'return_code': -1, 'stdout': '', 'stderr': ''}
+    except Exception as e:
+        return {'status': 'error', 'error_message': f'Unexpected error running tests: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
+
+RUN_ALL_TESTS_SCHEMA = {
+    'name': 'run_all_tests',
+    'description': 'Runs all tests in the current environment using pytest.',
+    'parameters': [],
+    'returns': {'type': 'dict', 'description': "Results of the test run including stdout/stderr."}
+}
 if __name__ == '__main__':
     print('--- Testing code_execution_tools.py ---')
     print('\n--- Testing execute_sandboxed_python_script ---')

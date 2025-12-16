@@ -1,5 +1,269 @@
 [
     {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_9e2eb92afc",
+        "timestamp": "2025-12-16T10:23:37.698224+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f9cad817",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.meta_programming_tools.get_generated_tools_path"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_a469abfe7f",
+        "timestamp": "2025-12-16T10:23:25.810320+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_be26025307",
+        "timestamp": "2025-12-16T10:21:01.336526+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ffb7e4ba",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.get_project_file_content"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_8fd445ac24",
+        "timestamp": "2025-12-16T10:20:41.866367+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_a5f2056f01",
+        "timestamp": "2025-12-16T10:10:45.711596+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3eda0ada",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.write_text_to_file"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_56a2aa9ea6",
+        "timestamp": "2025-12-16T10:10:33.764838+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_fc17a6d18a",
+        "timestamp": "2025-12-16T10:04:14.011997+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_e408435aa0",
+        "timestamp": "2025-12-16T09:58:08.088008+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_97c839680f",
+        "timestamp": "2025-12-16T09:57:23.012126+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_542470bf00",
+        "timestamp": "2025-12-16T09:52:54.825145+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_701513219a",
+        "timestamp": "2025-12-16T09:52:39.852005+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_76d992b4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.list_project_files"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_6b157db8b6",
+        "timestamp": "2025-12-16T09:52:19.534148+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_49e31f2a2f",
+        "timestamp": "2025-12-16T09:49:11.828349+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_a482d5f0",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.agent_tools.spawn_ephemeral_agent"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_6d65a46f9f",
+        "timestamp": "2025-12-16T09:49:01.935221+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_7766e81f06",
+        "timestamp": "2025-12-16T09:47:33.305568+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_23a61ca226",
+        "timestamp": "2025-12-16T09:47:07.167545+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7913d9c0",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.config_management_tools.manage_tool_confirmation_settings"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_b670e4656f",
+        "timestamp": "2025-12-16T09:46:39.953257+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_9cc93d5b0c",
+        "timestamp": "2025-12-16T09:44:25.616530+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_b556a4bad6",
+        "timestamp": "2025-12-16T09:43:43.042947+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.t...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_fc19c4fcbe",
+        "timestamp": "2025-12-16T09:40:48.580241+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_2ba5385a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.tools.tool_system._tool_view_function_code"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_38640aed10",
+        "timestamp": "2025-12-16T09:40:39.278019+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_dd1ea78aac",
+        "timestamp": "2025-12-16T09:39:13.341386+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_f4907f0f36",
+        "timestamp": "2025-12-16T09:36:12.335806+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bbcf98d2",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.code_execution_tools.install_python_package"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_ffc9bd6fb0",
+        "timestamp": "2025-12-16T09:36:01.143265+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
         "event_type": "GENERAL_INFO",
         "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
         "notification_id": "notify_edae6d6bc8",

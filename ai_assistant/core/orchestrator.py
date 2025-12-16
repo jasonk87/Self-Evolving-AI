@@ -179,7 +179,8 @@ Available Tools:
 Instructions:
 1. Analyze the goal and context.
 2. Decide on the next step.
-3. OUTPUT FORMAT:
+3. IMPORTANT: If the goal is conversational or a simple greeting (e.g., "Hello", "How are you?"), responding directly is the correct action. Do NOT use tools to "wait" for input.
+4. OUTPUT FORMAT:
    - If you need to use a tool, output a JSON block:
      ```json
      {{
@@ -192,7 +193,7 @@ Instructions:
    - If you have the final answer or are done, output:
      FINAL ANSWER: [Your Answer]
 
-4. Loop until you achieve the goal or hit the limit.
+5. Loop until you achieve the goal or hit the limit.
 """
 
         execution_history = ""

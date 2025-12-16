@@ -126,17 +126,10 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
 
 
             # Try to parse JSON from response
-            json_str = response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0]
-            
-            # proposal = json.loads(json_str.strip())
-            proposal = _robust_json_parse(json_str.strip())
+            proposal = _robust_json_parse(response)
             
             if not proposal:
-                raise json.JSONDecodeError("Failed to parse using robust parser", json_str, 0)
+                raise json.JSONDecodeError("Failed to parse using robust parser", response, 0)
 
             
             # If successful, return immediately
@@ -226,29 +219,50 @@ async def perform_architectural_audit(effort_level: str = "normal") -> Optional[
 
 def _robust_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
     """
-    Attempts to parse JSON with multiple fallback strategies to handle LLM quirks.
+    Attempts to parse JSON with multiple fallback strategies, including regex extraction.
     """
-    # 1. Try standard JSON parsing
+    # 1. Try standard clean-up of markdown code blocks
+    clean_str = json_str.strip()
+    if clean_str.startswith("```json"):
+        clean_str = clean_str[7:]
+    elif clean_str.startswith("```"):
+        clean_str = clean_str[3:]
+    
+    if clean_str.endswith("```"):
+        clean_str = clean_str[:-3]
+    
+    clean_str = clean_str.strip()
+
+    # 2. Try standard JSON parsing on cleaned string
     try:
-        return json.loads(json_str)
+        return json.loads(clean_str)
     except json.JSONDecodeError:
         pass
 
-    # 2. Try ast.literal_eval (handles single quotes and some Python-specifics)
+    # 3. Regex Extraction: Find the largest outer {} block
+    # This handles cases where the LLM puts text before or after the JSON, 
+    # or if the markdown stripping failed.
+    import re
     try:
-        # ast.literal_eval is safe for evaluating strings containing Python literals
-        return ast.literal_eval(json_str) 
+        # Find the first '{' and the last '}'
+        start_idx = json_str.find('{')
+        end_idx = json_str.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            candidate = json_str[start_idx:end_idx+1]
+            return json.loads(candidate)
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # 4. Try ast.literal_eval (handles Python-specific syntax like single quotes)
+    try:
+        return ast.literal_eval(clean_str)
     except (ValueError, SyntaxError):
         pass
 
-    # 3. Try to clean up common issues
-    # Handle unescaped backslashes in strings (a common LLM issue with code generation)
-    # This is a bit risky but often saves the day.
-    # We try to escape backslashes that are NOT followed by a valid escape char.
+    # 5. Desperation move: replace newlines in strings
     try:
-        cleaned_str = json_str
-        # Replace 'Unterminated string' issues due to newlines
-        cleaned_str = cleaned_str.replace('\n', '\\n') 
+        cleaned_str = clean_str.replace('\n', '\\n') 
         return json.loads(cleaned_str)
     except json.JSONDecodeError:
         pass

@@ -1,3 +1,10 @@
+import subprocess
+import sys
+from typing import Dict, Any
+import re
+import subprocess
+import shlex
+from typing import Dict, Any
 import os
 import subprocess
 import tempfile
@@ -128,8 +135,6 @@ def execute_safe_terminal_command(command: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing "status", "stdout", "stderr", "return_code".
     """
-    import subprocess
-    import shlex
     ALLOWED_PREFIXES = ['pip install', 'python -m pip install', 'python3 -m pip install', 'python3.11 -m pip install', 'ls', 'dir', 'echo', 'whoami']
     is_allowed = False
     clean_command = command.strip()
@@ -141,10 +146,12 @@ def execute_safe_terminal_command(command: str) -> Dict[str, Any]:
         return {'status': 'error', 'error_message': f"Command not allowed: '{clean_command}'. Allowed prefixes: {ALLOWED_PREFIXES}", 'return_code': -1, 'stdout': '', 'stderr': ''}
     try:
         command_list = shlex.split(clean_command)
-        process_result = subprocess.run(command_list, shell=False, capture_output=True, text=True, timeout=120)
+        process_result = subprocess.run(command_list, capture_output=True, text=True, timeout=120, shell=False)
         return {'status': 'success' if process_result.returncode == 0 else 'error', 'return_code': process_result.returncode, 'stdout': process_result.stdout.strip(), 'stderr': process_result.stderr.strip()}
     except subprocess.TimeoutExpired:
         return {'status': 'timeout', 'error_message': 'Command execution timed out.', 'return_code': -1, 'stdout': '', 'stderr': ''}
+    except FileNotFoundError as e:
+        return {'status': 'error', 'error_message': f'Command not found: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 EXECUTE_SAFE_TERMINAL_COMMAND_SCHEMA = {'name': 'execute_safe_terminal_command', 'description': 'Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.', 'parameters': [{'name': 'command', 'type': 'str', 'description': 'The command string to execute.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr', 'error_message'."}}
@@ -159,11 +166,9 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing "status", "stdout", "stderr", "return_code".
     """
-    import sys
     if not package_name or not package_name.strip():
         return {'status': 'error', 'error_message': 'Package name cannot be empty.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     clean_package_name = package_name.strip()
-    import re
     if not re.match('^[a-zA-Z0-9_\\-\\.\\[\\]<>=!]+$', clean_package_name):
         return {'status': 'error', 'error_message': f"Invalid package name format: '{clean_package_name}'.", 'return_code': -1, 'stdout': '', 'stderr': ''}
     cmd = [sys.executable, '-m', 'pip', 'install', clean_package_name]

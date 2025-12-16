@@ -1,0 +1,16 @@
+{
+  "id": "e42acd66-7c4f-44bb-bea2-4fd6bf9a7da2",
+  "title": "how are you doing today?",
+  "created_at": 1765878131.9036396,
+  "updated_at": 1765878132.9086523,
+  "history": [
+    {
+      "role": "user",
+      "content": "how are you doing today?"
+    },
+    {
+      "role": "assistant",
+      "content": "An unexpected error occurred: 'ToolSystem' object has no attribute 'get_tools_description'"
+    }
+  ]
+}

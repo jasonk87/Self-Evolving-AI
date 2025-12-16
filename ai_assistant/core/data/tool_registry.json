@@ -907,5 +907,29 @@
         "description": "Performs 'Deep Research' by searching Google, visiting the top results, reading their content, and synthesizing a comprehensive answer. Use this for complex coding questions, API documentation lookups, or when standard snippets are insufficient.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "check_calendar": {
+        "tool_name": "check_calendar",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "check_calendar",
+        "description": "Checks the user's Google Calendar schedule for a specific date.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "list_upcoming_events": {
+        "tool_name": "list_upcoming_events",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "list_upcoming_events",
+        "description": "Lists the next upcoming events on the user's calendar.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "schedule_event": {
+        "tool_name": "schedule_event",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "schedule_event",
+        "description": "Schedules a new event on the user's Google Calendar.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

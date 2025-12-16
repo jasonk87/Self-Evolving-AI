@@ -59,8 +59,8 @@ class TaskRouter:
             response = await invoke_gemini_model_async(
                 prompt=full_prompt,
                 model_name=self.llm_model,
-                temperature=0.1, # Low temp for deterministic classification
-                max_tokens=10
+                temperature=0.0, # Zero temp for deterministic classification
+                max_tokens=100 # Allow enough tokens for Chain of Thought if present, though we ignore it
             )
 
             if response:
