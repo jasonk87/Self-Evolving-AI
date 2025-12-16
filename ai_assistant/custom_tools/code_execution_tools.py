@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import json
 from typing import Dict, Any, Optional, List
+from ai_assistant.core.events import emit_system_event
 
 def execute_sandboxed_python_script(script_content: str, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None) -> Dict[str, Any]:
     """
@@ -37,6 +38,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
             "error_message": Optional error message if status is "error".
             "executed_script_path": Path to the temporary script file.
     """
+    emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Preparing sandbox...', 'status': 'RUNNING'})
     if not script_content:
         return {'status': 'error', 'error_message': 'No script content provided.', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     interpreter = python_executable or 'python'
@@ -54,6 +56,9 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         return {'status': 'error', 'error_message': f'Invalid input_files argument: Expected dict, got {type(input_files).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     if output_filenames is not None and (not isinstance(output_filenames, list)):
         return {'status': 'error', 'error_message': f'Invalid output_filenames argument: Expected list, got {type(output_filenames).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
+
+    emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Running script in isolation...', 'status': 'RUNNING'})
+
     with tempfile.TemporaryDirectory() as temp_dir_path:
         script_filename = 'main_script.py'
         script_file_path = os.path.join(temp_dir_path, script_filename)
@@ -79,6 +84,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         error_msg_val = None
         try:
             process_result = subprocess.run([interpreter, '-I', '-s', '-S', script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
+            emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Execution finished.', 'status': 'COMPLETED'})
             stdout_val = process_result.stdout
             stderr_val = process_result.stderr
             return_code = process_result.returncode

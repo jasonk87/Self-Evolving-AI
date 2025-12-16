@@ -1,5 +1,25 @@
 [
     {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Test task 1 for summary....' (ID: task_44130ed6). Status: PLANNING",
+        "notification_id": "notify_86ea532682",
+        "timestamp": "2025-12-16T15:50:40.479409+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_44130ed6",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Test task 1 for summary....' (ID: task_3ba786b5). Status: PLANNING",
+        "notification_id": "notify_6136253b4d",
+        "timestamp": "2025-12-16T15:50:40.456528+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3ba786b5",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
         "event_type": "TASK_COMPLETED_SUCCESSFULLY",
         "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
         "notification_id": "notify_9e2eb92afc",

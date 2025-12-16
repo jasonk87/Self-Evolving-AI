@@ -203,6 +203,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- Chatterbox Protocol ---
+    socket.on('tool_status', (data) => {
+        // data: { message: "...", tool: "DeepResearcher", status: "RUNNING", session_id: "..." }
+
+        // Only show status for this session if session_id is provided
+        if (data.session_id && data.session_id !== currentSessionId) {
+            return;
+        }
+
+        // 1. Update Typing Indicator
+        showTypingIndicator(`${data.tool}: ${data.message}`);
+
+        // 2. Inline Ephemeral Log (Optional: append to chat as 'system' message that fades?)
+        // The prompt preferred "Inline ephemeral logs".
+        // Let's create a temporary message element that updates in place if the last message was also a status.
+
+        const lastMsg = chatContainer.lastElementChild;
+        const isLastMsgStatus = lastMsg && lastMsg.classList.contains('status-log');
+
+        if (isLastMsgStatus) {
+            lastMsg.innerHTML = `<span class="icon">🔄</span> <span class="text">${data.tool}: ${data.message}</span>`;
+        } else {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'message status-log';
+            statusDiv.style.color = '#888';
+            statusDiv.style.fontSize = '0.9em';
+            statusDiv.style.fontStyle = 'italic';
+            statusDiv.style.padding = '5px 10px';
+            statusDiv.style.opacity = '0.8';
+            statusDiv.innerHTML = `<span class="icon">🔄</span> <span class="text">${data.tool}: ${data.message}</span>`;
+            chatContainer.appendChild(statusDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    });
+
     function notifyIfHidden(title, body) {
         // Notify if document is hidden OR not focused
         if ((document.hidden || !document.hasFocus()) && notificationPermission === 'granted') {

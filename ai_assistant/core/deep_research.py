@@ -5,10 +5,11 @@ from ai_assistant.core.vision_service import VisionService
 from ai_assistant.custom_tools.search_tools import google_custom_search
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.config import DEEP_RESEARCH_MAX_URLS, DEEP_RESEARCH_TIMEOUT
+from ai_assistant.tools.base import ToolBase
 
 logger = logging.getLogger(__name__)
 
-class DeepResearcher:
+class DeepResearcher(ToolBase):
     """
     A research assistant that performs deep web research by:
     1. Searching Google for relevant URLs.
@@ -18,6 +19,7 @@ class DeepResearcher:
     """
 
     def __init__(self):
+        super().__init__(tool_name="DeepResearcher")
         self.vision_service = VisionService()
 
     async def perform_deep_research(self, query: str, max_depth: int = DEEP_RESEARCH_MAX_URLS) -> Dict[str, Any]:
@@ -31,9 +33,10 @@ class DeepResearcher:
         Returns:
             Dict[str, Any]: A dictionary containing the 'summary' and 'sources'.
         """
-        logger.info(f"DeepResearcher: Starting research for '{query}'")
+        self.emit_status(f"Starting research for '{query}'...")
 
         # Step 1: Search
+        self.emit_status("Searching Google for relevant sources...")
         search_results = google_custom_search(query, num_results=max_depth)
         if not search_results:
             return {
@@ -46,8 +49,8 @@ class DeepResearcher:
         findings = []
 
         # Step 2 & 3: Browse and Analyze
-        for url in urls_to_visit:
-            logger.info(f"DeepResearcher: Visiting {url}")
+        for i, url in enumerate(urls_to_visit):
+            self.emit_status(f"Visiting ({i+1}/{len(urls_to_visit)}): {url}")
             try:
                 # Use a timeout wrapper for the scraping part if needed,
                 # but VisionService has its own internal timeout logic (we might want to enforce DEEP_RESEARCH_TIMEOUT)
@@ -62,6 +65,7 @@ class DeepResearcher:
                     continue
 
                 # Analyze content
+                self.emit_status(f"Analyzing content from {url}...")
                 analysis = await self._analyze_page_content(query, url, page_content)
 
                 if analysis.strip().upper() == "SKIP":
@@ -73,8 +77,10 @@ class DeepResearcher:
 
             except asyncio.TimeoutError:
                 logger.warning(f"DeepResearcher: Timeout visiting {url}")
+                self.emit_status(f"Timeout visiting {url}")
             except Exception as e:
                 logger.error(f"DeepResearcher: Error visiting {url}: {e}")
+                self.emit_status(f"Error visiting {url}: {e}")
 
         # Step 4: Synthesize
         if not findings:
@@ -83,7 +89,9 @@ class DeepResearcher:
                 "sources": sources
             }
 
+        self.emit_status("Synthesizing final answer from findings...")
         summary = await self._synthesize_findings(query, findings)
+        self.emit_status("Research complete.")
 
         return {
             "summary": summary,
