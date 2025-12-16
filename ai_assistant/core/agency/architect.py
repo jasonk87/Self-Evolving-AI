@@ -131,6 +131,8 @@ Example:
         Discards any BLOCKED goals.
         """
         approved_goals = []
+        loop = asyncio.get_running_loop()
+
         for goal_data in goals:
             title = goal_data.get("title", "Untitled Goal")
             description = goal_data.get("description", "")
@@ -138,7 +140,12 @@ Example:
             # The judge expects an action description.
             action_desc = f"Create Maintenance Goal: {title}. Description: {description}"
 
-            verdict = judge.evaluate_action(action_desc) # judge is sync, which is fine
+            # Run blocking judge in executor
+            verdict = await loop.run_in_executor(
+                None,
+                judge.evaluate_action,
+                action_desc
+            )
 
             if verdict.status == "APPROVED":
                 approved_goals.append(goal_data)
