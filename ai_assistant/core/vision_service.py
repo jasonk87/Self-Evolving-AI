@@ -4,7 +4,7 @@ import base64
 import logging
 import asyncio
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from playwright.async_api import async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 import ai_assistant.config as config
@@ -119,6 +119,70 @@ class VisionService:
         except Exception as e:
             logger.error(f"VisionService: Error scraping text from {url}: {e}")
             return None
+        finally:
+            if browser:
+                await browser.close()
+            if playwright:
+                await playwright.stop()
+
+    async def scrape_page_images(self, url: str, limit: int = 3) -> List[str]:
+        """
+        Navigates to the URL and extracts relevant image URLs.
+        Filters out small icons, SVGs, and likely ads.
+        Returns a list of absolute URLs for the top images.
+        """
+        playwright = None
+        browser = None
+        try:
+            playwright = await async_playwright().start()
+
+            headless_mode = not config.GHOST_MODE
+            slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
+
+            browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
+
+            if config.GHOST_MODE:
+                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+            else:
+                page = await browser.new_page()
+
+            logger.info(f"VisionService: Scraping images from {url}")
+
+            await self._inject_hud(page)
+
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+
+            # Heuristic Logic to find good images
+            # 1. Get all img tags
+            # 2. Filter by size (naturalWidth > 100, naturalHeight > 100)
+            # 3. Filter out SVGs (often icons) if src ends with .svg or starts with data:image/svg
+            # 4. Sort by area (width * height) descending to get "hero" images
+
+            images = await page.evaluate('''() => {
+                const imgs = Array.from(document.querySelectorAll('img'));
+                return imgs
+                    .filter(img => {
+                        return img.naturalWidth > 100 &&
+                               img.naturalHeight > 100 &&
+                               !img.src.endsWith('.svg') &&
+                               !img.src.includes('logo') &&
+                               !img.src.includes('icon');
+                    })
+                    .map(img => ({
+                        src: img.src,
+                        area: img.naturalWidth * img.naturalHeight
+                    }))
+                    .sort((a, b) => b.area - a.area)
+                    .slice(0, 10) # Get top 10 candidates first
+                    .map(item => item.src);
+            }''')
+
+            # Return requested limit
+            return images[:limit]
+
+        except Exception as e:
+            logger.error(f"VisionService: Error scraping images from {url}: {e}")
+            return []
         finally:
             if browser:
                 await browser.close()
