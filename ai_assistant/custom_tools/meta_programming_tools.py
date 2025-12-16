@@ -120,6 +120,7 @@ Answer:
 
         council_feedback = ""
         
+        max_retries = 3
         for attempt in range(max_retries):
             current_prompt = base_prompt
             

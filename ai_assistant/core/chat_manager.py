@@ -50,7 +50,7 @@ class ChatSessionManager:
         # Sort by updated_at desc
         return sorted(sessions, key=lambda x: x['updated_at'], reverse=True)
 
-    def add_message(self, session_id: str, role: str, content: str):
+    def add_message(self, session_id: str, role: str, content: str, images: Optional[List[str]] = None):
         session = self.get_session(session_id)
         if not session:
             # If session doesn't exist, create it implicitly? 
@@ -61,7 +61,11 @@ class ChatSessionManager:
             # Let's return None to signal failure.
             return None
         
-        session["history"].append({"role": role, "content": content})
+        message_data = {"role": role, "content": content}
+        if images:
+            message_data["images"] = images
+
+        session["history"].append(message_data)
         session["updated_at"] = time.time()
         
         # Auto-update title if it's the first user message and title is "New Chat"
