@@ -337,7 +337,7 @@ async def chat():
     
     try:
         # Flask 2.0+ supports async views.
-        success, response = await orchestrator.process_prompt(
+        success, response, collected_images = await orchestrator.process_prompt(
             full_message,
             conversation_history=current_history_list,
             session_id=session_id,
@@ -346,12 +346,13 @@ async def chat():
         
         # Add assistant response to history (and storage)
         if response:
-             updated_session = chat_manager.add_message(session_id, "assistant", response)
+             updated_session = chat_manager.add_message(session_id, "assistant", response, images=collected_images)
         
         return jsonify({
             "response": response,
             "session_id": session_id,
-            "success": success
+            "success": success,
+            "images": collected_images
         })
     except Exception as e:
         logger.error(f"Error processing prompt: {e}")
@@ -704,17 +705,22 @@ def handle_message(data):
     # Run processing loop
     try:
         # We need to run async orchestrator method in a sync context
-        # Orchestrator.process_prompt returns (success, response_string)
-        success, response = asyncio.run(
+        # Orchestrator.process_prompt returns (success, response_string, images)
+        success, response, collected_images = asyncio.run(
             orchestrator.process_prompt(message)
         )
         
         # Save to history
         if session_id:
-             chat_manager.add_message(session_id, "assistant", response)
+             chat_manager.add_message(session_id, "assistant", response, images=collected_images)
 
         # Emit back direct response
-        socketio.emit('response', {'response': response, 'success': success, 'session_id': session_id})
+        socketio.emit('response', {
+            'response': response,
+            'success': success,
+            'session_id': session_id,
+            'images': collected_images
+        })
 
     except Exception as e:
         logger.error(f"Socket message processing error: {e}")

@@ -1,6 +1,16 @@
 [
     {
         "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_23b75857ab",
+        "timestamp": "2025-12-16T23:55:26.177920+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
         "summary_message": "Resuming interrupted task 'Test task 1 for summary....' (ID: task_44130ed6). Status: PLANNING",
         "notification_id": "notify_86ea532682",
         "timestamp": "2025-12-16T15:50:40.479409+00:00",

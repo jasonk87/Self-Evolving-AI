@@ -1,6 +1,9 @@
 import asyncio
 import logging
-from typing import Dict, Any, List
+import os
+import uuid
+import aiohttp
+from typing import Dict, Any, List, Optional
 from ai_assistant.core.vision_service import VisionService
 from ai_assistant.custom_tools.search_tools import google_custom_search
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
@@ -22,6 +25,25 @@ class DeepResearcher(ToolBase):
     def __init__(self):
         super().__init__(tool_name="DeepResearcher")
         self.vision_service = VisionService()
+
+    async def _download_image(self, url: str) -> Optional[str]:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as response:
+                    if response.status == 200:
+                        content_type = response.headers.get('content-type', '')
+                        if 'image' in content_type:
+                            data = await response.read()
+                            filename = f"{uuid.uuid4()}.jpg"
+                            save_dir = os.path.join("static", "scraped_images")
+                            os.makedirs(save_dir, exist_ok=True)
+                            filepath = os.path.join(save_dir, filename)
+                            with open(filepath, "wb") as f:
+                                f.write(data)
+                            return f"/static/scraped_images/{filename}"
+        except Exception as e:
+            logger.error(f"Failed to download image {url}: {e}")
+        return None
 
     async def perform_deep_research(self, query: str, max_depth: int = DEEP_RESEARCH_MAX_URLS) -> Dict[str, Any]:
         """
@@ -49,22 +71,32 @@ class DeepResearcher(ToolBase):
         urls_to_visit = [result['link'] for result in search_results if result.get('link')]
         sources = []
         findings = []
+        collected_images = []
 
         # Step 2 & 3: Browse and Analyze
         for i, url in enumerate(urls_to_visit):
             self.emit_status(f"Visiting ({i+1}/{len(urls_to_visit)}): {url}")
             try:
-                # Use a timeout wrapper for the scraping part if needed,
-                # but VisionService has its own internal timeout logic (we might want to enforce DEEP_RESEARCH_TIMEOUT)
-                # For now rely on VisionService's timeout or add one here.
+                # Scrape text
                 page_content = await asyncio.wait_for(
                     self.vision_service.scrape_page_text(url),
-                    timeout=DEEP_RESEARCH_TIMEOUT + 10 # slightly more than internal timeout
+                    timeout=DEEP_RESEARCH_TIMEOUT + 10
                 )
 
                 if not page_content:
                     logger.warning(f"DeepResearcher: No content retrieved from {url}")
                     continue
+
+                # Scrape images (The Visual Shopper)
+                # Attempt to get images for every page to ensure we capture visuals
+                try:
+                    image_urls = await self.vision_service.scrape_page_images(url, limit=2)
+                    for img_url in image_urls:
+                        local_path = await self._download_image(img_url)
+                        if local_path:
+                            collected_images.append(local_path)
+                except Exception as e:
+                    logger.error(f"DeepResearcher: Failed to scrape images from {url}: {e}")
 
                 # Analyze content
                 self.emit_status(f"Analyzing content from {url}...")
@@ -88,7 +120,8 @@ class DeepResearcher(ToolBase):
         if not findings:
             return {
                 "summary": "I visited the top search results but could not extract relevant information found to answer your specific query. The pages might have been protected, empty, or irrelevant.",
-                "sources": sources
+                "sources": sources,
+                "images": collected_images
             }
 
         self.emit_status("Synthesizing final answer from findings...")
@@ -97,7 +130,8 @@ class DeepResearcher(ToolBase):
 
         return {
             "summary": summary,
-            "sources": sources
+            "sources": sources,
+            "images": collected_images
         }
 
     async def _analyze_page_content(self, query: str, url: str, content: str) -> str:

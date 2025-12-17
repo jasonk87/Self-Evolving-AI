@@ -67,10 +67,10 @@ class DynamicOrchestrator:
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
 
-    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None) -> Tuple[bool, str]:
+    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Process a user prompt by routing it to the appropriate execution engine.
-        Returns (success, response_message)
+        Returns (success, response_message, images)
         """
         try:
             self.current_goal = prompt
@@ -99,7 +99,9 @@ class DynamicOrchestrator:
 
             # 4. Dispatch
             if mode == ExecutionMode.DIRECT:
-                return await self._run_direct_mode(prompt_with_context, conversation_history)
+                # Direct mode doesn't support tools, so no images
+                success, response = await self._run_direct_mode(prompt_with_context, conversation_history)
+                return success, response, None
             elif mode == ExecutionMode.FAST_REACT:
                 return await self._run_fast_react_mode(prompt_with_context, full_context_str, conversation_history, session_id)
             elif mode == ExecutionMode.THINKING_PRO:
@@ -110,7 +112,7 @@ class DynamicOrchestrator:
 
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            return False, f"An unexpected error occurred: {str(e)}"
+            return False, f"An unexpected error occurred: {str(e)}", None
 
     async def _run_direct_mode(self, prompt: str, history: Optional[List[Dict[str, str]]]) -> Tuple[bool, str]:
         """
@@ -134,7 +136,7 @@ class DynamicOrchestrator:
             return True, response
         return False, "Failed to generate response in Direct Mode."
 
-    async def _run_fast_react_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str]:
+    async def _run_fast_react_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Engine 2: Fast ReAct Mode. Standard loop (Think -> Act -> Observe).
         """
@@ -147,7 +149,7 @@ class DynamicOrchestrator:
             model_name="gemini-2.0-flash"
         )
 
-    async def _run_thinking_pro_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str]:
+    async def _run_thinking_pro_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Engine 3: Thinking Pro Mode. Parallel Branching ReAct.
         """
@@ -160,7 +162,7 @@ class DynamicOrchestrator:
             model_name="gemini-2.0-flash-exp" # Use stronger model for thinking
         )
 
-    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_parallel_thinking: bool, model_name: str) -> Tuple[bool, str]:
+    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_parallel_thinking: bool, model_name: str) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Shared ReAct loop logic.
         """
@@ -172,6 +174,7 @@ class DynamicOrchestrator:
 
         current_steps = []
         max_steps = MAX_REACT_STEPS
+        collected_images = []
 
         tools_desc = tool_system_instance.get_tools_description()
 
@@ -224,7 +227,7 @@ Instructions:
                 )
 
             if not response:
-                return False, "AI stopped responding."
+                return False, "AI stopped responding.", None
 
             # Parse Response
             tool_call = self._parse_tool_call(response)
@@ -267,6 +270,14 @@ Instructions:
                             notification_manager=self.notification_manager,
                             action_executor=self.action_executor
                         )
+
+                        # Check for images in result
+                        if isinstance(result, dict) and 'images' in result:
+                            # Add new images to collection
+                            new_images = result.get('images', [])
+                            if new_images:
+                                collected_images.extend(new_images)
+
                         result_str = str(result)
                         execution_success = True
                         break # Success!
@@ -322,7 +333,7 @@ Instructions:
             tools_used=tools_used_names
         ))
 
-        return success, final_answer
+        return success, final_answer, collected_images
 
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
         """

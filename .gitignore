@@ -9,3 +9,4 @@ venv/
 logs/
 *_output.txt
 git_*.txt
+static/scraped_images/
