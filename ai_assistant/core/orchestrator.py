@@ -126,6 +126,13 @@ class DynamicOrchestrator:
         final_answer = ""
         success = False
 
+        # Define persona guidance based on context_source
+        persona_guide = ""
+        if context_source == "SYSTEM":
+            persona_guide = "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. Be technical, concise, and results-oriented. If you finish, output the status/log as the FINAL ANSWER."
+        else:
+            persona_guide = "MODE: USER CHAT. You are assisting a user. Be helpful, conversational, and clear."
+
         # We loop through cycles
         for step_i in range(max_steps):
             print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
@@ -133,6 +140,7 @@ class DynamicOrchestrator:
             # Phase 1: Strategist (Think)
             strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action.
 Goal: {prompt}
+{persona_guide}
 
 Context:
 {context}
@@ -164,6 +172,7 @@ Output strictly your reasoning and the plan for the Operator.
 
             operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
 Goal: {prompt}
+{persona_guide}
 
 Available Tools:
 {tools_desc}
@@ -205,11 +214,12 @@ Instructions:
                 final_answer = operator_response.split("FINAL ANSWER:")[-1].strip()
                 success = True
 
-                # Context-Aware Exit
+                # Context-Aware Exit Logic
                 if context_source == "SYSTEM":
-                    # For system tasks, we might not want to return the raw text unless critical.
-                    # But the signature expects a string. We return it.
-                    pass
+                    # If this is a background system task, we ensure we don't accidentally reply with a "Hello" unless it's part of the task.
+                    # We trust the LLM followed the "SYSTEM TASK" persona instructions, but we can wrap the log.
+                    # Since we must return a string, we return the final answer which should be the log/status.
+                    logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
                 break
 
             if tool_call:
