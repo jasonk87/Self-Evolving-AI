@@ -1,5 +1,9 @@
+from typing import Optional, List, Dict
+from ai_assistant.core.task_manager import TaskManager
+from ai_assistant.core.notification_manager import NotificationManager
+from ai_assistant.core.system_status import get_system_status_summary, load_learned_facts
 from typing import List, Dict, Any, Optional
-
+from typing import List, Dict, Any, Optional
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification
 from datetime import datetime, timezone, timedelta
@@ -113,7 +117,6 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     import json
     from ai_assistant.config import get_data_dir
     import os
-    # load_learned_facts and get_system_status_summary are already imported at top level
     status_summary = get_system_status_summary(task_manager=task_manager, notification_manager=notification_manager, active_limit=3, archived_limit=5, unread_notifications_limit=3)
     facts = load_learned_facts()
     facts_summary = '\nLearned Facts:\n'
@@ -225,7 +228,11 @@ def list_formatted_suggestions(status_filter: Optional[str]='pending') -> List[D
         A list of dictionaries, where each dictionary contains key details of a suggestion.
         Returns an empty list if no suggestions match or if suggestion_manager is unavailable.
     """
-    all_suggs = list_suggestions()
+    from ai_assistant.custom_tools.suggestion_management import list_suggestions
+    try:
+        all_suggs = list_suggestions()
+    except Exception:
+        return []
     if not all_suggs:
         return []
     filtered_suggestions: List[Dict[str, Any]] = []
@@ -234,7 +241,7 @@ def list_formatted_suggestions(status_filter: Optional[str]='pending') -> List[D
         current_status = sugg.get('status', '').lower() if isinstance(sugg, dict) else ''
         if status_to_filter == 'all' or current_status == status_to_filter:
             formatted_sugg = {'suggestion_id': sugg.get('suggestion_id', 'N/A'), 'type': sugg.get('type', 'N/A'), 'description': sugg.get('description', 'N/A'), 'status': sugg.get('status', 'N/A'), 'created_at': sugg.get('creation_timestamp', 'N/A'), 'source': sugg.get('source', 'AI')}
-            if isinstance(formatted_sugg['type'], Enum):
+            if 'type' in formatted_sugg and hasattr(formatted_sugg['type'], 'name'):
                 formatted_sugg['type'] = formatted_sugg['type'].name
             filtered_suggestions.append(formatted_sugg)
     return filtered_suggestions

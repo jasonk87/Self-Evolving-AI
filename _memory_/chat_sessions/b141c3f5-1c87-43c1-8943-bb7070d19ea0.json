@@ -1,0 +1,24 @@
+{
+  "id": "b141c3f5-1c87-43c1-8943-bb7070d19ea0",
+  "title": "can yo ushow me a picture of m...",
+  "created_at": 1765933228.6973574,
+  "updated_at": 1765933364.4461174,
+  "history": [
+    {
+      "role": "user",
+      "content": "can yo ushow me a picture of michael jordan?"
+    },
+    {
+      "role": "assistant",
+      "content": "I am currently unable to display a picture of Michael Jordan due to technical difficulties retrieving search results."
+    },
+    {
+      "role": "user",
+      "content": "lets try to find that picture again"
+    },
+    {
+      "role": "assistant",
+      "content": "Awaiting user clarification."
+    }
+  ]
+}

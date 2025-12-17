@@ -1,4 +1,12 @@
 import os
+import os
+from typing import Dict, Any
+import os
+from typing import Dict, Any, Optional
+import os
+from typing import Dict, Any, Optional
+import os
+import os
 from typing import Dict, Any
 import os
 import re
@@ -137,7 +145,7 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
     path_to_list = os.path.abspath(root_path)
     if sub_directory:
         prospective_path = os.path.abspath(os.path.normpath(os.path.join(path_to_list, sub_directory)))
-        if os.path.commonpath([path_to_list, prospective_path]) != path_to_list:
+        if not prospective_path.startswith(path_to_list):
             return {'status': 'error', 'message': f"Subdirectory '{sub_directory}' attempts to traverse outside project root '{path_to_list}'."}
         path_to_list = prospective_path
     if not os.path.isdir(path_to_list):
@@ -147,10 +155,10 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         files = [entry for entry in entries if os.path.isfile(os.path.join(path_to_list, entry))]
         directories = [entry for entry in entries if os.path.isdir(os.path.join(path_to_list, entry))]
         return {'status': 'success', 'path_listed': path_to_list, 'files': sorted(files), 'directories': sorted(directories)}
-    except FileNotFoundError:
-        return {'status': 'error', 'message': f'Path not found: {path_to_list}'}
-    except PermissionError:
-        return {'status': 'error', 'message': f'Permission denied to list directory: {path_to_list}'}
+    except FileNotFoundError as e:
+        return {'status': 'error', 'message': f'Path not found: {path_to_list} - {str(e)}'}
+    except PermissionError as e:
+        return {'status': 'error', 'message': f'Permission denied to list directory: {path_to_list} - {str(e)}'}
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
 

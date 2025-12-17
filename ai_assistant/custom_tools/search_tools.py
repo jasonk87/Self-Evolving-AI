@@ -94,3 +94,80 @@ def execute_deep_research(query: str) -> str:
         return loop.run_until_complete(researcher.perform_deep_research(query))["summary"]
     else:
         return asyncio.run(researcher.perform_deep_research(query))["summary"]
+
+import requests
+import os
+import uuid
+
+def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
+    """
+    Searches for images on the web, downloads them locally, and returns their paths for display.
+    Use this when the user asks to "show" or "see" something.
+
+    Args:
+        query (str): The search query for the image.
+        num_images (int): Number of images to return (max 5).
+
+    Returns:
+        Dict[str, Any]: A dictionary with a key 'images' containing a list of web-accessible paths 
+                        (e.g., ['static/downloaded_images/img1.jpg']).
+    """
+    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+        return {"error": "Google API Key or CSE ID is not configured."}
+
+    try:
+        service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
+        num_images = max(1, min(num_images, 5))
+        
+        # searchType='image' is the key here
+        res = service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_images, searchType='image').execute()
+        
+        # Determine strict path to static folder relative to this file
+        # this file: ai_assistant/custom_tools/search_tools.py
+        # root: ai_assistant/../..
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        static_dir = os.path.join(base_dir, 'static', 'downloaded_images')
+        os.makedirs(static_dir, exist_ok=True)
+        
+        downloaded_paths = []
+        
+        if 'items' in res:
+            for item in res['items']:
+                link = item.get("link")
+                if not link:
+                    continue
+                    
+                try:
+                    # Download content
+                    img_data = requests.get(link, timeout=5).content
+                    
+                    # Generate unique filename
+                    ext = os.path.splitext(link)[1].lower()
+                    if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                        ext = '.jpg' # Fallback
+                        
+                    filename = f"img_{uuid.uuid4()}{ext}"
+                    filepath = os.path.join(static_dir, filename)
+                    
+                    with open(filepath, 'wb') as f:
+                        f.write(img_data)
+                        
+                    # Add relative path for frontend (assuming Flask serves 'static' at /static)
+                    # We return 'static/downloaded_images/filename'
+                    downloaded_paths.append(f"static/downloaded_images/{filename}")
+                    
+                except Exception as e:
+                    print(f"Failed to download image from {link}: {e}")
+                    continue
+
+        if not downloaded_paths:
+            return {"result": f"Found images for '{query}' but failed to download them.", "images": []}
+            
+        return {
+            "result": f"Successfully found and downloaded {len(downloaded_paths)} images for '{query}'.",
+            "images": downloaded_paths
+        }
+            
+    except Exception as e:
+        print(f"An error occurred during Image Search: {e}")
+        return {"error": str(e)}

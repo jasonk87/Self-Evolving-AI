@@ -18,5 +18,15 @@
         "created_at": "2025-12-12T10:22:08.498462+00:00",
         "updated_at": "2025-12-12T10:22:08.517760+00:00",
         "tasks": []
+    },
+    {
+        "project_id": "96804992-72ba-4032-8033-c061eae72a5c",
+        "name": "tic_tac_toe_ai",
+        "description": "A Tic Tac Toe game with a machine learning AI opponent.",
+        "status": "planning",
+        "root_path": "c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\ai_generated_projects\\tic_tac_toe_ai",
+        "created_at": "2025-12-17T09:18:47.252699+00:00",
+        "updated_at": "2025-12-17T09:18:47.277567+00:00",
+        "tasks": []
     }
 ]

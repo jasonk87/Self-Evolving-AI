@@ -977,5 +977,13 @@
                 ]
             }
         }
+    },
+    "list_suggestions": {
+        "tool_name": "list_suggestions",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "list_suggestions",
+        "description": "Lists suggestions, optionally filtered by status.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

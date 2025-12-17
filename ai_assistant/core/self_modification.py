@@ -463,11 +463,35 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             )
 
         # 1. Merge Imports (Prepend to original AST)
-        # Naive merge: just add them to the top. AST matching for duplicates is hard, Python allows duplicate imports.
-        # To be slightly cleaner, we could try to avoid exact duplicates, but let's trust Python for now.
+        # Deduplicate imports: Check if new_imports already exist in original code
         if new_imports:
-             original_ast.body = new_imports + original_ast.body
-             logger.info(f"Added {len(new_imports)} new import statements to '{file_path}'.")
+             existing_imports_sigs = set()
+             for node in original_ast.body:
+                 if isinstance(node, (ast.Import, ast.ImportFrom)):
+                     try:
+                         # Normalize using unparse to match exactly
+                         existing_imports_sigs.add(ast.unparse(node).strip())
+                     except Exception:
+                         pass
+             
+             unique_new_imports = []
+             for imp in new_imports:
+                 try:
+                     imp_sig = ast.unparse(imp).strip()
+                     if imp_sig not in existing_imports_sigs:
+                         unique_new_imports.append(imp)
+                         # Add to set to prevent duplicates within new_imports list itself
+                         existing_imports_sigs.add(imp_sig)
+                 except Exception:
+                     # If unparse fails, we default to adding it (safer vs losing it) or skip?
+                     # Safer to add it to avoid MissingImport error, user can clean up rare dupes.
+                     unique_new_imports.append(imp)
+
+             if unique_new_imports:
+                 original_ast.body = unique_new_imports + original_ast.body
+                 logger.info(f"Added {len(unique_new_imports)} unique import statements to '{file_path}'.")
+             else:
+                 logger.info("All new imports were duplicates of existing imports. Skipped addition.")
 
         # 2. Replace Function
         function_found_and_replaced = False

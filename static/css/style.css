@@ -144,6 +144,8 @@ body {
     display: flex;
     flex-direction: column;
     transition: margin-left 0.3s ease;
+    flex-shrink: 0;
+    /* Prevent shrinking when chat content is wide */
 }
 
 .sidebar-panel.collapsed {
@@ -202,6 +204,8 @@ body {
     flex-direction: column;
     position: relative;
     background: transparent;
+    min-width: 0;
+    /* CRITICAL: Allows flex children (chat) to shrink below content size, forcing wrap */
 }
 
 .view-container {
@@ -209,6 +213,8 @@ body {
     flex: 1;
     height: 100%;
     flex-direction: column;
+    min-width: 0;
+    /* CRITICAL: Propagate shrink capability down the tree */
 }
 
 .view-container.active {
@@ -536,6 +542,16 @@ body {
     line-height: 1.6;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     backdrop-filter: blur(10px);
+    /* Ensure text wraps correctly */
+    /* Ensure text wraps correctly */
+    white-space: pre-line;
+    /* Collapse spaces, wrap on newlines. Safer. */
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    /* Force break on long words */
+    word-break: break-all;
+    /* Aggressive breaking to prevent clipping at all costs */
+    /* overflow-x: hidden; REMOVED */
 }
 
 .message.user .content {
@@ -1542,6 +1558,7 @@ body {
     width: 14px;
     text-align: center;
 }
+
 /* Image Preview Styling */
 .image-preview-container {
     position: relative;
@@ -1588,7 +1605,8 @@ body {
 /* Ensure the input area accommodates the new button and preview */
 .input-area {
     /* ... existing styles ... */
-    gap: 10px; /* Ensure spacing between elements */
+    gap: 10px;
+    /* Ensure spacing between elements */
 }
 
 /* Image Upload Button Styles */
@@ -1603,12 +1621,14 @@ body {
     border: 1px solid transparent;
     border-radius: 50%;
     cursor: pointer;
-    color: #94a3b8; /* Slate 400 */
+    color: #94a3b8;
+    /* Slate 400 */
     transition: all 0.2s ease;
 }
 
 #image-upload-btn:hover {
-    color: #38bdf8; /* Sky 400 */
+    color: #38bdf8;
+    /* Sky 400 */
     background: rgba(56, 189, 248, 0.1);
     border-color: rgba(56, 189, 248, 0.2);
 }
@@ -1634,10 +1654,240 @@ body {
 }
 
 @keyframes glitch-anim {
-    0% { transform: translate(0); }
-    20% { transform: translate(-2px, 2px); }
-    40% { transform: translate(-2px, -2px); }
-    60% { transform: translate(2px, 2px); }
-    80% { transform: translate(2px, -2px); }
-    100% { transform: translate(0); }
+    0% {
+        transform: translate(0);
+    }
+
+    20% {
+        transform: translate(-2px, 2px);
+    }
+
+    40% {
+        transform: translate(-2px, -2px);
+    }
+
+    60% {
+        transform: translate(2px, 2px);
+    }
+
+    80% {
+        transform: translate(2px, -2px);
+    }
+
+    100% {
+        transform: translate(0);
+    }
+}
+
+/* --- Memory Tabs --- */
+.memory-tabs {
+    display: flex;
+    padding: 0 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px 0;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    position: relative;
+    transition: color 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    color: var(--accent-cyan);
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--accent-cyan);
+    box-shadow: 0 -2px 5px rgba(0, 240, 255, 0.5);
+}
+
+.memory-tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    height: 100%;
+    /* Ensure content takes available space but scrolls */
+    min-height: 0;
+}
+
+.memory-tab-content.active {
+    display: block;
+}
+
+.memory-tab-content.hidden {
+    display: none !important;
+}
+
+/* --- Episode Cards --- */
+.episode-card {
+    border-left: 2px solid var(--accent-purple);
+    background: rgba(197, 74, 255, 0.05);
+    /* Tinted purple */
+}
+
+.episode-card:hover {
+    background: rgba(197, 74, 255, 0.1);
+    border-left-width: 4px;
+}
+
+.topic-tag {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--font-code);
+}
+
+.view-session-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-session-btn:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    background: rgba(0, 240, 255, 0.1);
+}
+
+/* Settings UI Styles */
+.settings-container {
+    padding: 20px;
+    color: var(--text-primary);
+    background: rgba(10, 15, 30, 0.6);
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+.settings-container h3 {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    color: var(--accent-cyan);
+    font-size: 16px;
+}
+
+.setting-group {
+    margin-bottom: 20px;
+}
+
+.setting-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.setting-group select,
+.setting-group input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'Consolas', monospace;
+    transition: border-color 0.3s;
+}
+
+.setting-group select:focus,
+.setting-group input[type="text"]:focus {
+    border-color: var(--accent-cyan);
+    outline: none;
+}
+
+.setting-desc {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-top: 5px;
+    font-style: italic;
+    opacity: 0.7;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-switch label {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #333;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.toggle-switch label:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 4px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked+label {
+    background-color: var(--accent-cyan);
+}
+
+.toggle-switch input:checked+label:before {
+    transform: translateX(24px);
+}
+
+.setting-actions {
+    margin-top: 30px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+#save-status {
+    font-size: 0.9em;
+    opacity: 0;
+    transition: opacity 0.5s;
+    color: #4cd137;
 }

@@ -1,5 +1,1289 @@
 [
     {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' FAILED_UNKNOWN. Reason: LLM provided no usable suggestion or indicated impossibility (// NO_CODE_SUGGESTION_POSSIBLE).",
+        "notification_id": "notify_f825da6238",
+        "timestamp": "2025-12-17T10:16:22.114262+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b7680d09",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.get_project_file_content"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_f01f24b668",
+        "timestamp": "2025-12-17T10:08:35.099287+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' (ID: task_ad1431e5). Status: PLANNING",
+        "notification_id": "notify_54de2b5ddb",
+        "timestamp": "2025-12-17T10:08:35.070514+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ad1431e5",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_ea02c06388",
+        "timestamp": "2025-12-17T10:07:17.058450+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' (ID: task_ad1431e5). Status: PLANNING",
+        "notification_id": "notify_f42ddc8e9c",
+        "timestamp": "2025-12-17T10:07:17.029422+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ad1431e5",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_d32130ab19",
+        "timestamp": "2025-12-17T09:35:08.573972+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f2f8bcf5",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.build_project"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_234926cb10",
+        "timestamp": "2025-12-17T09:24:34.841421+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4fc4821f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.generated.set_bedtime_reminder"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_9ca34837d3",
+        "timestamp": "2025-12-17T09:24:19.965513+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' (ID: task_ad1431e5). Status: PLANNING",
+        "notification_id": "notify_f5c622d62b",
+        "timestamp": "2025-12-17T09:24:19.931161+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ad1431e5",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_31406c2003",
+        "timestamp": "2025-12-17T09:23:43.730024+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_FAILED_CODE_GENERATION",
+        "summary_message": "Task 'Executing action: APPLY_ARCHITECT_PROPOSAL, Source...' FAILED_CODE_GENERATION. Reason: Unsupported context",
+        "notification_id": "notify_c183fabb73",
+        "timestamp": "2025-12-17T03:06:03.634254+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b7eca5dd",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: APPLY_ARCHITECT_PROPOSAL, Source: action_3ebfcbd8"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Modify_code: ARCHITECT_EVOLUTION, Target: None.Non...' FAILED_PRE_REVIEW. Reason: Unsupported context",
+        "notification_id": "notify_8abbd535ed",
+        "timestamp": "2025-12-17T03:06:03.577875+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8c7034b6",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: ARCHITECT_EVOLUTION, Target: None.None"
+        }
+    },
+    {
+        "event_type": "SYSTEM_ALERT",
+        "summary_message": "Auto-Approved: I executed 'Architect Proposal for project_management_tools.py: The file `project_management_tools.py` contains several asynchronous functions for managing software projects, including project initialization, code generation, dependency management, testing, and building. The code is complex due to extensive error handling, manifest file processing, and interactions with external services like LLMs and subprocesses. The `initiate_ai_project` and `generate_code_for_project_file` ...",
+        "notification_id": "notify_f42d990130",
+        "timestamp": "2025-12-17T03:06:03.492547+00:00",
+        "status": "UNREAD",
+        "related_item_id": null,
+        "related_item_type": null,
+        "details_payload": {
+            "title": "Auto-Approved Action",
+            "priority": "normal",
+            "gatekeeper_result": {
+                "status": "approved",
+                "reason": "The proposal addresses the complexity of `project_management_tools.py` by refactoring key functions into smaller, more manageable units. The proposed changes improve readability, maintainability, and testability. The safety score is acceptable, and the necessity, redundancy, and efficiency scores are all positive.",
+                "safety_score": 8,
+                "optimization_score": 7
+            }
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_042e13c832",
+        "timestamp": "2025-12-17T03:04:51.987799+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_dbc3da36",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.my_extra_tools.subtract_numbers"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_c42337d58b",
+        "timestamp": "2025-12-17T02:59:40.435413+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0b477545",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.config_management_tools.manage_tool_confirmation_settings"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.t...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_910985100f",
+        "timestamp": "2025-12-17T02:54:11.018404+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e1e8209f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.tools.tool_system._example_multiply_numbers"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CODE_GENERATION",
+        "summary_message": "Task 'Executing action: APPLY_ARCHITECT_PROPOSAL, Source...' FAILED_CODE_GENERATION. Reason: Unsupported context",
+        "notification_id": "notify_f61091615e",
+        "timestamp": "2025-12-17T02:35:57.845040+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_cf306c05",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: APPLY_ARCHITECT_PROPOSAL, Source: action_65ca0049"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Modify_code: ARCHITECT_EVOLUTION, Target: None.Non...' FAILED_PRE_REVIEW. Reason: Unsupported context",
+        "notification_id": "notify_5cc69cf95e",
+        "timestamp": "2025-12-17T02:35:57.796521+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0f99698f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: ARCHITECT_EVOLUTION, Target: None.None"
+        }
+    },
+    {
+        "event_type": "SYSTEM_ALERT",
+        "summary_message": "Auto-Approved: I executed 'Architect Proposal for learning.py: Refactor the `LearningAgent` class to improve readability and reduce complexity, focusing on the `process_reflection_entry` function. The main goal is to decompose the large function into smaller, more manageable and testable units. Also, improve error handling and logging throughout the class.' because it passed all Gatekeeper checks (Safety: 8/10).",
+        "notification_id": "notify_b227759e05",
+        "timestamp": "2025-12-17T02:35:57.708552+00:00",
+        "status": "UNREAD",
+        "related_item_id": null,
+        "related_item_type": null,
+        "details_payload": {
+            "title": "Auto-Approved Action",
+            "priority": "normal",
+            "gatekeeper_result": {
+                "status": "approved",
+                "reason": "The proposal aims to improve the readability, maintainability, and robustness of the `LearningAgent` class by refactoring the `process_reflection_entry` function, improving error handling, and adding unit tests. The safety score is 8, necessity score is 7, redundancy score is 9, and efficiency score is 8, all of which meet the approval criteria.",
+                "safety_score": 8,
+                "optimization_score": 7
+            }
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_ae0659ee9f",
+        "timestamp": "2025-12-17T02:28:16.580877+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_991c99b4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.code_execution_tools.run_all_tests"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_764fec3d40",
+        "timestamp": "2025-12-17T02:17:39.604366+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b6931f25",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.awareness_tools.get_system_status_summary"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_75b5dcc1e9",
+        "timestamp": "2025-12-17T02:11:55.002794+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e19ef5bd",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.write_text_to_file"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_b3d082e8a9",
+        "timestamp": "2025-12-17T02:06:39.004069+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_9c90460a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.add_dependency_to_project"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_CODE_GENERATION",
+        "summary_message": "Task 'Executing action: APPLY_ARCHITECT_PROPOSAL, Source...' FAILED_CODE_GENERATION. Reason: Unsupported context",
+        "notification_id": "notify_1eb988119a",
+        "timestamp": "2025-12-17T02:05:31.630458+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_219d11f9",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: APPLY_ARCHITECT_PROPOSAL, Source: action_608a5429"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Modify_code: ARCHITECT_EVOLUTION, Target: None.Non...' FAILED_PRE_REVIEW. Reason: Unsupported context",
+        "notification_id": "notify_27f91fef63",
+        "timestamp": "2025-12-17T02:05:31.578965+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_05c88a76",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: ARCHITECT_EVOLUTION, Target: None.None"
+        }
+    },
+    {
+        "event_type": "SYSTEM_ALERT",
+        "summary_message": "Auto-Approved: I executed 'Architect Proposal for project_management_tools.py: The code defines project management tools for an AI assistant, including project initialization, code generation, dependency management, testing, building, and proposing file updates. The `initiate_ai_project` and `generate_code_for_project_file` functions are the most complex due to their interactions with LLMs, file system operations, and manifest management. Refactoring can focus on simplifying error handling, i...",
+        "notification_id": "notify_ef580edc7b",
+        "timestamp": "2025-12-17T02:05:31.512267+00:00",
+        "status": "UNREAD",
+        "related_item_id": null,
+        "related_item_type": null,
+        "details_payload": {
+            "title": "Auto-Approved Action",
+            "priority": "normal",
+            "gatekeeper_result": {
+                "status": "approved",
+                "reason": "The proposal aims to improve the maintainability and robustness of core project management functions by refactoring complex functions, simplifying error handling, and extracting common functionalities. The safety risk is moderate, but the potential benefits outweigh the risks. The proposal is not redundant and the refactoring steps seem reasonable and proportional.",
+                "safety_score": 8,
+                "optimization_score": 7
+            }
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_005fd3e166",
+        "timestamp": "2025-12-17T01:50:50.324550+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_fb5dcffb",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.config_management_tools.manage_tool_confirmation_settings"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_2a46ca1b7f",
+        "timestamp": "2025-12-17T01:50:26.602231+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_7ffb7ba955",
+        "timestamp": "2025-12-17T01:48:42.313255+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_1c6512a4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.save_project_file_content"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_4688823121",
+        "timestamp": "2025-12-17T01:35:46.769586+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_4064639f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_9696c546"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'search_duckduckgo' modified and passed tests successfully.",
+        "notification_id": "notify_a60e59aab5",
+        "timestamp": "2025-12-17T01:35:46.716607+00:00",
+        "status": "UNREAD",
+        "related_item_id": "search_duckduckgo",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "search_duckduckgo",
+            "change_description": "ISSUE DETECTED: The AI stopped responding when attempting to retrieve Google Search API rate prices. This could indicate a problem with the tool used to access and process API information, or network issue. (Evidence: USER: what are the goole search api rate prices?\nASSISTANT: AI stopped responding.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISS...",
+        "notification_id": "notify_3157e57198",
+        "timestamp": "2025-12-17T01:35:46.581523+00:00",
+        "status": "UNREAD",
+        "related_item_id": "62cfc344-9d01-4653-9664-fe77d8f5100e",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "62cfc344-9d01-4653-9664-fe77d8f5100e",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISSUE DETECTED: The AI stopped responding when attempting to retrieve Google Search API rate prices. This could indicate a problem with the tool used to access and process API information, or network issue. (Evidence: USER: what are the goole search api rate prices?\nASSISTANT: AI stopped responding.)",
+            "status": "pending",
+            "created_at": "2025-12-17T01:35:46.577982+00:00",
+            "updated_at": "2025-12-17T01:35:46.577982+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_27f4568212",
+        "timestamp": "2025-12-17T01:35:38.740419+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_e940ca47",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.my_extra_tools.search_duckduckgo"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_c57922bb46",
+        "timestamp": "2025-12-17T01:35:33.288620+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_db497797",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_9441747c"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'generate_safe_html' modified and passed tests successfully.",
+        "notification_id": "notify_838d80c482",
+        "timestamp": "2025-12-17T01:35:33.232017+00:00",
+        "status": "UNREAD",
+        "related_item_id": "generate_safe_html",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "generate_safe_html",
+            "change_description": "ISSUE DETECTED: The 'generate_safe_html' tool may have issues with returning None or with self-modification. (Evidence: ISSUE DETECTED: The AI reports that the 'generate_safe_html' tool returned None, indicating a potential issue with the tool's functionality or input handling. (Evidence: ASSISTANT: The 'generate_safe_html' tool returned None, so I wasn't able to generate any inline HTML.)\nISSUE DETECTED: The AI reports a failure in self-modifying the `generate_safe_html` tool after claiming to have generated and saved the code.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'generate_safe_html' verified. Description: IS...",
+        "notification_id": "notify_ee96a1755e",
+        "timestamp": "2025-12-17T01:35:33.062280+00:00",
+        "status": "UNREAD",
+        "related_item_id": "68fdf46e-263f-437d-adee-4620e8e436fd",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "68fdf46e-263f-437d-adee-4620e8e436fd",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'generate_safe_html' verified. Description: ISSUE DETECTED: The 'generate_safe_html' tool may have issues with returning None or with self-modification. (Evidence: ISSUE DETECTED: The AI reports that the 'generate_safe_html' tool returned None, indicating a potential issue with the tool's functionality or input handling. (Evidence: ASSISTANT: The 'generate_safe_html' tool returned None, so I wasn't able to generate any inline HTML.)\nISSUE DETECTED: The AI reports a failure in self-modifying the `generate_safe_html` tool after claiming to have generated and saved the code.)",
+            "status": "pending",
+            "created_at": "2025-12-17T01:35:33.057617+00:00",
+            "updated_at": "2025-12-17T01:35:33.057617+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_f46d02f86d",
+        "timestamp": "2025-12-17T01:35:11.704479+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3be1f69e",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.generated.generate_safe_html"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_bd33bd4234",
+        "timestamp": "2025-12-17T01:35:08.942069+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_59c0fea8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_66b27c14"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'get_self_awareness_info_and_converse' modified and passed tests successfully.",
+        "notification_id": "notify_0a0939ccb5",
+        "timestamp": "2025-12-17T01:35:08.897012+00:00",
+        "status": "UNREAD",
+        "related_item_id": "get_self_awareness_info_and_converse",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.awareness_tools",
+            "function_name": "get_self_awareness_info_and_converse",
+            "change_description": "ISSUE DETECTED: The 'get_self_awareness_info_and_converse' tool or a similar tool responsible for generating the initial game list response may have a limitation on response size or an error that caused the message to be cut off. (Evidence: ASSISTANT: It's unclear why my previous answer was cut off. It could be due to a system limitation on response size or an issue with the 'get_self_awareness_info_and_converse' tool.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'get_self_awareness_info_and_converse' verifie...",
+        "notification_id": "notify_092878faf0",
+        "timestamp": "2025-12-17T01:35:08.776612+00:00",
+        "status": "UNREAD",
+        "related_item_id": "1d63ce2a-fce6-436a-85da-e2526d014943",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "1d63ce2a-fce6-436a-85da-e2526d014943",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'get_self_awareness_info_and_converse' verified. Description: ISSUE DETECTED: The 'get_self_awareness_info_and_converse' tool or a similar tool responsible for generating the initial game list response may have a limitation on response size or an error that caused the message to be cut off. (Evidence: ASSISTANT: It's unclear why my previous answer was cut off. It could be due to a system limitation on response size or an issue with the 'get_self_awareness_info_and_converse' tool.)",
+            "status": "pending",
+            "created_at": "2025-12-17T01:35:08.772272+00:00",
+            "updated_at": "2025-12-17T01:35:08.772272+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_87a4654a52",
+        "timestamp": "2025-12-17T01:34:56.883287+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8ff90112",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.awareness_tools.get_self_awareness_info_and_converse"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_faad5eae0d",
+        "timestamp": "2025-12-17T01:31:06.215962+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8fc85390",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.agent_tools.run_agent_code"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_8527aaeaa4",
+        "timestamp": "2025-12-17T01:25:19.810300+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_c1e2ba9d",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.generate_code_for_project_file"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_062a9c60fc",
+        "timestamp": "2025-12-17T01:24:51.038646+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_775043d480",
+        "timestamp": "2025-12-17T01:06:00.435270+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_6b5aa1f666",
+        "timestamp": "2025-12-17T00:57:01.350972+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_53f34b55",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.generated.get_location_by_ip"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_cf8049b46e",
+        "timestamp": "2025-12-17T00:56:43.598219+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_e418ac15b2",
+        "timestamp": "2025-12-17T00:51:17.063056+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8c091669",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_0733afcd"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'generate_safe_html' modified and passed tests successfully.",
+        "notification_id": "notify_7d2691e728",
+        "timestamp": "2025-12-17T00:51:17.021262+00:00",
+        "status": "UNREAD",
+        "related_item_id": "generate_safe_html",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "generate_safe_html",
+            "change_description": "ISSUE DETECTED: The 'generate_safe_html' tool or the self-modification process may have issues related to code generation or permission issues. (Evidence: ISSUE DETECTED: The AI reports a failure in self-modifying the `generate_safe_html` tool after claiming to have generated and saved the code. This suggests an issue with the self-modification process, the tool's code generation, or permission issues.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'generate_safe_html' verified. Description: IS...",
+        "notification_id": "notify_2b70b17f9b",
+        "timestamp": "2025-12-17T00:51:16.909676+00:00",
+        "status": "UNREAD",
+        "related_item_id": "c2752158-5c8a-44e6-869b-b24339a5cb35",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "c2752158-5c8a-44e6-869b-b24339a5cb35",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'generate_safe_html' verified. Description: ISSUE DETECTED: The 'generate_safe_html' tool or the self-modification process may have issues related to code generation or permission issues. (Evidence: ISSUE DETECTED: The AI reports a failure in self-modifying the `generate_safe_html` tool after claiming to have generated and saved the code. This suggests an issue with the self-modification process, the tool's code generation, or permission issues.)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:51:16.905706+00:00",
+            "updated_at": "2025-12-17T00:51:16.905706+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_e47507e2f5",
+        "timestamp": "2025-12-17T00:50:59.713671+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_8c60e1bc",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.generated.generate_safe_html"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_c2a6e96cc0",
+        "timestamp": "2025-12-17T00:50:56.353906+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_774fc6d4",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_3ba5a46f"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'generate_safe_html' modified and passed tests successfully.",
+        "notification_id": "notify_1103601214",
+        "timestamp": "2025-12-17T00:50:56.236148+00:00",
+        "status": "UNREAD",
+        "related_item_id": "generate_safe_html",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "generate_safe_html",
+            "change_description": "ISSUE DETECTED: The 'generate_safe_html' tool may have issues with returning None or handling input errors. (Evidence: ISSUE DETECTED: The AI reports that the 'generate_safe_html' tool returned None, indicating a potential issue with the tool's functionality or input handling. (Evidence: ASSISTANT: The 'generate_safe_html' tool returned None, so I wasn't able to generate any inline HTML.))"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'generate_safe_html' verified. Description: IS...",
+        "notification_id": "notify_494f797988",
+        "timestamp": "2025-12-17T00:50:55.935040+00:00",
+        "status": "UNREAD",
+        "related_item_id": "21bab619-291b-4b5f-85f5-9d317be5e247",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "21bab619-291b-4b5f-85f5-9d317be5e247",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'generate_safe_html' verified. Description: ISSUE DETECTED: The 'generate_safe_html' tool may have issues with returning None or handling input errors. (Evidence: ISSUE DETECTED: The AI reports that the 'generate_safe_html' tool returned None, indicating a potential issue with the tool's functionality or input handling. (Evidence: ASSISTANT: The 'generate_safe_html' tool returned None, so I wasn't able to generate any inline HTML.))",
+            "status": "pending",
+            "created_at": "2025-12-17T00:50:55.929648+00:00",
+            "updated_at": "2025-12-17T00:50:55.929648+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_4ccab9831c",
+        "timestamp": "2025-12-17T00:50:33.347481+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_cf415a1f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.generated.generate_safe_html"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_94729453aa",
+        "timestamp": "2025-12-17T00:40:30.856879+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_4ac0c2416d",
+        "timestamp": "2025-12-17T00:35:45.430507+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_36c2cc37",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.run_project_tests"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_42065fca12",
+        "timestamp": "2025-12-17T00:32:36.254563+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_fd20b565",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_5cdb14d9"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'search_duckduckgo' modified and passed tests successfully.",
+        "notification_id": "notify_7a8f5a6e7f",
+        "timestamp": "2025-12-17T00:32:36.218504+00:00",
+        "status": "UNREAD",
+        "related_item_id": "search_duckduckgo",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "search_duckduckgo",
+            "change_description": "ISSUE DETECTED: The AI stopped responding after the user requested research on quantum computing, indicating a potential bug in the research tool or the overall AI planning/execution framework. (Evidence: AI stopped responding.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISS...",
+        "notification_id": "notify_b457e4cfad",
+        "timestamp": "2025-12-17T00:32:36.122223+00:00",
+        "status": "UNREAD",
+        "related_item_id": "a86f46c8-7f80-4f63-9753-b811130812f5",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "a86f46c8-7f80-4f63-9753-b811130812f5",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISSUE DETECTED: The AI stopped responding after the user requested research on quantum computing, indicating a potential bug in the research tool or the overall AI planning/execution framework. (Evidence: AI stopped responding.)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:32:36.120054+00:00",
+            "updated_at": "2025-12-17T00:32:36.120054+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_d65e17b58b",
+        "timestamp": "2025-12-17T00:32:21.796698+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f867924c",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.my_extra_tools.search_duckduckgo"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_c3a31cf299",
+        "timestamp": "2025-12-17T00:32:15.109072+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ee8ffd32",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_280f0990"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'request_user_clarification' modified and passed tests successfully.",
+        "notification_id": "notify_6dca4e78ab",
+        "timestamp": "2025-12-17T00:32:15.075999+00:00",
+        "status": "UNREAD",
+        "related_item_id": "request_user_clarification",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.conversational_tools",
+            "function_name": "request_user_clarification",
+            "change_description": "ISSUE DETECTED: The 'request_user_clarification' tool appears to have a bug where it doesn't reliably display the clarification request to the user in the UI. (Evidence: Do you see how the last thing that you wrote was I'm waiting for you to provide the project identifier so I can adjust the chat interfaces requested. Well, I don't know what you said or needed before that because you didn't put it on the screen.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'request_user_clarification' verified. Descrip...",
+        "notification_id": "notify_bcc93d2538",
+        "timestamp": "2025-12-17T00:32:14.976287+00:00",
+        "status": "UNREAD",
+        "related_item_id": "911485b9-13e7-4e9c-bbff-94a60ab37576",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "911485b9-13e7-4e9c-bbff-94a60ab37576",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'request_user_clarification' verified. Description: ISSUE DETECTED: The 'request_user_clarification' tool appears to have a bug where it doesn't reliably display the clarification request to the user in the UI. (Evidence: Do you see how the last thing that you wrote was I'm waiting for you to provide the project identifier so I can adjust the chat interfaces requested. Well, I don't know what you said or needed before that because you didn't put it on the screen.)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:32:14.973177+00:00",
+            "updated_at": "2025-12-17T00:32:14.973177+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_6d6b77f275",
+        "timestamp": "2025-12-17T00:31:52.173758+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7799226e",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.conversational_tools.request_user_clarification"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_d554ca8646",
+        "timestamp": "2025-12-17T00:31:49.440894+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b4bfa7d8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_01d016df"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'request_user_clarification' modified and passed tests successfully.",
+        "notification_id": "notify_3a3fb92399",
+        "timestamp": "2025-12-17T00:31:49.414121+00:00",
+        "status": "UNREAD",
+        "related_item_id": "request_user_clarification",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.conversational_tools",
+            "function_name": "request_user_clarification",
+            "change_description": "ISSUE DETECTED: The 'request_user_clarification' tool might not be displaying the clarification question to the user when used in certain contexts, leading to confusion. (Evidence: USER: Do you see how the last thing that you wrote was I'm waiting for you to provide the project identifier so I can adjust the chat interfaces requested. Well, I don't know what you said or needed before that because you didn't put it on the screen. So that's the only result I have from what you just did)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'request_user_clarification' verified. Descrip...",
+        "notification_id": "notify_2c76ddd013",
+        "timestamp": "2025-12-17T00:31:49.324595+00:00",
+        "status": "UNREAD",
+        "related_item_id": "daaf0bbc-7136-4e54-aedb-198a16b6e9ac",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "daaf0bbc-7136-4e54-aedb-198a16b6e9ac",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'request_user_clarification' verified. Description: ISSUE DETECTED: The 'request_user_clarification' tool might not be displaying the clarification question to the user when used in certain contexts, leading to confusion. (Evidence: USER: Do you see how the last thing that you wrote was I'm waiting for you to provide the project identifier so I can adjust the chat interfaces requested. Well, I don't know what you said or needed before that because you didn't put it on the screen. So that's the only result I have from what you just did)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:31:49.324066+00:00",
+            "updated_at": "2025-12-17T00:31:49.324066+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_0bf046dee3",
+        "timestamp": "2025-12-17T00:31:30.117742+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_3886587a",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.conversational_tools.request_user_clarification"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_ac0a849834",
+        "timestamp": "2025-12-17T00:31:27.098061+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_b75e525b",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_9d86de74"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'request_user_clarification' modified and passed tests successfully.",
+        "notification_id": "notify_18e62ad80f",
+        "timestamp": "2025-12-17T00:31:27.068355+00:00",
+        "status": "UNREAD",
+        "related_item_id": "request_user_clarification",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.conversational_tools",
+            "function_name": "request_user_clarification",
+            "change_description": "ISSUE DETECTED: The 'no op' tool or the process of awaiting user input is suspected of not displaying the AI's request for clarification in the UI, only showing 'Awaiting user input'. (Evidence: USER: I get that, but as of right now what you're actually doing is you're basically using react to answer your questions but what you're doing when you're doing that is you're going in you're using probably the request clarification tool and then you're using the like no op tool or whatever because you're waiting for input. But the problem is is what you actually wanted clarification on. Does it make it to the UI and when I see it it just says awaiting for user input)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'request_user_clarification' verified. Descrip...",
+        "notification_id": "notify_bd322aa4e1",
+        "timestamp": "2025-12-17T00:31:26.981226+00:00",
+        "status": "UNREAD",
+        "related_item_id": "870b9a6d-9a4d-4a32-9ff2-f341e32e229d",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "870b9a6d-9a4d-4a32-9ff2-f341e32e229d",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'request_user_clarification' verified. Description: ISSUE DETECTED: The 'no op' tool or the process of awaiting user input is suspected of not displaying the AI's request for clarification in the UI, only showing 'Awaiting user input'. (Evidence: USER: I get that, but as of right now what you're actually doing is you're basically using react to answer your questions but what you're doing when you're doing that is you're going in you're using probably the request clarification tool and then you're using the like no op tool or whatever because you're waiting for input. But the problem is is what you actually wanted clarification on. Does it make it to the UI and when I see it it just says awaiting for user input)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:31:26.978593+00:00",
+            "updated_at": "2025-12-17T00:31:26.978593+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_5e2e5708ae",
+        "timestamp": "2025-12-17T00:31:09.863193+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_6282a60f",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.conversational_tools.request_user_clarification"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_9d6fe7efad",
+        "timestamp": "2025-12-17T00:31:05.483429+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_aad6897b",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: TOOL_BUG_SUSPECTED_9f9bfcab"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'search_duckduckgo' modified and passed tests successfully.",
+        "notification_id": "notify_f01ebf0280",
+        "timestamp": "2025-12-17T00:31:05.458608+00:00",
+        "status": "UNREAD",
+        "related_item_id": "search_duckduckgo",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "search_duckduckgo",
+            "change_description": "ISSUE DETECTED: The AI stopped responding after receiving the request 'Research quantum computing', suggesting a potential issue with the tool it attempted to use for research. (Evidence: AI stopped responding.)"
+        }
+    },
+    {
+        "event_type": "NEW_SUGGESTION_CREATED_AI",
+        "summary_message": "New suggestion added: Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISS...",
+        "notification_id": "notify_c1dcdeb356",
+        "timestamp": "2025-12-17T00:31:05.381938+00:00",
+        "status": "UNREAD",
+        "related_item_id": "62175931-1215-46b0-b60c-f9ef3a755658",
+        "related_item_type": "suggestion",
+        "details_payload": {
+            "suggestion_id": "62175931-1215-46b0-b60c-f9ef3a755658",
+            "type": "PR_READY",
+            "description": "Ready to Merge: Fix for 'search_duckduckgo' verified. Description: ISSUE DETECTED: The AI stopped responding after receiving the request 'Research quantum computing', suggesting a potential issue with the tool it attempted to use for research. (Evidence: AI stopped responding.)",
+            "status": "pending",
+            "created_at": "2025-12-17T00:31:05.379761+00:00",
+            "updated_at": "2025-12-17T00:31:05.379761+00:00",
+            "reason_for_status": "",
+            "source_reflection_id": null,
+            "source": "Self-Healing Service",
+            "action_details": {}
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_f60f4a9434",
+        "timestamp": "2025-12-17T00:30:45.330590+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bead040d",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.my_extra_tools.search_duckduckgo"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_3c62916a79",
+        "timestamp": "2025-12-17T00:27:30.870447+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d4de0e61",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.file_system_tools.write_text_to_file"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_cf28a39b20",
+        "timestamp": "2025-12-17T00:20:40.320335+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_967e7d579d",
+        "timestamp": "2025-12-17T00:11:17.702642+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.t...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_ab332d35e3",
+        "timestamp": "2025-12-17T00:07:01.212009+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7dd6ba84",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.tools.tool_system._example_no_op_tool"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_dae382c35e",
+        "timestamp": "2025-12-17T00:06:52.611153+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_ce1602f448",
+        "timestamp": "2025-12-17T00:06:36.597898+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' FAILED_UNKNOWN. Reason: Tool modification failed after 3 attempts.",
+        "notification_id": "notify_ef46a0549d",
+        "timestamp": "2025-12-17T00:06:01.188176+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d79647b6",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: runtime_repair_request"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_6682f99d81",
+        "timestamp": "2025-12-17T00:06:01.129564+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_120768c8",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.system_tools.toggle_ghost_mode"
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Executing action: PROPOSE_TOOL_MODIFICATION, Sourc...' COMPLETED_SUCCESSFULLY.",
+        "notification_id": "notify_450a6bb4f9",
+        "timestamp": "2025-12-17T00:05:59.927151+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ee1b53b6",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Executing action: PROPOSE_TOOL_MODIFICATION, Source: runtime_repair_request"
+        }
+    },
+    {
+        "event_type": "SELF_MODIFICATION_APPLIED",
+        "summary_message": "Tool 'toggle_ghost_mode' modified and passed tests successfully.",
+        "notification_id": "notify_684177fde8",
+        "timestamp": "2025-12-17T00:05:59.899761+00:00",
+        "status": "UNREAD",
+        "related_item_id": "toggle_ghost_mode",
+        "related_item_type": "agent_tool",
+        "details_payload": {
+            "module_path": "ai_assistant.custom_tools.system_tools",
+            "function_name": "toggle_ghost_mode",
+            "change_description": "Runtime Error during execution: Error during execution of tool 'toggle_ghost_mode': toggle_ghost_mode() missing 1 required positional argument: 'enabled'. Fix the code to handle this error or correct the logic."
+        }
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_39553fc7e1",
+        "timestamp": "2025-12-17T00:05:50.728039+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_11df4c79",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.system_tools.toggle_ghost_mode"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_a40ff5d3b5",
+        "timestamp": "2025-12-17T00:04:11.980142+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_cc1e423cf7",
+        "timestamp": "2025-12-17T00:01:33.599175+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d6000573",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.generate_code_for_project_file"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_33820bd93c",
+        "timestamp": "2025-12-17T00:01:04.206262+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.t...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_b7956add82",
+        "timestamp": "2025-12-16T23:59:46.800760+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_0fed52b7",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.tools.tool_system._example_multiply_numbers"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_ed53f59a3d",
+        "timestamp": "2025-12-16T23:59:41.267248+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_2b88f57ae2",
+        "timestamp": "2025-12-16T23:57:59.376866+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d8fd3ffe",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.project_management_tools.generate_code_for_project_file"
+        }
+    },
+    {
+        "event_type": "GENERAL_INFO",
+        "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
+        "notification_id": "notify_a75904082e",
+        "timestamp": "2025-12-16T23:57:33.571503+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_28da1b26",
+        "related_item_type": "task",
+        "details_payload": {}
+    },
+    {
         "event_type": "GENERAL_INFO",
         "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
         "notification_id": "notify_23b75857ab",

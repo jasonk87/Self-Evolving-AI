@@ -283,9 +283,8 @@ class ToolSystem:
         tools_list = []
         for name, data in self._tool_registry.items():
             desc = data.get('description', 'No description available.')
-            # If schema details exist, maybe add args? For now keep it simple as per original intent.
-            tools_list.append(f"- {name}: {desc}")
-        return "\n".join(tools_list)
+            tools_list.append(f'- {name}: {desc}')
+        return '\n'.join(tools_list)
 
     def list_tools(self) -> Dict[str, str]:
         """Returns a dictionary of tool names to their descriptions."""

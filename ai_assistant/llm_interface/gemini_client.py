@@ -91,7 +91,7 @@ def invoke_gemini_model(
     prompt: str,
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
-    max_tokens: int = 1500
+    max_tokens: int = 8192
 ) -> Optional[str]:
     """
     Synchronously invokes the Google Gemini model.
@@ -180,7 +180,7 @@ async def invoke_gemini_model_async(
     prompt: str,
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
-    max_tokens: int = 1500,
+    max_tokens: int = 8192,
     images: Optional[List[str]] = None
 ) -> Optional[str]:
     """
@@ -292,6 +292,9 @@ async def invoke_gemini_model_async(
             except Exception as e:
                  logger.error(f"Unexpected error in Gemini async call: {e}")
                  return None
+        
+        # Windows/ProactorEventLoop workaround: Give time for SSL transport to close
+        await asyncio.sleep(0.250)
 
 async def get_embeddings_async(text: str, model_name: str = "text-embedding-004") -> Optional[List[float]]:
     """
@@ -339,6 +342,9 @@ async def get_embeddings_async(text: str, model_name: str = "text-embedding-004"
             logger.error(f"Error getting embeddings from Gemini: {e}")
             return None
 
+        # Windows/ProactorEventLoop workaround
+        await asyncio.sleep(0.250)
+
 MERGER_PROMPT_TEMPLATE = """You are a "Judge" and "Merger" AI. You have been provided with {num_branches} independent thought paths and solutions to a problem.
 
 Original Prompt:
@@ -349,13 +355,13 @@ Original Prompt:
 ---
 
 Your Task:
-1. Analyze the logic and solutions from all branches.
-2. Resolve any conflicts or discrepancies.
-3. Synthesize the best possible final answer.
-4. CRITICAL: If the original prompt requested a specific output format (e.g., JSON, Python code block, SQL), you MUST preserve that exact format in your final answer. Do not output a summary of the code or JSON; output the ACTUAL code or JSON.
-   - If the branches provided tools/JSON, output the best JSON tool call.
-   - If the branches provided Python code, output the best Python code block.
-5. Provide a cohesive, high-quality response that represents the best of all thinking paths.
+1. Synthesize the best possible final answer by combining the strongest elements from all branches.
+2. CRITICAL: Do NOT list, summarize, or mention the existence of the "branches". The user should NOT know multiple paths were explored.
+3. Present the result as a single, authoritative, and cohesive response.
+4. FORMATTING RULES:
+   - If the original prompt requested a specific output format (e.g., JSON, Python code, SQL), output ONLY that format (and the explanation if requested).
+   - If the branches generated tool calls (JSON), output the single BEST tool call.
+   - Do NOT output "Branch 1 said X, Branch 2 said Y". Just say "The answer is Z".
 
 Start with a brief <thinking> block explaining your synthesis decision, then provide the Final Answer.
 """

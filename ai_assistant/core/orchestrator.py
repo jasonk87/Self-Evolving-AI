@@ -2,6 +2,13 @@
 
 import re
 import os
+import sys
+
+# Ensure project root is in sys.path for stand-alone execution
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import asyncio
 import uuid
 import json
@@ -10,7 +17,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from ai_assistant.core.enums import ExecutionMode
 from ai_assistant.core.router import TaskRouter
-from ai_assistant.config import DEFAULT_EXECUTION_MODE, is_debug_mode
+import ai_assistant.config as config
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_parallel_thinking
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
@@ -86,11 +93,11 @@ class DynamicOrchestrator:
 
             # 3. Determine Mode
             mode = ExecutionMode.FAST_REACT # Default
-            if DEFAULT_EXECUTION_MODE == "AUTO":
+            if config.DEFAULT_EXECUTION_MODE == "AUTO":
                 mode = await self.router.determine_mode(prompt_with_context, context=context_metadata)
             else:
                 try:
-                    mode = ExecutionMode[DEFAULT_EXECUTION_MODE]
+                    mode = ExecutionMode[config.DEFAULT_EXECUTION_MODE]
                 except KeyError:
                     mode = ExecutionMode.FAST_REACT
 
@@ -112,7 +119,18 @@ class DynamicOrchestrator:
 
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            return False, f"An unexpected error occurred: {str(e)}", None
+            return False, f"An unexpected error occurred: {str(e)}", None, 
+
+        finally:
+            # 5. Session Level Summarization (Rolling)
+            # Only trigger if we have a session ID and it wasn't a direct failure that crashed everything logic
+            if session_id and self.task_manager: # Ensure we have deps
+                 try:
+                     # Fire-and-forget or await? Let's await to be safe for now, or create task.
+                     # Since this is "higher level" learning, async background is best.
+                     asyncio.create_task(self._update_session_summary(session_id, conversation_history))
+                 except Exception as e:
+                     logger.error(f"Failed to trigger session summary: {e}")
 
     async def _run_direct_mode(self, prompt: str, history: Optional[List[Dict[str, str]]]) -> Tuple[bool, str]:
         """
@@ -278,6 +296,18 @@ Instructions:
                             if new_images:
                                 collected_images.extend(new_images)
 
+                        # Check for PAUSED status (Conversational tools)
+                        if isinstance(result, dict) and result.get('status') == 'PAUSED':
+                            # Stop execution and return this special status event
+                            # We stringify it for the 'response' field, but the caller should detect it.
+                            result_str = str(result)
+                            # We set final_answer to this result so the loop breaks and returns it
+                            final_answer = result_str
+                            success = True
+                            execution_success = True
+                            print(color_text(f"--> Pausing for user clarification: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                            break # Break retry loop
+
                         result_str = str(result)
                         execution_success = True
                         break # Success!
@@ -320,19 +350,40 @@ Instructions:
         if not success and not final_answer:
             final_answer = "Maximum steps reached without definitive completion."
 
-        # Step B: Record Experience
+        # Step B: Record Experience & Add Visible Episode
         tools_used_names = [step['tool_name'] for step in current_steps if 'tool_name' in step]
         outcome = "SUCCESS" if success else "FAILURE"
 
-        # Fire-and-forget logging (or await if strict consistency needed, but plan said background)
-        # Using asyncio.create_task to run in background
-        asyncio.create_task(self.episodic_manager.record_experience(
+        # We await this to ensure we get the lesson for the UI episode
+        lesson = await self.episodic_manager.record_experience(
             prompt=prompt,
             plan=current_steps,
             outcome=outcome,
             tools_used=tools_used_names
-        ))
+        )
 
+        # Create UI-Visible Episode
+        if self.memory_manager:
+            try:
+                # Use the session_id if available, or a placeholder
+                sid = session_id if session_id else "auto_generated"
+                
+                # Title based on goal (truncated)
+                title = prompt[:50] + "..." if len(prompt) > 50 else prompt
+                
+                # Summary = Outcome + Lesson
+                summary_text = f"Outcome: {outcome}\nLesson: {lesson}"
+                
+                self.memory_manager.add_episode(
+                    summary=summary_text,
+                    title=title,
+                    session_id=sid,
+                    topics=tools_used_names
+                )
+                print(color_text(f"--> Episode added to Timeline: {title}", CLIColors.SYSTEM_MESSAGE))
+            except Exception as e:
+                logger.error(f"Failed to add UI episode: {e}")
+            
         return success, final_answer, collected_images
 
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
@@ -444,6 +495,88 @@ Instructions:
         except Exception as e:
             logger.error(f"Auto-repair execution error: {e}")
             return False
+
+    async def _update_session_summary(self, session_id: str, history: Optional[List[Dict[str, str]]]):
+        """
+        Updates the episodic memory for the current session.
+        Creates a new episode if one doesn't exist, or updates the existing one.
+        """
+        if not history or not self.memory_manager:
+            return
+
+        from ai_assistant.core.chat_manager import ChatSessionManager
+        # We need access to chat manager to get metadata. 
+        # But Orchestrator doesn't have direct ref to ChatSessionManager instance usually, 
+        # it relies on history passed in.
+        # However, `web_app.py` has the `chat_manager`. 
+        # Ideally Orchestrator should have it inject if we want to read metadata.
+        # For now, we unfortunately can't read the metadata easily if not passed in.
+        
+        # Workaround: pass `chat_manager` to Orchestrator init or just use a dedicated logical store.
+        # Check if `self.chat_manager` exists (it wasn't in init). 
+        # Let's assume we can't easily get the metadata regarding `current_episode_id` 
+        # unless we pass it.
+        
+        # Actually, `process_prompt` gets `session_id`.
+        # Taking a dependency on `ai_assistant.core.chat_manager` here is circular if not careful.
+        # Let's check `web_app.py` - it instantiates both.
+        # Maybe we assume `add_episode` and `update_episode` handle the "find by session_id" logic?
+        # `add_episode` stores session_id.
+        # So we can search episodes by session_id!
+        
+        # 1. Find existing episode for this session
+        episodes = self.memory_manager.get_all_episodes()
+        existing_episode = next((e for e in episodes if e.get("session_id") == session_id), None)
+        
+        # 2. Summarize History
+        # We use a simple summarization prompt
+        try:
+            # Format history for LLM
+            chat_text = ""
+            # Limit to last 30 messages to avoid context overflow for summary
+            recent_history = history[-30:] 
+            for msg in recent_history:
+                role = msg.get('role', 'unknown').upper()
+                content = str(msg.get('content', ''))[:500] # Truncate
+                chat_text += f"{role}: {content}\n"
+                
+            prompt = f"""Summarize this chat session into a high-level narrative.
+Focus on the overall goal and progress.
+Chat History:
+{chat_text}
+
+Output ONLY the summary text."""
+
+            # Use internal LLM
+            summary = await invoke_gemini_model_async(prompt, model_name="gemini-2.0-flash")
+            if not summary:
+                return
+
+            if existing_episode:
+                # Update
+                self.memory_manager.update_episode(
+                    episode_id=existing_episode['episode_id'],
+                    summary=summary,
+                    # Keep original title or update? Let's update title if it's generic
+                    title=existing_episode.get('title') 
+                )
+                logger.info(f"Updated session summary for {session_id}")
+            else:
+                # Create New
+                # Generate a title too
+                title_prompt = f"Generate a short (3-5 words) title for this chat:\n{summary}"
+                title = await invoke_gemini_model_async(title_prompt, model_name="gemini-2.0-flash")
+                title = title.strip().replace('"', '') if title else "Chat Session"
+                
+                self.memory_manager.add_episode(
+                    summary=summary,
+                    title=title,
+                    session_id=session_id
+                )
+                logger.info(f"Created new session summary for {session_id}")
+                
+        except Exception as e:
+            logger.error(f"Error in _update_session_summary: {e}")
 
     async def get_current_progress(self) -> Dict[str, Any]:
         """Get the current progress and context of task execution."""

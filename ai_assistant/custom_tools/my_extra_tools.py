@@ -1,3 +1,4 @@
+from typing import Union
 from duckduckgo_search import DDGS
 import json
 from typing import Optional, Union, List, Dict, Any
@@ -50,6 +51,10 @@ def search_duckduckgo(*args, **kwargs) -> str:
              if no results are found, or if the results are not in the expected format.
              Typically returns up to the top 5 results.
     """
+    import json
+    from typing import Optional
+    from duckduckgo_search import DDGS
+    from ai_assistant.custom_tools.my_extra_tools import search_google_custom_search
     query: Optional[str] = None
     if 'query' in kwargs:
         query = str(kwargs['query'])
@@ -74,9 +79,12 @@ def search_duckduckgo(*args, **kwargs) -> str:
         print('DuckDuckGo returned no results. Attempting Google Custom Search fallback...')
         try:
             google_res_json = search_google_custom_search(query, num_results=5)
-            google_res = json.loads(google_res_json)
-            if google_res:
-                return google_res_json
+            if google_res_json and google_res_json.strip():
+                google_res = json.loads(google_res_json)
+                if google_res:
+                    return google_res_json
+            else:
+                print('Google Custom Search returned empty or whitespace-only result.')
         except Exception as e:
             print(f'Google fallback failed: {e}')
     if not results:
@@ -139,11 +147,9 @@ def process_search_results(search_query: str, search_results_json: str='[]', pro
     """
     Processes JSON search results based on a specified instruction to generate a response.
     """
-    # Robustness: Handle incorrect 'instruction' argument from LLM
     if processing_instruction == 'answer_query' and 'instruction' in kwargs:
         print(f"process_search_results: Warning - 'instruction' argument used instead of 'processing_instruction'. Adapting...")
         processing_instruction = kwargs['instruction']
-
     ANSWER_QUERY_LLM_PROMPT_TEMPLATE = '\nGiven the original search query: "{query}"\nAnd the following search results (JSON format):\n---\n{results_json}\n---\nBased *only* on the provided search results, formulate a comprehensive, natural language answer to the original search query.\nIf the search results are empty or do not seem relevant to the query, state that you couldn\'t find a specific answer from the provided information.\nDo not make up information not present in the results.\nFocus on directly answering the query.\nAnswer:\n'
     SUMMARIZE_RESULTS_LLM_PROMPT_TEMPLATE = '\nGiven the original search query: "{query}"\nAnd the following search results (JSON format):\n---\n{results_json}\n---\nBased *only* on the provided search results, provide a concise summary of the main information found that is relevant to the original search query.\nIf the search results are empty or do not seem relevant, state that you couldn\'t find enough information to summarize.\nDo not make up information not present in the results.\nSummary:\n'
     EXTRACT_ENTITIES_LLM_PROMPT_TEMPLATE = '\nGiven the original search query: "{query}"\nAnd the following search results (JSON format):\n---\n{results_json}\n---\nBased *only* on the provided search results, list the key entities (e.g., people, organizations, locations, dates, specific terms or concepts) that are relevant to the original search query.\nIf the search results are empty or no distinct entities can be extracted, state that.\nFormat the output as a comma-separated list or a bulleted list if more appropriate.\nEntities:\n'

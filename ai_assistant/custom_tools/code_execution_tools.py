@@ -1,6 +1,9 @@
 import subprocess
 import sys
 from typing import Dict, Any
+import subprocess
+import sys
+from typing import Dict, Any
 import re
 import subprocess
 import shlex
@@ -56,9 +59,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         return {'status': 'error', 'error_message': f'Invalid input_files argument: Expected dict, got {type(input_files).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     if output_filenames is not None and (not isinstance(output_filenames, list)):
         return {'status': 'error', 'error_message': f'Invalid output_filenames argument: Expected list, got {type(output_filenames).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
-
     emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Running script in isolation...', 'status': 'RUNNING'})
-
     with tempfile.TemporaryDirectory() as temp_dir_path:
         script_filename = 'main_script.py'
         script_file_path = os.path.join(temp_dir_path, script_filename)
@@ -200,25 +201,13 @@ def run_all_tests() -> Dict[str, Any]:
     """
     import sys
     try:
-        # We assume pytest is installed and available.
         process_result = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True, timeout=300)
-        return {
-            'status': 'success' if process_result.returncode == 0 else 'failure',
-            'return_code': process_result.returncode,
-            'stdout': process_result.stdout.strip(),
-            'stderr': process_result.stderr.strip()
-        }
+        return {'status': 'success' if process_result.returncode == 0 else 'failure', 'return_code': process_result.returncode, 'stdout': process_result.stdout.strip(), 'stderr': process_result.stderr.strip()}
     except FileNotFoundError:
         return {'status': 'error', 'error_message': 'pytest not found. Please ensure it is installed.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error running tests: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
-
-RUN_ALL_TESTS_SCHEMA = {
-    'name': 'run_all_tests',
-    'description': 'Runs all tests in the current environment using pytest.',
-    'parameters': [],
-    'returns': {'type': 'dict', 'description': "Results of the test run including stdout/stderr."}
-}
+RUN_ALL_TESTS_SCHEMA = {'name': 'run_all_tests', 'description': 'Runs all tests in the current environment using pytest.', 'parameters': [], 'returns': {'type': 'dict', 'description': 'Results of the test run including stdout/stderr.'}}
 if __name__ == '__main__':
     print('--- Testing code_execution_tools.py ---')
     print('\n--- Testing execute_sandboxed_python_script ---')

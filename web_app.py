@@ -11,6 +11,7 @@ import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import subprocess
+import ast
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.dirname(__file__))
@@ -21,6 +22,11 @@ if project_root not in sys.path:
 from ai_assistant.config import get_projects_dir, LLM_PROVIDER
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
+from ai_assistant.core.config_manager import ConfigManager # Dynamic Config
+
+# Initialize Config Manager
+config_manager = ConfigManager()
+
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.execution.action_executor import ActionExecutor
 from ai_assistant.planning.execution import ExecutionAgent
@@ -252,6 +258,25 @@ def delete_session(session_id):
     except Exception as e:
         logger.error(f"Error deleting session {session_id}: {e}")
         return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Returns the current system configuration."""
+    return jsonify(config_manager.get_all_settings())
+
+@app.route('/api/config', methods=['POST'])
+def update_config():
+    """Updates system configuration."""
+    data = request.json
+    success = True
+    errors = []
+    
+    for key, value in data.items():
+        if not config_manager.update_setting(key, value):
+            success = False
+            errors.append(f"Failed to update {key}")
+            
+    return jsonify({"success": success, "errors": errors})
 
 @app.route('/chat', methods=['POST'])
 async def chat():
@@ -643,6 +668,74 @@ def update_insight_status(insight_id):
         logger.error(f"Error updating insight {insight_id}: {e}")
         return jsonify({"error": str(e), "success": False}), 500
 
+
+
+@app.route('/api/memory/episodes', methods=['GET'])
+def get_episodes():
+    """Returns a list of all episodic memories."""
+    try:
+        episodes = memory_manager.get_all_episodes()
+        return jsonify({"episodes": episodes, "success": True})
+    except Exception as e:
+        logger.error(f"Error fetching episodes: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+@app.route('/api/sessions/<session_id>/summarize', methods=['POST'])
+async def summarize_session(session_id):
+    """Triggers summarization of a chat session into an episodic memory."""
+    try:
+        # 1. Fetch Chat History
+        session = chat_manager.get_session(session_id)
+        if not session:
+            return jsonify({"error": "Session not found", "success": False}), 404
+
+        history = session.get('history', [])
+        if not history:
+            return jsonify({"error": "Session is empty", "success": False}), 400
+
+        # 2. Construct Prompt for LLM
+        prompt = "Analyze the following chat session and create a concise episodic summary.\\n" \
+                 "Extract key topics and the main outcome.\\n\\n" \
+                 "Chat History:\\n"
+        
+        for msg in history[-20:]: # Limit to last 20 messages for speed/context limits
+             role = msg.get('role', 'unknown')
+             content = msg.get('content', '')
+             prompt += f"{role.upper()}: {content[:500]}\\n" # Truncate long messages
+
+        prompt += "\\nFormat the output as JSON with keys: 'summary' (string), 'title' (string), 'topics' (list of strings)."
+
+        # 3. Call LLM (using orchestrator's provider or creating new one)
+        # We can use the global orchestrator if available
+        if not orchestrator or not orchestrator.planner or not orchestrator.planner.llm_provider:
+             return jsonify({"error": "LLM Provider not available", "success": False}), 500
+        
+        provider = orchestrator.planner.llm_provider
+        response_text = await provider.generate_text(prompt)
+
+        # 4. Parse JSON Response
+        try:
+             # Basic cleanup for code blocks if LLM wraps in ```json ... ```
+             clean_text = response_text.replace('```json', '').replace('```', '').strip()
+             data = json.loads(clean_text)
+             summary = data.get('summary', 'No summary generated.')
+             title = data.get('title', 'Untitled Episode')
+             topics = data.get('topics', [])
+        except Exception:
+             # Fallback if specific formatting failed
+             summary = response_text
+             title = f"Episode {session_id[:8]}"
+             topics = []
+
+        # 5. Save Episode
+        episode = memory_manager.add_episode(summary, title, session_id, topics)
+        
+        return jsonify({"episode": episode, "success": True})
+
+    except Exception as e:
+        logger.error(f"Error summarising session {session_id}: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
 @app.route('/api/memory/insights/<insight_id>', methods=['DELETE'])
 def delete_insight(insight_id):
     """Deletes an insight."""
@@ -705,22 +798,44 @@ def handle_message(data):
     # Run processing loop
     try:
         # We need to run async orchestrator method in a sync context
-        # Orchestrator.process_prompt returns (success, response_string, images)
         success, response, collected_images = asyncio.run(
-            orchestrator.process_prompt(message)
+            orchestrator.process_prompt(message, session_id=session_id)
         )
         
         # Save to history
         if session_id:
              chat_manager.add_message(session_id, "assistant", response, images=collected_images)
 
-        # Emit back direct response
-        socketio.emit('response', {
-            'response': response,
-            'success': success,
-            'session_id': session_id,
-            'images': collected_images
-        })
+        # Check for structured PAUSED response (Clarification Request)
+        clarification_needed = False
+        if isinstance(response, str) and "'status': 'PAUSED'" in response:
+             try:
+                 # Attempt to parse dictionary from string
+                 # We look for the dict structure more robustly
+                 clean_response = response.strip()
+                 if "{" in clean_response:
+                    start = clean_response.find("{")
+                    end = clean_response.rfind("}") + 1
+                    potential_dict = clean_response[start:end]
+                    
+                    resp_dict = ast.literal_eval(potential_dict)
+                    if isinstance(resp_dict, dict) and resp_dict.get('status') == 'PAUSED':
+                            socketio.emit('request_clarification', {
+                                'question': resp_dict.get('question'),
+                                'options': resp_dict.get('options')
+                            })
+                            clarification_needed = True
+             except Exception as e:
+                 logger.warning(f"Failed to parse potential clarification response: {e}")
+
+        # Emit back direct response unless it was a clarification request (which is handled by modal)
+        if not clarification_needed:
+            socketio.emit('response', {
+                'response': response,
+                'success': success,
+                'session_id': session_id,
+                'images': collected_images
+            })
 
     except Exception as e:
         logger.error(f"Socket message processing error: {e}")

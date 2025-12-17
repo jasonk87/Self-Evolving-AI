@@ -1,0 +1,24 @@
+{
+  "id": "f96d3e38-8ea2-49d3-bd39-77f39388e291",
+  "title": "how do you give an ai the ulti...",
+  "created_at": 1765966141.406255,
+  "updated_at": 1765966458.4410133,
+  "history": [
+    {
+      "role": "user",
+      "content": "how do you give an ai the ultimate freedom?"
+    },
+    {
+      "role": "user",
+      "content": "what are you doing?"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I help you today?"
+    },
+    {
+      "role": "assistant",
+      "content": "AI stopped responding."
+    }
+  ]
+}

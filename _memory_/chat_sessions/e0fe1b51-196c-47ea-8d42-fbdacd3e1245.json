@@ -1,0 +1,16 @@
+{
+  "id": "e0fe1b51-196c-47ea-8d42-fbdacd3e1245",
+  "title": "can you create a tic tac toe p...",
+  "created_at": 1765963115.7821808,
+  "updated_at": 1765963146.2823122,
+  "history": [
+    {
+      "role": "user",
+      "content": "can you create a tic tac toe project that uses machine learning?"
+    },
+    {
+      "role": "assistant",
+      "content": "AI stopped responding."
+    }
+  ]
+}

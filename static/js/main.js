@@ -100,6 +100,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return 4294967296 * (2097151 & h2) + (h1 >>> 0);
     };
 
+    // Listen for clarification requests
+    socket.on('request_clarification', (data) => {
+        // data: { question: "...", options: [...] }
+        const question = data.question || "The AI needs more information.";
+        let message = question;
+
+        if (data.options && data.options.length > 0) {
+            message += "\n\nOptions:\n" + data.options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+        }
+
+        window.showModal(
+            "Clarification Needed",
+            message,
+            () => {
+                // On confirm (user just acknowledges, or we could add an input field in the modal later)
+                // For now, the tool expects the *next* prompt to contain the answer.
+                // So we just close. The user types in the chat.
+                chatInput.focus();
+            },
+            false, // Not destructive
+            true   // Show cancel (just close)
+        );
+    });
+
     socket.on('response', (data) => {
         // Handle generic response events (e.g. from Terminal)
 
@@ -260,11 +284,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Fallback for known views not in sidebar
                 if (document.getElementById(targetId)) {
                     // Manually switch views
-                     mainViews.forEach(v => v.classList.remove('active'));
-                     sidebarViews.forEach(v => v.classList.add('hidden'));
-                     const view = document.getElementById(targetId);
-                     view.classList.remove('hidden'); // if sidebar view
-                     view.classList.add('active'); // if main view
+                    mainViews.forEach(v => v.classList.remove('active'));
+                    sidebarViews.forEach(v => v.classList.add('hidden'));
+                    const view = document.getElementById(targetId);
+                    view.classList.remove('hidden'); // if sidebar view
+                    view.classList.add('active'); // if main view
                 }
             }
 
@@ -847,46 +871,123 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Feature: Memory Management ---
-    async function loadMemory() {
-        memoryList.innerHTML = '<div class="loading">Scanning Neural Network...</div>';
-        try {
-            const res = await fetch('/api/memory/facts');
-            const data = await res.json();
-            if (data.success) {
-                memoryList.innerHTML = '';
-                if (data.facts.length === 0) {
-                    memoryList.innerHTML = '<div style="padding:10px; color:#666;">No facts recorded.</div>';
-                    return;
+    // --- Feature: Memories & Episodes ---
+    const memoryTabs = document.querySelectorAll('.tab-btn');
+    if (memoryTabs) {
+        memoryTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Deactivate all
+                memoryTabs.forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.memory-tab-content').forEach(c => c.classList.add('hidden'));
+                document.querySelectorAll('.memory-tab-content').forEach(c => c.classList.remove('active'));
+
+                // Activate clicked
+                tab.classList.add('active');
+                const targetId = tab.getAttribute('data-tab');
+                const targetContent = document.getElementById(targetId);
+                if (targetContent) {
+                    targetContent.classList.remove('hidden');
+                    targetContent.classList.add('active');
                 }
-                data.facts.forEach(fact => {
-                    const el = document.createElement('div');
-                    el.className = 'fact-item';
-                    el.innerHTML = `
-                        <div class="fact-text">${fact.text}</div>
-                        <div class="fact-meta">
-                            <span>${new Date(fact.created_at).toLocaleDateString()}</span>
-                            <span class="btn-delete" data-id="${fact.fact_id}">🗑️</span>
-                        </div>
-                    `;
-                    // Delete Handler
-                    el.querySelector('.btn-delete').addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        window.showModal(
-                            "Forget Fact",
-                            "Are you sure you want to delete this memory?",
-                            async () => {
-                                await fetch(`/api/memory/facts/${fact.fact_id}`, { method: 'DELETE' });
-                                loadMemory();
-                            },
-                            true
-                        );
+            });
+        });
+    }
+
+    async function loadMemory() {
+        const factsContainer = document.getElementById('memory-list');
+        const episodesContainer = document.getElementById('episodes-list');
+
+        if (factsContainer) factsContainer.innerHTML = '<div class="loading">Loading facts...</div>';
+        if (episodesContainer) episodesContainer.innerHTML = '<div class="loading">Loading episodes...</div>';
+
+        try {
+            // Load Facts
+            const resFacts = await fetch('/api/memory/facts');
+            const dataFacts = await resFacts.json();
+
+            // Load Episodes
+            const resEpisodes = await fetch('/api/memory/episodes');
+            const dataEpisodes = await resEpisodes.json();
+
+            if (dataFacts.success && factsContainer) {
+                if (dataFacts.facts.length === 0) {
+                    factsContainer.innerHTML = '<div style="padding:10px; color:#666;">No facts recorded.</div>';
+                } else {
+                    factsContainer.innerHTML = '';
+                    dataFacts.facts.forEach(fact => {
+                        const el = document.createElement('div');
+                        el.className = 'memory-item';
+                        el.innerHTML = `
+                            <div class="memory-text">${fact.text}</div>
+                            <div class="memory-meta">
+                                <span>${new Date(fact.created_at).toLocaleDateString()}</span>
+                                <span class="btn-delete-memory" data-id="${fact.fact_id}">🗑️</span>
+                            </div>
+                        `;
+                        // Delete Handler
+                        el.querySelector('.btn-delete-memory').addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            window.showModal(
+                                "Forget Fact",
+                                "Are you sure you want to delete this memory?",
+                                async () => {
+                                    await fetch(`/api/memory/facts/${fact.fact_id}`, { method: 'DELETE' });
+                                    loadMemory();
+                                },
+                                true
+                            );
+                        });
+                        factsContainer.appendChild(el);
                     });
-                    memoryList.appendChild(el);
+                }
+            }
+
+            if (episodesContainer) {
+                if (dataEpisodes.success && dataEpisodes.episodes && dataEpisodes.episodes.length > 0) {
+                    episodesContainer.innerHTML = '';
+                    renderEpisodes(dataEpisodes.episodes, episodesContainer);
+                } else {
+                    episodesContainer.innerHTML = '<div style="padding:10px; color:#666;">No episodes summarized yet.</div>';
+                }
+            }
+
+        } catch (e) {
+            if (factsContainer) factsContainer.innerHTML = 'Memory Access Error';
+            console.error(e);
+        }
+    }
+
+    function renderEpisodes(episodes, container) {
+        episodes.forEach(ep => {
+            const el = document.createElement('div');
+            el.className = 'memory-item episode-card';
+            // Styling for episode card can be reused or specific
+            // Add topics as tags
+            const tags = ep.key_topics ? ep.key_topics.map(t => `<span class="topic-tag">${t}</span>`).join('') : '';
+
+            el.innerHTML = `
+                <div class="data-title" style="font-weight:bold; margin-bottom:5px;">${ep.title || 'Untitled Episode'}</div>
+                <div class="data-desc" style="font-size:0.9em; margin-bottom:8px;">${ep.summary}</div>
+                <div class="tags-container" style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:5px;">${tags}</div>
+                <div class="data-meta" style="font-size:0.8em; color:#666; display:flex; justify-content:space-between; align-items:center;">
+                    <span>Session: ${ep.session_id ? ep.session_id.substring(0, 8) : 'Unknown'}</span>
+                    <button class="btn-xs view-session-btn" data-sid="${ep.session_id}">View Chat</button>
+                </div>
+            `;
+
+            // View Chat Click
+            const viewBtn = el.querySelector('.view-session-btn');
+            if (viewBtn) {
+                viewBtn.addEventListener('click', () => {
+                    // Switch to Chat View and Load Session
+                    const chatTrigger = document.querySelector('[data-target="view-chat"]');
+                    if (chatTrigger) chatTrigger.click();
+                    setTimeout(() => loadChatSession(ep.session_id), 100);
                 });
             }
-        } catch (e) {
-            memoryList.innerHTML = 'Memory Access Error';
-        }
+
+            container.appendChild(el);
+        });
     }
 
     // Add Fact Handler
@@ -1126,13 +1227,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let imagesHtml = '';
         if (images && images.length > 0) {
             images.forEach(imgB64 => {
-                 // Check if it already has the prefix or not. Backend stores whatever we sent.
-                 // In sendMessage we stripped the prefix. So we likely need to add it back if missing.
-                 let src = imgB64;
-                 if (!src.startsWith('data:image')) {
-                     src = `data:image/png;base64,${imgB64}`;
-                 }
-                 imagesHtml += `<div class="user-uploaded-image"><img src="${src}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>`;
+                // Check if it already has the prefix or not. Backend stores whatever we sent.
+                // In sendMessage we stripped the prefix. So we likely need to add it back if missing.
+                let src = imgB64;
+                if (!src.startsWith('data:image')) {
+                    src = `data:image/png;base64,${imgB64}`;
+                }
+                imagesHtml += `<div class="user-uploaded-image"><img src="${src}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>`;
             });
         }
 
@@ -1183,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Display Image in Chat History if present
         let displayMessage = message;
         if (currentImageBase64) {
-             displayMessage = `<div class="user-uploaded-image"><img src="${currentImageBase64}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>` + displayMessage;
+            displayMessage = `<div class="user-uploaded-image"><img src="${currentImageBase64}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>` + displayMessage;
         }
 
         appendMessage('user', displayMessage);
@@ -1341,4 +1442,154 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Summarize Session ---
+    const summarizeBtn = document.getElementById('summarize-btn');
+    if (summarizeBtn) {
+        summarizeBtn.addEventListener('click', async () => {
+            if (!currentSessionId) return window.showAlert("Info", "No active session.");
+
+            // Check if session has enough history? Backend handles it.
+
+            const originalText = summarizeBtn.textContent;
+            summarizeBtn.textContent = "Summarizing...";
+            summarizeBtn.disabled = true;
+
+            try {
+                const res = await fetch(`/api/sessions/${currentSessionId}/summarize`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    window.showAlert("Success", "Session summarized into episodic memory!");
+                    // Switch to Memory View -> Episodes tab to show result
+                    const memorySidebar = document.querySelector('[data-target="view-sidebar-memory"]');
+                    if (memorySidebar) memorySidebar.click();
+
+                    // Need to wait for view transition?
+                    setTimeout(() => {
+                        const episodesTab = document.querySelector('.tab-btn[data-tab="mem-episodes"]');
+                        if (episodesTab) episodesTab.click();
+                        // Refresh memory
+                        loadMemory();
+                    }, 200);
+
+                } else {
+                    window.showAlert("Error", "Summarization failed: " + (data.error || "Unknown error"));
+                }
+            } catch (e) {
+                window.showAlert("Error", "Request failed.");
+            } finally {
+                summarizeBtn.textContent = originalText;
+                summarizeBtn.disabled = false;
+            }
+        });
+    }
+
 });// Default to Files view
+
+/* --- Dynamic Settings Management --- */
+function loadConfig() {
+    fetch('/api/config')
+        .then(response => response.json())
+        .then(config => {
+            console.log("Config loaded:", config);
+            // Populate Fields
+            if (config.DEFAULT_EXECUTION_MODE) {
+                const el = document.getElementById('setting-execution-mode');
+                if (el) el.value = config.DEFAULT_EXECUTION_MODE;
+            }
+            if (config.REASONING_STRATEGIES && config.REASONING_STRATEGIES.default) {
+                const el = document.getElementById('setting-reasoning');
+                if (el) el.value = config.REASONING_STRATEGIES.default;
+            }
+            if (config.ENABLE_THINKING !== undefined) {
+                const el = document.getElementById('setting-thinking-enabled');
+                if (el) el.checked = config.ENABLE_THINKING;
+            }
+            if (config.TASK_MODELS) {
+                if (config.TASK_MODELS.summarization) {
+                    const el = document.getElementById('setting-model-summary');
+                    if (el) el.value = config.TASK_MODELS.summarization;
+                }
+                if (config.TASK_MODELS.code_generation) {
+                    const el = document.getElementById('setting-model-codegen');
+                    if (el) el.value = config.TASK_MODELS.code_generation;
+                }
+            }
+        })
+        .catch(err => console.error("Error loading config:", err));
+}
+
+function saveSettings() {
+    const data = {};
+
+    // Execution Mode
+    const modeEl = document.getElementById('setting-execution-mode');
+    if (modeEl) data.DEFAULT_EXECUTION_MODE = modeEl.value;
+
+    // Thinking Enabled
+    const thinkEl = document.getElementById('setting-thinking-enabled');
+    if (thinkEl) data.ENABLE_THINKING = thinkEl.checked;
+
+    // Reasoning Strategy (Complex Object Update)
+    const reasonEl = document.getElementById('setting-reasoning');
+    if (reasonEl) {
+        // We need to fetch current config first to merge, or assumption is we overwrite default?
+        // Let's assume we update the default key for now. 
+        // Ideally we shouldn't wipe other keys. 
+        // For simplicity in this UI, we will just update the 'default' strategy.
+        // Backend handles key-based updates. But variable is a dict.
+        // We will just send what we have, backend needs to handle dict merging if key is a dict? 
+        // ConfigManager replaces value. So we need the full object or backend support for partial.
+        // Let's re-fetch config to merge client side for safety.
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(currentConfig => {
+                const strategies = currentConfig.REASONING_STRATEGIES || {};
+                strategies.default = reasonEl.value;
+                strategies.summarization = reasonEl.value; // Sync for now as UI implies 'Default'
+                strategies.code_generation = reasonEl.value;
+
+                // Models
+                const taskModels = currentConfig.TASK_MODELS || {};
+                const sumModel = document.getElementById('setting-model-summary');
+                if (sumModel && sumModel.value) taskModels.summarization = sumModel.value;
+
+                const codeModel = document.getElementById('setting-model-codegen');
+                if (codeModel && codeModel.value) taskModels.code_generation = codeModel.value;
+
+                // Send Updates
+                const updates = {
+                    DEFAULT_EXECUTION_MODE: data.DEFAULT_EXECUTION_MODE,
+                    ENABLE_THINKING: data.ENABLE_THINKING,
+                    REASONING_STRATEGIES: strategies,
+                    TASK_MODELS: taskModels
+                };
+
+                return fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+            })
+            .then(res => res.json())
+            .then(result => {
+                const statusEl = document.getElementById('save-status');
+                if (result.success) {
+                    statusEl.textContent = "Configuration Saved Successfully!";
+                    statusEl.style.color = "#4cd137";
+                    statusEl.style.opacity = 1;
+                    setTimeout(() => statusEl.style.opacity = 0, 3000);
+                } else {
+                    statusEl.textContent = "Save Failed: " + result.errors.join(", ");
+                    statusEl.style.color = "#e84118";
+                    statusEl.style.opacity = 1;
+                }
+            })
+            .catch(err => console.error("Error saving settings:", err));
+    }
+}
+
+// Attach to global scope and init
+window.saveSettings = saveSettings;
+// Call on load (append to existing listener if possible, else just run)
+document.addEventListener('DOMContentLoaded', loadConfig);

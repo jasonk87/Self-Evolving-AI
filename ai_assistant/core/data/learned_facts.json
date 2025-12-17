@@ -358,5 +358,21 @@
         "source": "user_interface",
         "created_at": "2025-12-16T09:49:23.847687+00:00",
         "updated_at": "2025-12-16T09:49:23.847687+00:00"
+    },
+    {
+        "fact_id": "fact_80391888",
+        "text": "The Council rejected modification to tool 'get_self_awareness_info_and_converse' because: The three branches and the Skeptic's critique all converge on the same conclusion: the proposed code change fails to address the root cause of the error. The error is a `TypeError` caused by calling `get_self_awareness_info_and_converse` with an unexpected keyword argument, `full_report`. The proposed change only involves importing dependencies, which, while potentially beneficial for code clarity, does not resolve the `TypeError`. The correct solution would involve either modifying the function definition to accept the `full_report` argument or modifying the calling code to remove the argument.\n\n\nReasoning: The proposed code does not fix the reported error. The error message clearly indicates a `TypeError` due to an unexpected keyword argument in the function call. The proposed change only focuses on importing dependencies, which is a good practice but irrelevant to resolving the actual error. The core problem remains unresolved: the function `get_self_awareness_info_and_converse` is being called with an argument it doesn't accept. The fix requires either updating the function signature to accept the `full_report` argument, or modifying the caller to remove it.",
+        "category": "system_feedback",
+        "source": "Council Review",
+        "created_at": "2025-12-17T00:45:26.579135+00:00",
+        "updated_at": "2025-12-17T00:45:26.579135+00:00"
+    },
+    {
+        "fact_id": "fact_435da056",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'get_self_awareness_info_and_converse' tool or a similar tool responsible for generating the initial game list response may have a limitation on response size or an error that caused the message to be cut off. (Evidence: ASSISTANT: It's unclear why my previous answer was cut off. It could be due to a system limitation on response size or an issue with the 'get_self_awareness_info_and_converse' tool.)' with reason: This has been fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-17T01:31:31.554406+00:00",
+        "updated_at": "2025-12-17T01:31:31.554406+00:00"
     }
 ]

@@ -1,4 +1,3 @@
-
 import ai_assistant.config as config
 
 def toggle_ghost_mode(enabled: bool) -> str:
@@ -11,9 +10,8 @@ def toggle_ghost_mode(enabled: bool) -> str:
     Returns:
         str: Confirmation message.
     """
+    # Use the globally imported config module
     config.GHOST_MODE = enabled
-
-    status = "ENABLED" if config.GHOST_MODE else "DISABLED"
-    message = f"Ghost Mode {status} - Browser will now be {'visible' if config.GHOST_MODE else 'invisible'}."
-
+    status = 'ENABLED' if config.GHOST_MODE else 'DISABLED'
+    message = f"Ghost Mode {status} - Browser will now be {('visible' if config.GHOST_MODE else 'invisible')}."
     return message

@@ -79,6 +79,9 @@ LEARNED_FACTS_FILEPATH = os.path.join(get_data_dir(), LEARNED_FACTS_FILENAME)
 ACTIONABLE_INSIGHTS_FILENAME = "actionable_insights.json"
 ACTIONABLE_INSIGHTS_FILEPATH = os.path.join(get_data_dir(), ACTIONABLE_INSIGHTS_FILENAME)
 
+EPISODIC_MEMORIES_FILENAME = "episodic_memories.json"
+EPISODIC_MEMORIES_FILEPATH = os.path.join(get_data_dir(), EPISODIC_MEMORIES_FILENAME)
+
 
 def save_learned_facts(facts: List[Dict[str, Any]], filepath: str = LEARNED_FACTS_FILEPATH) -> bool:
     """
@@ -248,6 +251,36 @@ def load_actionable_insights(filepath: str = ACTIONABLE_INSIGHTS_FILEPATH) -> Li
         return []
     except Exception as e: # pragma: no cover
         print(f"Unexpected error loading actionable insights from {filepath}: {e}. Returning empty list.")
+        return []
+
+# --- Episodic Memory Persistence Functions ---
+def save_episodic_memories(episodes: List[Dict[str, Any]], filepath: str = EPISODIC_MEMORIES_FILEPATH) -> bool:
+    """
+    Serializes a list of episodic memory dictionaries to JSON and writes to file.
+    """
+    try:
+        dir_path = os.path.dirname(filepath)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(episodes, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error saving episodic memories: {e}")
+        return False
+
+def load_episodic_memories(filepath: str = EPISODIC_MEMORIES_FILEPATH) -> List[Dict[str, Any]]:
+    """
+    Reads a list of episodic memory dictionaries from a JSON file.
+    """
+    if not os.path.exists(filepath):
+        return []
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading episodic memories: {e}")
         return []
 
 if __name__ == '__main__':

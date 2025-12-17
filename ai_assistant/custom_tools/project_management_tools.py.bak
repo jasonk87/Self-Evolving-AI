@@ -1,5 +1,15 @@
-from typing import Optional, Dict, Any
-from ai_assistant.reviewer_agent import ReviewerAgent
+import os
+import json
+import subprocess
+from ai_assistant.custom_tools.project_management_tools.utils import sanitize_project_name, read_text_from_file
+from ai_assistant.custom_tools.project_management_tools.project_manifest import ProjectManifest
+from ai_assistant.utils.configuration import BASE_PROJECTS_DIR
+import ai_assistant.modules.logger as logger
+from typing import Any
+import os
+import json
+from typing import Optional
+from datetime import datetime, timezone
 import json
 import subprocess
 import os
@@ -210,10 +220,16 @@ async def generate_code_for_project_file(project_name: str, filename: str=None, 
                 except:
                     pass
         return err_msg
-    if generated_code.startswith('```python'):
-        generated_code = generated_code.lstrip('```python').rstrip('```').strip()
-    elif generated_code.startswith('```'):
-        generated_code = generated_code.lstrip('```').rstrip('```').strip()
+    code_content = generated_code.strip()
+    if code_content.startswith('```python'):
+        code_content = code_content[9:]
+        if code_content.endswith('```'):
+            code_content = code_content[:-3]
+    elif code_content.startswith('```'):
+        code_content = code_content[3:]
+        if code_content.endswith('```'):
+            code_content = code_content[:-3]
+    generated_code = code_content.strip()
     target_dir = project_dir
     if manifest_available and manifest_instance.build_config and manifest_instance.build_config.source_directories:
         if manifest_instance.build_config.source_directories:
@@ -338,13 +354,15 @@ async def build_project(project_name: str) -> str:
     build_command_parts = build_command_str.split()
     try:
         logger.info(f"Running build command '{build_command_str}' for project '{project_name}' in directory '{project_dir}'...")
-        process_result = subprocess.run(build_command_parts, cwd=project_dir, capture_output=True, text=True, timeout=600, check=False)
+        process_result = subprocess.run(build_command_parts, cwd=project_dir, capture_output=True, text=True, timeout=600)
         output_summary = [f'Build Results for Project: {project_name}', f'Command: {build_command_str}', f'Return Code: {process_result.returncode}', '--- STDOUT ---', process_result.stdout.strip() if process_result.stdout else '(No standard output)', '--- STDERR ---', process_result.stderr.strip() if process_result.stderr else '(No standard error)']
         return '\n'.join(output_summary)
     except FileNotFoundError:
         return f"Error: Build command '{build_command_parts[0]}' not found. Ensure it's installed and in PATH."
     except subprocess.TimeoutExpired:
         return f"Error: Build command '{build_command_str}' timed out after 600 seconds."
+    except subprocess.CalledProcessError as e:
+        return f"Error: Build command '{build_command_str}' failed with return code {e.returncode}. Stderr: {(e.stderr.strip() if e.stderr else '(No standard error)')}"
     except Exception as e:
         return f"Error: An unexpected error occurred while building project '{project_name}': {e}"
 from ..core.self_modification import edit_project_file

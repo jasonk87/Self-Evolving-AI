@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 class ChatSessionManager:
     def __init__(self, storage_dir: str):
@@ -92,6 +92,24 @@ class ChatSessionManager:
         if os.path.exists(self.storage_dir):
             for f in os.listdir(self.storage_dir):
                 os.remove(os.path.join(self.storage_dir, f))
+
+    def update_session_metadata(self, session_id: str, metadata: Dict[str, Any]) -> Optional[Dict]:
+        """
+        Updates arbitrary metadata for a session.
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return None
+            
+        # Ensure metadata dict exists
+        if "metadata" not in session:
+            session["metadata"] = {}
+            
+        session["metadata"].update(metadata)
+        session["updated_at"] = time.time()
+        
+        self._save_session(session_id, session)
+        return session
 
     def _save_session(self, session_id: str, data: Dict):
         path = os.path.join(self.storage_dir, f"{session_id}.json")

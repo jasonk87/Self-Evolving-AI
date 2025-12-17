@@ -286,6 +286,9 @@ async def invoke_ollama_model_async_internal(
             except aiohttp.ClientError as e: print(f"HTTP error occurred in async CoT: {e}"); return None
             except json.JSONDecodeError as e: print(f"Error decoding JSON in async CoT: {e}"); return None
             except Exception as e: print(f"An unexpected error occurred in async CoT: {e}"); return None
+        
+        # Windows/ProactorEventLoop workaround
+        await asyncio.sleep(0.250)
 
     payload = {
         "model": model_name,
@@ -346,6 +349,9 @@ async def invoke_ollama_model_async_internal(
         except json.JSONDecodeError: print("Error: Failed to parse JSON response from Ollama (async)."); return None
         except Exception as e: print(f"An unexpected error occurred during the async request: {e}"); return None
 
+        # Windows/ProactorEventLoop workaround
+        await asyncio.sleep(0.250)
+
 async def invoke_ollama_model_async(
     prompt: str,
     model_name: str = DEFAULT_OLLAMA_MODEL,
@@ -397,6 +403,9 @@ class OllamaProvider:
             except Exception as e:
                 print(f"Error getting embeddings from Ollama: {e}")
                 return None
+            
+            # Windows/ProactorEventLoop workaround
+            await asyncio.sleep(0.250)
 
     async def generate_code_async(self, prompt: str) -> Optional[str]:
         """
@@ -460,6 +469,9 @@ class OllamaProvider:
             except Exception as e:
                 print(f"Unexpected error listing models: {e}")
                 return []
+            
+            # Windows/ProactorEventLoop workaround
+            await asyncio.sleep(0.250)
 
 
 async def main_async_test():

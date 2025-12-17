@@ -79,7 +79,7 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error adding documents to ChromaDB: {e}")
 
-    def search(self, query_embedding: List[float], k: int = 5, score_threshold: float = 0.0) -> List[Dict[str, Any]]:
+    def search(self, query_embedding: List[float], k: int = 5, score_threshold: float = 0.0, filter_criteria: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Searches for the k most similar documents to the query embedding.
         """
@@ -91,7 +91,8 @@ class VectorStore:
             # ChromaDB expects a list of query embeddings
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=k
+                n_results=k,
+                where=filter_criteria
             )
 
             # ChromaDB returns lists of lists (one per query)

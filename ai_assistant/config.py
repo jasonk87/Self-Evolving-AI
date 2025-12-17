@@ -35,7 +35,7 @@ ENABLE_THINKING = True  # Set to False to disable thinking output globally
 
 # Chain of thought settings for models that don't support native thinking
 ENABLE_CHAIN_OF_THOUGHT = True  # Enable chain of thought prompting for non-thinking models
-DEFAULT_EXECUTION_MODE = "AUTO"  # Options: AUTO, DIRECT, FAST_REACT, THINKING_PRO
+DEFAULT_EXECUTION_MODE = "THINKING_PRO"  # Options: AUTO, DIRECT, FAST_REACT, THINKING_PRO
 DEFAULT_TEMPERATURE_THINKING = 0.7  # Temperature for thinking phase
 DEFAULT_TEMPERATURE_RESPONSE = 0.5  # Temperature for response phase (slightly lower for more focused responses)
 
@@ -89,8 +89,8 @@ REASONING_STRATEGIES: Dict[str, str] = {
     "conversation_intelligence": "PARALLEL",
     "council_judge": "PARALLEL",
     "reviewing": "PARALLEL",
-    "summarization": "STANDARD",
-    "default": "STANDARD"
+    "summarization": "PARALLEL",
+    "default": "PARALLEL"
 }
 
 # Parallel Thinking Configuration
@@ -272,5 +272,5 @@ if __name__ == '__main__':
 # --- Deep Research Configuration ---
 DEEP_RESEARCH_MAX_URLS = 3
 DEEP_RESEARCH_TIMEOUT = 60
-GHOST_MODE = False  # If True, the browser will be visible (headless=False)
+GHOST_MODE = True  # If True, the browser will be visible (headless=False)
 BROWSER_SLOW_MO = 100  # Milliseconds to slow down operations in Ghost Mode

@@ -1,0 +1,54 @@
+{
+    "project_name": "tic_tac_toe_ai",
+    "sanitized_project_name": "tic_tac_toe_ai",
+    "project_directory": "c:\\Users\\Jason\\Desktop\\Self Evolving AI\\ai_assistant\\ai_generated_projects\\tic_tac_toe_ai",
+    "project_description": "A Tic Tac Toe game with a machine learning AI opponent.",
+    "creation_timestamp": "2025-12-17T09:18:49.125299+00:00",
+    "last_modified_timestamp": "2025-12-17T09:27:01.815635+00:00",
+    "version": "0.1.0",
+    "manifest_version": "1.1.0",
+    "project_type": "python",
+    "entry_points": {},
+    "dependencies": [],
+    "build_config": {
+        "build_command": null,
+        "output_directory": null,
+        "source_directories": [
+            "src"
+        ]
+    },
+    "test_config": {
+        "test_command": null,
+        "test_directory": "tests"
+    },
+    "project_goals": [],
+    "development_tasks": [
+        {
+            "task_id": "TASK001",
+            "task_type": "CREATE_FILE",
+            "description": "Define structure and generate code for tictactoe.py",
+            "details": {
+                "filename": "tictactoe.py",
+                "original_description": "Main game file handling game logic, AI opponent, and telemetry.",
+                "key_components": [
+                    "GameBoard class (represents the game board and its state)",
+                    "Player class (represents a player, human or AI)",
+                    "AIPlayer class (inherits from Player, implements the AI logic)",
+                    "minimax function (AI decision making algorithm)",
+                    "get_available_moves function",
+                    "is_game_over function",
+                    "evaluate_board function (for AI)",
+                    "play_game function (main game loop)",
+                    "write_telemetry function (writes game state to telemetry.json)"
+                ],
+                "file_dependencies": []
+            },
+            "status": "generated",
+            "dependencies": [],
+            "last_attempt_timestamp": "2025-12-17T09:27:01.790952+00:00",
+            "error_message": null,
+            "notes": null
+        }
+    ],
+    "project_notes": null
+}

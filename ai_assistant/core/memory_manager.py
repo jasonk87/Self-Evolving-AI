@@ -5,7 +5,8 @@ import logging
 import asyncio # Added for async operations
 from ai_assistant.memory.persistent_memory import (
     load_learned_facts, save_learned_facts,
-    load_actionable_insights, save_actionable_insights
+    load_actionable_insights, save_actionable_insights,
+    load_episodic_memories, save_episodic_memories
 )
 # Integration with RAG
 from ai_assistant.memory.rag_system import RAGSystem
@@ -61,11 +62,73 @@ class MemoryManager:
         """
         facts = load_learned_facts()
         insights = load_actionable_insights()
+        episodes = load_episodic_memories()
 
         return {
             "facts": facts,
-            "insights": insights
+            "insights": insights,
+            "episodes": episodes
         }
+
+    # --- Episodic Memory Management ---
+
+    def get_all_episodes(self) -> List[Dict[str, Any]]:
+        """Returns all episodic memories."""
+        return load_episodic_memories()
+
+    def add_episode(self, summary: str, title: str, session_id: str, topics: List[str] = []) -> Dict[str, Any]:
+        """
+        Adds a new episodic memory.
+        """
+        episodes = load_episodic_memories()
+
+        new_episode = {
+            "episode_id": f"ep_{uuid.uuid4().hex[:8]}",
+            "title": title,
+            "summary": summary,
+            "session_id": session_id,
+            "key_topics": topics,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        episodes.append(new_episode)
+        if save_episodic_memories(episodes):
+            logger.info(f"Added new episode: {new_episode['episode_id']}")
+            return new_episode
+        else:
+            logger.error("Failed to save new episode.")
+            raise Exception("Failed to save new episode.")
+
+    def update_episode(self, episode_id: str, summary: Optional[str] = None, title: Optional[str] = None, topics: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Updates an existing episodic memory.
+        """
+        episodes = load_episodic_memories()
+        episode_found = False
+        updated_episode = None
+
+        for ep in episodes:
+            if ep.get("episode_id") == episode_id:
+                if summary: ep["summary"] = summary
+                if title: ep["title"] = title
+                if topics: ep["key_topics"] = topics
+                ep["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                
+                episode_found = True
+                updated_episode = ep
+                break
+
+        if episode_found:
+            if save_episodic_memories(episodes):
+                logger.info(f"Updated episode: {episode_id}")
+                return updated_episode
+            else:
+                logger.error(f"Failed to save updated episode: {episode_id}")
+                raise Exception("Failed to save updated episode.")
+        else:
+            logger.warning(f"Episode not found for update: {episode_id}")
+            return None
 
     def get_all_facts(self) -> List[Dict[str, Any]]:
         """Returns all learned facts."""

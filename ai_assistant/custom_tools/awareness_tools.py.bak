@@ -1,7 +1,8 @@
-from typing import Optional
-
-
-
+from typing import Optional, List, Dict
+from ai_assistant.core.task_manager import TaskManager
+from ai_assistant.core.notification_manager import NotificationManager
+from ai_assistant.core.system_status import get_system_status_summary, load_learned_facts
+from typing import List, Dict, Any, Optional
 from typing import List, Dict, Any, Optional
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification
@@ -116,22 +117,24 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     import json
     from ai_assistant.config import get_data_dir
     import os
-    status_summary = get_system_status_summary(task_manager=task_manager, notification_manager=notification_manager, active_limit=5, archived_limit=10, unread_notifications_limit=5)
+    status_summary = get_system_status_summary(task_manager=task_manager, notification_manager=notification_manager, active_limit=3, archived_limit=5, unread_notifications_limit=3)
     facts = load_learned_facts()
     facts_summary = '\nLearned Facts:\n'
     if not facts:
         facts_summary += '  No specific facts learned yet.'
     elif isinstance(facts, list) and len(facts) > 0 and isinstance(facts[0], str):
-        for f in facts[:5]:
+        num_facts = min(3, len(facts))
+        for f in facts[:num_facts]:
             facts_summary += f'  - {f}\n'
-        if len(facts) > 5:
-            facts_summary += f'  ... and {len(facts) - 5} more.'
+        if len(facts) > num_facts:
+            facts_summary += f'  ... and {len(facts) - num_facts} more.'
     elif isinstance(facts, list) and len(facts) > 0 and isinstance(facts[0], dict):
-        for f in facts[:5]:
+        num_facts = min(3, len(facts))
+        for f in facts[:num_facts]:
             text = f.get('text', 'Unknown fact')
             facts_summary += f'  - {text}\n'
-        if len(facts) > 5:
-            facts_summary += f'  ... and {len(facts) - 5} more.'
+        if len(facts) > num_facts:
+            facts_summary += f'  ... and {len(facts) - num_facts} more.'
     else:
         facts_summary = '  Facts are in an unexpected format.'
     registry_path = os.path.join(get_data_dir(), 'tool_registry.json')
@@ -142,7 +145,8 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
                 registry = json.load(f)
                 tool_names = sorted(list(registry.keys()))
                 count = len(tool_names)
-                tool_names = tool_names[:5]
+                num_tools = min(3, count)
+                tool_names = tool_names[:num_tools]
                 tool_list_str += f'  (Showing {len(tool_names)} of {count} total)\n'
                 tool_list_str += '  ' + ', '.join(tool_names)
         else:
@@ -152,7 +156,7 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     response = 'Self-Awareness Report:\n'
     if context:
         response += f'(Context: {context})\n'
-    response += f'{status_summary}\n{facts_summary}\n{tool_list_str}\n\n(This report summarizes my current status and available tools.)'
+    response += f'{status_summary}\n{facts_summary}\n{tool_list_str}\n\n(End of report.)'
     return response
 GET_SELF_AWARENESS_INFO_AND_CONVERSE_SCHEMA = {'name': 'get_self_awareness_info_and_converse', 'description': "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.", 'parameters': [{'name': 'context', 'type': 'str', 'description': 'Optional. A brief explanation of why self-awareness is being checked or what specific information is being sought.'}], 'returns': {'type': 'str', 'description': 'A detailed text report of internal status.'}}
 
@@ -227,7 +231,11 @@ def list_formatted_suggestions(status_filter: Optional[str]='pending') -> List[D
         A list of dictionaries, where each dictionary contains key details of a suggestion.
         Returns an empty list if no suggestions match or if suggestion_manager is unavailable.
     """
-    all_suggs = list_suggestions()
+    from ai_assistant.custom_tools.suggestion_management import list_suggestions
+    try:
+        all_suggs = list_suggestions()
+    except Exception:
+        return []
     if not all_suggs:
         return []
     filtered_suggestions: List[Dict[str, Any]] = []
@@ -236,7 +244,7 @@ def list_formatted_suggestions(status_filter: Optional[str]='pending') -> List[D
         current_status = sugg.get('status', '').lower() if isinstance(sugg, dict) else ''
         if status_to_filter == 'all' or current_status == status_to_filter:
             formatted_sugg = {'suggestion_id': sugg.get('suggestion_id', 'N/A'), 'type': sugg.get('type', 'N/A'), 'description': sugg.get('description', 'N/A'), 'status': sugg.get('status', 'N/A'), 'created_at': sugg.get('creation_timestamp', 'N/A'), 'source': sugg.get('source', 'AI')}
-            if isinstance(formatted_sugg['type'], Enum):
+            if 'type' in formatted_sugg and hasattr(formatted_sugg['type'], 'name'):
                 formatted_sugg['type'] = formatted_sugg['type'].name
             filtered_suggestions.append(formatted_sugg)
     return filtered_suggestions

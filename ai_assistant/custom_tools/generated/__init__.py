@@ -14,3 +14,4 @@ from .generate_safe_html import generate_safe_html
 from .div_table_generator import generate_div_table_html
 from .notification_scheduler import schedule_notification
 
+from .suggestion_tool import list_suggestions

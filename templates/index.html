@@ -25,7 +25,32 @@
             background-color: #0f172a;
             /* Match Deep Space theme */
             min-height: 0;
+
             /* Important for nested flex scroll/size */
+        }
+
+        /* CRITICAL LAYOUT FIXES (Inlined & Un-nested) */
+        .sidebar-panel {
+            flex-shrink: 0 !important;
+        }
+
+        .main-stage,
+        .view-container {
+            min-width: 0 !important;
+        }
+
+        .message .content {
+            white-space: pre-line !important;
+            word-wrap: break-word !important;
+            overflow-wrap: anywhere !important;
+            word-break: break-all !important;
+            max-width: 85% !important;
+        }
+
+        pre {
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            overflow-wrap: anywhere !important;
         }
     </style>
 </head>
@@ -180,7 +205,8 @@
             <div id="view-sidebar-files" class="sidebar-view hidden">
                 <div class="panel-header">
                     <h3>EXPLORER</h3>
-                    <button class="btn-icon" onclick="loadProjects()" title="Refresh">↻</button>
+                    <button class="tab-button" onclick="openTab(event, 'Timeline')">Timeline</button>
+                    <button class="tab-button" onclick="openTab(event, 'Settings')">Settings</button>
                 </div>
                 <div id="file-tree" class="file-tree-container">
                     <!-- Populated by JS -->
@@ -223,10 +249,22 @@
                     <h3>LONG-TERM MEMORY</h3>
                     <button class="btn-icon" id="add-fact-btn" title="Add Fact">➕</button>
                 </div>
+                <div class="memory-tabs">
+                    <button class="tab-btn active" data-tab="mem-facts">Facts</button>
+                    <button class="tab-btn" data-tab="mem-episodes">Episodes</button>
+                </div>
                 <div class="memory-wrapper">
-                    <div id="memory-list" class="memory-list">
-                        <!-- Facts go here -->
-                        <div class="loading">Fetching engrams...</div>
+                    <!-- Facts Tab -->
+                    <div id="mem-facts" class="memory-tab-content active">
+                        <div id="memory-list" class="memory-list">
+                            <div class="loading">Fetching engrams...</div>
+                        </div>
+                    </div>
+                    <!-- Episodes Tab -->
+                    <div id="mem-episodes" class="memory-tab-content hidden">
+                        <div id="episodes-list" class="memory-list">
+                            <div class="loading">Loading episodes...</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -270,6 +308,8 @@
             <div id="view-chat" class="view-container active">
                 <header class="stage-header glass-panel">
                     <span class="title">AI ASSISTANT</span>
+                    <button id="summarize-btn" class="btn-xs"
+                        style="margin-left: auto; background: rgba(0,255,100,0.1); color: #0f0; border: 1px solid rgba(0,255,100,0.3); border-radius: 4px; padding: 4px 8px; cursor: pointer;">Summarize</button>
                 </header>
                 <div id="chat-container">
                     <div class="message system">
@@ -283,7 +323,8 @@
                     <!-- Image Upload Elements -->
                     <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
                     <button id="image-upload-btn" class="btn-icon" title="Add Image">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
@@ -384,6 +425,55 @@
                 <button class="btn-modal confirm" id="modal-confirm-btn">Confirm</button>
             </div>
         </div>
+
+        <div id="Settings" class="tab-content" style="display:none;">
+            <div class="settings-container">
+                <h3>Global Configuration</h3>
+
+                <div class="setting-group">
+                    <label>Execution Mode</label>
+                    <select id="setting-execution-mode">
+                        <option value="AUTO">Auto (AI Decides)</option>
+                        <option value="THINKING_PRO">Thinking Pro (Parallel & Deep)</option>
+                        <option value="FAST_REACT">Fast ReAct (Quick & Linear)</option>
+                        <option value="DIRECT">Direct (No Thinking)</option>
+                    </select>
+                    <p class="setting-desc">Controls the default intelligence level for all tasks.</p>
+                </div>
+
+                <div class="setting-group">
+                    <label>Reasoning Strategy (Default)</label>
+                    <select id="setting-reasoning">
+                        <option value="STANDARD">Standard</option>
+                        <option value="PARALLEL">Parallel (Branching)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Enable Thinking Process</label>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="setting-thinking-enabled">
+                        <label for="setting-thinking-enabled"></label>
+                    </div>
+                </div>
+
+                <h3>Task Models</h3>
+                <div class="setting-group">
+                    <label>Summarization Model</label>
+                    <input type="text" id="setting-model-summary" placeholder="e.g. gemini-exp-1206">
+                </div>
+                <div class="setting-group">
+                    <label>Code Generation Model</label>
+                    <input type="text" id="setting-model-codegen" placeholder="e.g. gemini-exp-1206">
+                </div>
+
+                <div class="setting-actions">
+                    <button class="btn-primary" onclick="saveSettings()">Save Configuration</button>
+                    <span id="save-status"></span>
+                </div>
+            </div>
+        </div>
+
     </div>
 </body>
 

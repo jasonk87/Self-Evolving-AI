@@ -1,0 +1,38 @@
+{
+    "DEFAULT_EXECUTION_MODE": "THINKING_PRO",
+    "ENABLE_THINKING": true,
+    "DEFAULT_MODEL": "gemini-2.0-flash",
+    "TASK_MODELS": {
+        "code_generation": "gemini-2.0-flash",
+        "planning": "gemini-2.0-flash",
+        "reflection": "gemini-2.0-flash",
+        "conversation_intelligence": "gemini-1.5-pro",
+        "argument_population": "gemini-2.0-flash",
+        "goal_preprocessing": "gemini-2.0-flash",
+        "summarization": "gemini-2.0-flash",
+        "reviewing": "gemini-2.0-flash",
+        "fact_extraction": "gemini-2.0-flash",
+        "tool_design": "gemini-2.0-flash",
+        "tool_creation": "gemini-2.0-flash",
+        "council_skeptic": "gemini-2.0-flash",
+        "council_judge": "gemini-2.0-flash"
+    },
+    "REASONING_STRATEGIES": {
+        "planning": "PARALLEL",
+        "code_generation": "PARALLEL",
+        "conversation_intelligence": "PARALLEL",
+        "council_judge": "PARALLEL",
+        "reviewing": "PARALLEL",
+        "summarization": "PARALLEL",
+        "default": "PARALLEL"
+    },
+    "CONVERSATION_HISTORY_TURNS": 5,
+    "AUTONOMOUS_LEARNING_ENABLED": true,
+    "AUTO_APPROVE_DELAY_SECONDS": 600,
+    "PARALLEL_THINKING_CONFIG": {
+        "num_branches": 3,
+        "merge_model": "gemini-2.0-flash-exp",
+        "temperature_branches": 0.7,
+        "temperature_merge": 0.2
+    }
+}

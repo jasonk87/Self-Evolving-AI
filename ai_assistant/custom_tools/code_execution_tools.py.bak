@@ -1,6 +1,9 @@
 import subprocess
 import sys
 from typing import Dict, Any
+import subprocess
+import sys
+from typing import Dict, Any
 import re
 import subprocess
 import shlex
@@ -10,6 +13,7 @@ import subprocess
 import tempfile
 import json
 from typing import Dict, Any, Optional, List
+from ai_assistant.core.events import emit_system_event
 
 def execute_sandboxed_python_script(script_content: str, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None) -> Dict[str, Any]:
     """
@@ -37,6 +41,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
             "error_message": Optional error message if status is "error".
             "executed_script_path": Path to the temporary script file.
     """
+    emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Preparing sandbox...', 'status': 'RUNNING'})
     if not script_content:
         return {'status': 'error', 'error_message': 'No script content provided.', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     interpreter = python_executable or 'python'
@@ -54,6 +59,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         return {'status': 'error', 'error_message': f'Invalid input_files argument: Expected dict, got {type(input_files).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     if output_filenames is not None and (not isinstance(output_filenames, list)):
         return {'status': 'error', 'error_message': f'Invalid output_filenames argument: Expected list, got {type(output_filenames).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
+    emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Running script in isolation...', 'status': 'RUNNING'})
     with tempfile.TemporaryDirectory() as temp_dir_path:
         script_filename = 'main_script.py'
         script_file_path = os.path.join(temp_dir_path, script_filename)
@@ -79,6 +85,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         error_msg_val = None
         try:
             process_result = subprocess.run([interpreter, '-I', '-s', '-S', script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
+            emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Execution finished.', 'status': 'COMPLETED'})
             stdout_val = process_result.stdout
             stderr_val = process_result.stderr
             return_code = process_result.returncode
@@ -166,9 +173,11 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing "status", "stdout", "stderr", "return_code".
     """
+    import sys
     if not package_name or not package_name.strip():
         return {'status': 'error', 'error_message': 'Package name cannot be empty.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     clean_package_name = package_name.strip()
+    import re
     if not re.match('^[a-zA-Z0-9_\\-\\.\\[\\]<>=!]+$', clean_package_name):
         return {'status': 'error', 'error_message': f"Invalid package name format: '{clean_package_name}'.", 'return_code': -1, 'stdout': '', 'stderr': ''}
     cmd = [sys.executable, '-m', 'pip', 'install', clean_package_name]
@@ -181,6 +190,25 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
         return {'status': 'error', 'error_message': f'Unexpected error during installation: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 INSTALL_PYTHON_PACKAGE_SCHEMA = {'name': 'install_python_package', 'description': "Installs a Python package using the current environment's pip.", 'parameters': [{'name': 'package_name', 'type': 'str', 'description': 'The name of the package to install.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}}
 EXECUTE_SANDBOXED_PYTHON_SCRIPT_SCHEMA = {'name': 'execute_sandboxed_python_script', 'description': 'Executes a given Python script string in a temporary, somewhat isolated environment. WARNING: Basic PoC sandbox with minimal security. Use with extreme caution.', 'parameters': [{'name': 'script_content', 'type': 'str', 'description': 'The Python script content as a string.'}, {'name': 'input_files', 'type': 'dict', 'description': 'Optional. Filename:content map for files to create in the execution dir.'}, {'name': 'output_filenames', 'type': 'list', 'description': 'Optional. List of filenames expected to be created by the script, whose content will be returned.'}, {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout for script execution (default 10s).'}, {'name': 'python_executable', 'type': 'str', 'description': "Optional. Path to python interpreter (e.g., 'python' or '/usr/bin/python3'). Defaults to 'python'."}], 'returns': {'type': 'dict', 'description': "A dict with 'status' ('success', 'timeout', 'error'), 'return_code', 'stdout', 'stderr', 'output_files' (dict), 'error_message'."}}
+
+def run_all_tests() -> Dict[str, Any]:
+    """
+    Runs all tests available in the project by discovering and executing them.
+    Typically runs 'pytest'.
+
+    Returns:
+        A dictionary containing the test results.
+    """
+    try:
+        process_result = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True, timeout=300, check=False)
+        return {'status': 'success' if process_result.returncode == 0 else 'failure', 'return_code': process_result.returncode, 'stdout': process_result.stdout.strip(), 'stderr': process_result.stderr.strip()}
+    except FileNotFoundError:
+        return {'status': 'error', 'error_message': 'pytest not found. Please ensure it is installed.', 'return_code': -1, 'stdout': '', 'stderr': ''}
+    except subprocess.TimeoutExpired as e:
+        return {'status': 'error', 'error_message': f'Tests timed out after 300 seconds.', 'return_code': -1, 'stdout': process_result.stdout.strip() if 'process_result' in locals() else '', 'stderr': process_result.stderr.strip() if 'process_result' in locals() else str(e)}
+    except Exception as e:
+        return {'status': 'error', 'error_message': f'Unexpected error running tests: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
+RUN_ALL_TESTS_SCHEMA = {'name': 'run_all_tests', 'description': 'Runs all tests in the current environment using pytest.', 'parameters': [], 'returns': {'type': 'dict', 'description': 'Results of the test run including stdout/stderr.'}}
 if __name__ == '__main__':
     print('--- Testing code_execution_tools.py ---')
     print('\n--- Testing execute_sandboxed_python_script ---')
