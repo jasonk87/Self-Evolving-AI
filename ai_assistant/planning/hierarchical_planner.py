@@ -2,9 +2,11 @@
 import re
 import json # Added for __main__ printing
 from typing import List, Any, Optional, Dict # Added Dict
+import os
 # Assuming a generic LLM service interface or a specific one like OllamaProvider
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
 from ai_assistant.memory.persistent_memory import load_learned_facts
+from ai_assistant.planning.plan_simulator import PlanSimulator
 # For __main__ example, we'll mock this.
 
 # TypedDict for ProjectPlanStep can be formally defined if preferred,
@@ -111,6 +113,25 @@ Example for detailed_task 'Define data structure for snake (list of coordinates)
     "timeout_seconds": 30
   }}
 }}
+"""
+
+LLM_HP_PLAN_REPAIR_PROMPT_TEMPLATE = """
+The following project plan was generated but failed the 'Shadow Mode' simulation due to critical logic errors.
+Your task is to REPAIR the plan to fix these specific issues.
+
+Project Plan (JSON):
+{current_plan_json}
+
+Detected Issues:
+{issues_json}
+
+Instructions:
+1. Analyze the issues (e.g., trying to edit a deleted file, missing dependency).
+2. Modify the plan steps (reorder, add, remove, or edit details) to resolve the conflicts.
+3. Ensure the overall goal '{user_goal}' is still met.
+4. Return the ENTIRE corrected plan as a JSON list of step objects.
+
+Respond ONLY with the valid JSON list. Do not include markdown or explanations.
 """
 
 class HierarchicalPlanner:
@@ -431,7 +452,109 @@ class HierarchicalPlanner:
                 print(f"[HP]   Successfully elaborated step {project_plan_step['step_id']} of type '{project_plan_step['type']}'.")
 
         print(f"[HP] Finished generating full project plan. Total steps: {len(full_plan)}")
-        return full_plan
+
+        # --- Shadow Mode Simulation & Self-Repair Loop ---
+        print("[HP] Entering Shadow Mode: Simulating generated plan...")
+
+        # Capture current file state
+        current_files = []
+        try:
+             # Basic walk to get file paths relative to CWD
+             for root, dirs, files in os.walk("."):
+                 if ".git" in dirs: dirs.remove(".git")
+                 if "__pycache__" in dirs: dirs.remove("__pycache__")
+                 for f in files:
+                     current_files.append(os.path.relpath(os.path.join(root, f), "."))
+        except Exception as e:
+            print(f"[HP] Warning: Could not scan current directory for simulation: {e}")
+
+        simulator = PlanSimulator(initial_files=current_files, llm_provider=self.llm_provider)
+
+        max_retries = 3
+        current_plan = full_plan
+
+        for attempt in range(max_retries + 1):
+            simulator.reset_state() # Ensure fresh virtual FS for each run
+            sim_report = await simulator.simulate_plan(current_plan)
+
+            if sim_report["success"]:
+                print(f"[HP] Shadow Mode Simulation passed (Attempt {attempt}).")
+                return current_plan
+
+            # If failed:
+            print(f"[HP] SHADOW MODE ALERT (Attempt {attempt}): Found {len(sim_report['issues'])} issues.")
+            for issue in sim_report['issues']:
+                print(f"  - Step {issue['step_id']}: [{issue['risk_level']}] {issue['reason']}")
+
+            if attempt < max_retries:
+                print(f"[HP] Attempting Autonomous Plan Repair...")
+                repaired_plan = await self._repair_plan_with_llm(current_plan, sim_report['issues'], user_goal)
+                if repaired_plan:
+                    current_plan = repaired_plan
+                    continue
+                else:
+                    print(f"[HP] Plan repair failed to generate a valid JSON. Retrying original plan (likely to fail again, but exiting loop).")
+                    break
+            else:
+                 print(f"[HP] Max repair attempts reached. Falling back to warning injection.")
+
+        # If we exit the loop with failure, inject the warning
+        warning_step = {
+            "step_id": "0.0",
+            "description": "Shadow Mode Simulation Warning (Repair Failed)",
+            "type": "human_review_gate",
+            "details": {
+                "prompt_to_user": f"SHADOW MODE detected {len(sim_report['issues'])} risks in this plan (e.g., {sim_report['issues'][0]['reason']}) and was unable to autonomously fix them. Please review the plan carefully."
+            },
+            "outline_group": "Plan Validation"
+        }
+        current_plan.insert(0, warning_step)
+
+        return current_plan
+
+    async def _repair_plan_with_llm(
+        self,
+        current_plan: List[Dict[str, Any]],
+        issues: List[Dict[str, Any]],
+        user_goal: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Asks the LLM to fix the plan based on the simulation report.
+        """
+        # Simplify plan for prompt (remove large details if needed, but we need details to fix logic)
+        prompt = LLM_HP_PLAN_REPAIR_PROMPT_TEMPLATE.format(
+            current_plan_json=json.dumps(current_plan, indent=2),
+            issues_json=json.dumps(issues, indent=2),
+            user_goal=user_goal
+        )
+
+        try:
+            from ai_assistant.config import get_model_for_task
+            model_name = get_model_for_task("hierarchical_planning_step_elaboration") # Reuse robust model
+
+            response = await self.llm_provider.invoke_ollama_model_async(
+                prompt,
+                model_name=model_name,
+                temperature=0.2,
+                max_tokens=2000
+            )
+
+            if not response: return None
+
+            # Parse JSON
+            cleaned_json = re.sub(r"^\s*```json\s*\n?", "", response.strip(), flags=re.IGNORECASE)
+            cleaned_json = re.sub(r"\n?\s*```\s*$", "", cleaned_json, flags=re.IGNORECASE).strip()
+
+            new_plan = json.loads(cleaned_json)
+            if isinstance(new_plan, list) and len(new_plan) > 0:
+                return new_plan
+            else:
+                print(f"[HP] Repair returned invalid structure: {type(new_plan)}")
+                return None
+
+        except Exception as e:
+            print(f"[HP] Error during plan repair: {e}")
+            return None
 
 
 if __name__ == '__main__': # pragma: no cover
