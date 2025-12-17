@@ -298,6 +298,27 @@ class OllamaProvider:
         self.base_url = base_url or OLLAMA_API_ENDPOINT.rsplit('/api/', 1)[0]
         self.generate_endpoint = f"{self.base_url}/api/generate"
         self.chat_endpoint = f"{self.base_url}/api/chat"
+        self.embeddings_endpoint = f"{self.base_url}/api/embeddings"
+
+    async def get_embeddings_async(self, text: str, model_name: Optional[str] = None) -> Optional[List[float]]:
+        """
+        Generates embeddings for a given text using Ollama.
+        """
+        model = model_name or self.model
+        payload = {
+            "model": model,
+            "prompt": text
+        }
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60.0)) as session:
+            try:
+                async with session.post(self.embeddings_endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    return data.get("embedding")
+            except Exception as e:
+                print(f"Error getting embeddings from Ollama: {e}")
+                return None
 
     async def generate_code_async(self, prompt: str) -> Optional[str]:
         """

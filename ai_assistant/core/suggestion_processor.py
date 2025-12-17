@@ -313,4 +313,3 @@ if __name__ == '__main__': # pragma: no cover
 
     if __name__ == '__main__':
         asyncio.run(main_suggestion_processor_test())
-```

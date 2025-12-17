@@ -109,6 +109,104 @@ class CriticalReviewCoordinator:
 
         return unanimous_approval, collected_reviews
 
+    async def execute_council_debate(
+        self,
+        proposed_code: str,
+        proposal_description: str,
+        original_code: str,
+        module_path: str,
+        llm_provider: Any # Using Any to avoid import cycles, assumes it matches provider interface
+    ) -> Tuple[bool, str]:
+        """
+        Executes an adversarial 'Council Debate' for high-risk self-modification.
+
+        Roles:
+        - The Skeptic: Attacks the proposal looking for safety/security risks.
+        - The Judge: Decides whether to proceed based on the proposal and critique.
+
+        Returns:
+            Tuple[bool, str]: (is_approved, reasoning_summary)
+        """
+        from ai_assistant.config import get_model_for_task # Imported here to avoid circular imports if moved
+
+        emit_system_event("council_session_started", {
+            "message": "High-risk task detected. Convening The Council for adversarial debate."
+        })
+
+        # 1. The Skeptic
+        skeptic_model = get_model_for_task("council_skeptic")
+        skeptic_prompt = f"""
+        You are 'The Skeptic', a highly critical security and reliability auditor for an AI system.
+
+        Context: The AI is attempting to modify its own code (Self-Modification).
+        Module: `{module_path}`
+        Proposal: {proposal_description}
+
+        Existing Code:
+        ```python
+        {original_code}
+        ```
+
+        Proposed New Code:
+        ```python
+        {proposed_code}
+        ```
+
+        Your Goal: Find any reason why this change is dangerous, buggy, or inefficient.
+        - Look for infinite loops.
+        - Look for security vulnerabilities (e.g., executing arbitrary code from user input without sanitization).
+        - Look for logic errors that could break the system.
+        - Be harsh. If it looks fine, admit it, but try to find flaws.
+
+        Output your critique concisely.
+        """
+
+        emit_system_event("council_skeptic_thinking", {"message": "The Skeptic is analyzing risks..."})
+        if hasattr(llm_provider, 'invoke_ollama_model_async'):
+             skeptic_response = await llm_provider.invoke_ollama_model_async(skeptic_prompt, model_name=skeptic_model, temperature=0.7)
+        else: # Fallback or mock
+             skeptic_response = "Skeptic analysis unavailable."
+
+        emit_system_event("council_skeptic_verdict", {"critique": skeptic_response})
+
+        # 2. The Judge
+        judge_model = get_model_for_task("council_judge")
+        judge_prompt = f"""
+        You are 'The Judge', the final decision maker for an AI system's self-evolution.
+
+        Proposal: {proposal_description}
+
+        The Skeptic's Critique:
+        {skeptic_response}
+
+        Your Goal: Weigh the proposal against the critique.
+        - If the critique highlights a critical flaw (security risk, system-breaking bug), REJECT.
+        - If the critique is minor or nitpicky and the value of the proposal is high, APPROVE.
+        - If the code looks safe and correct, APPROVE.
+
+        Output Format:
+        Status: [APPROVED | REJECTED]
+        Reasoning: <Your explanation>
+        """
+
+        emit_system_event("council_judge_thinking", {"message": "The Judge is deliberating..."})
+        if hasattr(llm_provider, 'invoke_ollama_model_async'):
+             judge_response = await llm_provider.invoke_ollama_model_async(judge_prompt, model_name=judge_model, temperature=0.3)
+        else:
+             judge_response = "Status: REJECTED\nReasoning: LLM provider unavailable for judgment."
+
+        is_approved = "Status: APPROVED" in judge_response
+        reasoning = judge_response.replace("Status: APPROVED", "").replace("Status: REJECTED", "").strip()
+        if reasoning.startswith("Reasoning:"):
+            reasoning = reasoning[10:].strip()
+
+        emit_system_event("council_judge_verdict", {
+            "approved": is_approved,
+            "reasoning": reasoning
+        })
+
+        return is_approved, reasoning
+
 if __name__ == '__main__': # pragma: no cover
     # Example Usage (requires ReviewerAgent and a running LLM for ReviewerAgent)
     async def example_main():

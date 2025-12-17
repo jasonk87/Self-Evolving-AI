@@ -248,16 +248,125 @@ Now, generate the Python code and the suggested filename for the described tool.
             logger.error(f"Failed to auto-reload tools: {e_reload}")
             reload_msg = "Tool generated, but auto-reload failed. Please restart or use /refresh_tools."
 
+        # --- Test Generation (Proactive Immunity) ---
+        test_generation_msg = ""
+        try:
+             test_gen_result = await _generate_test_for_tool(
+                 tool_name=tool_function_name,
+                 tool_filename=final_filename,
+                 tool_code=generated_code,
+                 action_executor=action_executor
+             )
+             test_generation_msg = f"\nTest Generation: {test_gen_result}"
+        except Exception as e_test:
+            logger.error(f"Failed to generate test for tool {tool_function_name}: {e_test}")
+            test_generation_msg = f"\nTest Generation Failed: {e_test}"
+
+
         relative_file_path = os.path.join("custom_tools", GENERATED_TOOLS_DIR_NAME, final_filename).replace("\\", "/")
         return (
             f"Successfully generated tool code and applied syntax verification.\n"
             f"Saved to: 'ai_assistant/{relative_file_path}'\n"
             f"Function: '{tool_function_name}'\n"
             f"{reload_msg}"
+            f"{test_generation_msg}"
         )
     except Exception as e:
         logger.error(f"Error in generate_new_tool_from_description: {e}", exc_info=True)
         return f"An unexpected error occurred during tool generation: {e}"
+
+async def _generate_test_for_tool(
+    tool_name: str,
+    tool_filename: str,
+    tool_code: str,
+    action_executor: Optional["ActionExecutor"]
+) -> str:
+    """
+    Generates a pytest file for the newly created tool.
+    """
+    if not tool_name:
+        return "Skipped (no tool name identified)."
+
+    if not action_executor:
+        return "Skipped (no action_executor provided)."
+
+    logger.info(f"Generating test for tool: {tool_name}")
+
+    # Locate LLM
+    llm = None
+    if hasattr(action_executor, 'llm_interface'):
+        llm = action_executor.llm_interface
+    elif hasattr(action_executor, 'code_service') and hasattr(action_executor.code_service, 'llm_provider'):
+        llm = action_executor.code_service.llm_provider
+
+    if not llm:
+        return "Skipped (LLM not available for test generation)."
+
+    model_name = get_model_for_task("code_generation")
+    module_name = tool_filename.replace(".py", "")
+
+    prompt = f"""
+You are an expert QA engineer.
+Your task is to write a comprehensive `pytest` test suite for the following Python tool.
+
+Tool Name: `{tool_name}`
+Module Name: `{module_name}`
+Tool Source Code:
+```python
+{tool_code}
+```
+
+Requirements:
+1. Use `pytest`.
+2. The test file should import the tool from `ai_assistant.custom_tools.generated.{module_name}`.
+3. Include tests for:
+    - Normal operation (happy path).
+    - Edge cases (empty inputs, invalid types).
+    - Error handling (if the tool raises exceptions).
+4. Do NOT mock `action_executor` unless absolutely necessary (try to pass None or a simple MagicMock if needed).
+5. Output ONLY the Python code for the test file, enclosed in triple backticks.
+
+Example Import:
+`from ai_assistant.custom_tools.generated.{module_name} import {tool_name}`
+
+Generate the test code now.
+"""
+    try:
+        # Generate test code
+        if hasattr(llm, 'send_request'):
+             llm_response = await llm.send_request(prompt=prompt, model_name=model_name, temperature=0.2)
+        elif hasattr(llm, 'invoke_ollama_model_async'):
+             llm_response = await llm.invoke_ollama_model_async(prompt, model_name=model_name, temperature=0.2)
+        else:
+             return "Failed (LLM method not found)."
+
+        if not llm_response:
+             return "Failed (Empty LLM response)."
+
+        code_match = re.search(r"```(?:python)?\s*\n(.*?)\n```", llm_response, re.DOTALL | re.IGNORECASE)
+        if not code_match:
+             return "Failed (No code block found in LLM response)."
+
+        test_code = code_match.group(1).strip()
+
+        # Determine test path
+        # Assuming tests/custom_tools/ exists
+        test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "custom_tools")
+        # Normalize path
+        test_dir = os.path.abspath(test_dir)
+        os.makedirs(test_dir, exist_ok=True)
+
+        test_filename = f"test_{module_name}.py"
+        test_filepath = os.path.join(test_dir, test_filename)
+
+        with open(test_filepath, "w", encoding="utf-8") as f:
+            f.write(test_code)
+
+        return f"Success! Saved to {test_filename}"
+
+    except Exception as e:
+        logger.error(f"Error generating test: {e}")
+        return f"Error: {e}"
 
 # --- New find_agent_tool_source function and related logic ---
 import importlib.util

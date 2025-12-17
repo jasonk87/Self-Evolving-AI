@@ -1,16 +1,21 @@
 # Code for task planning.
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import re
 import json # For parsing LLM plan string
 from ai_assistant.planning.llm_argument_parser import populate_tool_arguments_with_llm
 from ai_assistant.config import get_model_for_task
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # For re-planning
 
+if TYPE_CHECKING:
+    from ai_assistant.core.memory_manager import MemoryManager
+
 class PlannerAgent:
     """
     Responsible for creating a sequence of tool invocations (a plan)
     to achieve a given goal.
     """
+    def __init__(self, memory_manager: Optional["MemoryManager"] = None):
+        self.memory_manager = memory_manager
 
     def _extract_numbers(self, text: str, count: int = 2) -> List[str]:
         """Extracts up to 'count' numbers from the text using regex."""
@@ -206,6 +211,24 @@ class PlannerAgent:
 
         print(f"\nPlannerAgent (LLM): Attempting to create plan for goal: '{goal_description}'")
 
+        # --- Memory Retrieval (Wisdom) ---
+        relevant_memory_section = ""
+        if self.memory_manager:
+            try:
+                # Query RAG for similar past situations
+                context_results = await self.memory_manager.retrieve_relevant_context(goal_description, k=3)
+                if context_results:
+                    memory_lines = ["Relevant Past Experiences / Knowledge:"]
+                    for item in context_results:
+                        text = item.get('text', '')
+                        # You could also include metadata if useful, e.g., "Source: ..."
+                        memory_lines.append(f"- {text}")
+                    relevant_memory_section = "\n".join(memory_lines) + "\n"
+                    print(f"PlannerAgent (Wisdom): Retrieved {len(context_results)} relevant memories.")
+            except Exception as e:
+                print(f"PlannerAgent (Wisdom): Failed to retrieve memory context: {e}")
+        # ---------------------------------
+
         # Prepare tools description for the LLM, including parameters from schema
         tools_for_prompt = {}
         for tool_name, tool_data in available_tools.items(): # available_tools is now richer
@@ -253,15 +276,17 @@ When generating the plan, consider this existing project context. For example, i
         LLM_PLANNING_PROMPT_TEMPLATE = """Given the user's goal: "{goal}"
 {conversation_history_section}
 {project_context_section}
+{relevant_memory_section}
 
 **Leveraging Provided Information (Context & Facts):**
 - If a "Current Project Context" (e.g., code from existing files) is provided, use it to understand the current state and how the user's goal relates to it.
-- If "Relevant Learned Facts" or "Knowledge Snippets" are provided, review them carefully.
-- These facts represent information the assistant already knows.
+- If "Relevant Learned Facts", "Knowledge Snippets", or "Relevant Past Experiences" are provided, review them carefully.
+- These facts represent information the assistant already knows or lessons from the past.
 - Use these facts to:
     - Inform your choice of tools and arguments.
     - Avoid asking for information already known.
     - Avoid planning steps to re-acquire or re-learn these facts.
+    - **Avoid repeating past mistakes described in the experiences.**
 - If a learned fact directly helps in achieving the user's goal, incorporate this knowledge into your plan.
 
 And the following available tools (tool_name: description):
@@ -499,6 +524,7 @@ JSON Plan:
             goal=goal_description, 
             conversation_history_section=conversation_history_section_str,
             project_context_section=project_context_section_str,
+            relevant_memory_section=relevant_memory_section,
             tools_json_string=tools_json_string
         )
 
