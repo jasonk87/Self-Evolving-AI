@@ -119,7 +119,7 @@ class DynamicOrchestrator:
 
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            return False, f"An unexpected error occurred: {str(e)}", None, 
+            return False, f"An unexpected error occurred: {str(e)}", None
 
         finally:
             # 5. Session Level Summarization (Rolling)
@@ -157,30 +157,72 @@ class DynamicOrchestrator:
     async def _run_fast_react_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Engine 2: Fast ReAct Mode. Standard loop (Think -> Act -> Observe).
+        Now upgraded to use the Sequential Flash Loop for stability.
         """
+        # In the new protocol, Fast ReAct is just the loop without the explicit Phase 1 strategic deep dive,
+        # OR we can unify them. Let's make it a lighter version of Thinking Pro.
+        # For now, let's keep it direct to _execute_react_loop but ensure it uses the robust error handling.
         return await self._execute_react_loop(
             prompt,
             context,
             history,
             session_id,
-            use_parallel_thinking=False,
+            use_sequential_thinking=False, # Fast mode just reacts
             model_name="gemini-2.0-flash"
         )
 
     async def _run_thinking_pro_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
         """
-        Engine 3: Thinking Pro Mode. Parallel Branching ReAct.
+        Engine 3: Thinking Pro Mode.
+        OLD: Parallel Branching ReAct.
+        NEW: Sequential Flash Loop (Think First -> Then Act).
         """
+        print(color_text(f"--> Initiating Sequential Flash Loop...", CLIColors.SYSTEM_MESSAGE))
+
+        # Phase 1: The Thinker (Strategic Analysis)
+        # We explicitly ask for a plan without tools.
+        thinking_prompt = f"""You are an Expert AI Strategist.
+Goal: {prompt}
+
+Context:
+{context}
+
+Your Task:
+1. Analyze the user's request deepy.
+2. Identify potential pitfalls, edge cases, or ambiguities.
+3. Outline a high-level step-by-step logic to solve this.
+4. Do NOT execute any tools yet. Do NOT write the final code yet.
+5. Output your analysis clearly.
+
+Output Format:
+[ANALYSIS] ...
+[PLAN] ...
+"""
+        print(color_text(f"--> Phase 1: Strategic Analysis...", CLIColors.THOUGHT))
+        analysis = await invoke_gemini_model_async(
+            prompt=thinking_prompt,
+            model_name="gemini-2.0-flash",
+            temperature=0.7
+        )
+
+        if analysis:
+            print(color_text(f"--> Analysis Complete. Transitioning to Execution...", CLIColors.SYSTEM_MESSAGE))
+            # Prepend analysis to context for the Executor
+            context = f"*** STRATEGIC ANALYSIS ***\n{analysis}\n\n{context}"
+        else:
+            logger.warning("Phase 1 Analysis failed, proceeding with raw context.")
+
+        # Phase 2: The Doer (Execution)
         return await self._execute_react_loop(
             prompt,
             context,
             history,
             session_id,
-            use_parallel_thinking=True,
-            model_name="gemini-2.0-flash-exp" # Use stronger model for thinking
+            use_sequential_thinking=True, # Flag for internal logic if needed
+            model_name="gemini-2.0-flash"
         )
 
-    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_parallel_thinking: bool, model_name: str) -> Tuple[bool, str, Optional[List[str]]]:
+    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_sequential_thinking: bool, model_name: str) -> Tuple[bool, str, Optional[List[str]]]:
         """
         Shared ReAct loop logic.
         """
@@ -206,7 +248,7 @@ Available Tools:
 {tools_desc}
 
 Instructions:
-1. Analyze the goal and context.
+1. Analyze the goal and context (including any Strategic Analysis provided).
 2. Decide on the next step.
 3. IMPORTANT: If the goal is conversational or a simple greeting (e.g., "Hello", "How are you?"), responding directly is the correct action. Do NOT use tools to "wait" for input.
 4. OUTPUT FORMAT:
@@ -232,17 +274,11 @@ Instructions:
         for step_i in range(max_steps):
             step_prompt = f"{system_prompt}\n\nExecution History:\n{execution_history}\n\nStep {step_i+1}:"
 
-            if use_parallel_thinking:
-                response = await invoke_parallel_thinking(
-                    prompt=step_prompt,
-                    model_name=model_name,
-                    num_branches=3
-                )
-            else:
-                response = await invoke_gemini_model_async(
-                    prompt=step_prompt,
-                    model_name=model_name
-                )
+            # Replaced Parallel Thinking with Single Sequential Call
+            response = await invoke_gemini_model_async(
+                prompt=step_prompt,
+                model_name=model_name
+            )
 
             if not response:
                 return False, "AI stopped responding.", None
