@@ -7,7 +7,7 @@ import os
 
 LLM_PROVIDER = "gemini" 
 
-DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
+DEFAULT_MODEL = "gemini-2.0-flash"  # Standardized to Flash 2.0 for everything
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
@@ -62,41 +62,42 @@ THINKING_CONFIG = {
 # This allows using different models for different capabilities (e.g., code generation, planning, reflection).
 # If a task is not listed here, or if its value is None, the DEFAULT_MODEL will be used.
 TASK_MODELS: Dict[str, Optional[str]] = {
-    "code_generation": DEFAULT_MODEL,       # For generating new tool code via LLM
-    "planning": DEFAULT_MODEL,              # For LLM-based planning
-    "reflection": DEFAULT_MODEL,            # For LLM-based reflection, pattern identification, suggestion generation
-    "conversation_intelligence": "gemini-1.5-pro", # Use Pro for better analysis, it has decent limits too
-    "argument_population": DEFAULT_MODEL,   # For populating tool arguments from goal descriptions
-    "goal_preprocessing": DEFAULT_MODEL,    # For preprocessing user goals
-    "summarization": DEFAULT_MODEL,              # For summarizing text, e.g., search results
-    "reviewing": DEFAULT_MODEL,                  # For reviewing AI's own suggestions/actions
-    "fact_extraction": DEFAULT_MODEL,              # For extracting facts for autonomous learning
-    "tool_design": DEFAULT_MODEL,                # For designing tool components (name, params, code) from a description
-    "tool_creation": DEFAULT_MODEL,              # For the AI to create new tools
-    "council_skeptic": DEFAULT_MODEL,            # For the Skeptic role in Council Debate
-    "council_judge": DEFAULT_MODEL,              # For the Judge role in Council Debate
+    "code_generation": "gemini-2.0-flash",       # Standardized to Flash
+    "planning": "gemini-2.0-flash",              # Standardized to Flash
+    "reflection": "gemini-2.0-flash",            # Standardized to Flash
+    "conversation_intelligence": "gemini-2.0-flash", # Standardized to Flash
+    "argument_population": "gemini-2.0-flash",   # Standardized to Flash
+    "goal_preprocessing": "gemini-2.0-flash",    # Standardized to Flash
+    "summarization": "gemini-2.0-flash",              # Standardized to Flash
+    "reviewing": "gemini-2.0-flash",                  # Standardized to Flash
+    "fact_extraction": "gemini-2.0-flash",              # Standardized to Flash
+    "tool_design": "gemini-2.0-flash",                # Standardized to Flash
+    "tool_creation": "gemini-2.0-flash",              # Standardized to Flash
+    "council_skeptic": "gemini-2.0-flash",            # Standardized to Flash
+    "council_judge": "gemini-2.0-flash",              # Standardized to Flash
     # Add other tasks here as needed, e.g.:
     # "translation": "another_model:latest",
 }
 
 # Reasoning Strategies Configuration
-# Maps specific tasks to a strategy: "STANDARD" or "PARALLEL".
+# Maps specific tasks to a strategy: "STANDARD", "PARALLEL", or "SEQUENTIAL".
 # "STANDARD": Singular call (with <think> if enabled).
 # "PARALLEL": Parallel Thinking (3 passes + Merge).
+# "SEQUENTIAL": Two-step loop (Think first, then Act).
 REASONING_STRATEGIES: Dict[str, str] = {
-    "planning": "PARALLEL",
-    "code_generation": "PARALLEL",
-    "conversation_intelligence": "PARALLEL",
-    "council_judge": "PARALLEL",
-    "reviewing": "PARALLEL",
-    "summarization": "PARALLEL",
-    "default": "PARALLEL"
+    "planning": "SEQUENTIAL",
+    "code_generation": "SEQUENTIAL",
+    "conversation_intelligence": "SEQUENTIAL",
+    "council_judge": "SEQUENTIAL",
+    "reviewing": "SEQUENTIAL",
+    "summarization": "SEQUENTIAL",
+    "default": "SEQUENTIAL"
 }
 
-# Parallel Thinking Configuration
+# Parallel Thinking Configuration (Deprecated but kept for compatibility)
 PARALLEL_THINKING_CONFIG = {
     "num_branches": 3,
-    "merge_model": "gemini-2.0-flash-exp", # Using the experimental model for better reasoning
+    "merge_model": "gemini-2.0-flash",
     "temperature_branches": 0.7,
     "temperature_merge": 0.2
 }
@@ -151,7 +152,7 @@ MW_TTS_ENABLED = True
 # Rate Limiting Configuration
 # Set to True to enable rate limiting for API calls (recommended for Free Tier)
 # Set to False to disable rate limiting (recommended for Paid Tier)
-ENABLE_RATE_LIMITING = False
+ENABLE_RATE_LIMITING = True
 
 
 def is_debug_mode() -> bool:
