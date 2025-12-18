@@ -176,14 +176,8 @@ class PlannerAgent:
             else:
                 print(f"PlannerAgent: No specific tool action planned for segment: '{segment_text}'")
 
-        # If no steps were generated at all from any segment, and no_op_tool is available, use it.
-        if not full_plan and "no_op_tool" in available_tools:
-            full_plan.append({
-                "tool_name": "no_op_tool",
-                "args": (),
-                "kwargs": {} # Ensure no_op_tool is called without unexpected keyword arguments
-            })
-        elif not full_plan:
+
+        if not full_plan:
             print(f"Planner: Could not find any suitable tool or create a plan for the goal: '{main_goal_description}'")
 
         print(f"PlannerAgent: Generated plan for '{main_goal_description}': {full_plan}")
@@ -325,12 +319,12 @@ Before planning any "creation" task (e.g., "create a ...", "make a ...", "build 
 A.  The creation of a new **Agent Tool**: A specific capability or function for the AI assistant itself. These are typically single Python scripts/functions. If so, prioritize using tools like 'generate_new_tool_from_description'.
 B.  The creation or scaffolding of a **User Project**: A broader software application or multi-file project that the user wants to develop. If so, prioritize tools like 'initiate_ai_project', 'generate_code_for_project_file', or 'execute_project_coding_plan'.
 
-If the user's intent for a "creation" task is ambiguous between an Agent Tool and a User Project, your *first planned step* should be to use the 'request_user_clarification' tool (if available). The 'question_text' argument for this tool should ask the user to specify if they want an agent tool or a user project, e.g., question_text="Are you asking me to create a new capability/tool for myself, or to start scaffolding a new software project for you?". You can also provide a list of strings for the 'options' argument if offering choices is helpful, for example: options=["A new tool for me (the AI assistant)?", "A new software project for you to work on?"]. If 'request_user_clarification' is not available, make your best judgment based on the detail and scope of the request.
+If the user's intent for a "creation" task is ambiguous between an Agent Tool and a User Project, your *first planned step* should be to use the 'get_self_awareness_info_and_converse' tool. The 'context' argument for this tool should explain that you need clarification on whether to create an agent tool or a user project. For example: context="Asking the user to specify if they want an agent tool or a user project.". This will prompt a conversational response where you can ask the question naturally.
 
 **General Guidance for Seeking Clarification:**
-- **Use `request_user_clarification`**: If the user's goal is ambiguous, if required arguments for a chosen tool cannot be reliably inferred from the goal, or if there are multiple plausible interpretations that could lead to different plans, your first step should be to use the `request_user_clarification` tool.
-- **Formulate Clear Questions**: For the `question_text` argument, provide a concise question that directly addresses the ambiguity or missing information.
-- **Offer Options (Optional)**: For the `options` argument (a list of strings), provide choices if it helps the user narrow down their intent or provide specific details. Example: `question_text="Which file format do you prefer?", options=["CSV", "JSON", "Plain Text"]`.
+**General Guidance for Seeking Clarification:**
+- **Use `get_self_awareness_info_and_converse`**: If the user's goal is ambiguous, use this tool to trigger a conversational turn. Set the `context` argument to the question you need to ask.
+- **Do not output a tool for clarification**: Simply planning the `get_self_awareness_info_and_converse` step is sufficient to hand control back to the conversational engine, which will then generate a response including your question.
 
 **Preferred Project Management Tools:**
 For tasks related to software project creation, code generation for specific files within a project, or building out a project based on a plan, please PREFER the following tools:
@@ -374,7 +368,7 @@ Example for tool creation:
 Do NOT attempt to fulfill the *functionality* of a requested new tool using other existing tools (especially `execute_sandboxed_python_script`) if the user explicitly asks to *create* a tool. Your task in such a scenario is to initiate the tool creation process so the capability becomes persistent. One-off scripts are NOT tools.
 
 **Guidance for Editing Existing Agent Tools:**
-If the user's goal is to "edit an existing agent tool", "modify an agent tool", "change how an agent tool works", or similar, your plan should generally follow these steps. If the user's feedback about which tool to edit or what specific change to make is too vague, consider using the `request_user_clarification` tool first to get more details before proceeding with these steps.
+If the user's goal is to "edit an existing agent tool", "modify an agent tool", "change how an agent tool works", or similar, your plan should generally follow these steps. If the user's feedback about which tool to edit or what specific change to make is too vague, consider using `get_self_awareness_info_and_converse` first to get more details before proceeding with these steps.
 1.  **Find the tool's source code**: Use the `find_agent_tool_source` tool. The `tool_name` argument should be the name of the tool to be edited. (Assumes `find_agent_tool_source` is an available tool).
 2.  **Generate code modification**: Use a code modification tool/service (e.g., a tool named `call_code_service_modify_code` that wraps `CodeService.modify_code`).
     *   The `context` argument for this tool (e.g., `GRANULAR_CODE_REFACTOR` or `SELF_FIX_TOOL`) should be chosen based on the specificity of the user's request. Prefer `GRANULAR_CODE_REFACTOR` if the user's feedback points to a specific part of the tool's code or describes a very targeted change. Use `SELF_FIX_TOOL` for more general bug fixes or broader enhancements where the exact lines of code to change are not specified by the user.
@@ -436,7 +430,7 @@ Plan:
 
 **Guidance for Iterating on User Projects (Based on Feedback):**
 If the user provides feedback on a project they are working on (e.g., "My 'WebAppX' project has a bug in `main.py`," or "Add a new feature to the 'DataAnalyzer' project to plot charts," or "The 'GameProject' is not working, please fix it."), your plan should generally follow these steps:
-1.  **Identify Project**: Determine the `project_identifier` (name or ID) from the user's feedback. If ambiguous, use `request_user_clarification`.
+1.  **Identify Project**: Determine the `project_identifier` (name or ID) from the user's feedback. If ambiguous, use `get_self_awareness_info_and_converse` to ask for the project name.
 2.  **Gather Context (if needed)**:
     *   Use `list_project_files` (passing `project_identifier` and optionally a `sub_directory`) to understand the project structure if the feedback is general or implies needing to know file organization.
     *   If specific files are mentioned or relevant (e.g., "bug in `main.py`"), use `get_project_file_content` (passing `project_identifier` and the relative `file_path_in_project`) to read their content. Multiple calls may be needed for multiple files.

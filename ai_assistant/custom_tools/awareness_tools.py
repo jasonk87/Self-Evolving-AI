@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
-from ai_assistant.core.system_status import get_system_status_summary, load_learned_facts
+
 from typing import List, Dict, Any, Optional
 from typing import List, Dict, Any, Optional
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType

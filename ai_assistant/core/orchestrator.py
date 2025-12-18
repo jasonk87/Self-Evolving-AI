@@ -293,12 +293,12 @@ Instructions:
         # Record Experience
         tools_used_names = [step['tool'] for step in current_steps if 'tool' in step]
         outcome = "SUCCESS" if success else "FAILURE"
-        lesson = await self.episodic_manager.record_experience(
+        asyncio.create_task(self.episodic_manager.record_experience(
             prompt=prompt,
             plan=current_steps,
             outcome=outcome,
             tools_used=tools_used_names
-        )
+        ))
 
         return success, final_answer, collected_images
 

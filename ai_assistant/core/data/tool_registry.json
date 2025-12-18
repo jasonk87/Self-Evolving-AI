@@ -255,14 +255,6 @@
         "type": "builtin",
         "schema_details": null
     },
-    "no_op_tool": {
-        "tool_name": "no_op_tool",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_example_no_op_tool",
-        "description": "Does nothing, useful for default plans.",
-        "type": "builtin",
-        "schema_details": null
-    },
     "view_function_code": {
         "tool_name": "view_function_code",
         "module_path": "ai_assistant.tools.tool_system",
@@ -286,33 +278,6 @@
         "description": "A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.",
         "type": "builtin",
         "schema_details": null
-    },
-    "request_user_clarification": {
-        "tool_name": "request_user_clarification",
-        "module_path": "ai_assistant.custom_tools.conversational_tools",
-        "function_name": "request_user_clarification",
-        "description": "Asks the user a clarifying question to resolve ambiguities or gather missing information needed to complete a task. Returns the user's textual response.",
-        "type": "custom_discovered",
-        "schema_details": {
-            "name": "request_user_clarification",
-            "description": "Asks the user a clarifying question to resolve ambiguities or gather missing information needed to complete a task. Returns the user's textual response.",
-            "parameters": [
-                {
-                    "name": "question_text",
-                    "type": "str",
-                    "description": "The question to ask the user."
-                },
-                {
-                    "name": "options",
-                    "type": "list",
-                    "description": "Optional. A list of suggested string options for the user to choose from or consider."
-                }
-            ],
-            "returns": {
-                "type": "str",
-                "description": "The user's textual reply to the clarification question."
-            }
-        }
     },
     "propose_project_file_update": {
         "tool_name": "propose_project_file_update",
@@ -983,6 +948,22 @@
         "module_path": "ai_assistant.custom_tools.generated",
         "function_name": "list_suggestions",
         "description": "Lists suggestions, optionally filtered by status.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_chat_history": {
+        "tool_name": "get_chat_history",
+        "module_path": "ai_assistant.custom_tools.conversational_tools",
+        "function_name": "get_chat_history",
+        "description": "Retrieves the chat history for a session.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "list_available_tools": {
+        "tool_name": "list_available_tools",
+        "module_path": "ai_assistant.custom_tools.system_tools",
+        "function_name": "list_available_tools",
+        "description": "Lists all available tools registered in the system.",
         "type": "custom_discovered",
         "schema_details": null
     }

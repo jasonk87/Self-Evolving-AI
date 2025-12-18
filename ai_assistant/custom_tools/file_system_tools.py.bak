@@ -214,7 +214,10 @@ def save_project_file_content(project_identifier: str, file_path_in_project: str
         A dictionary with "status": "success", "file_path": "absolute_path".
         Or {"status": "error", "message": "error description"}.
     """
-    from ai_assistant.core.project_manager import find_project
+    try:
+        from ai_assistant.core.project_manager import find_project
+    except ModuleNotFoundError:
+        return {'status': 'error', 'message': 'Could not import ai_assistant.core.project_manager. Please ensure the ai_assistant package is installed and available.'}
     project = find_project(project_identifier)
     if not project:
         return {'status': 'error', 'message': f"Project '{project_identifier}' not found."}
@@ -224,7 +227,7 @@ def save_project_file_content(project_identifier: str, file_path_in_project: str
     if not os.path.isdir(root_path):
         return {'status': 'error', 'message': f"Project root path '{root_path}' for '{project_identifier}' is not a valid directory."}
     target_file_path = os.path.abspath(os.path.normpath(os.path.join(root_path, file_path_in_project)))
-    if os.path.commonpath([root_path, target_file_path]) != root_path:
+    if not target_file_path.startswith(root_path):
         return {'status': 'error', 'message': f"File path '{file_path_in_project}' attempts to traverse outside project root."}
     try:
         os.makedirs(os.path.dirname(target_file_path), exist_ok=True)

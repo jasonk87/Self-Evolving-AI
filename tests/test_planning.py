@@ -46,10 +46,6 @@ class TestPlannerAgentLLMSearch(unittest.TestCase):
                     ]
                 }
             },
-            "no_op_tool": {
-                "description": "Does nothing, useful for default plans or when no other tool is suitable.",
-                "schema_details": {"name": "no_op_tool", "description": "Does nothing.", "parameters": []}
-            },
             "request_user_clarification": {
                 "description": self.REQUEST_USER_CLARIFICATION_SCHEMA["description"],
                 "schema_details": self.REQUEST_USER_CLARIFICATION_SCHEMA
@@ -102,7 +98,7 @@ class TestPlannerAgentLLMSearch(unittest.TestCase):
                 }
             }
         }
-
+    
     @patch('ai_assistant.planning.planning.invoke_ollama_model_async')
     async def test_plan_search_answer_query(self, mock_invoke_llm_async):
         """Test planning a search with default 'answer_query' processing."""
@@ -189,38 +185,28 @@ class TestPlannerAgentLLMSearch(unittest.TestCase):
         """Test that simple math queries do not trigger a web search."""
         goal = "What is 5 plus 5?"
         
-        llm_response_json = json.dumps([
-            {"tool_name": "no_op_tool", "args": [], "kwargs": {"note":"LLM decided no specific tool needed or cannot answer."}}
-        ])
+        # Expect empty list if no tool is suitable (since add_numbers is not effectively in available_tools_rich's keys for this check, wait, it is NOT in keys of available_tools_rich above, I need to check)
+        # Ah, available_tools_rich definition below does not have add_numbers.
+        llm_response_json = json.dumps([]) 
         mock_invoke_llm_async.return_value = llm_response_json
 
         plan = await self.planner.create_plan_with_llm(goal, self.available_tools_rich)
 
         self.assertIsInstance(plan, list)
-        if plan:
-            for step in plan:
-                self.assertNotEqual(step['tool_name'], "search_duckduckgo", "Search tool should not be used for simple math.")
-            if len(plan) == 1:
-                 self.assertEqual(plan[0]['tool_name'], "no_op_tool")
+        self.assertEqual(plan, []) # Should be empty
 
     @patch('ai_assistant.planning.planning.invoke_ollama_model_async')
     async def test_plan_no_search_for_creative_task(self, mock_invoke_llm_async):
         """Test that creative tasks do not trigger a web search."""
         goal = "Write a short story about a dragon."
 
-        llm_response_json = json.dumps([
-            {"tool_name": "no_op_tool", "args": [], "kwargs": {"note":"LLM decided no specific tool needed or cannot answer with available tools."}}
-        ])
+        llm_response_json = json.dumps([])
         mock_invoke_llm_async.return_value = llm_response_json
 
         plan = await self.planner.create_plan_with_llm(goal, self.available_tools_rich)
 
         self.assertIsInstance(plan, list)
-        if plan:
-            for step in plan:
-                self.assertNotEqual(step['tool_name'], "search_duckduckgo", "Search tool should not be used for creative tasks.")
-            if len(plan) == 1:
-                 self.assertEqual(plan[0]['tool_name'], "no_op_tool")
+        self.assertEqual(plan, [])
 
     @patch('ai_assistant.planning.planning.invoke_ollama_model_async')
     async def test_create_plan_with_llm_uses_clarification_tool_for_ambiguity(self, mock_invoke_llm_async):

@@ -15,3 +15,38 @@ def toggle_ghost_mode(enabled: bool) -> str:
     status = 'ENABLED' if config.GHOST_MODE else 'DISABLED'
     message = f"Ghost Mode {status} - Browser will now be {('visible' if config.GHOST_MODE else 'invisible')}."
     return message
+
+def list_available_tools(category: str = None) -> str:
+    """
+    Lists all available tools registered in the system.
+
+    Args:
+        category (str, optional): Filter tools by category (e.g., 'system', 'custom').
+
+    Returns:
+        str: A formatted list of tools and their descriptions.
+    """
+    from ai_assistant.tools.tool_system import ToolSystem
+    
+    # Instantiate ToolSystem to access registry
+    # Note: In a live system, we might want to access a singleton, but re-instantiating 
+    # to read the registry file is safer for a standalone tool call.
+    tool_system = ToolSystem()
+    tools = tool_system.get_tools() # Usage of get_tools() implies it returns a dict of tool_name -> details
+    
+    output_lines = ["Available Tools:"]
+    for name, details in sorted(tools.items()):
+        
+        # Simple category filtering based on module path or type
+        tool_type = details.get('type', 'unknown')
+        if category:
+            if category.lower() not in tool_type.lower() and category.lower() not in details.get('module_path', '').lower():
+                continue
+
+        desc = details.get('description', 'No description.')
+        output_lines.append(f"- {name}: {desc}")
+    
+    if len(output_lines) == 1:
+        return "No tools found."
+        
+    return "\n".join(output_lines)

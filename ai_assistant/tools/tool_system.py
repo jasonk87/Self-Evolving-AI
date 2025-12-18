@@ -386,7 +386,7 @@ class ToolSystem:
     def register_example_tools(self):
         """Registers a set of example tools. Idempotent."""
         current_module_obj = sys.modules[self.__class__.__module__]
-        example_tools_data = [('greet_user', 'Greets the user. Args: name (str)', '_example_greet_user'), ('add_numbers', 'Adds two integers. Args: a (int), b (int)', '_example_add_numbers'), ('multiply_numbers', 'Multiplies two floats. Args: x (float), y (float)', '_example_multiply_numbers'), ('no_op_tool', 'Does nothing, useful for default plans.', '_example_no_op_tool'), ('view_function_code', 'Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).', '_tool_view_function_code'), ('simulate_edit_function_code', 'Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).', '_tool_simulate_edit_function_code'), ('maybe_fail_tool', 'A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.', '_example_maybe_fail_tool')]
+        example_tools_data = [('greet_user', 'Greets the user. Args: name (str)', '_example_greet_user'), ('add_numbers', 'Adds two integers. Args: a (int), b (int)', '_example_add_numbers'), ('multiply_numbers', 'Multiplies two floats. Args: x (float), y (float)', '_example_multiply_numbers'), ('view_function_code', 'Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).', '_tool_view_function_code'), ('simulate_edit_function_code', 'Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).', '_tool_simulate_edit_function_code'), ('maybe_fail_tool', 'A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.', '_example_maybe_fail_tool')]
         for tool_name, description, func_name_str in example_tools_data:
             try:
                 func_callable = getattr(current_module_obj, func_name_str, None)
@@ -417,8 +417,7 @@ def _example_multiply_numbers(x: float, y: float) -> float:
     except ValueError:
         raise ValueError("'x' and 'y' must be floats.")
 
-def _example_no_op_tool() -> str:
-    return 'No-op tool executed successfully.'
+
 _maybe_fail_tool_counter = 0
 
 def _example_maybe_fail_tool() -> str:
