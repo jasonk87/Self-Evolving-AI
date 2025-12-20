@@ -1,3 +1,4 @@
+
 import os
 import json
 import subprocess
@@ -596,6 +597,10 @@ async def request_code_review_tool(code_to_review: Optional[str]=None, original_
         return {'status': 'error', 'comments': "Error: 'code_to_review' argument is missing. Please provide the code to be reviewed.", 'suggestions': ''}
     if not original_requirements:
         return {'status': 'error', 'comments': "Error: 'original_requirements' argument is missing. Please provide the requirements to review against.", 'suggestions': ''}
-    reviewer_agent = ReviewerAgent()
-    review_results = await reviewer_agent.review_code(code_to_review=code_to_review, original_requirements=original_requirements, related_tests=related_tests)
-    return review_results
+    
+    try:
+        reviewer_agent = ReviewerAgent()
+        review_results = await reviewer_agent.review_code(code_to_review=code_to_review, original_requirements=original_requirements, related_tests=related_tests)
+        return review_results
+    except Exception as e:
+        return {'status': 'error', 'comments': f"An error occurred during review: {str(e)}", 'suggestions': ''}

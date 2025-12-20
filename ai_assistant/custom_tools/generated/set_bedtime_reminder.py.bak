@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ai_assistant.core.action_executor import ActionExecutor
 
-async def set_bedtime_reminder(action_executor: Any) -> str:
+async def set_bedtime_reminder(action_executor: 'ActionExecutor') -> str:
     """
     Sets a reminder to go to bed at 8:00 PM today.
 
@@ -27,7 +27,10 @@ async def set_bedtime_reminder(action_executor: Any) -> str:
 
         async def bedtime_alert():
             await asyncio.sleep(sleep_seconds)
-            await action_executor.say('Time to go to bed!')
+            try:
+                await action_executor.send_notification('Time to go to bed!')
+            except Exception as e:
+                print(f'Error sending notification: {e}')
         asyncio.create_task(bedtime_alert())
         return 'Bedtime reminder set for 8:00 PM.'
     except Exception as e:

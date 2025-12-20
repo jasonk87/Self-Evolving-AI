@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, Dict, Any
 from ai_assistant.core.enums import ExecutionMode
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
 from ai_assistant.config import DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
@@ -56,11 +56,13 @@ class TaskRouter:
 
             full_prompt = f"{ROUTER_PROMPT}\n\nUser Prompt: {prompt}{context_str}\n\nMode:"
 
-            response = await invoke_gemini_model_async(
+            # Use Split Brain for smarter routing
+            response, _ = await invoke_split_brain_async(
                 prompt=full_prompt,
                 model_name=self.llm_model,
                 temperature=0.0, # Zero temp for deterministic classification
-                max_tokens=100 # Allow enough tokens for Chain of Thought if present, though we ignore it
+                max_tokens=200, # Allow enough tokens for Chain of Thought if present, though we ignore it
+                context_text=f"Routing decision."
             )
 
             if response:

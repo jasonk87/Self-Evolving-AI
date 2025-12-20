@@ -144,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'memory': 'memory', // Match module path fragment
         'TaskManager': 'orchestrator', // TaskManager is close to Orchestrator
         'task_manager': 'orchestrator',
+        'gemini_client': 'orchestrator', // AI Thoughts
         'user': 'user'
     };
 

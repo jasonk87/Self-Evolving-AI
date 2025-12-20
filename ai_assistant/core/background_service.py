@@ -23,6 +23,8 @@ from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
 from ai_assistant.core.approval_manager import approval_manager
 from ai_assistant.learning.learning import InsightType
+from ai_assistant.core.memory_maintenance_service import MemoryMaintenanceService # Added
+
 
 # Added for Evolutionary Architect
 from ai_assistant.learning.evolutionary_architect import perform_architectural_audit
@@ -33,6 +35,13 @@ from ai_assistant.core.reviewer import ReviewerAgent
 from ai_assistant.goals import goal_management
 # Fix: Import NotificationType to avoid NameError in autonomous goal processor
 from ai_assistant.core.notification_manager import NotificationType
+
+# Import Reminder Tool
+try:
+    from ai_assistant.custom_tools.reminder_tool import check_due_reminders
+except ImportError:
+    check_due_reminders = None
+    logger.warning("BackgroundService: Could not import reminder_tool.")
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -73,6 +82,17 @@ ARCHITECT_STATE_FILE = "architect_state.json"
 _last_auto_approve_check_time: float = 0.0
 _auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
 
+_last_auto_approve_check_time: float = 0.0
+_auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
+
+# Memory Maintenance State
+_last_memory_maintenance_time: float = 0.0
+_memory_maintenance_interval_seconds = 3600 * 24 # Run once every 24 hours
+
+# Learning & Conversation Scan State
+_last_conversation_scan_time: float = 0.0
+_conversation_scan_interval_seconds = 600 # Check frequent conversations
+
 # Vision Service State
 _last_visual_audit_time: float = 0.0
 _visual_audit_interval_seconds = 900 # 15 minutes
@@ -85,11 +105,87 @@ _last_autonomous_goal_check_time: float = 0.0
 _autonomous_goal_check_interval_seconds = 30 # Check every 30 seconds
 _last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 
+# Reminder System State
+_last_reminder_check_time: float = 0.0
+_reminder_check_interval_seconds = 10 # Check frequently
+
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
     global _orchestrator
     _orchestrator = orchestrator_instance
     logger.info("BackgroundService: Orchestrator instance set.")
+
+# Broadcaster for Chat Messages
+_socket_broadcaster = None
+
+def set_socket_broadcaster(broadcaster_func):
+    """Sets the function to broadcast messages to the UI via WebSockets."""
+    global _socket_broadcaster
+    _socket_broadcaster = broadcaster_func
+    logger.info("BackgroundService: Socket broadcaster set.")
+
+async def broadcast_agent_message(session_id: str, message: str, title: str = "Agent Report"):
+    """Sends a message to a specific chat session via the broadcaster."""
+    if _socket_broadcaster:
+        try:
+            # We assume broadcaster_func accepts (session_id, message, title)
+            # or we adapt it to match what web_app expects (likely an event emission)
+            # Actually, web_app.socketio.emit is strictly for sockets. 
+            # We need to UPDATE THE CHAT HISTORY first, then emit.
+            
+            # Since we are in background, we shouldn't import chat_manager directly if we can avoid it?
+            # Actually we can import it, it handles files.
+            from ai_assistant.core.chat_manager import ChatSessionManager
+            from ai_assistant.config import get_projects_dir # Just to get a path relative to root
+            
+            # Re-instantiate or reuse? ChatManager is lightweight.
+            # We need the path.
+            # Assuming standard path:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
+            cm = ChatSessionManager(chat_storage)
+            
+            # 1. Save to History
+            model_name = "Background Agent" # Or specific agent name
+            # Format message with title
+            formatted_msg = f"**{title}**\n\n{message}"
+            updated_session = cm.add_message(session_id, "assistant", formatted_msg)
+            
+            # 2. Emit to UI
+            # The broadcaster should handle the emission.
+            # We pass the full updated session or just the new message?
+            # Let's pass the payload the UI expects for 'message_received' or 'agent_event'
+            await _socket_broadcaster("agent_message", {
+                "session_id": session_id,
+                "role": "assistant",
+                "content": formatted_msg,
+                "timestamp": time.time()
+            })
+            logger.info(f"BackgroundService: Broadcasted agent message to {session_id}")
+            
+        except Exception as e:
+            logger.error(f"BackgroundService: Failed to broadcast agent message: {e}")
+
+def get_service_status():
+    """Returns the current status of the background service."""
+    uptime_seconds = 0
+    if _background_service_active: # We don't track start time explicitly yet, but could.
+        # Estimate from loop
+        pass
+
+    return {
+        "is_active": _background_service_active,
+        "has_orchestrator": _orchestrator is not None,
+        "has_broadcaster": _socket_broadcaster is not None,
+        "last_reflection_timestamp": _last_reflection_analyzed_timestamp if '_last_reflection_analyzed_timestamp' in globals() else 0,
+        "last_fact_curation_timestamp": _last_fact_curation_time,
+        "last_project_execution_scan_timestamp": _last_project_execution_scan_time,
+        "last_self_healing_timestamp": _last_self_healing_time,
+        "last_architect_audit_timestamp": _last_architect_audit_timestamp,
+        "last_dream_timestamp": _last_dream_time if '_last_dream_time' in globals() else 0,
+        "last_visual_audit_timestamp": _last_visual_audit_time,
+        "autonomous_learning_enabled": globals().get('AUTONOMOUS_LEARNING_ENABLED', False)
+    }
 
 async def run_autonomous_goal_processor():
     """
@@ -142,13 +238,45 @@ async def run_autonomous_goal_processor():
                              }
                          )
 
-                    # Create task for orchestrator processing
-                    asyncio.create_task(
-                        _orchestrator.process_prompt(
-                            prompt=goal_desc,
-                            session_id=session_id
-                        )
-                    )
+                    # POST-EXECUTION REPORTING
+                    # We need to know the result. orchestrator.process_prompt returns (success, response, images)
+                    # Use a callback or wait? 
+                    # create_task wraps it. We can define a wrapper.
+                    async def _run_and_report(gid=goal_id, sess_id=session_id, desc=goal_desc, source_sess=goal.get("metadata", {}).get("source_session_id")):
+                        try:
+                            success, result_text, _ = await _orchestrator.process_prompt(
+                                prompt=desc,
+                                session_id=sess_id,
+                                context_source="SYSTEM" # Use SYSTEM personas
+                            )
+                            
+                            # Update Goal Status
+                            new_status = "completed" if success else "failed"
+                            goal_management.update_goal_status(gid, status=new_status)
+                            
+                            # Report back to source session if exists
+                            if source_sess:
+                                report_title = f"Agent Report: {desc[:30]}..."
+                                report_body = result_text if success else f"Agent failed to complete task: {result_text}"
+                                await broadcast_agent_message(source_sess, report_body, title=report_title)
+                                
+                            # NEW: Trigger Learning from this experience
+                            # If successful, extract facts from the result
+                            if success and hasattr(_orchestrator, 'learning_agent') and _orchestrator.learning_agent:
+                                logger.info(f"BackgroundService: Triggering learning extraction for goal {gid}...")
+                                # Fire and forget (or await if we want to ensure it completes before goal update? 
+                                # goal is already updated. Awaiting is safer to managing loop).
+                                await _orchestrator.learning_agent.extract_and_save_facts(
+                                    text=result_text,
+                                    source_desc=f"Background Agent Task: {desc}"
+                                )
+                                
+                        except Exception as e:
+                            logger.error(f"Error in autonomous wrapper for goal {gid}: {e}")
+                            goal_management.update_goal_status(gid, status="failed")
+
+                    asyncio.create_task(_run_and_report())
+
                 else:
                     logger.error(f"BackgroundService: Failed to update status for goal {goal_id}. Execution aborted to avoid loops.")
 
@@ -261,7 +389,7 @@ def _save_architect_state():
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
 
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time, _last_autonomous_goal_check_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time, _last_autonomous_goal_check_time, _last_reminder_check_time, _last_memory_maintenance_time, _last_conversation_scan_time
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
@@ -269,6 +397,9 @@ async def _background_loop_async():
     _last_auto_approve_check_time = time.time()
     _last_visual_audit_time = time.time()
     _last_autonomous_goal_check_time = time.time()
+    _last_reminder_check_time = time.time()
+    _last_memory_maintenance_time = time.time()
+    _last_conversation_scan_time = time.time()
     
     _load_architect_state()
 
@@ -320,8 +451,23 @@ async def _background_loop_async():
     # Initialize Reviewer for Auto-Approvals
     reviewer_agent = ReviewerAgent()
 
+    # Initialize Memory Maintenance Service
+    memory_maintenance_service = MemoryMaintenanceService()
+
     while _background_service_active:
         current_loop_time = time.time()
+        
+        # --- Memory Maintenance Task ---
+        # Checks if 24h has passed, runs audit and prune
+        if current_loop_time >= _last_memory_maintenance_time + _memory_maintenance_interval_seconds:
+            # Don't run immediately on startup if we just restarted, unless it's been a long time.
+            # But standard logic handles that.
+            try:
+                await memory_maintenance_service.run_maintenance_cycle()
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during memory maintenance cycle: {e}", exc_info=True)
+            
+            _last_memory_maintenance_time = time.time()
 
         # --- Daily Briefing (Agenda Check) ---
         current_date_str = time.strftime('%Y-%m-%d')
@@ -485,6 +631,52 @@ async def _background_loop_async():
             _last_autonomous_goal_check_time = time.time()
             next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
 
+        # --- Active Learning: Conversation Scan ---
+        if learning_agent and current_loop_time >= _last_conversation_scan_time + _conversation_scan_interval_seconds:
+            try:
+                # 1. Scan for new insights
+                new_insights = await learning_agent.scan_recent_conversations()
+                
+                # 2. Fast-track Facts
+                if new_insights > 0:
+                     processed = await learning_agent.process_learned_facts_immediately()
+                     if processed > 0:
+                         logger.info(f"BackgroundService: Fast-tracked {processed} learned facts from conversation.")
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during conversation scan: {e}")
+            
+            _last_conversation_scan_time = time.time()
+
+        # --- Reminder System Task ---
+        if check_due_reminders and current_loop_time >= _last_reminder_check_time + _reminder_check_interval_seconds:
+            try:
+                due_reminders = check_due_reminders()
+                if due_reminders:
+                    logger.info(f"BackgroundService: Found {len(due_reminders)} due reminders.")
+                    
+                    # Notify for each
+                    # We need a notification manager. 'learning_agent' has one, or we can use the one passed in set_orchestrator?
+                    # The LearningAgent one is local to this thread, which is fine as long as the UI polls the same backend.
+                    # Ideally, NotificationManager persists to file, so any instance works.
+                    # We utilize the 'nm' (NotificationManager) created locally in this function.
+                    
+                    if 'nm' in locals() and nm:
+                         for rem in due_reminders:
+                            logger.info(f"BackgroundService: Firing reminder: {rem['message']}")
+                            nm.add_notification(
+                                event_type=NotificationType.SYSTEM_ALERT,
+                                summary_message=f"REMINDER: {rem['message']}",
+                                details_payload={
+                                    "title": "Scheduled Reminder",
+                                    "message": rem['message'],
+                                    "scheduled_for": rem['target_time']
+                                }
+                            )
+            except Exception as e:
+                logger.error(f"BackgroundService: Error checking reminders: {e}")
+            
+            _last_reminder_check_time = time.time()
+
         # --- Visual Audit Task ---
         if vision_service and current_loop_time >= next_visual_audit_run_time:
             logger.info("BackgroundService: Running Visual Audit...")
@@ -635,6 +827,16 @@ async def _background_loop_async():
                  logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
             
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
+
+        # --- General Insight Processing (Learning) ---
+        # Checks for NEW insights (Frustrations, Preferences) and proposes actions
+        if learning_agent and current_loop_time >= next_self_healing_run_time + 5: # Offset slightly from self-healing
+             try:
+                 # Process one insight per cycle to avoid flooding
+                 await learning_agent.review_and_propose_next_action()
+             except Exception as e:
+                 logger.error(f"BackgroundService: Error during general insight processing: {e}", exc_info=True)
+
 
         # --- Evolutionary Architect Audit Task ---
         if current_loop_time >= next_architect_audit_run_time:

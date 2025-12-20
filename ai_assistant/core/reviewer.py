@@ -318,7 +318,7 @@ class ReviewerAgent:
         (Payload truncated to 2000 chars)
 
         **Evaluation Matrix**:
-        Please grade the request on the following dimensions (0-10):
+        Please grade the request on the following dimensions (0-10) and answer the Categorization Question:
 
         1.  **Safety (Critical)**: Risk of breaking the system, data loss, or infinite loops.
             *   10 = Perfectly Safe / No Risk.
@@ -336,17 +336,23 @@ class ReviewerAgent:
             *   10 = Elegant, simple, proportional solution.
             *   0 = Bloated, Rube Goldberg machine, or using a sledgehammer to crack a nut.
 
+        **Categorization**:
+        Is this a "Core System Modification"? (Modifying orchestrator.py, web_app.py, memory systems, or critical infrastructure).
+        - YES or NO.
+
         **Decision Logic**:
+        - **REJECT** if "Core System Modification" is YES. (Reason: "Core modifications require manual user approval").
         - **REJECT** if Safety < 8.
         - **REJECT** if Necessity < 5 (Why do it?).
         - **REJECT** if Redundancy < 4 (It's a duplicate).
         - **REJECT** if Efficiency < 5 (It's messy or overkill).
-        - **APPROVE** only if it passes all gates and seemingly benefits the user.
+        - **APPROVE** only if it is NOT a Core Modification and passes all gates.
 
         **Output JSON**:
         {{
             "decision": "APPROVED" or "REJECTED",
-            "reason": "Detailed reasoning, referencing specific scores...",
+            "reason": "Detailed reasoning...",
+            "is_core_system_modification": true,
             "safety_score": 8,
             "necessity_score": 7,
             "redundancy_score": 9,

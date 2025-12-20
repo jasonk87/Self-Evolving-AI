@@ -64,6 +64,52 @@ def _run_pylint_check(code_str: str) -> Optional[str]:
         except:
             pass
 
+def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> list[str]:
+    """
+    Validates that the modules referenced in new import nodes actually exist 
+    in the current environment using importlib.util.find_spec.
+    """
+    import importlib.util
+    errors = []
+    
+    for node in new_imports:
+        try:
+            # Determine the module name to check
+            module_name = None
+            if isinstance(node, ast.Import):
+                # For `import foo, bar`, check all names
+                for alias in node.names:
+                    # We only strictly check the top-level package for safety
+                    # e.g. "import ai_assistant.core.reviewer" -> check "ai_assistant"
+                    top_level = alias.name.split('.')[0]
+                    if not importlib.util.find_spec(top_level):
+                        errors.append(f"Import Error: Module '{top_level}' not found (from '{alias.name}').")
+            elif isinstance(node, ast.ImportFrom):
+                # For `from foo.bar import baz`, check `foo` (and preferably foo.bar)
+                if node.module:
+                    top_level = node.module.split('.')[0]
+                    # Attempt to find the full module path if possible, but at least top level
+                    if not importlib.util.find_spec(top_level):
+                         errors.append(f"Import Error: Module '{top_level}' not found (from 'from {node.module} ...').")
+                    else:
+                        # If top level exists, try to be more specific if not too risky
+                        # find_spec works for submodules if they are importable
+                        try:
+                            if not importlib.util.find_spec(node.module):
+                                errors.append(f"Import Error: Submodule '{node.module}' not found.")
+                        except (ModuleNotFoundError, AttributeError, ValueError):
+                            # Fallback if finding specific submodule fails weirdly (e.g. namespace packages)
+                            # but top level passed, so we might give it a pass or log warning.
+                            # For strictness, let's assume if find_spec failed, it's bad.
+                            errors.append(f"Import Error: Submodule '{node.module}' verification failed.")
+                else:
+                    # relative import (from . import foo) - usually safe if inside package
+                    pass 
+        except Exception as e:
+            errors.append(f"Validation Error checking import {node}: {e}")
+            
+    return errors
+
 
 
 
@@ -462,36 +508,49 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                 f"The function name in the new code will be used for replacement, effectively renaming the function."
             )
 
-        # 1. Merge Imports (Prepend to original AST)
-        # Deduplicate imports: Check if new_imports already exist in original code
+        # --- VALIDATE NEW IMPORTS ---
         if new_imports:
-             existing_imports_sigs = set()
-             for node in original_ast.body:
-                 if isinstance(node, (ast.Import, ast.ImportFrom)):
-                     try:
-                         # Normalize using unparse to match exactly
-                         existing_imports_sigs.add(ast.unparse(node).strip())
-                     except Exception:
-                         pass
-             
-             unique_new_imports = []
-             for imp in new_imports:
-                 try:
-                     imp_sig = ast.unparse(imp).strip()
-                     if imp_sig not in existing_imports_sigs:
-                         unique_new_imports.append(imp)
-                         # Add to set to prevent duplicates within new_imports list itself
-                         existing_imports_sigs.add(imp_sig)
-                 except Exception:
-                     # If unparse fails, we default to adding it (safer vs losing it) or skip?
-                     # Safer to add it to avoid MissingImport error, user can clean up rare dupes.
-                     unique_new_imports.append(imp)
+            import_errors = _validate_new_imports(new_imports)
+            if import_errors:
+                err_msg = "Critical Safety Review Failed: Invalid Imports Detected.\n" + "\n".join(import_errors)
+                logger.error(err_msg)
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Import validation failed")
+                return err_msg
+        # ----------------------------
 
-             if unique_new_imports:
-                 original_ast.body = unique_new_imports + original_ast.body
-                 logger.info(f"Added {len(unique_new_imports)} unique import statements to '{file_path}'.")
-             else:
-                 logger.info("All new imports were duplicates of existing imports. Skipped addition.")
+        # 1. Merge Imports (Prepend to original AST)
+        # Deduplicate imports: Granular AST check
+        if new_imports:
+            existing_import_sigs = set()
+            for node in original_ast.body:
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        existing_import_sigs.add((None, alias.name, alias.asname))
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module
+                    for alias in node.names:
+                        existing_import_sigs.add((module, alias.name, alias.asname))
+            
+            unique_new_imports = []
+            for imp in new_imports:
+                # Scan aliases in the new import node
+                new_names = []
+                for alias in imp.names:
+                    sig = (None, alias.name, alias.asname) if isinstance(imp, ast.Import) else (imp.module, alias.name, alias.asname)
+                    if sig not in existing_import_sigs:
+                        new_names.append(alias)
+                        existing_import_sigs.add(sig) # Add to set to prevent duplicates within new list
+                
+                # If we have valid names left, add the node (unmodified aliases are dropped)
+                if new_names:
+                    imp.names = new_names
+                    unique_new_imports.append(imp)
+
+            if unique_new_imports:
+                original_ast.body = unique_new_imports + original_ast.body
+                logger.info(f"Added {len(unique_new_imports)} unique import statements to '{file_path}'.")
+            else:
+                logger.info("All new imports were duplicates of existing imports. Skipped addition.")
 
         # 2. Replace Function
         function_found_and_replaced = False
@@ -877,17 +936,61 @@ async def edit_class_method(
         return f"Error reading file: {e}"
 
     try:
-        new_method_ast = ast.parse(new_code).body[0]
-        if not isinstance(new_method_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
-             return "Error: new_code must be a function/method definition."
+        new_module_ast = ast.parse(new_code)
     except Exception as e:
         return f"Error parsing new code: {e}"
+
+    new_method_ast = None
+    new_imports = []
+
+    for node in new_module_ast.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if new_method_ast:
+                 return "Error: Multiple function definitions in new code."
+            new_method_ast = node
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            new_imports.append(node)
+        else:
+            # Ignore or reject? For methods, we might be strict.
+            pass
+
+    if not new_method_ast:
+         return "Error: new_code must contain a function/method definition."
 
     try:
         original_ast = ast.parse(original_source)
     except Exception as e:
         return f"Error parsing original file: {e}"
 
+    # 1. Merge Imports (Module Level)
+    if new_imports:
+         existing_import_sigs = set()
+         for node in original_ast.body:
+             if isinstance(node, ast.Import):
+                 for alias in node.names:
+                     existing_import_sigs.add((None, alias.name, alias.asname))
+             elif isinstance(node, ast.ImportFrom):
+                 module = node.module
+                 for alias in node.names:
+                     existing_import_sigs.add((module, alias.name, alias.asname))
+         
+         unique_new_imports = []
+         for imp in new_imports:
+             new_names = []
+             for alias in imp.names:
+                 sig = (None, alias.name, alias.asname) if isinstance(imp, ast.Import) else (imp.module, alias.name, alias.asname)
+                 if sig not in existing_import_sigs:
+                     new_names.append(alias)
+                     existing_import_sigs.add(sig)
+             
+             if new_names:
+                 imp.names = new_names
+                 unique_new_imports.append(imp)
+
+         if unique_new_imports:
+             original_ast.body = unique_new_imports + original_ast.body
+
+    # 2. Find Class and Replace Method
     class_found = False
     method_found = False
 
@@ -899,6 +1002,12 @@ async def edit_class_method(
                 if isinstance(class_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and class_node.name == method_name:
                     method_found = True
                     # Replace with new method AST
+                    # Ensure name matches target (if snippet had different name)
+                    if new_method_ast.name != method_name:
+                         # Log warning?
+                         pass
+                    # We might want to preserve decorators if not provided in snippet? 
+                    # Usually snippet has full definition.
                     new_class_body.append(new_method_ast)
                 else:
                     new_class_body.append(class_node)
@@ -948,9 +1057,6 @@ async def edit_class_method(
             aggregated_comments = "\n".join([f"{r['status']}: {r['comments']} {r.get('suggestions','')}" for r in reviews])
             combined_feedback = {"status": "requires_changes", "comments": aggregated_comments, "suggestions": ""}
 
-            # Note: refining the WHOLE file might be too much context for LLM if large.
-            # Ideally we'd refine just the method, but here we have the whole file string.
-            # RefinementAgent expects 'original_code'.
             refined_file_source = await refinement_agent.refine_code(
                 original_code=current_new_source,
                 requirements=change_description,
@@ -1015,19 +1121,28 @@ async def upsert_import(
         return f"Error parsing original file: {e}"
 
     # Check existence
-    exists = False
+    # Check existence (Granular)
+    # Extract target signatures from new_import_node
+    target_sigs = set()
+    if isinstance(new_import_node, ast.Import):
+        for alias in new_import_node.names:
+            target_sigs.add((None, alias.name, alias.asname))
+    elif isinstance(new_import_node, ast.ImportFrom):
+        for alias in new_import_node.names:
+            target_sigs.add((new_import_node.module, alias.name, alias.asname))
+            
+    # Check against existing
+    existing_sigs = set()
     for node in original_ast.body:
-        if type(node) == type(new_import_node):
-            if isinstance(node, ast.Import):
-                if node.names[0].name == new_import_node.names[0].name: # Simplified check
-                    exists = True
-                    break
-            elif isinstance(node, ast.ImportFrom):
-                if node.module == new_import_node.module and node.names[0].name == new_import_node.names[0].name:
-                    exists = True
-                    break
+         if isinstance(node, ast.Import):
+             for alias in node.names:
+                 existing_sigs.add((None, alias.name, alias.asname))
+         elif isinstance(node, ast.ImportFrom):
+             for alias in node.names:
+                 existing_sigs.add((node.module, alias.name, alias.asname))
 
-    if exists:
+    # If all targets exist, we are done
+    if target_sigs.issubset(existing_sigs):
         return "Import already exists."
 
     # Insert

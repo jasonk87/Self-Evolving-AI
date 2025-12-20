@@ -555,6 +555,7 @@ class InsightType(Enum):
     USER_PREFERENCE_LEARNED = auto() # The user explicitly stated a preference
     USER_FRUSTRATION = auto()        # The user expressed frustration (needs analysis)
     VISUAL_DEFECT_DETECTED = auto()  # The Visual Audit detected a UI/UX issue
+    LEARNED_FACT = auto()            # A permanent user fact extracted from conversation
     # Dream Mode Types
     HYPOTHETICAL_SCENARIO = auto()   # A "What if?" scenario generated during dreaming
     DREAM_EXPERIMENT = auto()        # The result of a specific dream test run

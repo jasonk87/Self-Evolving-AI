@@ -2,10 +2,11 @@
 import json
 from googleapiclient.discovery import build
 from ai_assistant.config import GOOGLE_API_KEY, GOOGLE_CSE_ID
+import ai_assistant.config as config
 from typing import List, Dict, Any, Optional
 import asyncio
 
-def google_custom_search(query: str, num_results: int = 5) -> Optional[List[Dict[str, Any]]]:
+async def google_custom_search(query: str, num_results: int = 5) -> Optional[List[Dict[str, Any]]]:
     """
     Your primary tool for finding information online using Google Search. Use this for questions
     like 'what is X?', 'who is Y?', 'explain Z', 'search for A', 'find information on B',
@@ -16,6 +17,30 @@ def google_custom_search(query: str, num_results: int = 5) -> Optional[List[Dict
     Returns:
         Optional[List[Dict[str, Any]]]: A list of search results, or None if an error occurs or keys are missing.
     """
+    # 1. VISUALIZATION (Ghost Mode)
+    # Fire and forget visualization if enabled.
+    if config.GHOST_MODE:
+        try:
+            # Lazy import to avoid circular dependencies
+            from ai_assistant.core.vision_service import VisionService
+            vision = VisionService()
+            # Launch in background (don't await fully if we want speed, but for "show me" we await navigation)
+            # Ghost Mode: Visually browse for effect (using DDG to avoid Google Captcha blocking)
+            encoded_query = urllib.parse.quote(query)
+            search_url = f"https://duckduckgo.com/?q={encoded_query}"
+            
+            # We await the navigation so the user SEES it happen before the answer pops up.
+            # This adds delay but fulfills the "Ghost Mode" promise.
+            # We don't need to scrape, just show.
+            print(f"Ghost Mode: Visualizing search for '{query}'...")
+            await vision.capture_page_screenshot(search_url) 
+            # Note: capture_page_screenshot opens browser, goes to url, takes shot, closes.
+            # Ideally we'd keep it open, but VisionService closes browser by default.
+            # For "Ghost Mode" effect, seeing it happen is the key.
+        except Exception as e:
+            print(f"Ghost Mode Visualization Error: {e}")
+
+    # 2. DATA RETRIEVAL (API)
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
         print("Error: Google API Key or CSE ID is not configured.")
         return None
@@ -24,7 +49,10 @@ def google_custom_search(query: str, num_results: int = 5) -> Optional[List[Dict
         # Clamp num_results between 1 and 10 (API limit per request)
         num_results = max(1, min(num_results, 10))
         
-        res = service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_results).execute()
+        # Run sync API call in thread to avoid blocking loop
+        res = await asyncio.to_thread(
+            service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_results).execute
+        )
         
         search_results = []
         if 'items' in res:
@@ -99,7 +127,7 @@ import requests
 import os
 import uuid
 
-def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
+async def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
     """
     Searches for images on the web, downloads them locally, and returns their paths for display.
     Use this when the user asks to "show" or "see" something.
@@ -114,22 +142,38 @@ def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
     """
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
         return {"error": "Google API Key or CSE ID is not configured."}
+        
+    try:
+        # Ensure num_images is an int
+        num_images = int(num_images)
+    except Exception:
+        num_images = 1
+
+    # Ghost Mode Visualization
+    if config.GHOST_MODE:
+        try:
+            from ai_assistant.core.vision_service import VisionService
+            import urllib.parse
+            # Use DuckDuckGo Images for visual effect to avoid Google Captcha
+            encoded_query = urllib.parse.quote(query)
+            search_url = f"https://duckduckgo.com/?q={encoded_query}&iax=images&ia=images"
+             # Fire and forget (awaiting briefly just to ensure snapshot starts)
+            await VisionService().capture_page_screenshot(search_url)
+        except Exception as e:
+            print(f"Ghost Mode Visualization failed: {e}")
 
     try:
-        service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
-        num_images = max(1, min(num_images, 5))
-        
-        # searchType='image' is the key here
-        res = service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_images, searchType='image').execute()
+        # Run synchronous Google API call in a thread to avoid blocking
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, lambda: build("customsearch", "v1", developerKey=GOOGLE_API_KEY).cse().list(q=query, cx=GOOGLE_CSE_ID, num=max(1, min(num_images, 5)), searchType='image').execute())
         
         # Determine strict path to static folder relative to this file
-        # this file: ai_assistant/custom_tools/search_tools.py
-        # root: ai_assistant/../..
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         static_dir = os.path.join(base_dir, 'static', 'downloaded_images')
         os.makedirs(static_dir, exist_ok=True)
         
         downloaded_paths = []
+        markdown_results = []
         
         if 'items' in res:
             for item in res['items']:
@@ -138,8 +182,8 @@ def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
                     continue
                     
                 try:
-                    # Download content
-                    img_data = requests.get(link, timeout=5).content
+                    # Download content (in executor to avoid blocking)
+                    img_data = await loop.run_in_executor(None, lambda: requests.get(link, timeout=5).content)
                     
                     # Generate unique filename
                     ext = os.path.splitext(link)[1].lower()
@@ -149,12 +193,14 @@ def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
                     filename = f"img_{uuid.uuid4()}{ext}"
                     filepath = os.path.join(static_dir, filename)
                     
+                    # Write file
                     with open(filepath, 'wb') as f:
                         f.write(img_data)
                         
-                    # Add relative path for frontend (assuming Flask serves 'static' at /static)
-                    # We return 'static/downloaded_images/filename'
-                    downloaded_paths.append(f"static/downloaded_images/{filename}")
+                    # Web accessible path (relative to static)
+                    web_path = f"static/downloaded_images/{filename}"
+                    downloaded_paths.append(web_path)
+                    markdown_results.append(f"![{query}]({web_path})")
                     
                 except Exception as e:
                     print(f"Failed to download image from {link}: {e}")
@@ -163,8 +209,9 @@ def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
         if not downloaded_paths:
             return {"result": f"Found images for '{query}' but failed to download them.", "images": []}
             
+        # Return a result string that includes the Markdown so the AI can just repeat it
         return {
-            "result": f"Successfully found and downloaded {len(downloaded_paths)} images for '{query}'.",
+            "result": f"Successfully found images for '{query}':\n\n" + "\n".join(markdown_results),
             "images": downloaded_paths
         }
             

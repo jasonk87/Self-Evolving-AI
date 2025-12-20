@@ -41,7 +41,6 @@ def run_agent_code(agent_id: str, filename: str, code: str, cmd_args: List[str]=
     workspace_path = agent_manager.get_workspace_path(agent_id)
     if not os.path.exists(workspace_path):
         return {'error': f'Workspace for agent {agent_id} does not exist.'}
-    filename = os.path.basename(filename)
     file_path = os.path.join(workspace_path, filename)
     try:
         with open(file_path, 'w', encoding='utf-8') as f:

@@ -18,30 +18,21 @@ def schedule_notification(reminder_message: str, delay_minutes: int) -> str:
         delay_seconds = delay_minutes * 60
         future_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
         timestamp = future_time.timestamp()
-
         system = platform.system()
-
-        if system == "Darwin":  # macOS
-            script = f"""
-            osascript -e 'display notification "{reminder_message}" with title "Reminder" sound name "default"'
-            """
+        if system == 'Darwin':
+            script = f'''\n            osascript -e 'display notification "{reminder_message}" with title "Reminder" sound name "default"'\n            '''
             time.sleep(delay_seconds)
             subprocess.run(script, shell=True, check=True)
-            return "Notification scheduled successfully (macOS)."
-        elif system == "Linux":
+            return 'Notification scheduled successfully (macOS).'
+        elif system == 'Linux':
             try:
-                # Check if notify-send is installed
-                subprocess.run(["which", "notify-send"], check=True, capture_output=True)
-                script = f"""
-                sleep {delay_seconds}
-                notify-send "Reminder" "{reminder_message}"
-                """
+                subprocess.run(['which', 'notify-send'], check=True, capture_output=True)
+                script = f'\n                sleep {delay_seconds}\n                notify-send "Reminder" "{reminder_message}"\n                '
                 subprocess.run(script, shell=True, check=True)
-                return "Notification scheduled successfully (Linux)."
+                return 'Notification scheduled successfully (Linux).'
             except subprocess.CalledProcessError:
-                return "Error: notify-send is not installed. Please install it to use notifications on Linux."
-
-        elif system == "Windows":
+                return 'Error: notify-send is not installed. Please install it to use notifications on Linux.'
+        elif system == 'Windows':
             import winsound
             import threading
 
@@ -50,18 +41,16 @@ def schedule_notification(reminder_message: str, delay_minutes: int) -> str:
                 try:
                     import win10toast
                     toaster = win10toast.ToastNotifier()
-                    toaster.show_toast("Reminder", reminder_message, duration=10)
+                    toaster.show_toast('Reminder', reminder_message, duration=10)
                 except ImportError:
-                    print("win10toast not installed. Falling back to winsound.")
-                    winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+                    print('win10toast not installed. Falling back to winsound.')
+                    winsound.PlaySound('SystemExclamation', winsound.SND_ALIAS)
                 except Exception as e:
-                    print(f"Error displaying notification: {e}")
-
+                    print(f'Error displaying notification: {e}')
             notification_thread = threading.Thread(target=show_notification)
             notification_thread.start()
-            return "Notification scheduled successfully (Windows)."
+            return 'Notification scheduled successfully (Windows).'
         else:
-            return f"Unsupported operating system: {system}"
-
+            return f'Unsupported operating system: {system}'
     except Exception as e:
-        return f"Error scheduling notification: {e}"
+        return f'Error scheduling notification: {e}'

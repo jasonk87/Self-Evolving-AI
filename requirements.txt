@@ -14,3 +14,7 @@ pillow
 nest_asyncio
 google-auth-httplib2
 google-auth-oauthlib
+
+websockets
+pyaudio
+mss

@@ -6,7 +6,8 @@ import logging
 import aiohttp
 import asyncio
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
+from ai_assistant.utils.display_utils import CLIColors, color_text
 # Import config
 from ai_assistant.config import (
     GOOGLE_API_KEY, 
@@ -21,6 +22,10 @@ THINKING_SYSTEM_INSTRUCTION = "You are a deep thinking AI. You MUST first think 
 logger = logging.getLogger(__name__)
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+class GeminiError(Exception):
+    """Exception raised for errors in the Gemini API interaction."""
+    pass
 
 def _get_api_key() -> str:
     """Retrieves the Google API Key from config or environment."""
@@ -66,7 +71,10 @@ class RateLimiter:
 
 # Global Rate Limiter
 # Setting conservative limit to avoid 429s (Gemini Free Tier is ~15 RPM)
-GLOBAL_RATE_LIMITER = RateLimiter(rpm=10) 
+GLOBAL_RATE_LIMITER = RateLimiter(rpm=10)
+# Global Concurrency Limit (Queue)
+# Limits the number of requests actively "talking" to the API at once.
+GLOBAL_CONCURRENCY_LIMITER = asyncio.Semaphore(5)
 
 def _extract_and_log_thinking(text: str) -> str:
     """
@@ -92,17 +100,19 @@ def invoke_gemini_model(
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
     max_tokens: int = 8192
-) -> Optional[str]:
+) -> str:
     """
     Synchronously invokes the Google Gemini model.
+    Raises GeminiError on failure.
     """
     # Wait for rate limit
     GLOBAL_RATE_LIMITER.wait_sync()
 
     api_key = _get_api_key()
     if not api_key:
-        logger.error("Google API Key not found. Please set GOOGLE_API_KEY in config.py or environment.")
-        return None
+        error_msg = "Google API Key not found. Please set GOOGLE_API_KEY in config.py or environment."
+        logger.error(error_msg)
+        raise GeminiError(error_msg)
 
     url = GEMINI_API_URL.format(model=model_name)
     headers = {"Content-Type": "application/json"}
@@ -143,7 +153,6 @@ def invoke_gemini_model(
         if response.status_code == 429:
              logger.warning("Gemini API Rate Limit Hit (Sync). Backing off...")
              time.sleep(5) # Extra backoff
-             # build simple retry? For now just fail gracefully or let caller handle, but logging is key.
              
         response.raise_for_status()
         data = response.json()
@@ -164,17 +173,18 @@ def invoke_gemini_model(
                      
                  return _extract_and_log_thinking(raw_text)
             elif "finishReason" in candidate:
-                logger.warning(f"Gemini finished with reason: {candidate['finishReason']}")
-                return None
+                reason = candidate['finishReason']
+                logger.warning(f"Gemini finished with reason: {reason}")
+                raise GeminiError(f"Gemini finished with reason: {reason}")
         
         logger.warning(f"Unexpected response structure from Gemini: {data}")
-        return None
+        raise GeminiError(f"Unexpected response structure from Gemini: {data}")
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Error invoking Gemini model (sync): {e}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Response body: {e.response.text}")
-        return None
+        raise GeminiError(f"Error invoking Gemini model (sync): {e}")
 
 async def invoke_gemini_model_async(
     prompt: str,
@@ -182,9 +192,10 @@ async def invoke_gemini_model_async(
     temperature: float = 0.7,
     max_tokens: int = 8192,
     images: Optional[List[str]] = None
-) -> Optional[str]:
+) -> str:
     """
     Asynchronously invokes the Google Gemini model.
+    Raises GeminiError on failure.
     Args:
         prompt: The text prompt.
         model_name: Model name.
@@ -197,8 +208,9 @@ async def invoke_gemini_model_async(
 
     api_key = _get_api_key()
     if not api_key:
-        logger.error("Google API Key not found.")
-        return None
+        error_msg = "Google API Key not found."
+        logger.error(error_msg)
+        raise GeminiError(error_msg)
 
     url = GEMINI_API_URL.format(model=model_name)
     headers = {"Content-Type": "application/json"}
@@ -241,57 +253,74 @@ async def invoke_gemini_model_async(
         retries = 3
         base_delay = 2
         
-        for attempt in range(retries + 1):
-            try:
-                async with session.post(
-                    url, 
-                    headers=headers, 
-                    json=payload, 
-                    params={"key": api_key},
-                    timeout=60
-                ) as response:
-                    if response.status == 429:
-                         logger.warning(f"Gemini API Rate Limit Hit (Async). Attempt {attempt+1}/{retries+1}. Backing off...")
-                         if attempt < retries:
-                             await asyncio.sleep(base_delay * (2 ** attempt)) # Exponential backoff
-                             continue
-                         else:
-                             # Retries exhausted
-                             logger.error("Gemini API Rate Limit Retries Exhausted.")
-                             return None
-                    
-                    response.raise_for_status()
-                    data = await response.json()
-                    
-                    if "candidates" in data and len(data["candidates"]) > 0:
-                        candidate = data["candidates"][0]
-                        if "content" in candidate and "parts" in candidate["content"]:
-                             raw_text = candidate["content"]["parts"][0]["text"]
-                             
-                             if VERBOSE_LLM_LOGGING:
-                                 print(f"\n{'-'*60}")
-                                 print(f" [GEMINI ASYNC RESPONSE] Model: {model_name}")
-                                 print(f"{'-'*60}")
-                                 print(f"RESPONSE:\n{raw_text}")
-                                 print(f"{'-'*60}\n")
-                                 
-                             return _extract_and_log_thinking(raw_text)
-                        elif "finishReason" in candidate:
-                            logger.warning(f"Gemini finished with reason: {candidate['finishReason']}")
-                            return None
-                    
-                    logger.warning(f"Unexpected response structure from Gemini (async): {data}")
-                    return None
+        attempt = 0
+        while True: # "Infinite" retry loop for Rate Limits
+            # Acquire Concurrency Slot
+            async with GLOBAL_CONCURRENCY_LIMITER:
+                try:
+                    async with session.post(
+                        url, 
+                        headers=headers, 
+                        json=payload, 
+                        params={"key": api_key},
+                        timeout=60
+                    ) as response:
+                        if response.status == 429:
+                            attempt += 1
+                            wait_time = base_delay * (2 ** min(attempt, 5)) # Cap backoff at ~64s
+                            logger.warning(f"Gemini API Rate Limit Hit (Async). Request Queued. Waiting {wait_time}s to retry...")
+                            await asyncio.sleep(wait_time)
+                            continue # Retry indefinitely for 429s
+                        
+                        response.raise_for_status()
+                        data = await response.json()
+                        
+                        if "candidates" in data and len(data["candidates"]) > 0:
+                            candidate = data["candidates"][0]
+                            if "content" in candidate and "parts" in candidate["content"]:
+                                raw_text = candidate["content"]["parts"][0]["text"]
+                                
+                                if VERBOSE_LLM_LOGGING:
+                                    print(f"\n{'-'*60}")
+                                    print(f" [GEMINI ASYNC RESPONSE] Model: {model_name}")
+                                    print(f"{'-'*60}")
+                                    print(f"RESPONSE:\n{raw_text}")
+                                    print(f"{'-'*60}\n")
+                                    
+                                return _extract_and_log_thinking(raw_text)
+                            elif "finishReason" in candidate:
+                                reason = candidate['finishReason']
+                                logger.warning(f"Gemini finished with reason: {reason}")
+                                # Don't crash, just return empty string or specific message so Orchestrator can handle it
+                                return f"[SYSTEM: The model finished with reason '{reason}' and generated no text.]"
 
-            except aiohttp.ClientError as e:
-                logger.error(f"ClientError in Gemini async call: {e}")
-                if attempt < retries:
-                     await asyncio.sleep(base_delay)
-                     continue
-                return None
-            except Exception as e:
-                 logger.error(f"Unexpected error in Gemini async call: {e}")
-                 return None
+                        # Handle cases where candidates are missing but usageMetadata exists (often safety related)
+                        if "promptFeedback" in data:
+                             block_reason = data["promptFeedback"].get("blockReason", "UNKNOWN")
+                             logger.warning(f"Gemini Request Blocked. Reason: {block_reason}")
+                             return f"[SYSTEM: The request was blocked by the model. Reason: {block_reason}]"
+                        
+                        # Fallback for just usage metadata or completely empty
+                        if "usageMetadata" in data and "candidates" not in data:
+                             logger.warning("Gemini returned usage metadata but no candidates (Empty Response).")
+                             return "[SYSTEM: The model returned an empty response.]"
+                        
+                        logger.warning(f"Unexpected response structure from Gemini (async): {data}")
+                        raise GeminiError(f"Unexpected response structure from Gemini (async): {data}")
+
+                except aiohttp.ClientError as e:
+                    logger.error(f"ClientError in Gemini async call: {e}")
+                    attempt += 1
+                    if attempt < 5: # Limited retries for network connection errors (not Rate Limits)
+                         await asyncio.sleep(base_delay)
+                         continue
+                    raise GeminiError(f"ClientError in Gemini async call: {e}")
+                except Exception as e:
+                     logger.error(f"Unexpected error in Gemini async call: {e}")
+                     # If it's already a GeminiError, re-raise it
+                     if isinstance(e, GeminiError):
+                         raise e
+                     raise GeminiError(f"Unexpected error in Gemini async call: {e}")
         
         # Windows/ProactorEventLoop workaround: Give time for SSL transport to close
         await asyncio.sleep(0.250)
@@ -434,6 +463,89 @@ async def invoke_parallel_thinking(
     )
 
     return final_response
+
+async def invoke_split_brain_async(
+    prompt: str,
+    model_name: str = "gemini-2.0-flash-exp",
+    temperature: float = 0.7,
+    max_tokens: int = 8192,
+    images: Optional[List[str]] = None,
+    context_text: str = ""
+) -> Tuple[str, str]:
+    """
+    Executes a "Split Brain" decision process:
+    1. Thinking Phase: Deep reasoning to analyze the problem.
+    2. Execution Phase: Final answer based on the reasoning.
+    
+    Returns: (final_response, thought_process)
+    """
+    
+    # --- Phase 1: Thinking ---
+    if VERBOSE_LLM_LOGGING:
+        print(color_text("\n[SPLIT BRAIN] Phase 1: Deep Thinking...", CLIColors.THOUGHT))
+
+    thinking_prompt = f"""You are the PRE-PROCESSOR and STRATEGIST for an AI system.
+Your goal is to THINK deeply about the user's request, facts, hidden constraints, and edge cases.
+
+User Request:
+{prompt}
+
+Additional Context:
+{context_text}
+
+Instructions:
+1. Analyze the request. What does the user REALLY want?
+2. Recall relevant facts or context.
+3. Identify potential pitfalls or ambiguity.
+4. Formulate a step-by-step strategy.
+
+Output ONLY your internal monologue/reasoning. Do not output the final answer yet.
+"""
+    # Use a slightly lower temp for reasoning to be more logical
+    raw_thoughts = await invoke_gemini_model_async(
+        thinking_prompt, 
+        model_name=model_name, 
+        temperature=0.7, # Balanced for creativity + logic
+        max_tokens=2000,
+        images=images
+    )
+    
+    # Clean up thoughts (remove <think> if present, though prompt says output logic)
+    thoughts = _extract_and_log_thinking(raw_thoughts)
+    
+    if VERBOSE_LLM_LOGGING:
+        print(color_text(f"\n[SPLIT BRAIN] Thoughts Generated ({len(thoughts)} chars)", CLIColors.THOUGHT))
+
+    # --- Phase 2: Execution ---
+    execution_prompt = f"""You are the EXECUTOR.
+You have successfully analyzed the problem. Now execute the strategy.
+
+User Request:
+{prompt}
+
+Your Strategic Analysis (The "Split Brain" Reference):
+{thoughts}
+
+Instructions:
+1. Use the analysis above to construct the BEST possible response.
+2. If the strategy says to use a tool, format the tool call correctly.
+3. If the strategy says to answer, provide the final answer clearly.
+4. Do NOT repeat the analysis in the final output unless requested or crucial for explanation.
+
+Additional Context:
+{context_text}
+"""
+
+    final_response = await invoke_gemini_model_async(
+        execution_prompt,
+        model_name=model_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        images=images # Pass images again if needed, or maybe just reliance on thought is enough? 
+                      # Ideally executor should see them too for specifics.
+    )
+
+    return final_response, thoughts
 
 if __name__ == "__main__":
     # Test block

@@ -8,6 +8,7 @@ import json
 import asyncio
 import logging
 import threading
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import subprocess
@@ -23,6 +24,8 @@ from ai_assistant.config import get_projects_dir, LLM_PROVIDER
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.core.config_manager import ConfigManager # Dynamic Config
+
+import ai_live_link # Live Mode Module
 
 # Initialize Config Manager
 config_manager = ConfigManager()
@@ -41,6 +44,9 @@ from ai_assistant.core.events import EventEmitter
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.core.background_service import run_background_services_forever, set_orchestrator
 from ai_assistant.voice.tts import generate_speech # Import TTS service
+from ai_assistant.core.shutdown_handler import shutdown_manager
+from ai_assistant.llm_interface.gemini_client import invoke_split_brain_async
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -361,6 +367,9 @@ async def chat():
     current_history_list = updated_session.get('history', [])
     
     try:
+        # Register task with shutdown manager
+        task_id = shutdown_manager.register_task(f"Chat Session {session_id}")
+        
         # Flask 2.0+ supports async views.
         success, response, collected_images = await orchestrator.process_prompt(
             full_message,
@@ -368,6 +377,7 @@ async def chat():
             session_id=session_id,
             images=images
         )
+
         
         # Add assistant response to history (and storage)
         if response:
@@ -381,9 +391,12 @@ async def chat():
         })
     except Exception as e:
         logger.error(f"Error processing prompt: {e}")
-        # Return a JSON error but with 200 OK so the frontend handles it gracefully if needed,
-        # or 500 if it's a server crash.
         return jsonify({"error": str(e), "success": False}), 500
+    finally:
+        # Ensure task is marked as complete
+        if 'task_id' in locals():
+            shutdown_manager.complete_task(task_id)
+
 
 @app.route('/api/projects', methods=['GET'])
 def get_projects():
@@ -707,11 +720,8 @@ async def summarize_session(session_id):
 
         # 3. Call LLM (using orchestrator's provider or creating new one)
         # We can use the global orchestrator if available
-        if not orchestrator or not orchestrator.planner or not orchestrator.planner.llm_provider:
-             return jsonify({"error": "LLM Provider not available", "success": False}), 500
-        
-        provider = orchestrator.planner.llm_provider
-        response_text = await provider.generate_text(prompt)
+        # 3. Call LLM (using split brain)
+        response_text, _ = await invoke_split_brain_async(prompt, context_text="Summarizing Session")
 
         # 4. Parse JSON Response
         try:
@@ -761,8 +771,105 @@ def api_speak():
         from flask import Response
         return Response(audio_data, mimetype="audio/mpeg")
     else:
-        # Fallback or error
         return jsonify({"error": "TTS generation failed"}), 500
+
+@app.route('/api/system/shutdown', methods=['POST'])
+def system_shutdown():
+    """Shuts down the server gracefully."""
+    logger.info("Shutdown requested via API.")
+    
+    def shutdown_server():
+        # Delay slightly to allow response to be sent
+        import time
+        time.sleep(1)
+        # Use graceful shutdown manager
+        shutdown_manager.request_shutdown(timeout_seconds=10)
+
+    # Run shutdown in a separate thread so this request can return 200 OK
+    threading.Thread(target=shutdown_server).start()
+    return jsonify({"success": True, "message": "System shutting down gracefully..."})
+
+# --- Live Mode Routes ---
+@app.route('/toggle_live_mode', methods=['POST'])
+def toggle_live_mode():
+    """Toggles 'The Watcher' Live Mode."""
+    data = request.json
+    active = data.get('active', False)
+    
+    if active:
+        # Define callback to save session to memory
+        def on_save_callback(summary: str):
+            try:
+                # Save as an Episode
+                title = f"Live Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                memory_manager.add_episode(
+                    summary=summary, 
+                    title=title, 
+                    session_id="live_mode_session", 
+                    topics=["Live Interaction", "Voice", "Screen"]
+                )
+                logger.info(f"Live Session saved to memory: {title}")
+                
+            except Exception as e:
+                logger.error(f"Failed to save Live Session to memory: {e}")
+
+        # Construct System Instruction with Memory
+        try:
+            facts = memory_manager.get_all_facts()
+            insights = memory_manager.get_all_insights()
+            
+            # Filter active insights
+            active_insights = [i['description'] for i in insights if i.get('status') == 'active']
+            
+            knowledge_dump = "FACTS:\n" + "\n".join([f"- {f['text']}" for f in facts])
+            knowledge_dump += "\n\nINSIGHTS:\n" + "\n".join([f"- {i}" for i in active_insights])
+            
+            # Detect User Name
+            import getpass
+            user_name = getpass.getuser()
+
+            # Include recent episodes (past conversations)
+            episodes = memory_manager.get_all_episodes()
+            # Sort by date if possible, or just take last few. Assuming latest are appended.
+            recent_episodes = episodes[-5:] 
+            episode_dump = "\n".join([f"- [{e.get('title', 'Untitled')}]: {e.get('summary', '')}" for e in recent_episodes])
+
+            knowledge_dump = "FACTS:\n" + "\n".join([f"- {f['text']}" for f in facts])
+            knowledge_dump += "\n\nINSIGHTS:\n" + "\n".join([f"- {i}" for i in active_insights])
+            knowledge_dump += "\n\nRECENT EPISODES (Context from past chats):\n" + episode_dump
+
+            persona = f"""
+You are Weebo, a helpful, energetic, and slightly sassy AI assistant (inspired by Flubber). You are 'The Watcher'.
+You are currently observing the user's screen and listening to them.
+The user's name is {user_name}.
+Your goal is to assist them with their coding and creative tasks in real-time.
+
+Here is your core knowledge base about the user and the project:
+{knowledge_dump}
+
+Use this knowledge to provide context-aware responses. Be lively!
+"""
+        except Exception as e:
+            logger.error(f"Failed to build knowledge dump: {e}")
+            persona = "You are Weebo, a helpful, energetic AI assistant."
+
+        # Start Live Mode with callback and persona
+        try:
+            ai_live_link.start_live_mode(on_save_callback=on_save_callback, system_instruction=persona)
+            return jsonify({"success": True, "status": "active"})
+        except Exception as e:
+            logger.error(f"Failed to start Live Mode: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+    else:
+        ai_live_link.stop_live_mode()
+        return jsonify({"success": True, "status": "inactive"})
+
+@app.route('/get_live_status', methods=['GET'])
+def get_live_status():
+    """Returns the current status of Live Mode (idle, listening, speaking)."""
+    status = ai_live_link.get_status()
+    return jsonify({"status": status})
+
 
 # SocketIO Event Handlers
 @socketio.on('connect')

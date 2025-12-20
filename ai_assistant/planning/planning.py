@@ -17,123 +17,15 @@ class PlannerAgent:
     def __init__(self, memory_manager: Optional["MemoryManager"] = None):
         self.memory_manager = memory_manager
 
-    def _extract_numbers(self, text: str, count: int = 2) -> List[str]:
-        """Extracts up to 'count' numbers from the text using regex."""
-        numbers = re.findall(r'\d+(?:\.\d+)?', text) # Supports integers and decimals
-        return numbers[:count]
-
-    def _extract_name_for_greeting(self, text: str) -> str:
-        """Extracts a name for greeting, looking for capitalized words after keywords."""
-        match = re.search(
-            r'(?:greet|hello to|hi to|say hello to|say hi to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', 
-            text, 
-            re.IGNORECASE
-        )
-        if match:
-            return match.group(1)
-        
-        if "greet" in text.lower():
-            words = text.split()
-            for i, word in enumerate(words):
-                if word.istitle() and word.lower() not in ["greet", "hello", "hi", "say", "to"]:
-                    if i > 0 and words[i-1].lower() in ["greet", "to"]:
-                        # Check for multi-word names like "John Doe"
-                        name_parts = [word]
-                        for j in range(i + 1, len(words)):
-                            if words[j].istitle():
-                                name_parts.append(words[j])
-                            else:
-                                break
-                        return " ".join(name_parts)
-                    elif i > 0 and not words[i-1].istitle():
-                        return word 
-        return "User"
-
     def _plan_single_segment(self, segment: str, available_tools: Dict[str, str]) -> Optional[Dict[str, Any]]:
         """
         Attempts to plan a single tool invocation for a given text segment.
-        This encapsulates the previous single-step planning logic and integrates LLM for arg population.
+        This used to contain rule-based logic for legacy tools.
+        Now it mostly returns None to defer to LLM planning, or could be used for other heuristics.
         """
-        segment_lower = segment.lower()
+        # Legacy rule-based logic for 'greet_user', 'add_numbers', 'multiply_numbers' has been removed
+        # to enforce ReAct pattern and use of modern conversational tools.
         
-        selected_tool_name: Optional[str] = None
-        extracted_args: tuple = ()
-        extracted_kwargs: Dict[str, Any] = {}
-        
-        # 1. Rule-based tool selection
-        if "greet_user" in available_tools and \
-           any(kw in segment_lower for kw in ["greet", "hello", "hi", "say hi", "say hello"]):
-            selected_tool_name = "greet_user"
-            name_to_greet = self._extract_name_for_greeting(segment)
-            if name_to_greet and name_to_greet != "User": # If a specific name was found
-                extracted_args = (name_to_greet,)
-            # If name_to_greet is "User" (default), regex was weak. LLM might do better.
-        
-        elif "add_numbers" in available_tools and \
-             any(kw in segment_lower for kw in ["add", "sum", "plus", "total of"]):
-            selected_tool_name = "add_numbers"
-            numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2:
-                extracted_args = tuple(numbers)
-            # If not 2 numbers, regex was weak. LLM might do better.
-
-        elif "multiply_numbers" in available_tools and \
-             any(kw in segment_lower for kw in ["multiply", "times", "product of"]):
-            selected_tool_name = "multiply_numbers"
-            numbers = self._extract_numbers(segment, 2)
-            if len(numbers) == 2:
-                extracted_args = tuple(numbers)
-            # If not 2 numbers, regex was weak. LLM might do better.
-        
-        # Add other rule-based tool selections here...
-
-        if selected_tool_name:
-            tool_description = available_tools[selected_tool_name]
-            
-            # 2. Decide if LLM should be used for argument population
-            # Strategy: Use LLM if regex extraction was weak (e.g., no args found for tools that expect them)
-            # or for tools where regex is inherently difficult for args.
-            use_llm_for_args = False
-            if selected_tool_name in ["add_numbers", "multiply_numbers"] and not extracted_args:
-                use_llm_for_args = True
-                print(f"PlannerAgent: Rule-based arg extraction for '{selected_tool_name}' yielded no args. Trying LLM.")
-            elif selected_tool_name == "greet_user" and (not extracted_args or extracted_args[0] == "User"):
-                # If regex found default "User" or nothing, LLM might find a specific name.
-                use_llm_for_args = True
-                print(f"PlannerAgent: Rule-based arg extraction for '{selected_tool_name}' was weak. Trying LLM.")
-            # Add other conditions for use_llm_for_args if needed for other tools
-
-            if use_llm_for_args:
-                llm_args_list, llm_kwargs_dict = populate_tool_arguments_with_llm(
-                    goal_description=segment, # Use the current segment as the goal for arg population
-                    tool_name=selected_tool_name,
-                    tool_description=tool_description
-                )
-                
-                # Merge strategy: LLM overrides if it provides something substantial.
-                # For positional args, if LLM provides any, it usually has better context.
-                if llm_args_list: # If LLM found any positional args
-                    extracted_args = tuple(llm_args_list) 
-                # For kwargs, merge or override. Here, simple override if LLM provides them.
-                if llm_kwargs_dict:
-                    extracted_kwargs = llm_kwargs_dict
-            
-            # Fallback for tools where regex failed and LLM also didn't provide args
-            if selected_tool_name == "add_numbers" and not extracted_args:
-                extracted_args = ("0", "0")
-                extracted_kwargs["note"] = f"Could not infer numbers for 'add_numbers' from '{segment}'. Using defaults."
-            elif selected_tool_name == "multiply_numbers" and not extracted_args:
-                extracted_args = ("1", "1")
-                extracted_kwargs["note"] = f"Could not infer numbers for 'multiply_numbers' from '{segment}'. Using defaults."
-            elif selected_tool_name == "greet_user" and not extracted_args:
-                 extracted_args = ("User",) # Default if LLM also fails for greet_user
-
-            return {
-                "tool_name": selected_tool_name,
-                "args": extracted_args,
-                "kwargs": extracted_kwargs
-            }
-
         return None # No tool matched for this segment by rule-based selection
 
     def create_plan(self, main_goal_description: str, available_tools: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -296,6 +188,33 @@ The user's request might be related to these recent tool activities/errors:
     - Avoid planning steps to re-acquire or re-learn these facts.
     - **Avoid repeating past mistakes described in the experiences.**
 - If a learned fact directly helps in achieving the user's goal, incorporate this knowledge into your plan.
+
+**Few-Shot Examples (How to Plan):**
+
+Example 1 (Coding - Refactoring):
+Goal: "Refactor utils.py to move the 'calculate_metrics' function to a new file 'metrics.py'."
+Context: Project has `utils.py` (contains `calculate_metrics`, `load_data`) and `metrics.py` (does not exist).
+Thought: "I need to move a function. First, I must read `utils.py` to get the function code. Then I need to create `metrics.py` with that code. Finally, I need to remove it from `utils.py` and add an import. Verification: Check dependencies."
+Plan:
+[
+  {{"tool_name": "read_file", "args": [".../utils.py"], "kwargs": {{}}}},
+  {{"tool_name": "write_to_file", "args": [".../metrics.py", "def calculate_metrics..."], "kwargs": {{}}}},
+  {{"tool_name": "replace_file_content", "args": [".../utils.py", ...], "kwargs": {{}}}}
+]
+
+Example 2 (Coding - New Tool):
+Goal: "Create a new tool 'system_check' in 'ai_assistant/custom_tools/system_tools.py'."
+Thought: "The user wants a new agent tool. I should use `generate_new_tool_from_description` if it's a standard tool request, but since they specified a file, they might want me to write code directly. However, the instruction says to PREFER `generate_new_tool_from_description` for tool creation. Let's start with that."
+Plan:
+[
+  {{"tool_name": "generate_new_tool_from_description", "args": ["A system check tool..."], "kwargs": {{}}}}
+]
+
+**Critical Instructions for Coding & Planning:**
+1.  **VERIFY FIRST**: If we are modifying code, do you have the *current* content? If not, plan a `read_file` or `grep_search` step FIRST. Do NOT blindly overwrite.
+2.  **CHECK EXISTENCE**: If creating a file, check if it already exists to avoid accidental overwrites (unless intent is replacement).
+3.  **REACT PATTERN**: Think about dependencies. If I add a new file, do I need to register it? If I delete a function, who calls it?
+4.  **CONTEXT USAGE**: Use the provided `Relevant Learned Facts` and `Project Context`. Don't ask the user for things you already know.
 
 And the following available tools (tool_name: description):
 {tools_json_string}

@@ -3,6 +3,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 import json
+import re
 
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.tools import tool_system 
@@ -66,17 +67,17 @@ Output JSON format:
         response = await invoke_gemini_model_async(prompt, temperature=0.7) # High temp for creativity
         
         try:
-            # Clean generic markdown
-            clean_res = response.strip()
-            if "```json" in clean_res:
-                clean_res = clean_res.split("```json")[1].split("```")[0]
-            elif "```" in clean_res:
-                 clean_res = clean_res.split("```")[1]
-            
-            data = json.loads(clean_res)
-            return data
+            # 1. Use regex to find the first JSON object
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                data = json.loads(json_str)
+                return data
+            else:
+                logger.warning(f"DreamerAgent: No JSON object found in response: {response[:100]}...")
+                return None
         except Exception as e:
-            logger.error(f"DreamerAgent: Failed to parse dream response: {e}")
+            logger.error(f"DreamerAgent: Failed to parse dream response: {e}. Raw: {response[:100]}...")
             return None
 
     async def realize_dream(self, tool_name: str) -> Dict[str, Any]:

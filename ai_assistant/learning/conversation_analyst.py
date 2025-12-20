@@ -19,26 +19,27 @@ Session Transcript:
 Task:
 Analyze the transcript above. Look for:
 1. **User Frustration**: Did the user have to repeat themselves? Did they express annoyance at the AI's behavior (e.g., "stop doing X", "I already told you Y")?
-2. **Explicit Directives/Preferences**: Did the user give a general instruction about how the AI should behave (e.g., "always be proactive", "never use this tool")?
-3. **Missed Failures / Tool Bugs**: Did the AI think it succeeded, but the user said it didn't? Did a tool return an error code or message that the AI failed to correct? (Classify as 'TOOL_BUG_SUSPECTED')
+2. **Explicit Directives/Preferences**: Did the user give a general instruction about how the AI should behave?
+3. **Learned Facts**: Did the user state a permanent fact about themselves or the world (e.g., "My son is Thomas", "We use AWS")?
+4. **Missed Failures / Tool Bugs**: Did the AI think it succeeded, but the user said it didn't?
 
 Output:
 Return a JSON object with a list of 'insights'. Each insight should have:
-- 'type': One of ["USER_PREFERENCE_LEARNED", "KNOWLEDGE_GAP_IDENTIFIED", "PLANNING_HEURISTIC_SUGGESTION", "USER_FRUSTRATION", "TOOL_BUG_SUSPECTED"]
-- 'description': A clear, actionable description of what was learned.
-- 'related_tool_name': (Optional) If identifying a TOOL_BUG_SUSPECTED, specify the exact name of the tool (e.g., 'get_weather').
-- 'evidence': A quote or summary from the transcript supporting this.
-- 'suggestion': A specific suggestion on how to adapt (e.g., "Add a rule to...", "Learn fact that...").
+- 'type': One of ["USER_PREFERENCE_LEARNED", "LEARNED_FACT", "KNOWLEDGE_GAP_IDENTIFIED", "PLANNING_HEURISTIC_SUGGESTION", "USER_FRUSTRATION", "TOOL_BUG_SUSPECTED"]
+- 'description': A clear, actionable description.
+- 'related_tool_name': (Optional)
+- 'evidence': Quote.
+- 'suggestion': suggestion.
 
 If nothing significant is found, return {{"insights": []}}.
 Example JSON:
 {{
   "insights": [
     {{
-      "type": "USER_PREFERENCE_LEARNED",
-      "description": "User prefers 'proactive' behavior over asking clarifying questions for every detail.",
-      "evidence": "User said 'if i always tell it be proactive, and stop asking me...'",
-      "suggestion": "Update planning heuristics to favor immediate action with assumptions over excessive clarification."
+      "type": "LEARNED_FACT",
+      "description": "User's son is named Thomas.",
+      "evidence": "User said 'my sons name is Thomas'",
+      "suggestion": "Save this fact to permanent memory."
     }}
   ]
 }}
@@ -55,8 +56,9 @@ class ConversationalAnalyst:
             role = msg.get("role", "unknown").upper()
             content = msg.get("content", "")
             # Truncate very long content to avoid context window issues
-            if len(content) > 2000:
-                content = content[:1997] + "..."
+            # Truncate very long content to avoid context window issues
+            if len(content) > 50000:
+                content = content[:49997] + "..."
             transcript.append(f"{role}: {content}")
         return "\n\n".join(transcript)
 
@@ -86,21 +88,17 @@ class ConversationalAnalyst:
             for item in insights_data:
                 insight_type_str = item.get("type")
                 try:
-                    # Map string to Enum
-                    # We only support specific types for now
-                    if insight_type_str == "USER_PREFERENCE_LEARNED":
-                        itype = InsightType.USER_PREFERENCE_LEARNED
-                    elif insight_type_str == "USER_FRUSTRATION":
-                        itype = InsightType.USER_FRUSTRATION
-                    elif insight_type_str == "KNOWLEDGE_GAP_IDENTIFIED":
-                        itype = InsightType.KNOWLEDGE_GAP_IDENTIFIED
-                    elif insight_type_str == "PLANNING_HEURISTIC_SUGGESTION":
-                         itype = InsightType.PLANNING_HEURISTIC_SUGGESTION
-                    elif insight_type_str == "TOOL_BUG_SUSPECTED":
-                         itype = InsightType.TOOL_BUG_SUSPECTED
+                    # Map string to Enum (Explicit mapping for safety)
+                    itype = InsightType.PLANNING_HEURISTIC_SUGGESTION # Default
+                    
+                    if insight_type_str == "USER_PREFERENCE_LEARNED": itype = InsightType.USER_PREFERENCE_LEARNED
+                    elif insight_type_str == "USER_FRUSTRATION": itype = InsightType.USER_FRUSTRATION
+                    elif insight_type_str == "KNOWLEDGE_GAP_IDENTIFIED": itype = InsightType.KNOWLEDGE_GAP_IDENTIFIED
+                    elif insight_type_str == "PLANNING_HEURISTIC_SUGGESTION": itype = InsightType.PLANNING_HEURISTIC_SUGGESTION
+                    elif insight_type_str == "TOOL_BUG_SUSPECTED": itype = InsightType.TOOL_BUG_SUSPECTED
+                    elif insight_type_str == "LEARNED_FACT": itype = InsightType.LEARNED_FACT # NEW
                     else:
-                        logger.warning(f"ConversationalAnalyst: Unknown insight type '{insight_type_str}'. Defaulting to PLANNING_HEURISTIC_SUGGESTION.")
-                        itype = InsightType.PLANNING_HEURISTIC_SUGGESTION
+                        logger.warning(f"ConversationalAnalyst: Unknown insight type '{insight_type_str}'.")
                     
                     description = f"{item.get('description')} (Evidence: {item.get('evidence')})"
                     if itype == InsightType.TOOL_BUG_SUSPECTED:
@@ -143,3 +141,4 @@ class ConversationalAnalyst:
         except Exception as e:
             logger.error(f"ConversationalAnalyst: Unexpected error: {e}")
             return []
+

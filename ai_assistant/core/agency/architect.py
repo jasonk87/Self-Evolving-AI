@@ -7,7 +7,7 @@ import uuid
 
 from ai_assistant.core.safety.judge import judge, SafetyVerdict
 from ai_assistant.goals.goal_management import create_goal, save_current_goals
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 from ai_assistant.config import DEFAULT_MODEL
 
@@ -112,7 +112,11 @@ Example:
 ]
 """
         try:
-            response = await invoke_gemini_model_async(prompt, model_name=DEFAULT_MODEL)
+            response, _ = await invoke_split_brain_async(
+                prompt=prompt, 
+                model_name=DEFAULT_MODEL,
+                context_text="Architectural Planning"
+            )
             # Parse JSON from response (handling potential markdown code blocks)
             cleaned_response = response.replace("```json", "").replace("```", "").strip()
             goals_data = json.loads(cleaned_response)

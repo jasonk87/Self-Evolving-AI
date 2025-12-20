@@ -1,9 +1,33 @@
 {
+    "view_function_code": {
+        "tool_name": "view_function_code",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_tool_view_function_code",
+        "description": "Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).",
+        "type": "builtin",
+        "schema_details": null
+    },
+    "simulate_edit_function_code": {
+        "tool_name": "simulate_edit_function_code",
+        "module_path": "ai_assistant.tools.tool_system",
+        "function_name": "_tool_simulate_edit_function_code",
+        "description": "Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).",
+        "type": "builtin",
+        "schema_details": null
+    },
     "echo_message": {
         "tool_name": "echo_message",
         "module_path": "ai_assistant.custom_tools.my_extra_tools",
         "function_name": "echo_message",
         "description": "Repeats a message a specified number of times.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_current_time": {
+        "tool_name": "get_current_time",
+        "module_path": "ai_assistant.custom_tools.my_extra_tools",
+        "function_name": "get_current_time",
+        "description": "Returns the current date and time.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -39,270 +63,6 @@
         "type": "custom_discovered",
         "schema_details": null
     },
-    "get_self_awareness_info_and_converse": {
-        "tool_name": "get_self_awareness_info_and_converse",
-        "module_path": "ai_assistant.custom_tools.awareness_tools",
-        "function_name": "get_self_awareness_info_and_converse",
-        "description": "Provides a conversational response about the AI's current status,",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "manage_tool_confirmation_settings": {
-        "tool_name": "manage_tool_confirmation_settings",
-        "module_path": "ai_assistant.custom_tools.config_management_tools",
-        "function_name": "manage_tool_confirmation_settings",
-        "description": "Manages the list of tools that require explicit user confirmation before execution.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "add_dependency_to_project": {
-        "tool_name": "add_dependency_to_project",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "add_dependency_to_project",
-        "description": "Adds a dependency to the specified project's manifest.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "build_project": {
-        "tool_name": "build_project",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "build_project",
-        "description": "Builds the specified project based on 'build_config' in the manifest.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_code_for_project_file": {
-        "tool_name": "generate_code_for_project_file",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "generate_code_for_project_file",
-        "description": "Generates code for a specific file within an AI-managed project,",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "initiate_ai_project": {
-        "tool_name": "initiate_ai_project",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "initiate_ai_project",
-        "description": "Initializes a new AI-managed software project. ",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "request_code_review_tool": {
-        "tool_name": "request_code_review_tool",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "request_code_review_tool",
-        "description": "Requests a review for the provided code against original requirements and related tests.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "run_project_tests": {
-        "tool_name": "run_project_tests",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "run_project_tests",
-        "description": "Runs the tests for the specified project based on 'test_config' in the manifest.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "execute_project_coding_plan": {
-        "tool_name": "execute_project_coding_plan",
-        "module_path": "ai_assistant.custom_tools.project_execution_tools",
-        "function_name": "execute_project_coding_plan",
-        "description": "Executes the coding plan for a given project by generating code for all",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_and_review_code_tool": {
-        "tool_name": "generate_and_review_code_tool",
-        "module_path": "ai_assistant.custom_tools.project_execution_tools",
-        "function_name": "generate_and_review_code_tool",
-        "description": "Generates Python code based on a description, then reviews it automatically.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "execute_python_script_in_project": {
-        "tool_name": "execute_python_script_in_project",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "execute_python_script_in_project",
-        "description": "Executes a specified Python script within a given project directory.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "run_all_tests": {
-        "tool_name": "run_all_tests",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "run_all_tests",
-        "description": "No description available.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "setup_test_environment": {
-        "tool_name": "setup_test_environment",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "setup_test_environment",
-        "description": "No description available.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "teardown_test_environment": {
-        "tool_name": "teardown_test_environment",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "teardown_test_environment",
-        "description": "No description available.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "create_project_directory": {
-        "tool_name": "create_project_directory",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "create_project_directory",
-        "description": "Creates a new project directory under the BASE_PROJECTS_DIR.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "read_text_from_file": {
-        "tool_name": "read_text_from_file",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "read_text_from_file",
-        "description": "Reads and returns the text content from the specified file.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "sanitize_project_name": {
-        "tool_name": "sanitize_project_name",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "sanitize_project_name",
-        "description": "Sanitizes a project name to create a safe directory name.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "write_text_to_file": {
-        "tool_name": "write_text_to_file",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "write_text_to_file",
-        "description": "Writes the given text content to the specified file.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "push_ai_generated_commits": {
-        "tool_name": "push_ai_generated_commits",
-        "module_path": "ai_assistant.custom_tools.git_tools",
-        "function_name": "push_ai_generated_commits",
-        "description": "Pushes locally committed AI self-modifications to a remote repository ",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "learn_fact": {
-        "tool_name": "learn_fact",
-        "module_path": "ai_assistant.custom_tools.knowledge_tools",
-        "function_name": "learn_fact",
-        "description": "Learns a new fact by adding it to the knowledge base via LLM curation.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "recall_facts": {
-        "tool_name": "recall_facts",
-        "module_path": "ai_assistant.custom_tools.knowledge_tools",
-        "function_name": "recall_facts",
-        "description": "Retrieves a list of learned facts from the curated fact store.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "run_periodic_fact_store_curation_async": {
-        "tool_name": "run_periodic_fact_store_curation_async",
-        "module_path": "ai_assistant.custom_tools.knowledge_tools",
-        "function_name": "run_periodic_fact_store_curation_async",
-        "description": "Performs a periodic curation of the entire fact store using the LLM.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_new_tool_from_description": {
-        "tool_name": "generate_new_tool_from_description",
-        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
-        "function_name": "generate_new_tool_from_description",
-        "description": "CRITICAL: Generates a NEW, PERSISTENT, REUSABLE Agent Tool (Python coding capability) based on a description. Use this when the user wants to add a new ability to the AI.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "get_generated_tools_path": {
-        "tool_name": "get_generated_tools_path",
-        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
-        "function_name": "get_generated_tools_path",
-        "description": "Returns the absolute path to the directory where generated tools are stored.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "greet_user": {
-        "tool_name": "greet_user",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_example_greet_user",
-        "description": "Greets the user. Args: name (str)",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "add_numbers": {
-        "tool_name": "add_numbers",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_example_add_numbers",
-        "description": "Adds two integers. Args: a (int), b (int)",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "multiply_numbers": {
-        "tool_name": "multiply_numbers",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_example_multiply_numbers",
-        "description": "Multiplies two floats. Args: x (float), y (float)",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "view_function_code": {
-        "tool_name": "view_function_code",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_tool_view_function_code",
-        "description": "Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "simulate_edit_function_code": {
-        "tool_name": "simulate_edit_function_code",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_tool_simulate_edit_function_code",
-        "description": "Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "maybe_fail_tool": {
-        "tool_name": "maybe_fail_tool",
-        "module_path": "ai_assistant.tools.tool_system",
-        "function_name": "_example_maybe_fail_tool",
-        "description": "A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.",
-        "type": "builtin",
-        "schema_details": null
-    },
-    "propose_project_file_update": {
-        "tool_name": "propose_project_file_update",
-        "module_path": "ai_assistant.custom_tools.project_management_tools",
-        "function_name": "propose_project_file_update",
-        "description": "No description available.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "get_project_file_content": {
-        "tool_name": "get_project_file_content",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "get_project_file_content",
-        "description": "Reads the content of a specified file within a project.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "list_project_files": {
-        "tool_name": "list_project_files",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "list_project_files",
-        "description": "Lists files and directories within a specified project's root path or a subdirectory thereof.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
     "get_item_details_by_id": {
         "tool_name": "get_item_details_by_id",
         "module_path": "ai_assistant.custom_tools.awareness_tools",
@@ -321,12 +81,34 @@
                 {
                     "name": "item_type",
                     "type": "str",
-                    "description": "The type of item. Valid values: 'task', 'suggestion', 'project'."
+                    "description": "The type of item. Valid values: 'task', 'suggestion', 'project', 'notification'."
                 }
             ],
             "returns": {
                 "type": "dict",
                 "description": "A dictionary containing the item's details, or an error dictionary if not found or type is invalid."
+            }
+        }
+    },
+    "get_self_awareness_info_and_converse": {
+        "tool_name": "get_self_awareness_info_and_converse",
+        "module_path": "ai_assistant.custom_tools.awareness_tools",
+        "function_name": "get_self_awareness_info_and_converse",
+        "description": "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "get_self_awareness_info_and_converse",
+            "description": "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.",
+            "parameters": [
+                {
+                    "name": "context",
+                    "type": "str",
+                    "description": "Optional. A brief explanation of why self-awareness is being checked or what specific information is being sought."
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "A detailed text report of internal status."
             }
         }
     },
@@ -382,9 +164,89 @@
             "returns": {
                 "type": "list",
                 "item_type": "dict",
-                "description": "A list of dictionaries, each representing a suggestion with its key details (id, type, description, status, created_at). Returns an empty list if no suggestions match."
+                "description": "A list of dictionaries, each representing a suggestion with its key details (id, type, description, status, created_at, source). Returns an empty list if no suggestions match."
             }
         }
+    },
+    "manage_tool_confirmation_settings": {
+        "tool_name": "manage_tool_confirmation_settings",
+        "module_path": "ai_assistant.custom_tools.config_management_tools",
+        "function_name": "manage_tool_confirmation_settings",
+        "description": "Manages the list of tools that require explicit user confirmation before execution.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_chat_history": {
+        "tool_name": "get_chat_history",
+        "module_path": "ai_assistant.custom_tools.conversational_tools",
+        "function_name": "get_chat_history",
+        "description": "Retrieves the chat history for a session.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "add_dependency_to_project": {
+        "tool_name": "add_dependency_to_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "add_dependency_to_project",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "build_project": {
+        "tool_name": "build_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "build_project",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_code_for_project_file": {
+        "tool_name": "generate_code_for_project_file",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "generate_code_for_project_file",
+        "description": "Generates code for a specific file within an AI-managed project.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "initiate_ai_project": {
+        "tool_name": "initiate_ai_project",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "initiate_ai_project",
+        "description": "Initializes a new AI-managed software project. ",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "propose_project_file_update": {
+        "tool_name": "propose_project_file_update",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "propose_project_file_update",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "request_code_review_tool": {
+        "tool_name": "request_code_review_tool",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "request_code_review_tool",
+        "description": "Requests a review for the provided code against original requirements and related tests.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "run_project_tests": {
+        "tool_name": "run_project_tests",
+        "module_path": "ai_assistant.custom_tools.project_management_tools",
+        "function_name": "run_project_tests",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "execute_project_coding_plan": {
+        "tool_name": "execute_project_coding_plan",
+        "module_path": "ai_assistant.custom_tools.project_execution_tools",
+        "function_name": "execute_project_coding_plan",
+        "description": "Executes the coding plan for a given project by generating code for all",
+        "type": "custom_discovered",
+        "schema_details": null
     },
     "execute_project_plan": {
         "tool_name": "execute_project_plan",
@@ -475,6 +337,36 @@
             }
         }
     },
+    "generate_and_review_code_tool": {
+        "tool_name": "generate_and_review_code_tool",
+        "module_path": "ai_assistant.custom_tools.project_execution_tools",
+        "function_name": "generate_and_review_code_tool",
+        "description": "Generates Python code based on a description, then reviews it automatically.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "execute_safe_terminal_command": {
+        "tool_name": "execute_safe_terminal_command",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "execute_safe_terminal_command",
+        "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "execute_safe_terminal_command",
+            "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
+            "parameters": [
+                {
+                    "name": "command",
+                    "type": "str",
+                    "description": "The command string to execute."
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr', 'error_message'."
+            }
+        }
+    },
     "execute_sandboxed_python_script": {
         "tool_name": "execute_sandboxed_python_script",
         "module_path": "ai_assistant.custom_tools.code_execution_tools",
@@ -517,11 +409,129 @@
             }
         }
     },
-    "manage_suggestion_status": {
-        "tool_name": "manage_suggestion_status",
-        "module_path": "ai_assistant.custom_tools.suggestion_management_tools",
-        "function_name": "manage_suggestion_status",
-        "description": "Approves or denies a specific suggestion by its ID.",
+    "install_python_package": {
+        "tool_name": "install_python_package",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "install_python_package",
+        "description": "Installs a Python package using the current environment's pip.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "install_python_package",
+            "description": "Installs a Python package using the current environment's pip.",
+            "parameters": [
+                {
+                    "name": "package_name",
+                    "type": "str",
+                    "description": "The name of the package to install."
+                }
+            ],
+            "returns": {
+                "type": "dict",
+                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr'."
+            }
+        }
+    },
+    "run_all_tests": {
+        "tool_name": "run_all_tests",
+        "module_path": "ai_assistant.custom_tools.code_execution_tools",
+        "function_name": "run_all_tests",
+        "description": "Runs all tests in the current environment using pytest.",
+        "type": "custom_discovered",
+        "schema_details": {
+            "name": "run_all_tests",
+            "description": "Runs all tests in the current environment using pytest.",
+            "parameters": [],
+            "returns": {
+                "type": "dict",
+                "description": "Results of the test run including stdout/stderr."
+            }
+        }
+    },
+    "create_project_directory": {
+        "tool_name": "create_project_directory",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "create_project_directory",
+        "description": "Creates a new project directory under the BASE_PROJECTS_DIR.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_project_file_content": {
+        "tool_name": "get_project_file_content",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "get_project_file_content",
+        "description": "Reads the content of a specified file within a project.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "list_project_files": {
+        "tool_name": "list_project_files",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "list_project_files",
+        "description": "Lists files and directories within a specified project's root path or a subdirectory thereof.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "read_text_from_file": {
+        "tool_name": "read_text_from_file",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "read_text_from_file",
+        "description": "Reads and returns the text content from the specified file.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "sanitize_project_name": {
+        "tool_name": "sanitize_project_name",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "sanitize_project_name",
+        "description": "Sanitizes a project name to create a safe directory name.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "save_project_file_content": {
+        "tool_name": "save_project_file_content",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "save_project_file_content",
+        "description": "Writes content to a specified file within a project.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "write_text_to_file": {
+        "tool_name": "write_text_to_file",
+        "module_path": "ai_assistant.custom_tools.file_system_tools",
+        "function_name": "write_text_to_file",
+        "description": "Writes the given text content to the specified file.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "push_ai_generated_commits": {
+        "tool_name": "push_ai_generated_commits",
+        "module_path": "ai_assistant.custom_tools.git_tools",
+        "function_name": "push_ai_generated_commits",
+        "description": "Pushes locally committed AI self-modifications to a remote repository ",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "learn_fact": {
+        "tool_name": "learn_fact",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "learn_fact",
+        "description": "Learns a new fact by adding it to the knowledge base via LLM curation.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "recall_facts": {
+        "tool_name": "recall_facts",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "recall_facts",
+        "description": "Retrieves a list of learned facts.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "run_periodic_fact_store_curation_async": {
+        "tool_name": "run_periodic_fact_store_curation_async",
+        "module_path": "ai_assistant.custom_tools.knowledge_tools",
+        "function_name": "run_periodic_fact_store_curation_async",
+        "description": "Placeholder for periodic curation.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -562,15 +572,31 @@
             ]
         }
     },
+    "generate_new_tool_from_description": {
+        "tool_name": "generate_new_tool_from_description",
+        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
+        "function_name": "generate_new_tool_from_description",
+        "description": "Generates Python code for a new tool based on a description and saves it",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_generated_tools_path": {
+        "tool_name": "get_generated_tools_path",
+        "module_path": "ai_assistant.custom_tools.meta_programming_tools",
+        "function_name": "get_generated_tools_path",
+        "description": "Returns the absolute path to the directory where generated tools are stored.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
     "stage_agent_tool_modification": {
         "tool_name": "stage_agent_tool_modification",
         "module_path": "ai_assistant.custom_tools.meta_programming_tools",
         "function_name": "stage_agent_tool_modification",
-        "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor.",
+        "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor. Supports both full function replacement and surgical node replacement.",
         "type": "custom_discovered",
         "schema_details": {
             "name": "stage_agent_tool_modification",
-            "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor.",
+            "description": "Stages the parameters needed to propose a modification to an existing agent tool. This prepares the information for the self-modification review and application process, typically for ActionExecutor. Supports both full function replacement and surgical node replacement.",
             "parameters": [
                 [
                     [
@@ -603,7 +629,7 @@
                 [
                     [
                         "description",
-                        "The complete new source code for the modified function."
+                        "The complete new source code for the modified function, OR the replacement snippet for surgical edits."
                     ],
                     [
                         "name",
@@ -655,6 +681,34 @@
                         "type",
                         "str"
                     ]
+                ],
+                [
+                    [
+                        "description",
+                        "Optional. 'full_replace' (default) or 'surgical_replace_node'."
+                    ],
+                    [
+                        "name",
+                        "modification_strategy"
+                    ],
+                    [
+                        "type",
+                        "str"
+                    ]
+                ],
+                [
+                    [
+                        "description",
+                        "Optional (Required for surgical). The existing code snippet to match and replace."
+                    ],
+                    [
+                        "name",
+                        "target_node_pattern"
+                    ],
+                    [
+                        "type",
+                        "str"
+                    ]
                 ]
             ],
             "returns": [
@@ -668,6 +722,14 @@
                 ]
             ]
         }
+    },
+    "manage_suggestion_status": {
+        "tool_name": "manage_suggestion_status",
+        "module_path": "ai_assistant.custom_tools.suggestion_management_tools",
+        "function_name": "manage_suggestion_status",
+        "description": "Approves or denies a specific suggestion by its ID.",
+        "type": "custom_discovered",
+        "schema_details": null
     },
     "run_agent_code": {
         "tool_name": "run_agent_code",
@@ -693,19 +755,67 @@
         "type": "custom_discovered",
         "schema_details": null
     },
-    "save_project_file_content": {
-        "tool_name": "save_project_file_content",
-        "module_path": "ai_assistant.custom_tools.file_system_tools",
-        "function_name": "save_project_file_content",
-        "description": "Writes content to a specified file within a project.",
+    "check_calendar": {
+        "tool_name": "check_calendar",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "check_calendar",
+        "description": "Checks the user's Google Calendar schedule for a specific date.",
         "type": "custom_discovered",
         "schema_details": null
     },
-    "get_current_time": {
-        "tool_name": "get_current_time",
-        "module_path": "ai_assistant.custom_tools.my_extra_tools",
-        "function_name": "get_current_time",
-        "description": "Returns the current date and time.",
+    "list_upcoming_events": {
+        "tool_name": "list_upcoming_events",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "list_upcoming_events",
+        "description": "Lists the next upcoming events on the user's calendar.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "schedule_event": {
+        "tool_name": "schedule_event",
+        "module_path": "ai_assistant.custom_tools.calendar_tools",
+        "function_name": "schedule_event",
+        "description": "Schedules a new event on the user's Google Calendar.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "chat_dynamic_html": {
+        "tool_name": "chat_dynamic_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "chat_dynamic_html",
+        "description": "Generates safe HTML, CSS, and JavaScript code based on a given idea, suitable for inline inclusion in a chat response.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_div_table_html": {
+        "tool_name": "generate_div_table_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_div_table_html",
+        "description": "Generates HTML code for displaying data in a table-like format using divs and CSS.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_safe_html": {
+        "tool_name": "generate_safe_html",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_safe_html",
+        "description": "Generates safe HTML from a given input string by escaping and sanitizing it.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "generate_two_responses": {
+        "tool_name": "generate_two_responses",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "generate_two_responses",
+        "description": "Generates two back-to-back responses from the AI for a given prompt.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_location_by_ip": {
+        "tool_name": "get_location_by_ip",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "get_location_by_ip",
+        "description": "Gets the user's location based on their IP address using the ipinfo.io API.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -717,6 +827,14 @@
         "type": "custom_discovered",
         "schema_details": null
     },
+    "list_suggestions": {
+        "tool_name": "list_suggestions",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "list_suggestions",
+        "description": "Lists suggestions, optionally filtered by status.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
     "remind_at_3_40": {
         "tool_name": "remind_at_3_40",
         "module_path": "ai_assistant.custom_tools.generated",
@@ -725,11 +843,27 @@
         "type": "custom_discovered",
         "schema_details": null
     },
+    "schedule_notification": {
+        "tool_name": "schedule_notification",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "schedule_notification",
+        "description": "Schedules a desktop notification to be displayed after a specified delay.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
     "schedule_reminder": {
         "tool_name": "schedule_reminder",
         "module_path": "ai_assistant.custom_tools.generated",
         "function_name": "schedule_reminder",
-        "description": "Schedules a reminder to be displayed at a specific time with a custom message.",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "send_text_message": {
+        "tool_name": "send_text_message",
+        "module_path": "ai_assistant.custom_tools.generated",
+        "function_name": "send_text_message",
+        "description": "Sends a text message to the specified recipient using Twilio.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -765,135 +899,11 @@
         "type": "custom_discovered",
         "schema_details": null
     },
-    "send_text_message": {
-        "tool_name": "send_text_message",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "send_text_message",
-        "description": "Sends a text message to the specified recipient using Twilio.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_two_responses": {
-        "tool_name": "generate_two_responses",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "generate_two_responses",
-        "description": "Generates two back-to-back responses from the AI for a given prompt.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "get_location_by_ip": {
-        "tool_name": "get_location_by_ip",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "get_location_by_ip",
-        "description": "Gets the user's location based on their IP address using the ipinfo.io API.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_div_table_html": {
-        "tool_name": "generate_div_table_html",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "generate_div_table_html",
-        "description": "Generates HTML code for displaying data in a table-like format using divs and CSS.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "generate_safe_html": {
-        "tool_name": "generate_safe_html",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "generate_safe_html",
-        "description": "Generates safe HTML content from a given HTML string. It uses the bleach library to sanitize the HTML,",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "execute_safe_terminal_command": {
-        "tool_name": "execute_safe_terminal_command",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "execute_safe_terminal_command",
-        "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
-        "type": "custom_discovered",
-        "schema_details": {
-            "name": "execute_safe_terminal_command",
-            "description": "Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.",
-            "parameters": [
-                {
-                    "name": "command",
-                    "type": "str",
-                    "description": "The command string to execute."
-                }
-            ],
-            "returns": {
-                "type": "dict",
-                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr', 'error_message'."
-            }
-        }
-    },
-    "install_python_package": {
-        "tool_name": "install_python_package",
-        "module_path": "ai_assistant.custom_tools.code_execution_tools",
-        "function_name": "install_python_package",
-        "description": "Installs a Python package using the current environment's pip.",
-        "type": "custom_discovered",
-        "schema_details": {
-            "name": "install_python_package",
-            "description": "Installs a Python package using the current environment's pip.",
-            "parameters": [
-                {
-                    "name": "package_name",
-                    "type": "str",
-                    "description": "The name of the package to install."
-                }
-            ],
-            "returns": {
-                "type": "dict",
-                "description": "A dict with 'status', 'return_code', 'stdout', 'stderr'."
-            }
-        }
-    },
-    "schedule_notification": {
-        "tool_name": "schedule_notification",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "schedule_notification",
-        "description": "Schedules a desktop notification to be displayed after a specified delay.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "chat_dynamic_html": {
-        "tool_name": "chat_dynamic_html",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "chat_dynamic_html",
-        "description": "Generates safe HTML, CSS, and JavaScript code based on a given idea, suitable for inline inclusion in a chat response.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "execute_deep_research": {
-        "tool_name": "execute_deep_research",
-        "module_path": "ai_assistant.custom_tools.search_tools",
-        "function_name": "execute_deep_research",
-        "description": "Performs 'Deep Research' by searching Google, visiting the top results, reading their content, and synthesizing a comprehensive answer. Use this for complex coding questions, API documentation lookups, or when standard snippets are insufficient.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "check_calendar": {
-        "tool_name": "check_calendar",
-        "module_path": "ai_assistant.custom_tools.calendar_tools",
-        "function_name": "check_calendar",
-        "description": "Checks the user's Google Calendar schedule for a specific date.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "list_upcoming_events": {
-        "tool_name": "list_upcoming_events",
-        "module_path": "ai_assistant.custom_tools.calendar_tools",
-        "function_name": "list_upcoming_events",
-        "description": "Lists the next upcoming events on the user's calendar.",
-        "type": "custom_discovered",
-        "schema_details": null
-    },
-    "schedule_event": {
-        "tool_name": "schedule_event",
-        "module_path": "ai_assistant.custom_tools.calendar_tools",
-        "function_name": "schedule_event",
-        "description": "Schedules a new event on the user's Google Calendar.",
+    "list_available_tools": {
+        "tool_name": "list_available_tools",
+        "module_path": "ai_assistant.custom_tools.system_tools",
+        "function_name": "list_available_tools",
+        "description": "Lists all available tools registered in the system.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -943,27 +953,35 @@
             }
         }
     },
-    "list_suggestions": {
-        "tool_name": "list_suggestions",
-        "module_path": "ai_assistant.custom_tools.generated",
-        "function_name": "list_suggestions",
-        "description": "Lists suggestions, optionally filtered by status.",
+    "get_ai_source_map": {
+        "tool_name": "get_ai_source_map",
+        "module_path": "ai_assistant.custom_tools.introspection_tools",
+        "function_name": "get_ai_source_map",
+        "description": "Returns a map of the AI's own source code structure.",
         "type": "custom_discovered",
         "schema_details": null
     },
-    "get_chat_history": {
-        "tool_name": "get_chat_history",
-        "module_path": "ai_assistant.custom_tools.conversational_tools",
-        "function_name": "get_chat_history",
-        "description": "Retrieves the chat history for a session.",
+    "get_background_task_status": {
+        "tool_name": "get_background_task_status",
+        "module_path": "ai_assistant.custom_tools.introspection_tools",
+        "function_name": "get_background_task_status",
+        "description": "Returns the status of background AI services (Dreamer, Architect, Curation, etc.).",
         "type": "custom_discovered",
         "schema_details": null
     },
-    "list_available_tools": {
-        "tool_name": "list_available_tools",
-        "module_path": "ai_assistant.custom_tools.system_tools",
-        "function_name": "list_available_tools",
-        "description": "Lists all available tools registered in the system.",
+    "inspect_memory_stats": {
+        "tool_name": "inspect_memory_stats",
+        "module_path": "ai_assistant.custom_tools.introspection_tools",
+        "function_name": "inspect_memory_stats",
+        "description": "Returns statistics about the AI's internal memory (facts, insights, episodes).",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "read_system_logs": {
+        "tool_name": "read_system_logs",
+        "module_path": "ai_assistant.custom_tools.introspection_tools",
+        "function_name": "read_system_logs",
+        "description": "Reads the last N lines of a system log file.",
         "type": "custom_discovered",
         "schema_details": null
     }

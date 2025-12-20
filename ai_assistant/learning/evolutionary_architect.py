@@ -143,6 +143,7 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
 
         except json.JSONDecodeError as e:
             logger.warning(f"EvolutionaryArchitect: Failed to parse LLM proposal (Attempt {attempt+1}/{max_retries}) for {filepath}: {e}")
+            logger.debug(f"Row LLM Response was: {response}") # Added debug log
             # Add feedback to the prompt for the next attempt
             current_prompt = prompt + f"\n\nERROR: Your previous response was invalid JSON ({e}). Please fix the JSON formatting and try again. Ensure strings are properly escaped and the JSON is valid."
             

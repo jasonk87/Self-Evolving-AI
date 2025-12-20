@@ -908,6 +908,7 @@ class ActionExecutor:
                     "fact_id": f"fact_{uuid.uuid4().hex[:8]}", "text": normalized_fact_to_learn,
                     "category": determined_category,
                     "source": details.get("source", f"Insight {source_insight_id}" if source_insight_id else "Unknown"),
+                    "permanence": details.get("permanence", "permanent"), # Capture permanence
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }

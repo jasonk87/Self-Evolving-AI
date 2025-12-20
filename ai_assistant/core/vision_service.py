@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 from playwright.async_api import async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 import ai_assistant.config as config
+from ai_assistant.core.events import emit_system_event
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,18 @@ class VisionService:
             except Exception as e:
                 logger.error(f"VisionService: Failed to inject HUD: {e}")
 
+    async def _emit_snapshot(self, page, status: str = "Active"):
+        """Emits a browser snapshot to the UI if Ghost Mode is enabled."""
+        if config.GHOST_MODE:
+            try:
+                # Capture low-res screenshot for speed/performance
+                # Use jpeg for speed.
+                screenshot_bytes = await page.screenshot(type="jpeg", quality=50)
+                b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                emit_system_event('browser_snapshot', {'image': b64, 'status': status})
+            except Exception as e:
+                logger.warning(f"VisionService: Failed to emit snapshot: {e}")
+
     async def capture_page_screenshot(self, file_path_or_url: str) -> Optional[str]:
         """
         Captures a screenshot of the given file path or URL.
@@ -47,13 +60,18 @@ class VisionService:
         try:
             playwright = await async_playwright().start()
 
-            headless_mode = not config.GHOST_MODE
+            # Always run headless in Ghost Mode (we stream the view)
+            # Only run non-headless if we explicitly want to debug on server desktop
+            headless_mode = True 
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
 
             if config.GHOST_MODE:
-                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+                page = await browser.new_page(
+                    viewport={'width': 1280, 'height': 720},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
             else:
                 page = await browser.new_page()
 
@@ -69,8 +87,10 @@ class VisionService:
             logger.info(f"VisionService: Navigating to {target_url}")
             await page.goto(target_url, wait_until="networkidle", timeout=10000)
 
-            # Additional small wait to ensure rendering settles
-            await asyncio.sleep(1)
+            # Wait a bit to let the user see the page in Ghost Mode
+            await asyncio.sleep(3)
+            
+            await self._emit_snapshot(page, status="Capturing...")
 
             screenshot_bytes = await page.screenshot(type="png", full_page=True)
             base64_screenshot = base64.b64encode(screenshot_bytes).decode('utf-8')
@@ -96,7 +116,9 @@ class VisionService:
         try:
             playwright = await async_playwright().start()
 
-            headless_mode = not config.GHOST_MODE
+            # Always run headless in Ghost Mode (we stream the view)
+            # Only run non-headless if we explicitly want to debug on server desktop
+            headless_mode = True 
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
@@ -111,6 +133,8 @@ class VisionService:
             await self._inject_hud(page)
 
             await page.goto(url, wait_until="domcontentloaded", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it
+
+            await self._emit_snapshot(page, status="Reading...")
 
             # Extract text
             text_content = await page.inner_text("body")
@@ -136,7 +160,9 @@ class VisionService:
         try:
             playwright = await async_playwright().start()
 
-            headless_mode = not config.GHOST_MODE
+            # Always run headless in Ghost Mode (we stream the view)
+            # Only run non-headless if we explicitly want to debug on server desktop
+            headless_mode = True 
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
@@ -151,6 +177,8 @@ class VisionService:
             await self._inject_hud(page)
 
             await page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            await self._emit_snapshot(page, status="Scanning Images...")
 
             # Heuristic Logic to find good images
             # 1. Get all img tags
@@ -209,6 +237,8 @@ class VisionService:
 
                 # 3. Wait for visual effect
                 await page.wait_for_timeout(300)
+                
+                await self._emit_snapshot(page, status="Clicking...")
 
             # 4. Perform Click
             await page.click(selector)
@@ -240,6 +270,8 @@ class VisionService:
 
             # 4. Type text
             await page.type(selector, text, delay=50 if config.GHOST_MODE else 0)
+            
+            await self._emit_snapshot(page, status="Typing...")
 
         except Exception as e:
             logger.error(f"VisionService: Error typing text into {selector}: {e}")

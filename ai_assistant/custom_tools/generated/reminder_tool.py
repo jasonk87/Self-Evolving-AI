@@ -1,48 +1,51 @@
-import datetime
-import platform
-import subprocess
-from typing import Optional
+import json
+from typing import Dict, Any
+from datetime import datetime
+import os
+import logging
 
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-def set_reminder(reminder_text: str, reminder_time: str) -> str:
+REMINDER_FILE = "reminders.json"
+
+def set_reminder(reminder_time: str, reminder_message: str) -> str:
     """
-    Sets a reminder using the operating system's built-in functionality.
+    Sets a reminder for the user at a specific time with a specific message.
+    It stores the reminder for later use, as Weebo does not currently have the ability to alert the user directly.
 
     Args:
-        reminder_text (str): The text of the reminder.
-        reminder_time (str): The time for the reminder, in a format that can be parsed by datetime.fromisoformat (e.g., "2023-12-25T10:00:00").
+        reminder_time (str): The time to set the reminder for, in ISO 8601 format (e.g., 2024-01-01T12:00:00Z).
+        reminder_message (str): The message to remind the user about.
 
     Returns:
-        str: A message indicating whether the reminder was set successfully or if an error occurred.
+        str: A message indicating whether the reminder was successfully set or if an error occurred.
     """
     try:
-        reminder_datetime = datetime.datetime.fromisoformat(reminder_time)
-    except ValueError:
-        return "Error: Invalid reminder time format. Please use ISO format (e.g., 2023-12-25T10:00:00)."
+        datetime.fromisoformat(reminder_time.replace('Z', '+00:00')) #validate ISO format
 
-    system = platform.system()
-
-    try:
-        if system == "Darwin":  # macOS
-            # Use AppleScript to create a reminder
-            script = f"""
-            tell application "Reminders"
-                set newReminder to make new reminder with properties {{name:"{reminder_text}", remind me date:date "{reminder_datetime.strftime("%Y-%m-%d %H:%M:%S")}"}}
-                tell newReminder to set body to "{reminder_text}"
-            end tell
-            """
-            subprocess.run(["osascript", "-e", script], check=True)
-            return "Reminder set successfully on macOS."
-        elif system == "Linux":
-            # Use notify-send to create a notification (not a persistent reminder)
-            subprocess.run(["notify-send", "Reminder", reminder_text], check=True)
-            return "Notification sent successfully on Linux (not a persistent reminder)."
-        elif system == "Windows":
-            # This is a placeholder. Windows reminder functionality is more complex and requires additional libraries or external tools.
-            return "Error: Reminder functionality not yet implemented for Windows."
+        # Load existing reminders
+        if os.path.exists(REMINDER_FILE):
+            with open(REMINDER_FILE, "r") as f:
+                try:
+                    reminders = json.load(f)
+                except json.JSONDecodeError:
+                    reminders = []
         else:
-            return f"Error: Unsupported operating system: {system}."
+            reminders = []
+
+        # Add the new reminder
+        reminders.append({"time": reminder_time, "message": reminder_message})
+
+        # Save the updated reminders
+        with open(REMINDER_FILE, "w") as f:
+            json.dump(reminders, f)
+
+        return f"Reminder set for {reminder_time} with message: {reminder_message}"
+    except ValueError as e:
+        logger.error(f"Invalid reminder time format: {e}")
+        return f"Error: Invalid reminder time format. Please use ISO 8601 format (e.g., 2024-01-01T12:00:00Z)."
     except Exception as e:
-        return f"Error setting reminder: {e}"
-
-
+        logger.error(f"Could not set reminder: {e}")
+        return f"Error: Could not set reminder. {e}"

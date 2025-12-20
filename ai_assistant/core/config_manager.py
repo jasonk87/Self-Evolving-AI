@@ -53,7 +53,8 @@ class ConfigManager:
             "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
-            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG
+            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
+            "GHOST_MODE": config_module.GHOST_MODE
         }
         self._write_json(data)
 
@@ -86,7 +87,8 @@ class ConfigManager:
             "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
-            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG
+            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
+            "GHOST_MODE": config_module.GHOST_MODE
         }
 
     def _read_json(self):

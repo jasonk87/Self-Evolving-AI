@@ -1,11 +1,8 @@
-from typing import Optional, List, Dict
-from ai_assistant.core.task_manager import TaskManager
-from ai_assistant.core.notification_manager import NotificationManager
-
-from typing import List, Dict, Any, Optional
-from typing import List, Dict, Any, Optional
+import json
+from typing import Optional, Any
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from enum import Enum, auto
 from dataclasses import asdict

@@ -42,12 +42,13 @@ class MemoryManager:
 
         return await self.rag_system.retrieve_context(query, k=k)
 
-    async def add_fact_with_rag(self, text: str, category: str = "manual", source: str = "user_interface") -> Dict[str, Any]:
+    async def add_fact_with_rag(self, text: str, category: str = "manual", source: str = "user_interface", permanence: str = "permanent") -> Dict[str, Any]:
         """
         Adds a fact and indexes it in the RAG system.
         Note: This is an async version of add_fact.
         """
-        new_fact = self.add_fact(text, category, source)
+        # Pass permanence to the synchronous add_fact
+        new_fact = self.add_fact(text, category, source, permanence)
 
         if self.rag_system:
             await self.rag_system.ingest_fact(new_fact['text'], metadata=new_fact)
@@ -134,9 +135,14 @@ class MemoryManager:
         """Returns all learned facts."""
         return load_learned_facts()
 
-    def add_fact(self, text: str, category: str = "manual", source: str = "user_interface") -> Dict[str, Any]:
+    def add_fact(self, text: str, category: str = "manual", source: str = "user_interface", permanence: str = "permanent") -> Dict[str, Any]:
         """
         Adds a new manually created fact.
+        Args:
+            text: The fact content.
+            category: Classification (e.g. 'manual', 'learned_fact').
+            source: Where it came from.
+            permanence: 'permanent' (long-term truth) or 'transient' (temporary state, bug, current task).
         """
         facts = load_learned_facts()
 
@@ -145,13 +151,14 @@ class MemoryManager:
             "text": text,
             "category": category,
             "source": source,
+            "permanence": permanence, # Store solvency Tag
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
 
         facts.append(new_fact)
         if save_learned_facts(facts):
-            logger.info(f"Added new fact: {new_fact['fact_id']}")
+            logger.info(f"Added new fact: {new_fact['fact_id']} ({permanence})")
 
             # Fire-and-forget async RAG ingestion if loop is running
             if self.rag_system:
@@ -216,6 +223,47 @@ class MemoryManager:
         else:
             logger.warning(f"Fact not found for deletion: {fact_id}")
             return False
+
+    def prune_transient_memories(self, age_hours: int = 24) -> int:
+        """
+        Removes facts marked as 'transient' that are older than age_hours.
+        Returns the number of facts removed.
+        """
+        facts = load_learned_facts()
+        if not facts: return 0
+        
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=age_hours)
+        keep_facts = []
+        removed_count = 0
+        
+        for fact in facts:
+            # Check permanence
+            permanence = fact.get("permanence", "permanent") # Default to permanent if missing
+            
+            # If transient, check age
+            if permanence == "transient":
+                try:
+                    # ISO Format parsing
+                    created_at_str = fact.get("created_at")
+                    # Handle potential parsing issues if legacy formats existed
+                    created_at = datetime.datetime.fromisoformat(created_at_str)
+                    
+                    if created_at < cutoff:
+                        removed_count += 1
+                        continue # Skip appending, effectively deleting
+                except Exception:
+                    # If date parse fails, keep it or delete? Keep to be safe.
+                    pass
+            
+            keep_facts.append(fact)
+            
+        if removed_count > 0:
+            if save_learned_facts(keep_facts):
+                logger.info(f"Pruned {removed_count} transient memories older than {age_hours} hours.")
+            else:
+                logger.error("Failed to save memories after pruning.")
+        
+        return removed_count
 
     # --- Insights Management ---
 

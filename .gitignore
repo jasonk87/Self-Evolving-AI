@@ -10,3 +10,11 @@ logs/
 *_output.txt
 git_*.txt
 static/scraped_images/
+
+# Runtime Artifacts
+debug.log
+omnis.log
+architect_state.json
+knowledge_dump.json
+*.bak
+*.tmp

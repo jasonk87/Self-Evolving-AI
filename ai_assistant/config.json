@@ -34,5 +34,6 @@
         "merge_model": "gemini-2.0-flash-exp",
         "temperature_branches": 0.7,
         "temperature_merge": 0.2
-    }
+    },
+    "GHOST_MODE": true
 }

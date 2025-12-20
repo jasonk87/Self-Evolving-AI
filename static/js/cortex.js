@@ -88,9 +88,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="detail-label">Fact Content</div>
                         <div class="detail-value">${info.text}</div>
                     </div>`;
+                    const dateStr = info.timestamp ? new Date(info.timestamp).toLocaleString() : 'Unknown';
                     contentHtml += `<div class="detail-item">
                         <div class="detail-label">Created</div>
-                        <div class="detail-value">${new Date(info.timestamp).toLocaleString()}</div>
+                        <div class="detail-value">${dateStr}</div>
                     </div>`;
                 } else if (node.group === 'insight') {
                     contentHtml += `<div class="detail-item">

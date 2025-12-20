@@ -1,3 +1,4 @@
+from typing import Any
 from typing import Union
 from duckduckgo_search import DDGS
 import json
@@ -11,8 +12,6 @@ def subtract_numbers(a: float, b: float) -> Union[float, str]:
     try:
         return float(a) - float(b)
     except ValueError:
-        return "Error: Invalid input. 'a' and 'b' must be numbers for subtract_numbers."
-    except TypeError:
         return "Error: Invalid input. 'a' and 'b' must be numbers for subtract_numbers."
 
 def get_current_time() -> str:
@@ -162,6 +161,10 @@ def process_search_results(search_query: str, search_results_json: str='[]', pro
     except Exception as e:
         return f'Error preparing data for LLM: {e}'
     formatted_prompt = ''
+    try:
+        from ai_assistant.models import get_model_for_task, invoke_ollama_model
+    except ImportError as e:
+        return f"Error: Could not import necessary functions from 'ai_assistant.models'. Make sure the module exists and is accessible. {e}"
     model_for_processing = get_model_for_task('summarization')
     if processing_instruction == 'summarize_results':
         formatted_prompt = SUMMARIZE_RESULTS_LLM_PROMPT_TEMPLATE.format(query=search_query, results_json=search_results_json)
@@ -188,4 +191,4 @@ def process_search_results(search_query: str, search_results_json: str='[]', pro
     if llm_response:
         return llm_response.strip()
     else:
-        return f"Error: LLM failed to generate a response for the query '{search_query}' with instruction '{processing_instruction}' from the provided search results."
+        return f"Error: LLM failed to generate a response for the query '{search_query}' with instruction '{processing_instruction}' from the search results."

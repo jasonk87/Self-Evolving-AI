@@ -35,20 +35,26 @@ class ToolSystem:
             print(f'ToolSystem: Initializing with registry file: {self._persisted_tool_metadata_file}')
         self.load_persisted_tools()
         self._register_system_tools()
-        self.custom_tool_modules_to_discover = [('ai_assistant.custom_tools.my_extra_tools', 'my_extra_tools.py'), ('ai_assistant.custom_tools.awareness_tools', 'awareness_tools.py'), ('ai_assistant.custom_tools.config_management_tools', 'config_management_tools.py'), ('ai_assistant.custom_tools.conversational_tools', 'conversational_tools.py'), ('ai_assistant.custom_tools.project_management_tools', 'project_management_tools.py'), ('ai_assistant.custom_tools.project_execution_tools', 'project_execution_tools.py'), ('ai_assistant.custom_tools.code_execution_tools', 'code_execution_tools.py'), ('ai_assistant.custom_tools.file_system_tools', 'file_system_tools.py'), ('ai_assistant.custom_tools.git_tools', 'git_tools.py'), ('ai_assistant.custom_tools.knowledge_tools', 'knowledge_tools.py'), ('ai_assistant.custom_tools.meta_programming_tools', 'meta_programming_tools.py'), ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'), ('ai_assistant.custom_tools.agent_tools', 'agent_tools.py'), ('ai_assistant.custom_tools.calendar_tools', 'calendar_tools.py'), ('ai_assistant.custom_tools.generated', 'generated_tools_module'), ('ai_assistant.custom_tools.system_tools', 'system_tools.py'), ('ai_assistant.custom_tools.architect_tools', 'architect_tools.py'), ('ai_assistant.custom_tools.navigation_tools', 'navigation_tools.py')]
+        self.custom_tool_modules_to_discover = [('ai_assistant.custom_tools.my_extra_tools', 'my_extra_tools.py'), ('ai_assistant.custom_tools.awareness_tools', 'awareness_tools.py'), ('ai_assistant.custom_tools.config_management_tools', 'config_management_tools.py'), ('ai_assistant.custom_tools.conversational_tools', 'conversational_tools.py'), ('ai_assistant.custom_tools.project_management_tools', 'project_management_tools.py'), ('ai_assistant.custom_tools.project_execution_tools', 'project_execution_tools.py'), ('ai_assistant.custom_tools.code_execution_tools', 'code_execution_tools.py'), ('ai_assistant.custom_tools.file_system_tools', 'file_system_tools.py'), ('ai_assistant.custom_tools.git_tools', 'git_tools.py'), ('ai_assistant.custom_tools.knowledge_tools', 'knowledge_tools.py'), ('ai_assistant.custom_tools.meta_programming_tools', 'meta_programming_tools.py'), ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'), ('ai_assistant.custom_tools.agent_tools', 'agent_tools.py'), ('ai_assistant.custom_tools.calendar_tools', 'calendar_tools.py'), ('ai_assistant.custom_tools.generated', 'generated_tools_module'), ('ai_assistant.custom_tools.system_tools', 'system_tools.py'), ('ai_assistant.custom_tools.architect_tools', 'architect_tools.py'), ('ai_assistant.custom_tools.navigation_tools', 'navigation_tools.py'), ('ai_assistant.custom_tools.introspection_tools', 'introspection_tools.py'), ('ai_assistant.custom_tools.memory_tools', 'memory_tools.py')]
+        should_discover = not self._tool_registry
         any_new_tools_registered_overall = False
-        for module_import_path, module_filename in self.custom_tool_modules_to_discover:
-            try:
-                module_to_inspect = importlib.import_module(module_import_path)
-                if self._discover_and_register_custom_tools(module_to_inspect, module_import_path):
+        if should_discover:
+            if is_debug_mode():
+                print('ToolRegistry empty. performing full discovery.')
+            for module_import_path, module_filename in self.custom_tool_modules_to_discover:
+                try:
+                    module_to_inspect = importlib.import_module(module_import_path)
+                    if self._discover_and_register_custom_tools(module_to_inspect, module_import_path):
+                        if is_debug_mode():
+                            print(f'ToolSystem: New custom tools discovered from {module_filename}. Triggering save.')
+                        any_new_tools_registered_overall = True
+                except ImportError:
                     if is_debug_mode():
-                        print(f'ToolSystem: New custom tools discovered from {module_filename}. Triggering save.')
-                    any_new_tools_registered_overall = True
-            except ImportError:
-                if is_debug_mode():
-                    print(f'ToolSystem: Could not import {module_filename} (path: {module_import_path}), skipping custom tool discovery from it.')
-            except Exception as e:
-                print(f'ToolSystem: Warning - Error during custom tool discovery from {module_filename} (path: {module_import_path}): {e}')
+                        print(f'ToolSystem: Could not import {module_filename} (path: {module_import_path}), skipping custom tool discovery from it.')
+                except Exception as e:
+                    print(f'ToolSystem: Warning - Error during custom tool discovery from {module_filename} (path: {module_import_path}): {e}')
+        elif is_debug_mode():
+            print('ToolRegistry loaded from persistence. Skipping auto-discovery.')
         self.register_example_tools()
         if any_new_tools_registered_overall:
             self.save_registered_tools()
@@ -300,7 +306,7 @@ class ToolSystem:
         """
         detailed_tools = {}
         for tool_name, tool_data in self._tool_registry.items():
-            detailed_tools[tool_name] = {'module_path': tool_data.get('module_path', 'N/A'), 'function_name': tool_data.get('function_name', tool_name), 'description': tool_data.get('description', 'No description available.'), 'schema_details': tool_data.get('schema_details')}
+            detailed_tools[tool_name] = {'module_path': tool_data.get('module_path', 'N/A'), 'function_name': tool_data.get('function_name', tool_name), 'description': tool_data.get('description', 'No description available.'), 'schema_details': tool_data.get('schema_details'), 'type': tool_data.get('type', 'unknown')}
         return detailed_tools
 
     def save_registered_tools(self) -> bool:
@@ -386,7 +392,7 @@ class ToolSystem:
     def register_example_tools(self):
         """Registers a set of example tools. Idempotent."""
         current_module_obj = sys.modules[self.__class__.__module__]
-        example_tools_data = [('greet_user', 'Greets the user. Args: name (str)', '_example_greet_user'), ('add_numbers', 'Adds two integers. Args: a (int), b (int)', '_example_add_numbers'), ('multiply_numbers', 'Multiplies two floats. Args: x (float), y (float)', '_example_multiply_numbers'), ('view_function_code', 'Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).', '_tool_view_function_code'), ('simulate_edit_function_code', 'Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).', '_tool_simulate_edit_function_code'), ('maybe_fail_tool', 'A tool that fails on its 1st, 3rd, etc. call and succeeds on its 2nd, 4th, etc. call.', '_example_maybe_fail_tool')]
+        example_tools_data = [('view_function_code', 'Retrieves the source code of a specified function. Inputs: module_path (str), function_name (str).', '_tool_view_function_code'), ('simulate_edit_function_code', 'Simulates editing source code. Inputs: module_path (str), function_name (str), new_code_block (str).', '_tool_simulate_edit_function_code')]
         for tool_name, description, func_name_str in example_tools_data:
             try:
                 func_callable = getattr(current_module_obj, func_name_str, None)
@@ -401,31 +407,6 @@ class ToolSystem:
                 print(f'ToolSystem: Error registering example tool {tool_name}: {e}')
         if is_debug_mode():
             print(f'ToolSystem: Example tools registration attempt finished.')
-
-def _example_greet_user(name: str) -> str:
-    return f'Hello, {name}!'
-
-def _example_add_numbers(a: int, b: int) -> int:
-    try:
-        return int(a) + int(b)
-    except ValueError:
-        raise ValueError("'a' and 'b' must be integers.")
-
-def _example_multiply_numbers(x: float, y: float) -> float:
-    try:
-        return float(x) * float(y)
-    except ValueError:
-        raise ValueError("'x' and 'y' must be floats.")
-
-
-_maybe_fail_tool_counter = 0
-
-def _example_maybe_fail_tool() -> str:
-    global _maybe_fail_tool_counter
-    _maybe_fail_tool_counter += 1
-    if _maybe_fail_tool_counter % 2 != 0:
-        raise ValueError(f'Intentional failure from maybe_fail_tool on call #{_maybe_fail_tool_counter}!')
-    return f'maybe_fail_tool succeeded on call #{_maybe_fail_tool_counter}.'
 
 def _tool_view_function_code(module_path: str, function_name: str) -> str:
     try:
@@ -477,27 +458,13 @@ async def main_test():
     all_tools = list_tools()
     for t_name, t_desc in all_tools.items():
         print(f'  - {t_name}: {t_desc[:70]}...')
-    print("\nTesting execution of 'greet_user' tool:")
-    try:
-        greeting = await execute_tool('greet_user', args=('ModuleTester',), notification_manager=None)
-        print(f'Greeting result: {greeting}')
-    except Exception as e:
-        print(f'Error executing greet_user: {e}')
-    print("\nTesting execution of 'add_numbers' tool:")
-    try:
-        sum_result = await execute_tool('add_numbers', args=(5, '7'), notification_manager=None)
-        print(f'Sum result: {sum_result}')
-    except Exception as e:
-        print(f'Error executing add_numbers: {e}')
     print("\nTesting new 'manage_auto_approve_list' tool (if registered):")
     if 'manage_auto_approve_list' in all_tools:
         try:
             list_result = await execute_tool('manage_auto_approve_list', args=('list',), notification_manager=None)
             print(f'Manage auto-approve list result: {list_result}')
-            add_result = await execute_tool('manage_auto_approve_list', args=('add', 'greet_user'), notification_manager=None)
-            print(f"Add 'greet_user' to auto-approve: {add_result}")
             list_after_add = await execute_tool('manage_auto_approve_list', args=('list',), notification_manager=None)
-            print(f'List after add: {list_after_add}')
+            print(f'List check: {list_after_add}')
         except Exception as e:
             print(f'Error executing manage_auto_approve_list: {e}')
     else:
@@ -520,3 +487,20 @@ async def main_test():
     print('\n--- ToolSystem Direct Execution Test Finished ---')
 if __name__ == '__main__':
     asyncio.run(main_test())
+
+def refresh_custom_tools():
+    """
+    Scans the custom_tools directory and updates the tool registry.
+    This is a wrapper for the tool registry's scan function.
+    """
+    try:
+        if 'tool_system_instance' in globals():
+            instance = globals()['tool_system_instance']
+        else:
+            from ai_assistant.tools.tool_system import tool_system_instance as instance
+        result = instance.refresh_custom_tools()
+        print(f'Tool registry refreshed successfully. Result: {result}')
+        return True
+    except Exception as e:
+        print(f'Error refreshing tools: {e}')
+        return False

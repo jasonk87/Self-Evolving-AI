@@ -1,0 +1,59 @@
+from typing import TYPE_CHECKING, Optional
+import json
+
+if TYPE_CHECKING:
+    from ai_assistant.core.action_executor import ActionExecutor
+
+async def chat_dynamic_html(action_executor: "ActionExecutor", idea: str) -> str:
+    """
+    Generates safe HTML, CSS, and JavaScript code based on a given idea, suitable for inline inclusion in a chat response.
+
+    Args:
+        action_executor: The action executor, used to call the LLM.
+        idea (str): A description of the desired HTML element or functionality.
+
+    Returns:
+        str: A string containing the generated HTML, CSS, and JavaScript code wrapped in a 'html-dynamic' block for frontend rendering.
+    """
+    try:
+        prompt = f"""
+        You are an expert web developer. Generate safe HTML, CSS, and JavaScript code based on the following idea, suitable for inline inclusion in a chat response.
+        Ensure the code is self-contained and does not rely on external resources.
+        Prioritize security and prevent XSS vulnerabilities.
+        Return the code as a JSON object with keys "html", "css", and "js".
+        If no javascript is needed, return null.
+        If no css is needed, return null.
+
+        Idea: {idea}
+        """
+
+        llm_response = await action_executor.run_code(
+            lang="llm", code=prompt
+        )
+
+        try:
+            code_dict = json.loads(llm_response)
+            html_code = code_dict.get("html", "")
+            css_code = code_dict.get("css", "")
+            js_code = code_dict.get("js", "")
+
+            if css_code:
+                css_section = f"<style>\n{css_code}\n</style>"
+            else:
+                css_section = ""
+
+            if js_code:
+                js_section = f"<script>\n{js_code}\n</script>"
+            else:
+                js_section = ""
+
+            final_html = f"{css_section}\n{html_code}\n{js_section}"
+
+            # CRITICAL: Wrap in the special block for the frontend to render it dynamically
+            return f"```html-dynamic\n{final_html}\n```"
+
+        except json.JSONDecodeError as e:
+            return f"Error decoding LLM response: {e}. Raw response: {llm_response}"
+
+    except Exception as e:
+        return f"Error generating HTML: {e}"

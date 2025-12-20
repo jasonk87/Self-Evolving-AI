@@ -222,8 +222,30 @@ document.addEventListener('DOMContentLoaded', () => {
             // Usually chat response comes after. Let's leave it, but maybe update text.
             // removeTypingIndicator(); // Don't remove, let the final response do it.
             if (task.status === 'COMPLETED_SUCCESSFULLY') {
-                showTypingIndicator("Finalizing...");
+                removeTypingIndicator();
             }
+        }
+    });
+
+    socket.on('browser_snapshot', (data) => {
+        // data: { image: "base64...", status: "Navigating..." }
+        const portal = document.getElementById('ghost-portal');
+        const feed = document.getElementById('ghost-feed');
+        const statusEl = portal ? portal.querySelector('.ghost-status') : null;
+
+        if (portal && feed && data.image) {
+            portal.classList.remove('hidden');
+            feed.src = "data:image/jpeg;base64," + data.image;
+
+            if (statusEl && data.status) {
+                statusEl.textContent = data.status;
+            }
+
+            // Auto-hide after 5 seconds of inactivity
+            if (window.ghostHideTimeout) clearTimeout(window.ghostHideTimeout);
+            window.ghostHideTimeout = setTimeout(() => {
+                portal.classList.add('hidden');
+            }, 5000);
         }
     });
 
@@ -398,6 +420,92 @@ document.addEventListener('DOMContentLoaded', () => {
             voiceToggleBtn.classList.toggle('active', autoSpeakEnabled);
             voiceToggleBtn.title = autoSpeakEnabled ? "Auto-Speech (On)" : "Auto-Speech (Off)";
         });
+    }
+
+    // --- "The Watcher" (Live Mode) Logic ---
+    const liveToggleBtn = document.getElementById('live-toggle-btn');
+    const liveOrbContainer = document.getElementById('live-orb-container');
+    const liveOrb = document.getElementById('live-orb');
+    let liveModeActive = false;
+    let liveStatusInterval = null;
+
+    async function toggleLiveMode() {
+        if (!liveToggleBtn) return;
+
+        const newState = !liveModeActive;
+
+        // Optimistic UI update
+        liveToggleBtn.classList.toggle('active', newState);
+        liveToggleBtn.innerText = newState ? "UPLINK BUSY" : "LIVE UPLINK"; // Show busy/wait? Or just keep it.
+        if (!newState) liveToggleBtn.innerText = "LIVE UPLINK";
+
+        try {
+            const res = await fetch('/toggle_live_mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: newState })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                liveModeActive = newState;
+                if (liveModeActive) {
+                    liveToggleBtn.innerText = "NO SIGNAL"; // Default until status
+                    liveToggleBtn.innerText = "LIVE ACTIVE";
+                    liveOrbContainer.classList.remove('hidden');
+                    startLivePolling();
+                } else {
+                    liveToggleBtn.innerText = "LIVE UPLINK";
+                    liveOrbContainer.classList.add('hidden');
+                    stopLivePolling();
+                }
+            } else {
+                console.error("Live Mode Toggle Failed:", data.error);
+                appendMessage('system', `<div class="bubble error">Live Uplink Failed: ${data.error}</div>`);
+                // Revert
+                liveToggleBtn.classList.toggle('active', !newState);
+            }
+        } catch (e) {
+            console.error("Live Mode Network Error:", e);
+            liveToggleBtn.classList.toggle('active', !newState);
+        }
+    }
+
+    function startLivePolling() {
+        if (liveStatusInterval) clearInterval(liveStatusInterval);
+        liveStatusInterval = setInterval(async () => {
+            if (!liveModeActive) return;
+            try {
+                const res = await fetch('/get_live_status');
+                const data = await res.json();
+                updateOrbState(data.status);
+            } catch (e) {
+                console.warn("Live Polling Error:", e);
+            }
+        }, 500); // Poll every 500ms
+    }
+
+    function stopLivePolling() {
+        if (liveStatusInterval) clearInterval(liveStatusInterval);
+        liveStatusInterval = null;
+        updateOrbState('idle');
+    }
+
+    function updateOrbState(status) {
+        if (!liveOrb) return;
+        liveOrb.className = 'orb'; // Reset
+        liveOrb.classList.add(status); // idle, listening, speaking, connecting
+
+        // Update Toggle Text potentially?
+        if (liveToggleBtn && liveModeActive) {
+            if (status === 'speaking') liveToggleBtn.innerText = "RECEIVING...";
+            else if (status === 'listening') liveToggleBtn.innerText = "LISTENING";
+            else liveToggleBtn.innerText = "LIVE ACTIVE";
+        }
+    }
+
+    if (liveToggleBtn) {
+        liveToggleBtn.addEventListener('click', toggleLiveMode);
     }
 
     function speakText(text) {
@@ -791,6 +899,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper for simple alerts
     window.showAlert = function (title, message) {
         window.showModal(title, message, null, false, false);
+    }
+
+    // --- Shutdown Logic ---
+    window.confirmShutdown = function () {
+        window.showModal(
+            "System Shutdown",
+            "Are you sure you want to shut down the AI Assistant? The server will stop immediately.",
+            async () => {
+                // UI Feedback
+                window.showAlert("System", "Shutting down services...");
+
+                try {
+                    const res = await fetch('/api/system/shutdown', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        // Replace body with offline message
+                        document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fa5252;font-family:monospace;font-size:2em;flex-direction:column;"><div>SYSTEM OFFLINE</div><div style="font-size:0.5em;color:#666;margin-top:20px;">Connection Terminated</div></div>';
+                    }
+                } catch (e) {
+                    console.error("Shutdown failed:", e);
+                    window.showAlert("Error", "Shutdown signal failed to transmit.");
+                }
+            },
+            true // Destructive
+        );
     }
 
     async function loadChatSession(sessionId) {
@@ -1261,6 +1394,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Normal text processing (Basic Markdown)
                 let md = part
+                    // Markdown Image: ![alt](url)
+                    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="chat-image" style="max-width: 100%; border-radius: 5px; margin: 5px 0;">')
+                    // Markdown Link: [text](url)
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-light);">$1</a>')
                     // Handle normal code blocks
                     .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
                     // Inline code
@@ -1505,6 +1642,10 @@ function loadConfig() {
                 const el = document.getElementById('setting-thinking-enabled');
                 if (el) el.checked = config.ENABLE_THINKING;
             }
+            if (config.GHOST_MODE !== undefined) {
+                const el = document.getElementById('setting-ghost-mode');
+                if (el) el.checked = config.GHOST_MODE;
+            }
             if (config.TASK_MODELS) {
                 if (config.TASK_MODELS.summarization) {
                     const el = document.getElementById('setting-model-summary');
@@ -1529,6 +1670,10 @@ function saveSettings() {
     // Thinking Enabled
     const thinkEl = document.getElementById('setting-thinking-enabled');
     if (thinkEl) data.ENABLE_THINKING = thinkEl.checked;
+
+    // Ghost Mode
+    const ghostEl = document.getElementById('setting-ghost-mode');
+    if (ghostEl) data.GHOST_MODE = ghostEl.checked;
 
     // Reasoning Strategy (Complex Object Update)
     const reasonEl = document.getElementById('setting-reasoning');
@@ -1561,6 +1706,7 @@ function saveSettings() {
                 const updates = {
                     DEFAULT_EXECUTION_MODE: data.DEFAULT_EXECUTION_MODE,
                     ENABLE_THINKING: data.ENABLE_THINKING,
+                    GHOST_MODE: data.GHOST_MODE,
                     REASONING_STRATEGIES: strategies,
                     TASK_MODELS: taskModels
                 };

@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional, Union
 from ai_assistant.config import get_data_dir, get_projects_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text # For potential direct use or consistency
 
-PROJECTS_FILE_NAME = "projects.json"
+PROJECTS_FILE_NAME = "_ai_project_manifest.json"
 
 def get_projects_file_path() -> str:
     return os.path.join(get_data_dir(), PROJECTS_FILE_NAME)

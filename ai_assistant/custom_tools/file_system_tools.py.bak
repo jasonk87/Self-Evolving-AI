@@ -133,6 +133,8 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         "files": list_of_files, "directories": list_of_directories.
         Or {"status": "error", "message": "error description"}.
     """
+    import os
+    from typing import Optional, Dict, Any
     from ai_assistant.core.project_manager import find_project
     project = find_project(project_identifier)
     if not project:
@@ -159,6 +161,8 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         return {'status': 'error', 'message': f'Path not found: {path_to_list} - {str(e)}'}
     except PermissionError as e:
         return {'status': 'error', 'message': f'Permission denied to list directory: {path_to_list} - {str(e)}'}
+    except OSError as e:
+        return {'status': 'error', 'message': f"OS error occurred while listing files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
 
@@ -214,10 +218,7 @@ def save_project_file_content(project_identifier: str, file_path_in_project: str
         A dictionary with "status": "success", "file_path": "absolute_path".
         Or {"status": "error", "message": "error description"}.
     """
-    try:
-        from ai_assistant.core.project_manager import find_project
-    except ModuleNotFoundError:
-        return {'status': 'error', 'message': 'Could not import ai_assistant.core.project_manager. Please ensure the ai_assistant package is installed and available.'}
+    from ai_assistant.core.project_manager import find_project
     project = find_project(project_identifier)
     if not project:
         return {'status': 'error', 'message': f"Project '{project_identifier}' not found."}
@@ -227,7 +228,7 @@ def save_project_file_content(project_identifier: str, file_path_in_project: str
     if not os.path.isdir(root_path):
         return {'status': 'error', 'message': f"Project root path '{root_path}' for '{project_identifier}' is not a valid directory."}
     target_file_path = os.path.abspath(os.path.normpath(os.path.join(root_path, file_path_in_project)))
-    if not target_file_path.startswith(root_path):
+    if os.path.commonpath([root_path, target_file_path]) != root_path:
         return {'status': 'error', 'message': f"File path '{file_path_in_project}' attempts to traverse outside project root."}
     try:
         os.makedirs(os.path.dirname(target_file_path), exist_ok=True)

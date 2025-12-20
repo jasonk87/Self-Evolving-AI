@@ -21,8 +21,6 @@ class VectorStore:
         self.collection_name = collection_name
 
         # Determine the directory for ChromaDB
-        # If storage_path is a file path (like rag_vector_store.json),
-        # use its parent directory + 'chroma_db'
         if storage_path.endswith('.json'):
             self.persist_directory = os.path.join(os.path.dirname(storage_path), "chroma_db")
         else:
@@ -34,20 +32,51 @@ class VectorStore:
             self.collection = None
             return
 
+        # Attempt to initialize with self-healing pattern
         try:
-            os.makedirs(self.persist_directory, exist_ok=True)
-            self.client = chromadb.PersistentClient(path=self.persist_directory)
-
-            # Get or create the collection
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"} # Use cosine similarity
-            )
-            logger.info(f"Initialized ChromaDB at {self.persist_directory} (Collection: {self.collection_name})")
+             self._init_chroma()
         except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {e}")
-            self.client = None
-            self.collection = None
+             logger.error(f"First attempt to initialize ChromaDB failed: {e}")
+             if "database is malformed" in str(e).lower() or "disk I/O error" in str(e).lower():
+                 self._handle_corruption()
+                 # Retry once
+                 try:
+                     self._init_chroma()
+                 except Exception as e2:
+                     logger.critical(f"FATAL: Failed to initialize ChromaDB after reset: {e2}")
+                     self.client = None
+                     self.collection = None
+             else:
+                 # Re-raise if not a corruption issue, or handle gracefully
+                 logger.error(f"ChromaDB initialization failed with non-corruption error: {e}")
+                 self.client = None
+                 self.collection = None
+
+    def _init_chroma(self):
+        os.makedirs(self.persist_directory, exist_ok=True)
+        self.client = chromadb.PersistentClient(path=self.persist_directory)
+
+        # Get or create the collection
+        self.collection = self.client.get_or_create_collection(
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine"} # Use cosine similarity
+        )
+        logger.info(f"Initialized ChromaDB at {self.persist_directory} (Collection: {self.collection_name})")
+
+    def _handle_corruption(self):
+        import shutil
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{self.persist_directory}_corrupt_backup_{timestamp}"
+        logger.warning(f"ChromaDB corruption detected. Moving '{self.persist_directory}' to '{backup_path}'...")
+        try:
+            if os.path.exists(self.persist_directory):
+                shutil.move(self.persist_directory, backup_path)
+                logger.info("Corrupt DB moved successfully. System will start with fresh DB.")
+            else:
+                logger.warning("Chroma dir disappeared during check?")
+        except Exception as e:
+            logger.critical(f"Failed to move corrupt DB: {e}.")
 
     def add_documents(self, texts: List[str], embeddings: List[List[float]], metadatas: Optional[List[Dict[str, Any]]] = None):
         """

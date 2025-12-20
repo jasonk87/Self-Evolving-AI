@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Assistant Cockpit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ghost_mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/watcher.css') }}">
     <!-- Using Google Fonts for a futuristic look -->
     <link
         href="https://fonts.googleapis.com/css2?family=Segoe+UI&family=Roboto:wght@300;400;500&family=Consolas&display=swap"
@@ -182,6 +184,15 @@
                         </svg>
                     </span>
                 </div>
+                <div class="activity-item" title="Shutdown" onclick="confirmShutdown()" data-label="Shutdown">
+                    <span class="icon" style="color: #ff5555;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                        </svg>
+                    </span>
+                </div>
             </div>
         </aside>
 
@@ -311,6 +322,15 @@
                     <button id="summarize-btn" class="btn-xs"
                         style="margin-left: auto; background: rgba(0,255,100,0.1); color: #0f0; border: 1px solid rgba(0,255,100,0.3); border-radius: 4px; padding: 4px 8px; cursor: pointer;">Summarize</button>
                 </header>
+                <!-- Ghost Portal (Live Browser Feed) -->
+                <div id="ghost-portal" class="ghost-portal hidden">
+                    <div class="ghost-header">
+                        <span class="ghost-title">GHOST MODE: LIVE</span>
+                        <span class="ghost-status">Scanning...</span>
+                    </div>
+                    <img id="ghost-feed" src="" alt="Live Browser View">
+                </div>
+
                 <div id="chat-container">
                     <div class="message system">
                         <div class="bubble">Systems Nominal. Ready.</div>
@@ -319,6 +339,13 @@
                 <div class="input-area glass-panel">
                     <div class="voice-controls">
                         <button id="voice-toggle-btn" class="btn-icon" title="Auto-Speech (Off)">🔈</button>
+                        <button id="live-toggle-btn" class="btn-pill-neon" title="Connect to The Watcher">LIVE
+                            UPLINK</button>
+                    </div>
+                    <!-- Presence Orb -->
+                    <div id="live-orb-container" class="orb-container hidden">
+                        <div id="live-orb" class="orb idle"></div>
+                        <div class="orb-status">WATCHER ACTIVE</div>
                     </div>
                     <!-- Image Upload Elements -->
                     <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
@@ -454,6 +481,14 @@
                     <div class="toggle-switch">
                         <input type="checkbox" id="setting-thinking-enabled">
                         <label for="setting-thinking-enabled"></label>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Enable Ghost Mode (Visible Browser)</label>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="setting-ghost-mode">
+                        <label for="setting-ghost-mode"></label>
                     </div>
                 </div>
 

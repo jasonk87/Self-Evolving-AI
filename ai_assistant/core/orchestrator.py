@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from ai_assistant.core.enums import ExecutionMode
 from ai_assistant.core.router import TaskRouter
 import ai_assistant.config as config
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
@@ -28,7 +28,7 @@ from ..planning.planning import PlannerAgent
 from ..planning.execution import ExecutionAgent 
 from ..learning.learning import LearningAgent
 from ..execution.action_executor import ActionExecutor
-from .task_manager import TaskManager
+from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
 from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
 from ..utils.conversational_helpers import summarize_tool_result_conversationally
@@ -131,46 +131,112 @@ class DynamicOrchestrator:
         if context_source == "SYSTEM":
             persona_guide = "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. Be technical, concise, and results-oriented. If you finish, output the status/log as the FINAL ANSWER."
         else:
-            persona_guide = "MODE: USER CHAT. You are assisting a user. Be helpful, conversational, and clear."
+            persona_guide = "MODE: USER CHAT. You are 'Weebo', a personal AI assistant (inspired by Flubber). You are NOT a robot. Be witty, casual, proactive, and extremely conversational. Avoid generic AI phrases like 'I understand' or 'As an AI'."
 
-        # We loop through cycles
-        for step_i in range(max_steps):
-            print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
+        # Create ephemeral task for UI feedback
+        current_ui_task = None
+        if self.task_manager and session_id:
+            try:
+                # Use EPHEMERAL_AGENT_TASK or relevant type
+                current_ui_task = self.task_manager.add_task(
+                    description=prompt[:100], # Short desc
+                    task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK,
+                    session_id=session_id
+                )
+                self.task_manager.update_task_status(
+                    current_ui_task.task_id, 
+                    ActiveTaskStatus.PLANNING, 
+                    step_desc="Analyzing request..."
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create UI feedback task: {e}")
 
-            # Phase 1: Strategist (Think)
-            strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action.
+        try:
+            # We loop through cycles
+            for step_i in range(max_steps):
+                print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
+                
+                if current_ui_task:
+                    self.task_manager.update_task_status(
+                        current_ui_task.task_id,
+                        ActiveTaskStatus.PLANNING,
+                        step_desc=f"Thinking (Cycle {step_i+1})...",
+                        progress=min(90, step_i * 10)
+                    )
+
+                # Format Chat History - FULL HISTORY (No truncation)
+                chat_history_str = ""
+                if history:
+                    for msg in history:
+                        role = msg.get('role', 'unknown').upper()
+                        content = str(msg.get('content', ''))
+                        chat_history_str += f"{role}: {content}\n"
+                
+                # Phase 1: Strategist (Think)
+                strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {prompt}
 {persona_guide}
 
 Context:
 {context}
 
+Chat History:
+{chat_history_str}
+
 Execution History:
 {execution_history}
 
+Few-Shot Examples (How to Think):
+Example 1:
+User: "What is the weather in Tokyo?"
+Strategist: "The user wants weather information. I need to check if I have a weather tool. I see 'get_weather' in the tool list. I should instruct the Operator to use it."
+Plan: Call tool 'get_weather' with args=["Tokyo"].
+
+Example 2:
+User: "Calculate 25 * 48"
+Strategist: "The user wants a calculation. I can use the 'python_repl' or a calculator tool. 'python_repl' is safer for complex math, but let's check tools. I see 'calculator'. Plan: Use 'calculator' with expression '25 * 48'."
+Operator Result: 1200
+Strategist: "The calculation is done. I have the answer. I should instruct the Operator to give the final answer."
+Plan: FINAL ANSWER: The result is 1200.
+
 Instructions:
-1. Analyze the current situation.
-2. Determine if the goal is met.
-3. If not met, plan the EXACT next step for the Operator.
-4. Do NOT execute tools yourself. You only PLAN.
-5. If the goal is met or you have a final answer, instruct the Operator to provide it.
+1. Analyze the current situation based on the Goal, Context, Chat History, and Execution History.
+2. VERIFY PREVIOUS STEPS: If the Execution History shows a failure or unexpected result, ANALYZE WHY. Do not repeat the same mistake. Modify your plan.
+3. Determine if the goal is met.
+4. If not met, plan the EXACT next step for the Operator.
+5. Do NOT execute tools yourself. You only PLAN.
+6. If the goal is met or you have a final answer, instruct the Operator to provide it.
 
 Output strictly your reasoning and the plan for the Operator.
 """
-            strategist_response = await invoke_gemini_model_async(
-                prompt=strategist_prompt,
-                model_name=config.DEFAULT_MODEL
-            )
+                strategist_response, strategist_thoughts = await invoke_split_brain_async(
+                    prompt=strategist_prompt,
+                    model_name=config.DEFAULT_MODEL,
+                    context_text=f"Chat History Size: {len(history) if history else 0} msgs. Context Size: {len(context)} chars."
+                )
+                
+                # Log the deep thought
+                print(color_text(f"Strategist Thoughts:\n{strategist_thoughts}", CLIColors.THOUGHT))
 
-            if not strategist_response:
-                return False, "System paused (Strategist silent).", None
 
-            print(color_text(f"Strategist Plan: {strategist_response[:200]}...", CLIColors.THOUGHT))
 
-            # Phase 2: Operator (Act)
-            print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
+                print(color_text(f"Strategist Plan: {strategist_response[:200]}...", CLIColors.THOUGHT))
+                
+                # Update UI with strategy excerpt
+                if current_ui_task:
+                    # Extract a short summary of the plan
+                    plan_excerpt = strategist_response.split('\n')[0][:50]
+                    self.task_manager.update_task_status(
+                        current_ui_task.task_id,
+                        ActiveTaskStatus.PLANNING,
+                        step_desc=f"{plan_excerpt}...",
+                         progress=min(90, step_i * 10 + 5)
+                    )
 
-            operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
+                # Phase 2: Operator (Act)
+                print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
+
+                operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
 Goal: {prompt}
 {persona_guide}
 
@@ -180,142 +246,210 @@ Available Tools:
 Strategist's Plan:
 {strategist_response}
 
+Few-Shot Examples (How to Act):
+Example 1 (Tool Call):
+Strategist: "I need to search for 'latest python version'."
+Operator:
+```json
+{{
+  "action": "search_web",
+  "args": ["latest python version"],
+  "kwargs": {{}},
+  "thought": "Searching for python version as planned."
+}}
+```
+
+Example 3 (Visual Request):
+Strategist: "The user wants a button. Use dynamic HTML."
+Operator:
+```json
+{{
+  "action": "chat_dynamic_html",
+  "args": ["A button styled with CSS that says 'Click Me'"],
+  "kwargs": {{}},
+  "thought": "Generating styled button."
+}}
+```
+
+Example 2 (Final Answer):
+Strategist: "I have the info. Answer the user: It is 3.12."
+Operator:
+FINAL ANSWER: The latest Python version is 3.12.
+
 Instructions:
 1. Follow the Strategist's plan exactly.
 2. If the plan is to use a tool, output the tool call JSON.
-   ```json
-   {{
-     "action": "tool_name",
-     "args": [arg1, arg2],
-     "kwargs": {{ "key": "value" }},
-     "thought": "Brief reason"
-   }}
-   ```
-3. If the plan is to answer the user, output:
-   FINAL ANSWER: [Your Answer]
-
+3. If the plan is to answer the user, output: FINAL ANSWER: [Your Answer]
 4. Do NOT deviate from the plan.
+5. STRICT FORMATTING: Use ONLY the JSON format shown above for tool calls. Do NOT use `tool_code` blocks, python code blocks, or any other format.
+6. Check the Available Tools list carefully. If a tool requires arguments, ensure they are provided in the 'args' list or 'kwargs' dictionary.
 """
-            # We append execution history to operator too so it knows what happened
-            operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction:"
+                # We append execution history to operator too so it knows what happened
+                operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction:"
 
-            operator_response = await invoke_gemini_model_async(
-                prompt=operator_prompt,
-                model_name=config.DEFAULT_MODEL
-            )
+                operator_response, operator_thoughts = await invoke_split_brain_async(
+                    prompt=operator_prompt,
+                    model_name=config.DEFAULT_MODEL,
+                    context_text=f"Strategist Plan: {strategist_response[:100]}...\nCurrent Cycle: {step_i+1}"
+                )
 
-            if not operator_response:
-                 return False, "System paused (Operator silent).", None
+                # Log the deep thought
+                # print(color_text(f"Operator Thoughts:\n{operator_thoughts}", CLIColors.THOUGHT))
 
-            # Phase 3: Loop Logic
-            tool_call = self._parse_tool_call(operator_response)
 
-            if "FINAL ANSWER:" in operator_response:
-                final_answer = operator_response.split("FINAL ANSWER:")[-1].strip()
-                success = True
 
-                # Context-Aware Exit Logic
-                if context_source == "SYSTEM":
-                    # If this is a background system task, we ensure we don't accidentally reply with a "Hello" unless it's part of the task.
-                    # We trust the LLM followed the "SYSTEM TASK" persona instructions, but we can wrap the log.
-                    # Since we must return a string, we return the final answer which should be the log/status.
-                    logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
-                break
+                # Phase 3: Loop Logic
+                tool_call = self._parse_tool_call(operator_response)
 
-            if tool_call:
-                # Execute Tool
-                tool_name = tool_call.get("action")
-                args = tool_call.get("args", [])
-                kwargs = tool_call.get("kwargs", {})
-                thought = tool_call.get("thought", "")
+                if "FINAL ANSWER:" in operator_response:
+                    final_answer = operator_response.split("FINAL ANSWER:")[-1].strip()
+                    success = True
 
-                print(color_text(f"Operator Action: {thought}", CLIColors.THOUGHT))
-                print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
+                    # Context-Aware Exit Logic
+                    if context_source == "SYSTEM":
+                        # If this is a background system task, we ensure we don't accidentally reply with a "Hello" unless it's part of the task.
+                        # We trust the LLM followed the "SYSTEM TASK" persona instructions, but we can wrap the log.
+                        # Since we must return a string, we return the final answer which should be the log/status.
+                        logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
+                    break
 
-                # Tool Execution Logic (with self-healing)
-                execution_success = False
-                result_str = ""
-                max_retries = 2
+                if tool_call:
+                    # Execute Tool
+                    tool_name = tool_call.get("action")
+                    args = tool_call.get("args", [])
+                    kwargs = tool_call.get("kwargs", {})
+                    thought = tool_call.get("thought", "")
 
-                for attempt in range(max_retries + 1):
-                    try:
-                        result = await tool_system_instance.execute_tool(
-                            tool_name,
-                            args=tuple(args),
-                            kwargs=kwargs,
-                            task_manager=self.task_manager,
-                            notification_manager=self.notification_manager,
-                            action_executor=self.action_executor
+                    print(color_text(f"Operator Action: {thought}", CLIColors.THOUGHT))
+                    print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
+
+                    if current_ui_task:
+                        self.task_manager.update_task_status(
+                            current_ui_task.task_id,
+                            ActiveTaskStatus.GENERATING_CODE, # Mapped roughly to execution
+                            step_desc=f"{tool_name}: {thought[:40]}..."
                         )
 
-                        if isinstance(result, dict) and 'images' in result:
-                            new_images = result.get('images', [])
-                            if new_images:
-                                collected_images.extend(new_images)
+                    # Tool Execution Logic (with self-healing)
+                    execution_success = False
+                    result_str = ""
+                    max_retries = 2
 
-                        if isinstance(result, dict) and result.get('status') == 'PAUSED':
+                    for attempt in range(max_retries + 1):
+                        try:
+                            result = await tool_system_instance.execute_tool(
+                                tool_name,
+                                args=tuple(args),
+                                kwargs=kwargs,
+                                task_manager=self.task_manager,
+                                notification_manager=self.notification_manager,
+                                action_executor=self.action_executor
+                            )
+
+                            if isinstance(result, dict) and 'images' in result:
+                                new_images = result.get('images', [])
+                                if new_images:
+                                    collected_images.extend(new_images)
+
+                            if isinstance(result, dict) and result.get('status') == 'PAUSED':
+                                result_str = str(result)
+                                final_answer = result_str
+                                success = True
+                                print(color_text(f"--> Paused for user: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                                break
+
                             result_str = str(result)
-                            final_answer = result_str
-                            success = True
-                            print(color_text(f"--> Paused for user: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                            execution_success = True
                             break
+                        except Exception as e:
+                            if attempt < max_retries:
+                                print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
+                                # Optional: auto-repair logic could go here
+                                await asyncio.sleep(1)
+                            else:
+                                result_str = f"Error: {str(e)}"
 
-                        result_str = str(result)
-                        execution_success = True
-                        break
-                    except Exception as e:
-                        if attempt < max_retries:
-                            print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
-                            # Optional: auto-repair logic could go here
-                            await asyncio.sleep(1)
-                        else:
-                            result_str = f"Error: {str(e)}"
+                    # Append to history
+                    step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
+                    execution_history += step_record
+                    current_steps.append({
+                        "cycle": step_i + 1,
+                        "strategist": strategist_response,
+                        "tool": tool_name,
+                        "result": result_str
+                    })
+                else:
+                    # Operator didn't use a tool or say FINAL ANSWER. Treat as a conversational response or error?
+                    # If it's just chatting, treat as final answer.
+                    final_answer = operator_response
+                    success = True
+                    break
 
-                # Append to history
-                step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
-                execution_history += step_record
-                current_steps.append({
-                    "cycle": step_i + 1,
-                    "strategist": strategist_response,
-                    "tool": tool_name,
-                    "result": result_str
-                })
-            else:
-                # Operator didn't use a tool or say FINAL ANSWER. Treat as a conversational response or error?
-                # If it's just chatting, treat as final answer.
-                final_answer = operator_response
-                success = True
-                break
+            if not success and not final_answer:
+                final_answer = "Maximum cycles reached."
 
-        if not success and not final_answer:
-            final_answer = "Maximum cycles reached."
+            # Record Experience
+            tools_used_names = [step['tool'] for step in current_steps if 'tool' in step]
+            outcome = "SUCCESS" if success else "FAILURE"
+            asyncio.create_task(self.episodic_manager.record_experience(
+                prompt=prompt,
+                plan=current_steps,
+                outcome=outcome,
+                tools_used=tools_used_names
+            ))
 
-        # Record Experience
-        tools_used_names = [step['tool'] for step in current_steps if 'tool' in step]
-        outcome = "SUCCESS" if success else "FAILURE"
-        asyncio.create_task(self.episodic_manager.record_experience(
-            prompt=prompt,
-            plan=current_steps,
-            outcome=outcome,
-            tools_used=tools_used_names
-        ))
-
-        return success, final_answer, collected_images
+            return success, final_answer, collected_images
+        
+        finally:
+            # Clean up ephemeral task
+            if current_ui_task:
+                 try:
+                    self.task_manager.update_task_status(
+                        current_ui_task.task_id,
+                        ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_UNKNOWN,
+                        step_desc="Response ready."
+                    )
+                 except Exception:
+                     pass
 
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
         """
         Extracts JSON tool call from text.
         """
         try:
-            # Look for ```json ... ``` or just { ... }
-            json_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-            if not json_match:
-                json_match = re.search(r"(\{.*\})", text, re.DOTALL)
+            # 1. Attempt refined regex for backticks
+            # Matches ```json { ... } ``` or ``` { ... } ```
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
 
-            if json_match:
-                json_str = json_match.group(1)
-                return json.loads(json_str)
-        except Exception:
+            # 2. Attempt to find the first valid brace pair (ignoring leading text like "json")
+            # This is a simple stack-based parser to find the first balanced outer brace
+            start_index = text.find("{")
+            if start_index != -1:
+                balance = 0
+                for i in range(start_index, len(text)):
+                    char = text[i]
+                    if char == "{":
+                        balance += 1
+                    elif char == "}":
+                        balance -= 1
+                        if balance == 0:
+                            # Found the closing brace
+                            candidate_json = text[start_index:i+1]
+                            # Try standard JSON first
+                            try:
+                                return json.loads(candidate_json)
+                            except json.JSONDecodeError:
+                                # Fallback: Try ast.literal_eval for Pythonic JSON (e.g. loops with triple quotes)
+                                # This handles { "key": """value""" } which JSON can't, but LLMs often produce.
+                                import ast
+                                try:
+                                    return ast.literal_eval(candidate_json)
+                                except Exception:
+                                    pass
+        except Exception as e:
+            # logger.warning(f"Failed to parse tool call: {e}")
             pass
         return None
 
@@ -348,7 +482,7 @@ Instructions:
         # 1. RAG
         if self.memory_manager:
             try:
-                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=3)
+                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=20)
                 if rag_results:
                     facts = [f"- {res.get('text', '')}" for res in rag_results]
                     context_parts.append("Learned Facts:\n" + "\n".join(facts))

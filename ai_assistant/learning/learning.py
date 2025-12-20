@@ -49,7 +49,7 @@ from ai_assistant.tools.tool_system import get_tool
 from ai_assistant.core.chat_manager import ChatSessionManager
 from ai_assistant.config import get_projects_dir, get_data_dir # Assuming chat sessions are in data dir or similar
 from ai_assistant.core import self_modification # For code reading
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async # For root cause analysis
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async # For root cause analysis
 
 
 class LearningAgent:
@@ -258,7 +258,11 @@ Explain EXACTLY why the error occurred based on the code logic.
 Be concise and specific (e.g., "Line 45 assumes `x` is a list, but it is None because...").
 Do not provide a full fix, just the diagnosis.
 """
-        response = await invoke_gemini_model_async(prompt, temperature=0.0)
+        response, _ = await invoke_split_brain_async(
+            prompt, 
+            temperature=0.0,
+            context_text=f"Analyzing root cause for {tool_name}"
+        )
         return response if response else "Could not generate root cause analysis."
 
     async def _deduce_tool_from_description(self, description: str) -> Optional[str]:
@@ -589,12 +593,38 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
                     "fact_to_learn": selected_insight.knowledge_to_learn,
                     "source": f"Based on insight {selected_insight.insight_id}"
                 }
-            else: # pragma: no cover
-                proposed_action["action_type"] = "REVIEW_MANUALLY"
-        else: # pragma: no cover
-            proposed_action["action_type"] = "REVIEW_MANUALLY"
+            else:
+                 proposed_action["action_type"] = "REVIEW_MANUALLY"
 
-        execution_success = False
+        elif selected_insight.type == InsightType.LEARNED_FACT: # NEW - Auto-add permanent facts
+             proposed_action["action_type"] = "ADD_LEARNED_FACT"
+             proposed_action["details"] = {
+                 "fact_to_learn": selected_insight.description,
+                 "source": f"Conversational Insight {selected_insight.insight_id}",
+                 "permanence": "permanent" # User facts are permanent
+             }
+
+        elif selected_insight.type == InsightType.USER_FRUSTRATION or selected_insight.type == InsightType.USER_PREFERENCE_LEARNED:
+             # Convert frustations/preferences into Planning Heuristics
+             proposed_action["action_type"] = "ADD_PLANNING_HEURISTIC"
+             proposed_action["details"] = {
+                 "heuristic": f"User Preference/Feedback: {selected_insight.description}",
+                 "trigger_context": "always_active", # specific context requires advanced parsing, default to general
+                 "source": f"Derived from {selected_insight.type.name} (ID: {selected_insight.insight_id})"
+             }
+        
+        elif selected_insight.type == InsightType.PLANNING_HEURISTIC_SUGGESTION:
+             proposed_action["action_type"] = "ADD_PLANNING_HEURISTIC"
+             details = selected_insight.planning_heuristic_details or {}
+             proposed_action["details"] = {
+                 "heuristic": details.get("suggestion") or selected_insight.description,
+                 "trigger_context": "general_planning",
+                 "source": f"Insight {selected_insight.insight_id}"
+             }
+
+        else:
+             print(f"LearningAgent: Insight type {selected_insight.type.name} not handled autonomously. Defaulting to MANUAL REVIEW.")
+             proposed_action["action_type"] = "REVIEW_MANUALLY"
         if proposed_action["action_type"] == "REVIEW_MANUALLY" or proposed_action["action_type"] == "TBD":
             selected_insight.status = "PENDING_MANUAL_REVIEW"
             selected_insight.metadata["review_reason"] = f"Action type was {proposed_action['action_type']}."
@@ -602,6 +632,8 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
             selected_insight.status = "ACTION_ATTEMPTED"
             selected_insight.metadata["action_attempt_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             try:
+                # Pass permanence if ActionExecutor supports it (it just delegates to memory manager usually)
+                # We need to verify ActionExecutor supports 'permanence' in ADD_LEARNED_FACT
                 execution_success = await self.action_executor.execute_action(proposed_action)
                 if execution_success: selected_insight.status = "ACTION_SUCCESSFUL"
                 else: selected_insight.status = "ACTION_FAILED"
@@ -613,6 +645,56 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
                 execution_success = False
         self._save_insights()
         return proposed_action, execution_success
+
+    async def process_learned_facts_immediately(self) -> int:
+        """
+        Scans for 'LEARNED_FACT' insights and executes them immediately.
+        This bypasses the slow 'review_and_propose' cycle for safe, permanent knowledge.
+        Returns the number of facts processed.
+        """
+        fact_insights = [
+            insight for insight in self.insights 
+            if insight.type == InsightType.LEARNED_FACT and insight.status == "NEW"
+        ]
+        
+        if not fact_insights:
+            return 0
+            
+        print(f"LearningAgent: Fast-tracking {len(fact_insights)} learned facts...")
+        processed_count = 0
+        
+        for insight in fact_insights:
+            # Construct Action
+            action = {
+                "action_type": "ADD_LEARNED_FACT",
+                "details": {
+                    "fact_to_learn": insight.description,
+                    "source": f"Conversational Insight {insight.insight_id}",
+                    "permanence": "permanent"
+                }
+            }
+            
+            # Execute
+            insight.status = "PROCESSING"
+            insight.metadata["action_attempt_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            
+            try:
+                success = await self.action_executor.execute_action(action)
+                if success:
+                    insight.status = "ACTION_SUCCESSFUL"
+                    processed_count += 1
+                else:
+                    insight.status = "ACTION_FAILED"
+            except Exception as e:
+                insight.status = "ACTION_EXCEPTION"
+                insight.metadata["error"] = str(e)
+                
+            insight.metadata["action_end_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            
+        if processed_count > 0:
+            self._save_insights()
+            
+        return processed_count
 
     async def execute_self_healing_for_insight(self, insight: ActionableInsight, apply_immediately: bool = False) -> bool:
         """
@@ -777,8 +859,95 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         for insight in bug_insights:
             await self.execute_self_healing_for_insight(insight)
             processed_count += 1
-
+        
         return processed_count
+
+    async def extract_and_save_facts(self, text: str, source_desc: str = "Background Agent Report") -> int:
+        """
+        Analyzes the provided text to extract facts, determining their permanence.
+        - Permanent: "Project uses Flask", "User's son is Thomas".
+        - Transient: "Build checks failed", "Server is down".
+        Saves these facts to the MemoryManager.
+        """
+        if not text or len(text) < 50:
+            print("LearningAgent: Text too short for fact extraction. Skipping.")
+            return 0
+            
+        print(f"LearningAgent: Extracting facts from '{source_desc}'...")
+        
+        prompt = f"""
+You are the Memory Curator for an AI system.
+Analyze the following text and extract facts.
+For each fact, determine if it is:
+- "permanent": Enduring truths (User bio, Tech stack, Design decisions).
+- "transient": Temporary state (Current errors, Task status, Recent logs).
+
+Text:
+"{text}"
+
+Output a JSON object with a key "facts". unique items only.
+Each item must be object: {{ "text": "...", "type": "permanent" | "transient" }}
+
+Example:
+{{
+  "facts": [
+    {{ "text": "Project uses Flask.", "type": "permanent" }},
+    {{ "text": "Test suite failed on line 50.", "type": "transient" }}
+  ]
+}}
+        """
+
+        try:
+            # specialized model for extraction if available, otherwise default
+            response, _ = await invoke_split_brain_async(prompt, context_text="Fact Extraction")
+            
+            import json
+            import re
+            
+            facts = []
+            # Robust parsing
+            if response:
+                json_str = response
+                if "```" in response:
+                    match = re.search(r"```(?:json)?(.*?)```", response, re.DOTALL)
+                    if match:
+                        json_str = match.group(1).strip()
+                
+                try:
+                    data = json.loads(json_str)
+                    facts = data.get("facts", [])
+                except json.JSONDecodeError:
+                    print(f"LearningAgent: JSON decode failed for fact extraction.")
+            
+            saved_count = 0
+            if self.memory_manager and facts:
+                for fact_item in facts:
+                    # Robustness check for old/bad LLM format
+                    if isinstance(fact_item, str):
+                        fact_text = fact_item
+                        p_type = "permanent" # Default to careful
+                    else:
+                        fact_text = fact_item.get("text")
+                        p_type = fact_item.get("type", "permanent")
+
+                    if not fact_text: continue
+
+                    # Async save if possible, or use sync wrapper if needed.
+                    await self.memory_manager.add_fact_with_rag(
+                        text=fact_text,
+                        category="learned_fact",
+                        source=source_desc,
+                        permanence=p_type
+                    )
+                    saved_count += 1
+                    print(f"LearningAgent: Learned fact ({p_type}): {fact_text}")
+            
+            return saved_count
+
+        except Exception as e:
+            print(f"LearningAgent: Fact extraction failed: {e}")
+            return 0
+
 
 if __name__ == '__main__': # pragma: no cover
     # import uuid # uuid is already imported at the top of the module

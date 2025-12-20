@@ -1,4 +1,5 @@
 from typing import List, Dict
+import time
 import os
 import subprocess
 import sys
@@ -80,3 +81,38 @@ def submit_agent_report(agent_id: str, report_content: str, notification_manager
         return f'Report submitted and agent {agent_id} terminated successfully.'
     except Exception as e:
         return f'Report submitted, but failed to terminate agent {agent_id}: {e}'
+
+def spawn_background_agent(task_description: str, session_id: str = None) -> str:
+    """
+    Spawns a background agent to perform a time-consuming task.
+    The agent will work asynchronously and report back to the chat when done.
+
+    Args:
+        task_description (str): The detailed task to perform (e.g., "Deep research on Quantum Computing").
+        session_id (str, optional): The chat session ID to report back to. 
+                                    (The system should automatically provide this if called from chat).
+
+    Returns:
+        str: A confirmation message with the Goal ID.
+    """
+    # 1. Create a Goal
+    from ai_assistant.goals.goal_management import create_goal
+    
+    # Identify source
+    metadata = {
+        "type": "background_agent",
+        "source_session_id": session_id,
+        "created_at": time.time()
+    }
+    
+    goal_id = create_goal(
+        title=f"Background Agent: {task_description[:50]}...",
+        description=task_description,
+        priority="high", # Prioritize agent requests
+        metadata=metadata
+    )
+    
+    # 2. Trigger Background Service (Optional - it polls)
+    # But for responsiveness, maybe we should indicate it will be picked up.
+    
+    return f"Background Agent assigned to task: '{task_description}'.\nGoal ID: {goal_id}\nI will notify you in this chat when the agent completes the work."

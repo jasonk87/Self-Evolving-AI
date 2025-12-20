@@ -11,6 +11,7 @@ from .twilio_text_tool import send_text_message
 from .ai_response_generator import generate_two_responses
 from .location_utils import get_location_by_ip
 from .generate_safe_html import generate_safe_html
+from .chat_html_tool import chat_dynamic_html
 from .div_table_generator import generate_div_table_html
 from .notification_scheduler import schedule_notification
 

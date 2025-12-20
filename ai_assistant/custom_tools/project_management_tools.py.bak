@@ -1,10 +1,12 @@
+
 import os
 import json
 import subprocess
-from ai_assistant.custom_tools.project_management_tools.utils import sanitize_project_name, read_text_from_file
-from ai_assistant.custom_tools.project_management_tools.project_manifest import ProjectManifest
-from ai_assistant.utils.configuration import BASE_PROJECTS_DIR
-import ai_assistant.modules.logger as logger
+from ai_assistant.custom_tools.file_system_tools import sanitize_project_name, read_text_from_file
+from ai_assistant.project_management.manifest_schema import ProjectManifest
+from ai_assistant.custom_tools.file_system_tools import BASE_PROJECTS_DIR
+import logging
+logger = logging.getLogger(__name__)
 from typing import Any
 import os
 import json
@@ -354,19 +356,17 @@ async def build_project(project_name: str) -> str:
     build_command_parts = build_command_str.split()
     try:
         logger.info(f"Running build command '{build_command_str}' for project '{project_name}' in directory '{project_dir}'...")
-        process_result = subprocess.run(build_command_parts, cwd=project_dir, capture_output=True, text=True, timeout=600)
+        process_result = subprocess.run(build_command_parts, cwd=project_dir, capture_output=True, text=True, timeout=600, check=False)
         output_summary = [f'Build Results for Project: {project_name}', f'Command: {build_command_str}', f'Return Code: {process_result.returncode}', '--- STDOUT ---', process_result.stdout.strip() if process_result.stdout else '(No standard output)', '--- STDERR ---', process_result.stderr.strip() if process_result.stderr else '(No standard error)']
         return '\n'.join(output_summary)
     except FileNotFoundError:
         return f"Error: Build command '{build_command_parts[0]}' not found. Ensure it's installed and in PATH."
     except subprocess.TimeoutExpired:
         return f"Error: Build command '{build_command_str}' timed out after 600 seconds."
-    except subprocess.CalledProcessError as e:
-        return f"Error: Build command '{build_command_str}' failed with return code {e.returncode}. Stderr: {(e.stderr.strip() if e.stderr else '(No standard error)')}"
     except Exception as e:
         return f"Error: An unexpected error occurred while building project '{project_name}': {e}"
-from ..core.self_modification import edit_project_file
-from ..core.task_manager import TaskManager
+from ai_assistant.core.self_modification import edit_project_file
+from ai_assistant.core.task_manager import TaskManager
 
 async def propose_project_file_update(absolute_target_filepath: str, new_file_content: str, change_description: str, task_manager: Optional[TaskManager]=None, parent_task_id: Optional[str]=None) -> Dict[str, Any]:
     if not absolute_target_filepath or not change_description:
@@ -597,6 +597,10 @@ async def request_code_review_tool(code_to_review: Optional[str]=None, original_
         return {'status': 'error', 'comments': "Error: 'code_to_review' argument is missing. Please provide the code to be reviewed.", 'suggestions': ''}
     if not original_requirements:
         return {'status': 'error', 'comments': "Error: 'original_requirements' argument is missing. Please provide the requirements to review against.", 'suggestions': ''}
-    reviewer_agent = ReviewerAgent()
-    review_results = await reviewer_agent.review_code(code_to_review=code_to_review, original_requirements=original_requirements, related_tests=related_tests)
-    return review_results
+    
+    try:
+        reviewer_agent = ReviewerAgent()
+        review_results = await reviewer_agent.review_code(code_to_review=code_to_review, original_requirements=original_requirements, related_tests=related_tests)
+        return review_results
+    except Exception as e:
+        return {'status': 'error', 'comments': f"An error occurred during review: {str(e)}", 'suggestions': ''}
