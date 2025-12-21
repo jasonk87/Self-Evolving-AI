@@ -35,7 +35,7 @@
         "tool_name": "process_search_results",
         "module_path": "ai_assistant.custom_tools.my_extra_tools",
         "function_name": "process_search_results",
-        "description": "Processes JSON search results based on a specified instruction to generate a response.",
+        "description": "Processes JSON search results based on a specified instruction to generate a response using Gemini.",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -51,7 +51,7 @@
         "tool_name": "search_google_custom_search",
         "module_path": "ai_assistant.custom_tools.my_extra_tools",
         "function_name": "search_google_custom_search",
-        "description": "Searches Google. Args: query (str). Optional in kwargs: num_results (str, 1-10, default '5').",
+        "description": "Wrapper for the primary Google Custom Search tool. ",
         "type": "custom_discovered",
         "schema_details": null
     },
@@ -982,6 +982,102 @@
         "module_path": "ai_assistant.custom_tools.introspection_tools",
         "function_name": "read_system_logs",
         "description": "Reads the last N lines of a system log file.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "spawn_background_agent": {
+        "tool_name": "spawn_background_agent",
+        "module_path": "ai_assistant.custom_tools.agent_tools",
+        "function_name": "spawn_background_agent",
+        "description": "Spawns a background agent to perform a time-consuming task.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "modify_file_lines": {
+        "tool_name": "modify_file_lines",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "modify_file_lines",
+        "description": "Surgically modifies a file by replacing specific lines or ranges of lines.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "get_system_config": {
+        "tool_name": "get_system_config",
+        "module_path": "ai_assistant.custom_tools.system_config_tools",
+        "function_name": "get_system_config",
+        "description": "Retrieves the current system configuration.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "set_ghost_mode": {
+        "tool_name": "set_ghost_mode",
+        "module_path": "ai_assistant.custom_tools.system_config_tools",
+        "function_name": "set_ghost_mode",
+        "description": "Enables or disables \"Ghost Mode\" (visible browser automation).",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "update_system_config": {
+        "tool_name": "update_system_config",
+        "module_path": "ai_assistant.custom_tools.system_config_tools",
+        "function_name": "update_system_config",
+        "description": "Updates a system configuration setting.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "run_regression_tests": {
+        "tool_name": "run_regression_tests",
+        "module_path": "ai_assistant.custom_tools.testing_tools",
+        "function_name": "run_regression_tests",
+        "description": "Runs the regression suite (or specific tests) using pytest.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "trigger_learning_scan": {
+        "tool_name": "trigger_learning_scan",
+        "module_path": "ai_assistant.custom_tools.memory_tools",
+        "function_name": "trigger_learning_scan",
+        "description": "Triggers an immediate scan of the recent conversation to learn important facts or user preferences.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "insert_code_block": {
+        "tool_name": "insert_code_block",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "insert_code_block",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "propose_class_method_modification": {
+        "tool_name": "propose_class_method_modification",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "propose_class_method_modification",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "propose_function_modification": {
+        "tool_name": "propose_function_modification",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "propose_function_modification",
+        "description": "Wrapper for edit_function_source_code to be exposed as a tool.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "surgical_edit_function": {
+        "tool_name": "surgical_edit_function",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "surgical_edit_function",
+        "description": "No description available.",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "upsert_import": {
+        "tool_name": "upsert_import",
+        "module_path": "ai_assistant.custom_tools.file_editing_tools",
+        "function_name": "upsert_import",
+        "description": "No description available.",
         "type": "custom_discovered",
         "schema_details": null
     }
