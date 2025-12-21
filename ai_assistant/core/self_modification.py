@@ -514,8 +514,8 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                 return err_msg
         # ----------------------------
 
-        # 1. Merge Imports (Prepend to original AST)
-        # Deduplicate imports: Granular AST check
+        # 1. Identify Import Additions (Textual)
+        import_insertion_text = ""
         if new_imports:
             existing_import_sigs = set()
             for node in original_ast.body:
@@ -529,72 +529,96 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             
             unique_new_imports = []
             for imp in new_imports:
-                # Scan aliases in the new import node
                 new_names = []
                 for alias in imp.names:
                     sig = (None, alias.name, alias.asname) if isinstance(imp, ast.Import) else (imp.module, alias.name, alias.asname)
                     if sig not in existing_import_sigs:
                         new_names.append(alias)
-                        existing_import_sigs.add(sig) # Add to set to prevent duplicates within new list
+                        existing_import_sigs.add(sig)
                 
-                # If we have valid names left, add the node (unmodified aliases are dropped)
                 if new_names:
                     imp.names = new_names
                     unique_new_imports.append(imp)
 
             if unique_new_imports:
-                original_ast.body = unique_new_imports + original_ast.body
-                logger.info(f"Added {len(unique_new_imports)} unique import statements to '{file_path}'.")
+                # Generate text for new imports
+                # We use a temp module to unparse just the imports
+                temp_mod = ast.Module(body=unique_new_imports, type_ignores=[])
+                try:
+                    # ast.unparse available in 3.9+
+                    import_insertion_text = ast.unparse(temp_mod) + "\n"
+                except Exception:
+                     # Fallback if unparse fails (unlikely given previous checks)
+                     pass
+                logger.info(f"Prepared {len(unique_new_imports)} unique import statements for insertion.")
             else:
                 logger.info("All new imports were duplicates of existing imports. Skipped addition.")
 
-        # 2. Replace Function
-        function_found_and_replaced = False
-        new_body = []
+        # 2. Textual Replacement of Function (Preserve Comments)
+        # Re-read lines to ensure we have the exact original content including comments
+        lines = original_source.splitlines(keepends=True)
+
+        target_node = None
         for node in original_ast.body:
-            # Skip the newly added imports when looking for replacement target (they are at start of list now)
-            # Actually, we are iterating `original_ast.body` which we just modified. 
-            # We should probably iterate a copy or be careful.
-            # But simpler: We rebuild `new_body`.
-            
-            # Use `is` check to avoid matching the nodes we just added (though improbable to match name/type exactly identically by object identity)
-            # A safer way is to iterate the *original* content's body nodes. 
-            # But since we just prepended, the function replacing logic below is fine as long as we don't accidentally replace the import?
-            # Imports are not FunctionDefs, so safe.
-            
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
-                # Check if this is the ONE we want to replace (in case of overloads? Python doesn't support overloads in AST usually w/o decorators)
-                
-                # IMPORTANT: If we have multiple functions with same name (unlikely in valid module), this replaces all? 
-                # Standard behavior: replace first or all? Let's replace all to be safe or just first? 
-                # Usually modules have unique top level names.
-                
-                new_body.append(new_function_node)
-                function_found_and_replaced = True
-                logger.info(f"Function '{function_name}' found in '{file_path}' and marked for replacement with '{new_function_node.name}'.")
-            else:
-                new_body.append(node)
+                target_node = node
+                break
         
-        if not function_found_and_replaced:
+        if not target_node:
             err_msg = f"Error: Function '{function_name}' not found in module '{module_path}' (file '{file_path}')."
             logger.error(err_msg)
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="Target function not found in AST")
             return err_msg
 
-        original_ast.body = new_body
-        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Unparsing modified AST")
+        # Determine lines to replace
+        # ast line numbers are 1-based
+        # Start line is `lineno`. Note: This includes decorators.
+        start_line_idx = target_node.lineno - 1
+
+        # End line calculation
+        if hasattr(target_node, 'end_lineno') and target_node.end_lineno is not None:
+             end_line_idx = target_node.end_lineno
+        else:
+             # Fallback for older python or incomplete AST info?
+             # Iterate to find next node or end of file?
+             # Assuming 3.9+, end_lineno should be present.
+             err_msg = "Error: AST node missing end_lineno. Python 3.8+ required."
+             logger.error(err_msg)
+             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST version issue")
+             return err_msg
+
+        # Construct new file content
+        new_source_parts = []
+
+        # 1. Imports (Insert at very top for simplicity, or after shebang/docstrings if we were fancy)
+        # We'll just prepend to the file. This might put imports before docstrings in some cases,
+        # but it guarantees they are seen. A better spot is after the first docstring if present.
+        # Let's try to be smart: Check if first line is a docstring or hashbang.
+
+        # Simple Logic: Prepend to the whole file.
+        if import_insertion_text:
+             new_source_parts.append(import_insertion_text)
+
+        # 2. Pre-function content
+        # lines[0 : start_line_idx]
+        new_source_parts.append("".join(lines[:start_line_idx]))
+
+        # 3. New function content
+        # We use ast.unparse on the NEW function node to ensure it is clean and formatted.
         try:
-            new_source_code = ast.unparse(original_ast)
-        except AttributeError:
-            err_msg = "Error: ast.unparse is not available. Python 3.9+ is required." # pragma: no cover
-            logger.error(err_msg) # pragma: no cover
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST unparse failed (version issue)") # pragma: no cover
-            return err_msg # pragma: no cover
+            replacement_code = ast.unparse(new_function_node)
         except Exception as e_unparse:
-            err_msg = f"Error unparsing modified AST for '{file_path}': {e_unparse}" # pragma: no cover
-            logger.error(err_msg, exc_info=True) # pragma: no cover
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_DURING_APPLY, reason=err_msg, step_desc="AST unparse failed") # pragma: no cover
-            return err_msg # pragma: no cover
+             err_msg = f"Error unparsing new function node: {e_unparse}"
+             logger.error(err_msg)
+             return err_msg
+
+        new_source_parts.append(replacement_code + "\n")
+
+        # 4. Post-function content
+        # lines[end_line_idx : ]
+        new_source_parts.append("".join(lines[end_line_idx:]))
+
+        new_source_code = "".join(new_source_parts)
 
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Writing modified code to file")
         with open(file_path, 'w', encoding='utf-8') as f:

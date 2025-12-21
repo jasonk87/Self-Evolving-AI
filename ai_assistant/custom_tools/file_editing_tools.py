@@ -14,8 +14,153 @@ from ai_assistant.core.self_modification import (
 )
 from ai_assistant.custom_tools.file_system_tools import read_text_from_file, write_text_to_file
 from ai_assistant.core.task_manager import TaskManager
+import shutil
+import datetime
+from typing import List, Dict, Union
 
 logger = logging.getLogger(__name__)
+
+SCHEMA_MODIFY_FILE_LINES = {
+    "name": "modify_file_lines",
+    "description": "Surgically modifies a file by replacing specific lines or ranges of lines.",
+    "parameters": [
+        {
+            "name": "file_path",
+            "type": "str",
+            "description": "The absolute path to the file to modify."
+        },
+        {
+            "name": "edits",
+            "type": "list",
+            "description": "A list of edit dictionaries, each with 'start' (int), 'end' (int), and 'content' (str)."
+        },
+        {
+            "name": "backup",
+            "type": "bool",
+            "description": "Whether to create a backup before editing. Default True.",
+            "optional": True
+        }
+    ]
+}
+
+def modify_file_lines(
+    file_path: str,
+    edits: List[Dict[str, Union[int, str]]],
+    backup: bool = True,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None
+) -> str:
+    """
+    Surgically modifies a file by replacing specific lines or ranges of lines.
+
+    Args:
+        file_path (str): The absolute path to the file to modify.
+        edits (List[Dict]): A list of edit specifications. Each edit is a dict with:
+            - "start" (int): 1-indexed start line number.
+            - "end" (int): 1-indexed end line number (inclusive).
+            - "content" (str): The new content to insert. Can be multiple lines (newline separated).
+        backup (bool): Whether to create a backup of the file before editing. Defaults to True.
+
+    Returns:
+        str: A message indicating success or failure.
+    """
+    if not os.path.exists(file_path):
+        return f"Error: File not found at {file_path}"
+
+    if not os.path.isfile(file_path):
+        return f"Error: Path is not a file: {file_path}"
+
+    try:
+        # Validate edits format
+        validated_edits = []
+        for edit in edits:
+            if not isinstance(edit, dict):
+                return "Error: Each edit must be a dictionary."
+
+            start = edit.get("start")
+            end = edit.get("end")
+            content = edit.get("content")
+
+            if start is None or end is None or content is None:
+                return "Error: Each edit must have 'start', 'end', and 'content' keys."
+
+            if not isinstance(start, int) or not isinstance(end, int):
+                return f"Error: 'start' and 'end' must be integers. Got start={start}, end={end}."
+
+            if start < 1:
+                return f"Error: Line numbers must be 1-indexed (start >= 1). Got {start}."
+
+            if end < start:
+                return f"Error: 'end' line must be >= 'start' line. Got start={start}, end={end}."
+
+            if not isinstance(content, str):
+                return f"Error: 'content' must be a string. Got {type(content)}."
+
+            validated_edits.append({
+                "start": start,
+                "end": end,
+                "content": content
+            })
+
+        # Create backup
+        if backup:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{file_path}.{timestamp}.bak"
+            shutil.copy2(file_path, backup_path)
+
+        # Read file lines
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        total_lines = len(lines)
+
+        # Sort edits by start line descending to avoid offset issues
+        # and checking for overlaps
+        validated_edits.sort(key=lambda x: x["start"], reverse=True)
+
+        last_start = float('inf')
+
+        for edit in validated_edits:
+            start = edit["start"]
+            end = edit["end"]
+            content = edit["content"]
+
+            # Check for overlaps (since we iterate backwards, current end must be < last_start)
+            if end >= last_start:
+                 # Overlap detected!
+                 return f"Error: Overlapping edits detected. Please merge overlapping ranges. Conflict near line {end}."
+
+            last_start = start
+
+            # Check bounds
+            if start > total_lines + 1:
+                # Appending way past end
+                return f"Error: Start line {start} is beyond end of file ({total_lines})."
+
+            # Adjust indices for 0-based list
+            start_idx = start - 1
+            end_idx = end # split is exclusive at end, so line 5 (idx 4) to 5 means [4:5]
+
+            # Normalize content to list of lines
+            new_lines_list = content.splitlines(keepends=True)
+            if content and not content.endswith('\n'):
+                 if new_lines_list:
+                    new_lines_list[-1] = new_lines_list[-1] + '\n'
+
+            # Apply splice
+            if start_idx > len(lines):
+                 lines.extend(new_lines_list)
+            else:
+                lines[start_idx:end_idx] = new_lines_list
+
+        # Write back
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+        return f"Success: Applied {len(validated_edits)} edits to {os.path.basename(file_path)}."
+
+    except Exception as e:
+        return f"Error modifying file: {str(e)}"
 
 # --- Tool Wrappers for Self-Modification Functions ---
 
@@ -61,12 +206,12 @@ async def propose_function_modification(module_path: str, function_name: str, ne
             project_root_path=project_root,
             change_description=change_description
         )
-        
+
         status = "success" if "success" in result_msg.lower() else "error"
         # If it was rejected, status is technically success of the tool execution (it ran), but outcome is rejection
         if "rejected" in result_msg.lower():
             status = "rejected_by_review"
-            
+
         return {
             "status": status,
             "message": result_msg
