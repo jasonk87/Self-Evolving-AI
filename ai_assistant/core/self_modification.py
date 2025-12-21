@@ -288,17 +288,12 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
              _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="File path resolution failed", step="Path resolution")
              return "Error: Could not resolve file path."
         
-        # Ensure file_path is within project_root (basic check)
-        # if not file_path.startswith(project_root_path):
-        #    logger.warning(f"Resolved file path '{file_path}' is outside project root '{project_root_path}'. This might be intended for venv libraries.")
- 
-        # Read the original file content immediately to have it available for static analysis reconstruction
+        # Read the original file content immediately
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 original_source = f.read()
-            original_ast = ast.parse(original_source, filename=file_path)
         except Exception as e:
-            err_msg = f"Error reading or parsing original file '{file_path}': {e}"
+            err_msg = f"Error reading original file '{file_path}': {e}"
             logger.error(err_msg)
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Reading original file")
             return err_msg
@@ -319,9 +314,8 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             return f"No changes detected for function '{function_name}' in module '{module_path}'. Code is identical."
 
         # --- Critical Review Loop with Refinement ---
-        critic1 = ReviewerAgent()
-        critic2 = ReviewerAgent()
-        coordinator = CriticalReviewCoordinator(critic1, critic2)
+        critic = ReviewerAgent()
+        coordinator = CriticalReviewCoordinator(critic)
         refinement_agent = RefinementAgent()
 
         max_refinement_attempts = 3
@@ -332,8 +326,9 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             logger.info(f"Requesting critical review for '{function_name}' in '{module_path}' (Attempt {attempt+1}/{max_refinement_attempts+1})...")
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review (Attempt {attempt+1})")
 
-            # --- STATIC ANALYSIS CHECK ---
+            # --- STATIC ANALYSIS CHECK & FULL FILE RECONSTRUCTION ---
             pylint_error = None
+            full_file_content_for_review = ""
             try:
                 # Reconstruct the full file with the new function to check for valid imports/syntax
                 temp_new_func_ast = ast.parse(current_new_code).body[0]
@@ -354,6 +349,7 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                     temp_full_ast.body = new_body
                     try:
                         temp_full_source = ast.unparse(temp_full_ast)
+                        full_file_content_for_review = temp_full_source # Save for review
                         pylint_error = _run_pylint_check(temp_full_source)
                     except Exception as e_unparse:
                          logger.warning(f"AST unparse failed during static analysis prep: {e_unparse}")
@@ -363,18 +359,18 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
 
             if pylint_error:
                 logger.info(f"Static analysis failed: {pylint_error}")
-                unanimous_approval = False
+                is_approved = False
                 reviews = [{
                     "status": "requires_changes",
                     "comments": f"Automatic Static Analysis Failed:\n{pylint_error}",
                     "suggestions": "Please ensure all necessary imports are added (e.g., 'from typing import Any')."
                 }]
-                # Skip human/LLM review, go straight to refinement
             else:
                 try:
-                    unanimous_approval, reviews = await coordinator.request_critical_review(
-                        original_code=original_function_code_for_diff,
-                        new_code_string=current_new_code,
+                    # PASS THE FULL FILE CONTENT FOR REVIEW
+                    is_approved, reviews = await coordinator.request_critical_review(
+                        original_code=original_source, # Full original file
+                        new_code_string=full_file_content_for_review, # Full new file content
                         code_diff=current_code_diff,
                         original_requirements=change_description,
                         related_tests=None
@@ -385,7 +381,7 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                     _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
                     return err_msg
 
-            if unanimous_approval:
+            if is_approved:
                 logger.info(f"Change to function '{function_name}' approved by critical review.")
                 _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Critical review approved")
                 break # Proceed to apply changes
@@ -429,7 +425,7 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             else:
                  logger.warning("Max refinement attempts reached. Change rejected.")
 
-        if not unanimous_approval:
+        if not is_approved:
              review_summaries = []
              for i, r in enumerate(reviews):
                 review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
@@ -687,7 +683,7 @@ def get_backup_function_source_code(module_path: str, function_name: str) -> Opt
     backup_file_path = file_path + ".bak"
 
     if not os.path.exists(backup_file_path):
-        print(f"Warning: Backup file '{backup_file_path}' not found for module '{module_path}'.")
+        # print(f"Warning: Backup file '{backup_file_path}' not found for module '{module_path}'.")
         # Fallback: check if the file_path itself is the backup (some implementations swap)
         # But here we stick to .bak extension convention.
         return None
@@ -779,9 +775,8 @@ async def edit_project_file(
     file_diff = generate_diff(original_content, new_content, file_name=os.path.basename(absolute_file_path))
 
     # --- Critical Review Loop with Refinement ---
-    critic1 = ReviewerAgent()
-    critic2 = ReviewerAgent()
-    coordinator = CriticalReviewCoordinator(critic1, critic2)
+    critic = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic)
     refinement_agent = RefinementAgent()
 
     max_refinement_attempts = 3
@@ -793,7 +788,7 @@ async def edit_project_file(
         _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Performing critical review for file (Attempt {attempt+1})")
 
         try:
-            unanimous_approval, reviews = await coordinator.request_critical_review(
+            is_approved, reviews = await coordinator.request_critical_review(
                 original_code=original_content,  # Use original_content here
                 new_code_string=current_new_content,    # Use new_content here
                 code_diff=current_file_diff,
@@ -806,7 +801,7 @@ async def edit_project_file(
             _update_p_task(ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Critical review process error")
             return err_msg
 
-        if unanimous_approval:
+        if is_approved:
              logger.info(f"Change to project file '{absolute_file_path}' approved by critical review.")
              _update_p_task(ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc=f"Review approved for file: {os.path.basename(absolute_file_path)}")
              break
@@ -847,7 +842,7 @@ async def edit_project_file(
         else:
              logger.warning("Max refinement attempts reached for file. Change rejected.")
 
-    if not unanimous_approval:
+    if not is_approved:
         review_summaries = []
         for i, r in enumerate(reviews):
             review_summaries.append(f"Critic {i+1} ({r.get('status')}): {r.get('comments', 'No comments.')}")
@@ -1026,9 +1021,8 @@ async def edit_class_method(
 
     file_diff = generate_diff(original_source, new_file_source, file_name=relative_module_file_path)
 
-    critic1 = ReviewerAgent()
-    critic2 = ReviewerAgent()
-    coordinator = CriticalReviewCoordinator(critic1, critic2)
+    critic = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic)
     refinement_agent = RefinementAgent()
 
     _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc=f"Reviewing changes for {class_name}.{method_name}")
@@ -1040,6 +1034,8 @@ async def edit_class_method(
 
     for attempt in range(max_refinement_attempts + 1):
         try:
+            # For class methods, we already built the full file source in `new_file_source`
+            # So `current_new_source` holds the full file content.
             approved, reviews = await coordinator.request_critical_review(
                 original_code=original_source,
                 new_code_string=current_new_source,
@@ -1319,9 +1315,8 @@ async def surgical_edit_function(
 
     code_diff = generate_diff(original_source, new_source_code, file_name=relative_module_file_path)
 
-    critic1 = ReviewerAgent()
-    critic2 = ReviewerAgent()
-    coordinator = CriticalReviewCoordinator(critic1, critic2)
+    critic = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic)
     
     _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc="Reviewing surgical changes")
     

@@ -28,6 +28,9 @@ class CLIColors:
     THOUGHT = '\033[38;5;147m' # Added THOUGHT attribute
 
     BLUE = '\033[34m'          # Standard ANSI blue for the new prompt
+    OKBLUE = '\033[94m'        # Standard ANSI OKBLUE (Light Blue)
+    OKGREEN = '\033[92m'       # Standard ANSI OKGREEN
+
     # Component-specific colors (for debug mode)
     PLANNER = '\033[38;5;105m'    # Purple for planner
     REVIEWER = '\033[38;5;208m'   # Orange for reviewer
