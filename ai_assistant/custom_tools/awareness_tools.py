@@ -98,6 +98,15 @@ def get_system_status_summary(task_manager: Optional[TaskManager]=None, notifica
                 summary_lines.append('\nRecently Created/Modified Tools: None found in generated directory.')
     except Exception as e:
         summary_lines.append(f'\nError scanning generated tools: {e}')
+
+    # Append Background Service Report
+    try:
+        from ai_assistant.core.background_service import get_background_activity_report
+        bg_report = get_background_activity_report()
+        summary_lines.append(f'\n{bg_report}')
+    except Exception as e:
+        summary_lines.append(f'\nError retrieving background service status: {e}')
+
     return '\n'.join(summary_lines)
 GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {'name': 'get_system_status_summary', 'description': 'Provides a summary of current system activity, including active/archived tasks and recent unread notifications.', 'parameters': [{'name': 'active_limit', 'type': 'int', 'description': 'Optional. Max active tasks to detail (default 5).'}, {'name': 'archived_limit', 'type': 'int', 'description': 'Optional. Max archived tasks to detail (default 3).'}, {'name': 'unread_notifications_limit', 'type': 'int', 'description': 'Optional. Max unread notifications to detail (default 3).'}], 'returns': {'type': 'str', 'description': 'A multi-line string summarizing system status and notifications.'}}
 

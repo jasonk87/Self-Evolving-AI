@@ -109,6 +109,10 @@ _last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 _last_reminder_check_time: float = 0.0
 _reminder_check_interval_seconds = 10 # Check frequently
 
+# Detailed Status Trackers
+_last_dream_status: str = "No dreams realized yet."
+_last_architect_status: str = "No architectural audits performed yet."
+
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
     global _orchestrator
@@ -186,6 +190,51 @@ def get_service_status():
         "last_visual_audit_timestamp": _last_visual_audit_time,
         "autonomous_learning_enabled": globals().get('AUTONOMOUS_LEARNING_ENABLED', False)
     }
+
+def get_background_activity_report() -> str:
+    """
+    Returns a human-readable report of the background service's status and recent activities.
+    """
+    if not _background_service_active:
+        return "Background Service: INACTIVE (Processes are not running)"
+
+    now = time.time()
+    report = ["Background Service: ACTIVE (Running autonomous loops)"]
+
+    def fmt_time(t):
+        if t == 0: return "Never"
+        diff = int(now - t)
+        if diff < 60: return f"{diff}s ago"
+        if diff < 3600: return f"{diff//60}m ago"
+        return f"{diff//3600}h ago"
+
+    # Dream Mode
+    dream_time = globals().get('_last_dream_time', 0)
+    dream_stat = globals().get('_last_dream_status', 'No data')
+    report.append(f"- Dreamer (Simulation): Last run {fmt_time(dream_time)}. Status: {dream_stat}")
+
+    # Evolutionary Architect
+    arch_time = globals().get('_last_architect_audit_timestamp', 0)
+    arch_stat = globals().get('_last_architect_status', 'No data')
+    report.append(f"- Evolutionary Architect: Last audit {fmt_time(arch_time)}. Status: {arch_stat}")
+
+    # Self-Healing
+    heal_time = globals().get('_last_self_healing_time', 0)
+    report.append(f"- Self-Healing (Immune System): Last scan {fmt_time(heal_time)}")
+
+    # Visual Audit
+    vis_time = globals().get('_last_visual_audit_time', 0)
+    report.append(f"- Visual Audit: Last scan {fmt_time(vis_time)}")
+
+    # Auto-Approval
+    auto_time = globals().get('_last_auto_approve_check_time', 0)
+    report.append(f"- Auto-Approval Gatekeeper: Last check {fmt_time(auto_time)}")
+
+    # Autonomous Goals
+    goal_time = globals().get('_last_autonomous_goal_check_time', 0)
+    report.append(f"- Autonomous Goal Processor: Last check {fmt_time(goal_time)}")
+
+    return "\n".join(report)
 
 async def run_autonomous_goal_processor():
     """
@@ -857,8 +906,10 @@ async def _background_loop_async():
                          execute_func=_apply_proposal
                      )
                      logger.info(f"BackgroundService: Queued evolution proposal for {target_file}")
+                     globals()['_last_architect_status'] = f"Proposed changes for {os.path.basename(target_file)}: {summary}"
                  elif not proposal:
                      logger.info("BackgroundService: No proposal generated during audit.")
+                     globals()['_last_architect_status'] = "Audit completed. No improvements proposed."
 
                  _last_architect_audit_timestamp = time.time()
                  _save_architect_state()
@@ -919,6 +970,7 @@ async def _background_loop_async():
                         # Analyze Result
                         if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
                             logger.warning(f"BackgroundService: Nightmare realized! Tool '{target_tool}' failed hypothetical scenario.")
+                            globals()['_last_dream_status'] = f"Nightmare realized! Tool '{target_tool}' failed simulation."
                             
                             # ACTIVE IMMUNE SYSTEM: Attempt to fix
                             if learning_agent and learning_agent.action_executor and learning_agent.action_executor.code_service:
@@ -993,6 +1045,7 @@ async def _background_loop_async():
                                             # Check Verification Result
                                             if "DREAM_SURVIVED" in stdout_str_v:
                                                  logger.info(f"BackgroundService: Immune Response Successful! Fix verified for '{target_tool}'.")
+                                                 globals()['_last_dream_status'] = f"Nightmare realized for '{target_tool}', but Immune System successfully generated and verified a fix."
 
                                                  # 3. Submit Proposal
                                                  approval_manager.add_request(
@@ -1049,6 +1102,7 @@ async def _background_loop_async():
 
                         else:
                             logger.info(f"BackgroundService: Tool '{target_tool}' survived the dream scenario.")
+                            globals()['_last_dream_status'] = f"Tool '{target_tool}' survived dream scenario '{dream_result.get('scenario_name')}'."
                     
             except Exception as e:
                 logger.error(f"BackgroundService: Error during Dream Mode: {e}", exc_info=True)
