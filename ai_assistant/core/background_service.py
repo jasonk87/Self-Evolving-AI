@@ -113,6 +113,25 @@ _reminder_check_interval_seconds = 10 # Check frequently
 _last_dream_status: str = "No dreams realized yet."
 _last_architect_status: str = "No architectural audits performed yet."
 
+# --- User Activity Beacon ---
+_last_user_activity_ts: float = 0.0
+# Default threshold: 5 minutes (300 seconds)
+# Configurable via ai_assistant.config if needed in future
+BACKGROUND_IDLE_THRESHOLD_SECONDS = 300
+
+def report_user_activity():
+    """
+    Called by the UI/API to indicate the user is active.
+    Resets the idle timer, pausing heavy background tasks.
+    """
+    global _last_user_activity_ts
+    _last_user_activity_ts = time.time()
+    # logger.debug("User activity reported. Background tasks paused.")
+
+def is_user_active(threshold: int = BACKGROUND_IDLE_THRESHOLD_SECONDS) -> bool:
+    """Checks if the user has been active recently."""
+    return (time.time() - _last_user_activity_ts) < threshold
+
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
     global _orchestrator
@@ -233,6 +252,12 @@ def get_background_activity_report() -> str:
     # Autonomous Goals
     goal_time = globals().get('_last_autonomous_goal_check_time', 0)
     report.append(f"- Autonomous Goal Processor: Last check {fmt_time(goal_time)}")
+
+    # User Activity
+    last_act = globals().get('_last_user_activity_ts', 0)
+    is_active = (now - last_act) < BACKGROUND_IDLE_THRESHOLD_SECONDS
+    status_str = "ACTIVE (Pausing heavy tasks)" if is_active else "IDLE (Heavy tasks enabled)"
+    report.append(f"- User Activity: Last detected {fmt_time(last_act)}. Status: {status_str}")
 
     return "\n".join(report)
 
@@ -726,8 +751,12 @@ async def _background_loop_async():
             
             _last_reminder_check_time = time.time()
 
-        # --- Visual Audit Task ---
-        if vision_service and current_loop_time >= next_visual_audit_run_time:
+        # === IDLE GATED TASKS ===
+        # The following tasks are "Heavy" and should pause if the user is active.
+        user_is_idle = not is_user_active()
+
+        # --- Visual Audit Task (Heavy) ---
+        if user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
             logger.info("BackgroundService: Running Visual Audit...")
             try:
                 if os.path.isdir(BASE_PROJECTS_DIR):
@@ -808,8 +837,8 @@ async def _background_loop_async():
             _last_visual_audit_time = time.time()
             next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
 
-        # --- Autonomous Project Coding Task ---
-        if PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
+        # --- Autonomous Project Coding Task (Heavy) ---
+        if user_is_idle and PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
             current_time_str_project_exec = await asyncio.to_thread(time.strftime, '%Y-%m-%d %H:%M:%S')
             print(f"BackgroundService (Async): Scanning for projects with planned tasks (current time: {current_time_str_project_exec})...")
             projects_worked_on_this_cycle = 0
@@ -863,8 +892,8 @@ async def _background_loop_async():
             _last_project_execution_scan_time = time.time()
             next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
 
-        # --- Autonomous Self-Healing Task ---
-        if learning_agent and current_loop_time >= next_self_healing_run_time:
+        # --- Autonomous Self-Healing Task (Heavy) ---
+        if user_is_idle and learning_agent and current_loop_time >= next_self_healing_run_time:
             try:
                 # Restore Autonomous Self-Healing
                 # The user can still intervene via the UI because we expose 'NEW' insights
@@ -877,7 +906,7 @@ async def _background_loop_async():
             
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
 
-        # --- General Insight Processing (Learning) ---
+        # --- General Insight Processing (Learning - Always Run) ---
         # Checks for NEW insights (Frustrations, Preferences) and proposes actions
         if learning_agent and current_loop_time >= next_self_healing_run_time + 5: # Offset slightly from self-healing
              try:
@@ -887,8 +916,8 @@ async def _background_loop_async():
                  logger.error(f"BackgroundService: Error during general insight processing: {e}", exc_info=True)
 
 
-        # --- Evolutionary Architect Audit Task ---
-        if current_loop_time >= next_architect_audit_run_time:
+        # --- Evolutionary Architect Audit Task (Heavy) ---
+        if user_is_idle and current_loop_time >= next_architect_audit_run_time:
              logger.info(f"BackgroundService: Running Evolutionary Architect Audit...")
              try:
                  proposal = await perform_architectural_audit()
@@ -920,12 +949,12 @@ async def _background_loop_async():
                  # Retry later to avoid rapid error loop
                  next_architect_audit_run_time = time.time() + 3600
 
-        # --- DREAM MODE (Autonomous Deep Simulation) ---
+        # --- DREAM MODE (Autonomous Deep Simulation - Heavy) ---
         global _last_dream_time, _dream_interval_seconds
         if '_last_dream_time' not in globals(): _last_dream_time = 0.0
         if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 300 # 5 minutes
 
-        if current_loop_time >= _last_dream_time + _dream_interval_seconds:
+        if user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
             try:
                 # Lazy init Dreamer

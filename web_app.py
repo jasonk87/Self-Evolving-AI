@@ -42,7 +42,7 @@ from ai_assistant.core.project_manager import list_projects
 from ai_assistant.custom_tools.file_system_tools import list_project_files, get_project_file_content, save_project_file_content
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.core.memory_manager import MemoryManager
-from ai_assistant.core.background_service import run_background_services_forever, set_orchestrator
+from ai_assistant.core.background_service import run_background_services_forever, set_orchestrator, report_user_activity
 from ai_assistant.voice.tts import generate_speech # Import TTS service
 from ai_assistant.core.shutdown_handler import shutdown_manager
 from ai_assistant.llm_interface.gemini_client import invoke_split_brain_async
@@ -286,6 +286,7 @@ def update_config():
 
 @app.route('/chat', methods=['POST'])
 async def chat():
+    report_user_activity() # Signal user activity
     global orchestrator
     if not orchestrator:
         return jsonify({"error": "Orchestrator not initialized"}), 500
@@ -467,6 +468,7 @@ def save_file():
 @app.route('/api/run', methods=['POST'])
 def run_script():
     """Executes a Python script."""
+    report_user_activity() # Signal user activity
     data = request.json
     path = data.get('path')
 
@@ -539,6 +541,7 @@ def run_script():
 @app.route('/api/terminal/exec', methods=['POST'])
 def exec_terminal_command():
     """Executes a shell command directly."""
+    report_user_activity() # Signal user activity
     data = request.json
     command = data.get('command')
     project_name = data.get('project_name')
@@ -883,6 +886,7 @@ def handle_disconnect():
 @socketio.on('message')
 def handle_message(data):
     """Handles incoming socket messages (e.g. from Terminal)."""
+    report_user_activity() # Signal user activity
     global orchestrator
     if not orchestrator:
         socketio.emit('response', {'response': "Error: System not initialized.", 'success': False})
