@@ -18,3 +18,5 @@ architect_state.json
 knowledge_dump.json
 *.bak
 *.tmp
+
+live_debug.log
