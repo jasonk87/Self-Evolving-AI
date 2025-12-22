@@ -1,5 +1,161 @@
 [
     {
+        "event_type": "TASK_COMPLETED_SUCCESSFULLY",
+        "summary_message": "Task 'Modify_code: SELF_FIX_TOOL, Target: ai_assistant.c...' COMPLETED_SUCCESSFULLY. Reason: Code modification generated.",
+        "notification_id": "notify_87caea450c",
+        "timestamp": "2025-12-22T18:24:19.747995+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_ba018806",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "AGENT_TOOL_MODIFICATION",
+            "description": "Modify_code: SELF_FIX_TOOL, Target: ai_assistant.custom_tools.system_tools.list_available_tools"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_02b8a0dc04",
+        "timestamp": "2025-12-22T18:24:06.308249+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_d2d6ad61",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: PLANNING_HEURISTIC_SUGGESTION_81060a92"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_c4ef1ea936",
+        "timestamp": "2025-12-22T18:24:06.290848+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_c9196fe5",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_cd32136a"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_fcdd32d739",
+        "timestamp": "2025-12-22T18:24:06.272109+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_be54a4e6",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_c386e406"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: KNOWLE...' FAILED_UNKNOWN. Reason: module 'datetime' has no attribute 'now'",
+        "notification_id": "notify_8a3c95d5ed",
+        "timestamp": "2025-12-22T18:24:06.252735+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_bc36fb7d",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: KNOWLEDGE_GAP_IDENTIFIED_f8e30d2d"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_d051731430",
+        "timestamp": "2025-12-22T18:23:42.303812+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_7c76aa04",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_96a68e4b"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_8651c4b653",
+        "timestamp": "2025-12-22T18:23:42.280612+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_215c3901",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_003ac72b"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_b041ca4851",
+        "timestamp": "2025-12-22T18:23:42.260960+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_5c0c6d40",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: PLANNING_HEURISTIC_SUGGESTION_ae19995a"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_6f3c9d6e8d",
+        "timestamp": "2025-12-22T18:23:42.240531+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_cbeeaedb",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_841edec7"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_PLANNING_HEURISTIC, Source: ...' FAILED_UNKNOWN. Reason: Tool modification process failed.",
+        "notification_id": "notify_e99d43a01e",
+        "timestamp": "2025-12-22T18:23:42.218776+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_f5de994b",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "PROCESSING_REFLECTION",
+            "description": "Executing action: ADD_PLANNING_HEURISTIC, Source: USER_PREFERENCE_LEARNED_563fd5bb"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: action...' FAILED_UNKNOWN. Reason: module 'datetime' has no attribute 'now'",
+        "notification_id": "notify_87092de531",
+        "timestamp": "2025-12-22T18:23:42.204232+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_01be4eec",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: action_13b447b4"
+        }
+    },
+    {
+        "event_type": "TASK_FAILED_UNKNOWN",
+        "summary_message": "Task 'Executing action: ADD_LEARNED_FACT, Source: action...' FAILED_UNKNOWN. Reason: module 'datetime' has no attribute 'now'",
+        "notification_id": "notify_a60351674b",
+        "timestamp": "2025-12-22T18:23:18.288631+00:00",
+        "status": "UNREAD",
+        "related_item_id": "task_54b4bd10",
+        "related_item_type": "task",
+        "details_payload": {
+            "task_type": "LEARNING_NEW_FACT",
+            "description": "Executing action: ADD_LEARNED_FACT, Source: action_958d3016"
+        }
+    },
+    {
         "event_type": "GENERAL_INFO",
         "summary_message": "Resuming interrupted task 'Verify Mission Control API...' (ID: task_28da1b26). Status: PLANNING",
         "notification_id": "notify_43e88dc0fc",

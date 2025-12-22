@@ -1,0 +1,16 @@
+{
+  "id": "56156627-af90-48e8-b824-e5bbd6f8fa56",
+  "title": "sup",
+  "created_at": 1766427682.003798,
+  "updated_at": 1766427701.4975774,
+  "history": [
+    {
+      "role": "user",
+      "content": "sup"
+    },
+    {
+      "role": "assistant",
+      "content": "Sup, dude! What's up?"
+    }
+  ]
+}

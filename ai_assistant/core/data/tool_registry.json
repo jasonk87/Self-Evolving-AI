@@ -1016,5 +1016,13 @@
         "description": "Async version of write_text_to_file using aiofiles.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "trigger_learning_scan": {
+        "tool_name": "trigger_learning_scan",
+        "module_path": "ai_assistant.custom_tools.memory_tools",
+        "function_name": "trigger_learning_scan",
+        "description": "Triggers an immediate scan of the recent conversation to learn important facts or user preferences.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

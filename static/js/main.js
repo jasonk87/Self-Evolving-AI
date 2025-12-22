@@ -13,10 +13,66 @@ import { notifyIfHidden } from './modules/utils.js';
 // Expose Globals
 window.confirmShutdown = UI.confirmShutdown;
 
-document.addEventListener('DOMContentLoaded', () => {
+// Top-level startup log
+console.log("[System] Main.js initializing...");
 
-    // --- References ---
-    // --- References ---
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("[System] DOM Ready. Initializing modules...");
+
+    // ... (References) ...
+    // Global Error Handler for Unhandled Rejections
+    window.addEventListener('unhandledrejection', event => {
+        console.error("[System] Unhandled promise rejection:", event.reason);
+    });
+
+    // --- Event Delegation for New Chat ---
+    // We bind to document to ensure we catch clicks even if the button is replaced
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('#new-chat-btn');
+        if (btn) {
+            console.log("[System] New Chat button clicked (Delegated Event)");
+            e.preventDefault();
+            e.stopPropagation();
+
+            try {
+                const res = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: "New Chat" })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                console.log("[System] New Session Created:", data);
+
+                if (data.success) {
+                    if (Chat && typeof Chat.loadChatSession === 'function') {
+                        Chat.loadChatSession(data.session_id, chatContainer);
+                        Chat.loadSessions(chatSessionsList, (sid) => {
+                            Chat.loadChatSession(sid, chatContainer);
+                            Layout.openMainView('view-chat', 'Chat');
+                        });
+                        Layout.openMainView('view-chat', 'Chat');
+                    } else {
+                        console.error("[System] Chat module not fully loaded", Chat);
+                        UI.showAlert("Error", "Chat module not ready. Please refresh.");
+                    }
+                } else {
+                    throw new Error(data.error || "Unknown error");
+                }
+            } catch (err) {
+                console.error("[System] New Chat Error:", err);
+                UI.showAlert("Error", `Failed to create new chat: ${err.message}`);
+                if (!UI || !UI.showAlert) alert(`Error: ${err.message}`);
+            }
+        }
+    });
+
+    // ... (rest of init)
+
     const mobileChatBtn = document.getElementById('mobile-chat-btn');
     const sidebarPanel = document.getElementById('sidebar-panel');
     const bottomPanel = document.getElementById('bottom-panel');
@@ -195,7 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const filename = path ? path.split('/').pop() : 'Editor';
                         Layout.openMainView('view-editor-main', filename);
                     });
-                    if (target === 'view-sidebar-chats') Chat.loadSessions(chatSessionsList);
+                    if (target === 'view-sidebar-chats') Chat.loadSessions(chatSessionsList, (sessionId) => {
+                        Chat.loadChatSession(sessionId, chatContainer);
+                        Layout.openMainView('view-chat', 'Chat'); // Switch to stage
+                    });
                     if (target === 'view-sidebar-memory') Memory.loadMemory(
                         document.getElementById('memory-list'),
                         document.getElementById('episodes-list'),
@@ -310,25 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // We have that element in the DOM (the tab/view), but maybe not the trigger button in Activity Bar (we do have one).
 
 
-    // 6. New Chat
-    document.getElementById('new-chat-btn')?.addEventListener('click', async () => {
-        // ... same logic ...
-        try {
-            const res = await fetch('/api/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: "New Chat" })
-            });
-            const data = await res.json();
-            if (data.success) {
-                Chat.loadChatSession(data.session_id, chatContainer);
-                Chat.loadSessions(chatSessionsList);
-                Layout.openMainView('view-chat', 'Chat');
-            }
-        } catch (e) {
-            UI.showAlert("Error", "Failed to create new chat");
-        }
-    });
+    // 6. New Chat (Handled via Event Delegation above)
 
     // Mic
     document.getElementById('mic-btn')?.addEventListener('click', Voice.toggleListening);

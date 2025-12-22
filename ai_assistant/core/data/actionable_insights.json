@@ -344,7 +344,9 @@
                 "target_tool": "list_available_tools",
                 "target_module": "ai_assistant.custom_tools.system_tools"
             },
-            "failure_output": ""
+            "failure_output": "",
+            "module_path": "ai_assistant.custom_tools.system_tools",
+            "function_name": "list_available_tools"
         }
     },
     {
@@ -635,12 +637,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T17:52:36.658378+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Reinforce the AI's persona as a capable and powerful assistant. Emphasize its ability to create tools, run agents, and self-evolve."
+            "suggestion_text": "Reinforce the AI's persona as a capable and powerful assistant. Emphasize its ability to create tools, run agents, and self-evolve.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.214645+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:23:42.229674+00:00"
         }
     },
     {
@@ -681,12 +685,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T17:55:03.393158+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "The AI should embody this persona in its responses. It should emphasize its capabilities and willingness to use its tools to solve problems. This sets the stage for more complex requests."
+            "suggestion_text": "The AI should embody this persona in its responses. It should emphasize its capabilities and willingness to use its tools to solve problems. This sets the stage for more complex requests.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.234916+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:23:42.250158+00:00"
         }
     },
     {
@@ -705,12 +711,14 @@
             "suggestion": "Implement a system to track the effectiveness of pop-culture references. If the user doesn't respond positively or doesn't understand the reference, reduce the frequency or eliminate them altogether. Consider allowing the user to explicitly set a preference for pop-culture references."
         },
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T17:55:03.393158+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Implement a system to track the effectiveness of pop-culture references. If the user doesn't respond positively or doesn't understand the reference, reduce the frequency or eliminate them altogether. Consider allowing the user to explicitly set a preference for pop-culture references."
+            "suggestion_text": "Implement a system to track the effectiveness of pop-culture references. If the user doesn't respond positively or doesn't understand the reference, reduce the frequency or eliminate them altogether. Consider allowing the user to explicitly set a preference for pop-culture references.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.258111+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:23:42.273146+00:00"
         }
     },
     {
@@ -781,12 +789,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:01:23.114308+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Store the user's name and creator status in permanent memory and use it in future interactions. Prioritize Jason's requests and acknowledge his role in the system's existence."
+            "suggestion_text": "Store the user's name and creator status in permanent memory and use it in future interactions. Prioritize Jason's requests and acknowledge his role in the system's existence.",
+            "action_attempt_timestamp": "2025-12-22T18:22:56.053368+00:00",
+            "action_end_timestamp": "2025-12-22T18:23:18.313210+00:00"
         }
     },
     {
@@ -803,12 +813,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:01:23.114308+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Incorporate this persona description into the AI's behavior and response style. Lean into the 'badass' persona, tool creation, agent running, and self-evolution capabilities in future interactions. Demonstrate these capabilities proactively where appropriate."
+            "suggestion_text": "Incorporate this persona description into the AI's behavior and response style. Lean into the 'badass' persona, tool creation, agent running, and self-evolution capabilities in future interactions. Demonstrate these capabilities proactively where appropriate.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.278590+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:23:42.292915+00:00"
         }
     },
     {
@@ -825,12 +837,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:07:48.839539+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Store this information in a permanent memory or knowledge base and use it to personalize future interactions. For example, begin future interactions with \"Hello Jason, it's Weebo.\""
+            "suggestion_text": "Store this information in a permanent memory or knowledge base and use it to personalize future interactions. For example, begin future interactions with \"Hello Jason, it's Weebo.\"",
+            "action_attempt_timestamp": "2025-12-22T18:23:18.313210+00:00",
+            "action_end_timestamp": "2025-12-22T18:23:42.213627+00:00"
         }
     },
     {
@@ -847,12 +861,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:07:48.839539+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "The AI should maintain a persona that reflects confidence, competence, and a willingness to use its advanced capabilities to solve problems. Avoid overly simplistic or generic responses. When offering solutions, highlight the advanced capabilities being utilized."
+            "suggestion_text": "The AI should maintain a persona that reflects confidence, competence, and a willingness to use its advanced capabilities to solve problems. Avoid overly simplistic or generic responses. When offering solutions, highlight the advanced capabilities being utilized.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.297817+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:23:42.314158+00:00"
         }
     },
     {
@@ -869,12 +885,14 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:07:48.839539+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Avoid making references unless the AI can be certain that they are relevant to the user's interests or the current conversation. Implement a relevance check using a tool or module that can analyze the conversation history and user profile to determine if a reference is appropriate. Alternatively, the AI could ask the user if they are familiar with the reference before making it, or provide a brief explanation immediately after."
+            "suggestion_text": "Avoid making references unless the AI can be certain that they are relevant to the user's interests or the current conversation. Implement a relevance check using a tool or module that can analyze the conversation history and user profile to determine if a reference is appropriate. Alternatively, the AI could ask the user if they are familiar with the reference before making it, or provide a brief explanation immediately after.",
+            "action_attempt_timestamp": "2025-12-22T18:23:42.320579+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:24:06.261390+00:00"
         }
     },
     {
@@ -891,12 +909,64 @@
         "corrected_fact": null,
         "planning_heuristic_details": null,
         "priority": 3,
-        "status": "NEW",
+        "status": "ACTION_FAILED",
         "creation_timestamp": "2025-12-22T18:13:05.844548+00:00",
         "metadata": {
             "source": "conversational_analysis",
             "session_id": "83cae1d0-1cd1-45ac-87ed-257f5f549ac3",
-            "suggestion_text": "Adjust the AI's tone and vocabulary to reflect a confident and capable persona. Showcase its ability to create tools, run agents, and self-evolve when relevant to the conversation. Avoid being overly aggressive or using inappropriate language."
+            "suggestion_text": "Adjust the AI's tone and vocabulary to reflect a confident and capable persona. Showcase its ability to create tools, run agents, and self-evolve when relevant to the conversation. Avoid being overly aggressive or using inappropriate language.",
+            "action_attempt_timestamp": "2025-12-22T18:24:06.268302+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:24:06.280528+00:00"
+        }
+    },
+    {
+        "type": "USER_PREFERENCE_LEARNED",
+        "description": "The user initiated the conversation with a very informal greeting ('sup'). The AI should infer that the user is comfortable with informality, but it should still be cautious about mirroring the level of informality until the user has demonstrated a consistent preference. (Evidence: USER: sup)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_PREFERENCE_LEARNED_cd32136a",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "ACTION_FAILED",
+        "creation_timestamp": "2025-12-22T18:22:56.046471+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "56156627-af90-48e8-b824-e5bbd6f8fa56",
+            "suggestion_text": "Adjust the AI's formality level based on initial user input, but avoid excessive informality without further confirmation.",
+            "action_attempt_timestamp": "2025-12-22T18:24:06.285352+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:24:06.299149+00:00"
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The assistant's response could be improved. Instead of just mirroring the user's greeting and asking 'What's up?', it could proactively offer assistance or ask a more specific question based on its intended purpose. (Evidence: ASSISTANT: Sup, dude! What's up?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_81060a92",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Incorporate a planning heuristic: After a greeting, proactively offer common functions or ask a targeted question to guide the conversation."
+        },
+        "priority": 3,
+        "status": "ACTION_FAILED",
+        "creation_timestamp": "2025-12-22T18:22:56.047058+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "56156627-af90-48e8-b824-e5bbd6f8fa56",
+            "suggestion_text": "Incorporate a planning heuristic: After a greeting, proactively offer common functions or ask a targeted question to guide the conversation.",
+            "action_attempt_timestamp": "2025-12-22T18:24:06.305367+00:00",
+            "action_action_failed_timestamp": "2025-12-22T18:24:06.317575+00:00"
         }
     }
 ]

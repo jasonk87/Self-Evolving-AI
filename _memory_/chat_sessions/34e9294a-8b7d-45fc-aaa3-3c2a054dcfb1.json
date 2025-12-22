@@ -1,0 +1,16 @@
+{
+  "id": "34e9294a-8b7d-45fc-aaa3-3c2a054dcfb1",
+  "title": "what tools do you have availab...",
+  "created_at": 1766427711.6720512,
+  "updated_at": 1766427763.0648937,
+  "history": [
+    {
+      "role": "user",
+      "content": "what tools do you have available?"
+    },
+    {
+      "role": "assistant",
+      "content": "Alright, here's the REAL deal on what I can do! I've got tools for:\n\n*   **Project Management:** `add_dependency_to_project`, `build_project`, `create_project_directory`, `execute_project_coding_plan`, `execute_project_plan`\n*   **Info & Research:** `check_calendar`, `execute_deep_research`\n*   **Utilities:** `echo_message`, `execute_safe_terminal_command`, `execute_sandboxed_python_script`\n\nSo, what do you wanna build, research, or... um... echo today?"
+    }
+  ]
+}
