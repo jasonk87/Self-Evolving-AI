@@ -526,10 +526,34 @@ Instructions:
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
 
-        # 2. Project Context (Simplified)
+        # 2. Project Context (Simplified & Proactive)
         prompt_lower = prompt.lower()
+        file_mentions = re.findall(r'[\w./-]+\.py', prompt)
+
+        if file_mentions:
+            context_parts.append("Potential File Context:")
+            from ai_assistant.core.self_modification import _resolve_file_path_robust
+            from ai_assistant.custom_tools.file_system_tools import read_text_from_file
+
+            for fname in file_mentions:
+                # Naive resolution: check if it exists in current dir or basic project structure
+                # We reuse the logic in self_modification to find likely paths even if partial
+                # Note: This is read-only peek for context
+
+                # Check absolute or cwd relative
+                if os.path.exists(fname):
+                    try:
+                        content = read_text_from_file(fname)
+                        if not content.startswith("Error"):
+                            context_parts.append(f"--- Content of {fname} ---\n{content}\n--- End of {fname} ---")
+                            metadata[f'file_context_{fname}'] = "Loaded"
+                    except Exception:
+                        pass
+                # Check module path like behavior if it looks like a module but has .py
+                # (handled loosely by re above)
+
         if "project" in prompt_lower or ".py" in prompt_lower:
-            context_parts.append("Note: If this is a project request, use file tools to explore the codebase.")
+            context_parts.append("Note: If specific files were not loaded above, use file tools to explore the codebase.")
             metadata['project_context_hint'] = True
 
         return "\n\n".join(context_parts), metadata

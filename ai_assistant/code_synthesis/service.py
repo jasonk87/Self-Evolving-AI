@@ -214,16 +214,41 @@ class CodeSynthesisService:
         if original_code_from_context:
             original_code = original_code_from_context
         else:
-            original_code = self_modification.get_function_source_code(module_path, function_name)
+            # CHANGE: Get full file context if possible, falling back to function only
+            # Check if we can get the full file content
+            from ai_assistant.core.self_modification import _resolve_file_path_robust
+            from ai_assistant.custom_tools.file_system_tools import read_text_from_file
+
+            full_file_path = _resolve_file_path_robust(module_path, function_name)
+            original_code = None
+            full_file_context = ""
+
+            if full_file_path and os.path.exists(full_file_path):
+                file_content = read_text_from_file(full_file_path)
+                if not file_content.startswith("Error"):
+                    full_file_context = file_content
+                    # We still try to extract the specific function for the "Original Function Code" block
+                    # but we will append the full file context to the prompt description.
+                    original_code = self_modification.get_function_source_code(module_path, function_name)
+
+            if not original_code:
+                 # Fallback if full file load failed or function extraction failed
+                 original_code = self_modification.get_function_source_code(module_path, function_name)
+
         if not original_code:
             error_msg = f"Could not retrieve original code for {module_path}.{function_name}."
             print(f"CodeSynthesisService: {error_msg}")
             return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_PRECONDITION,
                                   error_message=error_msg)
 
+        # Enhance problem description with full context if available
+        enhanced_description = problem_description
+        if 'full_file_context' in locals() and full_file_context:
+            enhanced_description += f"\n\n--- Full File Context ({module_path}) ---\n{full_file_context}\n--- End Full File Context ---"
+
         prompt = LLM_CODE_FIX_PROMPT_TEMPLATE.format(
             module_path=module_path, function_name=function_name,
-            problem_description=problem_description, original_code=original_code
+            problem_description=enhanced_description, original_code=original_code
         )
 
         llm_config = request.llm_config_overrides or {}
