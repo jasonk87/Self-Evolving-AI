@@ -3,10 +3,13 @@ import os
 import shutil
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
-from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
+from ai_assistant.memory.persistent_memory import (
+    load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH,
+    load_actionable_insights, save_actionable_insights
+)
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_data_dir
@@ -48,17 +51,25 @@ class MemoryMaintenanceService:
         logger.info("MemoryMaintenanceService: Starting maintenance cycle...")
         stats = {
             "legacy_classified": 0,
-            "transient_pruned": 0
+            "transient_pruned": 0,
+            "insights_pruned": 0
         }
 
-        # 1. Audit Legacy Facts
+        # 1. Prune Stale Insights (Tool Bugs, etc.)
+        try:
+            insight_pruned_count = self.prune_stale_insights(age_hours=24)
+            stats["insights_pruned"] = insight_pruned_count
+        except Exception as e:
+            logger.error(f"MemoryMaintenanceService: Error during insight pruning: {e}", exc_info=True)
+
+        # 2. Audit Legacy Facts
         try:
             classified_count = await self._audit_legacy_facts()
             stats["legacy_classified"] = classified_count
         except Exception as e:
             logger.error(f"MemoryMaintenanceService: Error during legacy audit: {e}", exc_info=True)
 
-        # 2. Prune Transient Memories
+        # 3. Prune Transient Memories
         try:
             # Default to 24 hours retention for transient facts
             pruned_count = self.memory_manager.prune_transient_memories(age_hours=24)
@@ -145,3 +156,47 @@ class MemoryMaintenanceService:
                     logger.error("MemoryMaintenanceService: Failed to save classified facts.")
 
         return updated_count
+
+    def prune_stale_insights(self, age_hours: int = 24) -> int:
+        """
+        Removes 'TOOL_BUG_SUSPECTED' insights that are older than age_hours.
+        Returns the number of insights removed.
+        """
+        insights = load_actionable_insights()
+        if not insights:
+            return 0
+        
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+        keep_insights = []
+        removed_count = 0
+        
+        for insight in insights:
+            # Check type
+            insight_type = insight.get("type")
+            
+            # Pruning Rules:
+            # 1. TOOL_BUG_SUSPECTED older than cutoff
+            # 2. HYPOTHETICAL_SCENARIO (Dream results) older than cutoff (often clutter)
+            if insight_type in ["TOOL_BUG_SUSPECTED", "HYPOTHETICAL_SCENARIO"]:
+                 try:
+                    # Parse timestamp
+                    ts_str = insight.get("creation_timestamp")
+                    if ts_str:
+                        # Handle varied formats if necessary, but Isoformat is standard
+                        created_at = datetime.fromisoformat(ts_str)
+                        if created_at < cutoff:
+                            removed_count += 1
+                            continue # Skip appending
+                 except Exception:
+                     # If format error, conservatively keep it
+                     pass
+
+            keep_insights.append(insight)
+        
+        if removed_count > 0:
+            if save_actionable_insights(keep_insights):
+                logger.info(f"MemoryMaintenanceService: Pruned {removed_count} stale insights (Tool Bugs/Dreams older than {age_hours}h).")
+            else:
+                logger.error("MemoryMaintenanceService: Failed to save insights after pruning.")
+        
+        return removed_count

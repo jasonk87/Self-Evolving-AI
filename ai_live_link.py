@@ -7,9 +7,13 @@ import logging
 import threading
 import traceback
 import time
+import sys
 from datetime import datetime
 from typing import List, Optional
 import audioop # For Kill Switch RMS calculation
+import warnings
+if sys.version_info >= (3, 11):
+    warnings.warn("audioop is deprecated and will be removed in Python 3.13. Consider using numpy for RMS calculation.", DeprecationWarning)
 
 import websockets
 import pyaudio
@@ -174,6 +178,12 @@ class LiveSession:
                 await asyncio.sleep(0) # Yield
         except Exception as e:
             logger.error(f"Audio Input Error: {e}")
+            if "Input overflowed" in str(e):
+                logger.warning("Audio input overflowed - skipping chunk.")
+            else:
+                 # Re-raise or stop if critical
+                 # self._running = False
+                 pass
 
     async def _video_input_loop(self):
         """Captures screen and sends to Gemini every 1 second."""

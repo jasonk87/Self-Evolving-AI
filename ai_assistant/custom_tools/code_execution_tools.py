@@ -15,7 +15,7 @@ import json
 from typing import Dict, Any, Optional, List
 from ai_assistant.core.events import emit_system_event
 
-def execute_sandboxed_python_script(script_content: str, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None) -> Dict[str, Any]:
+def execute_sandboxed_python_script(script_content: str = None, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None, **kwargs) -> Dict[str, Any]:
     """
     Executes a Python script in a temporary, somewhat isolated environment.
     WARNING: This is a basic PoC sandbox. Security is minimal and relies on OS permissions
@@ -23,7 +23,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
     provide strong guarantees against malicious code. Use with extreme caution.
 
     Args:
-        script_content: The Python script content as a string.
+        script_content: The Python script content as a string. (Aliases: code, script, python_code)
         input_files: Optional. A dictionary where keys are filenames and values are their string content.
                      These files will be created in the execution directory.
         output_filenames: Optional. A list of filenames expected to be created by the script,
@@ -41,10 +41,17 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
             "error_message": Optional error message if status is "error".
             "executed_script_path": Path to the temporary script file.
     """
+    # Handle aliases for AI robustness
+    if not script_content:
+        for alias in ['code', 'script', 'python_code']:
+            if alias in kwargs:
+                script_content = kwargs[alias]
+                break
+
     emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Preparing sandbox...', 'status': 'RUNNING'})
     if not script_content:
-        return {'status': 'error', 'error_message': 'No script content provided.', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
-    interpreter = python_executable or 'python'
+        return {'status': 'error', 'error_message': 'No script content provided. Please use parameter "script_content" (or "code").', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
+    interpreter = python_executable or sys.executable
     if isinstance(input_files, str):
         try:
             input_files = json.loads(input_files)
@@ -84,7 +91,7 @@ def execute_sandboxed_python_script(script_content: str, input_files: Optional[D
         stderr_val = ''
         error_msg_val = None
         try:
-            process_result = subprocess.run([interpreter, '-I', '-s', '-S', script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
+            process_result = subprocess.run([interpreter, script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
             emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Execution finished.', 'status': 'COMPLETED'})
             stdout_val = process_result.stdout
             stderr_val = process_result.stderr

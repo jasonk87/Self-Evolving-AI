@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import logging
 import time
@@ -19,6 +20,8 @@ def get_generated_tools_path() -> str:
     custom_tools_dir = os.path.dirname(__file__)
     path = os.path.join(custom_tools_dir, GENERATED_TOOLS_DIR_NAME)
     os.makedirs(path, exist_ok=True)
+    if path not in sys.path:
+        sys.path.append(path)
     return path
 
 async def generate_new_tool_from_description(tool_description: str, suggested_tool_function_name: Optional[str]=None, suggested_filename: Optional[str]=None, action_executor: Optional['ActionExecutor']=None) -> str:

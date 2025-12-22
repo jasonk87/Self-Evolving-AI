@@ -87,7 +87,8 @@ _auto_approve_check_interval_seconds = 60 # Check frequently, but action depends
 
 # Memory Maintenance State
 _last_memory_maintenance_time: float = 0.0
-_memory_maintenance_interval_seconds = 3600 * 24 # Run once every 24 hours
+_last_memory_maintenance_time: float = 0.0
+_memory_maintenance_interval_seconds = 1800 # Run once every 30 minutes (idle only)
 
 # Learning & Conversation Scan State
 _last_conversation_scan_time: float = 0.0
@@ -532,16 +533,8 @@ async def _background_loop_async():
         current_loop_time = time.time()
         
         # --- Memory Maintenance Task ---
-        # Checks if 24h has passed, runs audit and prune
-        if current_loop_time >= _last_memory_maintenance_time + _memory_maintenance_interval_seconds:
-            # Don't run immediately on startup if we just restarted, unless it's been a long time.
-            # But standard logic handles that.
-            try:
-                await memory_maintenance_service.run_maintenance_cycle()
-            except Exception as e:
-                logger.error(f"BackgroundService: Error during memory maintenance cycle: {e}", exc_info=True)
-            
-            _last_memory_maintenance_time = time.time()
+        # NOW MOVED TO IDLE GATED SECTION
+        pass
 
         # --- Daily Briefing (Agenda Check) ---
         current_date_str = time.strftime('%Y-%m-%d')
@@ -836,6 +829,16 @@ async def _background_loop_async():
 
             _last_visual_audit_time = time.time()
             next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
+
+        # --- Memory Maintenance Task (Idle Gated) ---
+        if user_is_idle and current_loop_time >= _last_memory_maintenance_time + _memory_maintenance_interval_seconds:
+             try:
+                logger.info("BackgroundService: User is idle. Running Memory Maintenance Cycle...")
+                await memory_maintenance_service.run_maintenance_cycle()
+             except Exception as e:
+                logger.error(f"BackgroundService: Error during memory maintenance cycle: {e}", exc_info=True)
+            
+             _last_memory_maintenance_time = time.time()
 
         # --- Autonomous Project Coding Task (Heavy) ---
         if user_is_idle and PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:

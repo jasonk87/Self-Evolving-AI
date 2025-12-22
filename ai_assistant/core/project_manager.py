@@ -3,9 +3,11 @@ import os
 import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Union
+import aiofiles
+import asyncio
 
 from ai_assistant.config import get_data_dir, get_projects_dir
-from ai_assistant.utils.display_utils import CLIColors, color_text # For potential direct use or consistency
+from ai_assistant.utils.display_utils import CLIColors, color_text
 
 PROJECTS_FILE_NAME = "_ai_project_manifest.json"
 
@@ -27,6 +29,21 @@ def _load_projects() -> List[Dict[str, Any]]:
         print(color_text(f"Error loading projects: {e}", CLIColors.ERROR_MESSAGE))
         return []
 
+async def _load_projects_async() -> List[Dict[str, Any]]:
+    """Async version of _load_projects."""
+    filepath = get_projects_file_path()
+    if not os.path.exists(filepath):
+        return []
+    try:
+        async with aiofiles.open(filepath, 'r', encoding='utf-8') as f:
+            content = await f.read()
+            if not content:
+                return []
+            return json.loads(content)
+    except (IOError, json.JSONDecodeError) as e:
+        print(color_text(f"Error loading projects (async): {e}", CLIColors.ERROR_MESSAGE))
+        return []
+
 def _save_projects(projects: List[Dict[str, Any]]) -> bool:
     """Saves projects to the JSON file."""
     filepath = get_projects_file_path()
@@ -42,6 +59,10 @@ def _save_projects(projects: List[Dict[str, Any]]) -> bool:
 def list_projects() -> List[Dict[str, Any]]:
     """Returns a list of all projects."""
     return _load_projects()
+
+async def list_projects_async() -> List[Dict[str, Any]]:
+    """Returns a list of all projects asynchronously."""
+    return await _load_projects_async()
 
 # Conceptual Schema for create_project tool
 # CREATE_PROJECT_SCHEMA = {

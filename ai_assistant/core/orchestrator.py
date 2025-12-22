@@ -22,6 +22,7 @@ from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, 
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
+from ai_assistant.core.events import EventEmitter
 
 # Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
@@ -217,6 +218,13 @@ Output strictly your reasoning and the plan for the Operator.
                 
                 # Log the deep thought
                 print(color_text(f"Strategist Thoughts:\n{strategist_thoughts}", CLIColors.THOUGHT))
+                
+                # Emit thought event for UI
+                EventEmitter.emit("thought_update", {
+                    "role": "Strategist",
+                    "thought": strategist_thoughts,
+                    "cycle": step_i + 1
+                })
 
 
 
@@ -356,6 +364,13 @@ Instructions:
                     kwargs = tool_call.get("kwargs", {})
                     thought = tool_call.get("thought", "")
 
+                    # Emit thought event for UI (Operator Action)
+                    EventEmitter.emit("thought_update", {
+                        "role": "Operator",
+                        "thought": f"Action: {tool_name}\nReasoning: {thought}",
+                        "cycle": step_i + 1
+                    })
+
                     print(color_text(f"Operator Action: {thought}", CLIColors.THOUGHT))
                     print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
 
@@ -414,10 +429,26 @@ Instructions:
                         "tool": tool_name,
                         "result": result_str
                     })
-                else:
                     # Operator didn't use a tool or say FINAL ANSWER. Treat as a conversational response or error?
+                    
+                    # Safety check: If response looks like JSON but wasn't parsed, DO NOT treat as final answer.
+                    is_suspicious_json = operator_response.strip().startswith("{") or \
+                                         operator_response.strip().lower().startswith("json") or \
+                                         '"type":' in operator_response
+
+                    if is_suspicious_json:
+                         print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
+                         execution_history += f"Cycle {step_i+1}: Operator output invalid JSON. Retrying.\n"
+                         # Continue loop (retry)
+                         continue
+
                     # If it's just chatting, treat as final answer.
-                    final_answer = operator_response
+                    if not operator_response or not operator_response.strip():
+                        # Fallback for empty model response
+                        logger.warning("Operator returned empty response. using fallback.")
+                        final_answer = "Task Completed. (No text response generated)"
+                    else:
+                        final_answer = operator_response
                     success = True
                     break
 
@@ -453,39 +484,41 @@ Instructions:
         Extracts JSON tool call from text.
         """
         try:
+            # Clean up common prefixes
+            cleaned_text = text.strip()
+            if cleaned_text.lower().startswith("json"):
+                cleaned_text = cleaned_text[4:].strip()
+            
             # 1. Attempt refined regex for backticks
             # Matches ```json { ... } ``` or ``` { ... } ```
             match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
             if match:
                 return json.loads(match.group(1))
 
-            # 2. Attempt to find the first valid brace pair (ignoring leading text like "json")
-            # This is a simple stack-based parser to find the first balanced outer brace
-            start_index = text.find("{")
+            # 2. Attempt to find the first valid brace pair
+            start_index = cleaned_text.find("{")
             if start_index != -1:
                 balance = 0
-                for i in range(start_index, len(text)):
-                    char = text[i]
+                for i in range(start_index, len(cleaned_text)):
+                    char = cleaned_text[i]
                     if char == "{":
                         balance += 1
                     elif char == "}":
                         balance -= 1
                         if balance == 0:
                             # Found the closing brace
-                            candidate_json = text[start_index:i+1]
-                            # Try standard JSON first
+                            candidate_json = cleaned_text[start_index:i+1]
                             try:
                                 return json.loads(candidate_json)
                             except json.JSONDecodeError:
-                                # Fallback: Try ast.literal_eval for Pythonic JSON (e.g. loops with triple quotes)
-                                # This handles { "key": """value""" } which JSON can't, but LLMs often produce.
+                                # Fallback: Try ast.literal_eval
                                 import ast
                                 try:
                                     return ast.literal_eval(candidate_json)
                                 except Exception:
                                     pass
+                            break # Stop after first candidate
         except Exception as e:
-            # logger.warning(f"Failed to parse tool call: {e}")
             pass
         return None
 

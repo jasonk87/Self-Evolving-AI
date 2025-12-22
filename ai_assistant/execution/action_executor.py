@@ -317,9 +317,9 @@ class ActionExecutor:
             skeptic = ReviewerAgent("council_skeptic")
             judge = ReviewerAgent("council_judge") # Though coordinator usually takes 2 critics, execute_council_debate is custom
 
-            # Note: CriticalReviewCoordinator expects 2 critics in __init__, but execute_council_debate uses models directly via config.
+            # Note: CriticalReviewCoordinator expects 1 critic in __init__.
             # We just need a valid instance.
-            coordinator = CriticalReviewCoordinator(skeptic, judge)
+            coordinator = CriticalReviewCoordinator(skeptic)
 
             # Get original code for context
             original_code_content = self_modification.get_function_source_code(module_path, function_name) or ""
@@ -630,7 +630,14 @@ class ActionExecutor:
             return default_category
 
         try:
-            model_name = self.code_service.llm_provider.model
+            model_name = "gemini-2.0-flash-exp" # Default fallback
+            if hasattr(self.code_service.llm_provider, 'model'):
+                model_name = self.code_service.llm_provider.model
+            elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
+                model_name = self.code_service.llm_provider.DEFAULT_MODEL
+            elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
+                 # It might be the module itself if not instantiated
+                 model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
             llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
@@ -1240,7 +1247,8 @@ if __name__ == '__main__': # pragma: no cover
                  self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
                  return False
 
-            generated_code = await self.code_service.llm_provider.generate_code_async(prompt_for_code)
+            # Use invoke_ollama_model_async directly as it exists on the module
+            generated_code = await self.code_service.llm_provider.invoke_ollama_model_async(prompt_for_code, temperature=0.2)
 
             if not generated_code:
                  self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")

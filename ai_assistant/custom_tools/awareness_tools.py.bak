@@ -1,17 +1,8 @@
 import json
 from typing import Optional, Any
-from ai_assistant.tools.task_management import TaskManager
-from ai_assistant.tools.notification_management import NotificationManager
-from ai_assistant.tools.system_status import get_system_status_summary
-from ai_assistant.tools.fact_retrieval import load_learned_facts
-from ai_assistant.config import get_data_dir
-from typing import Optional, List, Dict
-from ai_assistant.core.task_manager import TaskManager
-from ai_assistant.core.notification_manager import NotificationManager
-from typing import List, Dict, Any, Optional
-from typing import List, Dict, Any, Optional
 from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from enum import Enum, auto
 from dataclasses import asdict
@@ -107,6 +98,15 @@ def get_system_status_summary(task_manager: Optional[TaskManager]=None, notifica
                 summary_lines.append('\nRecently Created/Modified Tools: None found in generated directory.')
     except Exception as e:
         summary_lines.append(f'\nError scanning generated tools: {e}')
+
+    # Append Background Service Report
+    try:
+        from ai_assistant.core.background_service import get_background_activity_report
+        bg_report = get_background_activity_report()
+        summary_lines.append(f'\n{bg_report}')
+    except Exception as e:
+        summary_lines.append(f'\nError retrieving background service status: {e}')
+
     return '\n'.join(summary_lines)
 GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {'name': 'get_system_status_summary', 'description': 'Provides a summary of current system activity, including active/archived tasks and recent unread notifications.', 'parameters': [{'name': 'active_limit', 'type': 'int', 'description': 'Optional. Max active tasks to detail (default 5).'}, {'name': 'archived_limit', 'type': 'int', 'description': 'Optional. Max archived tasks to detail (default 3).'}, {'name': 'unread_notifications_limit', 'type': 'int', 'description': 'Optional. Max unread notifications to detail (default 3).'}], 'returns': {'type': 'str', 'description': 'A multi-line string summarizing system status and notifications.'}}
 

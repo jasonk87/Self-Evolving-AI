@@ -133,8 +133,6 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         "files": list_of_files, "directories": list_of_directories.
         Or {"status": "error", "message": "error description"}.
     """
-    import os
-    from typing import Optional, Dict, Any
     from ai_assistant.core.project_manager import find_project
     project = find_project(project_identifier)
     if not project:
@@ -161,8 +159,6 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         return {'status': 'error', 'message': f'Path not found: {path_to_list} - {str(e)}'}
     except PermissionError as e:
         return {'status': 'error', 'message': f'Permission denied to list directory: {path_to_list} - {str(e)}'}
-    except OSError as e:
-        return {'status': 'error', 'message': f"OS error occurred while listing files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
 

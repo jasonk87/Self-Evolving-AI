@@ -11,6 +11,9 @@ from typing import Dict, Any
 import os
 import re
 from typing import Union, Optional, Dict, Any, List
+import aiofiles
+import asyncio
+import functools
 from ..config import get_data_dir
 ai_assistant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BASE_PROJECTS_DIR = os.path.join(ai_assistant_dir, 'ai_generated_projects')
@@ -94,6 +97,24 @@ def write_text_to_file(full_filepath: str, content: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while writing to file '{full_filepath}': {e}"
 
+async def write_text_to_file_async(full_filepath: str, content: str) -> str:
+    """Async version of write_text_to_file using aiofiles."""
+    if not full_filepath or not isinstance(full_filepath, str):
+        return 'Error: Filepath must be a non-empty string.'
+    if not isinstance(content, str):
+        return 'Error: Content must be a string.'
+    try:
+        dir_path = os.path.dirname(full_filepath)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        async with aiofiles.open(full_filepath, 'w', encoding='utf-8') as f:
+            await f.write(content)
+        return f"Success: Content written to '{full_filepath}'."
+    except OSError as e:
+        return f"Error writing to file '{full_filepath}': {e}"
+    except Exception as e:
+        return f"An unexpected error occurred while writing to file '{full_filepath}': {e}"
+
 def read_text_from_file(full_filepath: str) -> str:
     """
     Reads and returns the text content from the specified file.
@@ -113,6 +134,23 @@ def read_text_from_file(full_filepath: str) -> str:
     try:
         with open(full_filepath, 'r', encoding='utf-8') as f:
             content = f.read()
+        return content
+    except OSError as e:
+        return f"Error reading file '{full_filepath}': {e}"
+    except Exception as e:
+        return f"An unexpected error occurred while reading file '{full_filepath}': {e}"
+
+async def read_text_from_file_async(full_filepath: str) -> str:
+    """Async version of read_text_from_file using aiofiles."""
+    if not full_filepath or not isinstance(full_filepath, str):
+        return 'Error: Filepath must be a non-empty string.'
+    if not os.path.exists(full_filepath):
+        return f"Error: File '{full_filepath}' not found."
+    if not os.path.isfile(full_filepath):
+        return f"Error: Path '{full_filepath}' is not a file."
+    try:
+        async with aiofiles.open(full_filepath, 'r', encoding='utf-8') as f:
+            content = await f.read()
         return content
     except OSError as e:
         return f"Error reading file '{full_filepath}': {e}"
@@ -162,6 +200,11 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
 
+async def list_project_files_async(project_identifier: str, sub_directory: Optional[str]=None) -> Dict[str, Any]:
+    """Async wrapper for list_project_files running in thread pool."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(list_project_files, project_identifier, sub_directory))
+
 def get_project_file_content(project_identifier: str, file_path_in_project: str) -> Dict[str, Any]:
     """
     Reads the content of a specified file within a project.
@@ -200,6 +243,15 @@ def get_project_file_content(project_identifier: str, file_path_in_project: str)
         return {'status': 'error', 'message': f'IOError reading file {target_file_path}: {str(e)}'}
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to read project file '{file_path_in_project}' from '{project_identifier}': {str(e)}"}
+
+async def get_project_file_content_async(project_identifier: str, file_path_in_project: str) -> Dict[str, Any]:
+    """Async wrapper for get_project_file_content but using async file read."""
+    # We duplicate path logic or reuse sync function? Reuse sync logic for path resolution, but async read.
+    # Actually, simpler to just run the sync function in thread pool if path resolution is complex?
+    # No, let's copy the logic for purity if we want true async IO, but path checks are still sync (os.path).
+    # Thread pool is safest for os.* operations.
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(get_project_file_content, project_identifier, file_path_in_project))
 
 def save_project_file_content(project_identifier: str, file_path_in_project: str, content: str) -> Dict[str, Any]:
     """
@@ -240,6 +292,14 @@ def save_project_file_content(project_identifier: str, file_path_in_project: str
         return {'status': 'error', 'message': f'IOError writing file {target_file_path}: {str(e)}'}
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to write project file '{file_path_in_project}' to '{project_identifier}': {str(e)}"}
+
+async def save_project_file_content_async(project_identifier: str, file_path_in_project: str, content: str) -> Dict[str, Any]:
+    """Async wrapper/implementation for save_project_file_content."""
+    # Sync path resolution + mkdirs, then async write.
+    # To keep code simple and reliable, using thread pool for the whole operation including safe path checks
+    # is often better than mixing sync os.* and async write unless we rewrite all path logic.
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(save_project_file_content, project_identifier, file_path_in_project, content))
 if __name__ == '__main__':
     import shutil
     import tempfile

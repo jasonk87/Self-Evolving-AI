@@ -1,5 +1,6 @@
 requests
 aiohttp
+aiofiles
 duckduckgo_search
 prompt_toolkit
 google-api-python-client

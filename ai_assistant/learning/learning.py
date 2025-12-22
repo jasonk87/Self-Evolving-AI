@@ -434,8 +434,8 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
                                         # assuming the new insight might lead to a better fix.
                                         
                                         # Also deduplicate pending insights
-                                        if existing_insight.status in ["NEW", "PENDING", "PENDING_MANUAL_REVIEW"]:
-                                             print(f"LearningAgent: Skipping insight creation for '{related_tool_name}' because a similar insight ({existing_insight.insight_id}) is already pending.")
+                                        if existing_insight.status in ["NEW", "PENDING", "PENDING_MANUAL_REVIEW", "PROCESSING_SELF_HEALING", "SELF_HEALING_PROPOSED"]:
+                                             print(f"LearningAgent: Skipping insight creation for '{related_tool_name}' because a similar insight ({existing_insight.insight_id}) is already pending/proposed.")
                                              return None
 
                             break
@@ -532,7 +532,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
     async def review_and_propose_next_action(self) -> Optional[Tuple[Dict[str, Any], bool]]:
         actionable_new_insights = [insight for insight in self.insights if insight.status == "NEW"]
         if not actionable_new_insights:
-            print("LearningAgent: No new actionable insights to review.")
+            # print("LearningAgent: No new actionable insights to review.")
             return None
         actionable_new_insights.sort(key=lambda insight: (insight.priority, insight.creation_timestamp))
         selected_insight = actionable_new_insights[0]

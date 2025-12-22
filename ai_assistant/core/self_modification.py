@@ -113,6 +113,51 @@ def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> lis
 
 
 
+def _parse_and_validate_function_update(code_string: str, function_name: str) -> tuple[Optional[ast.AST], list[ast.AST], Optional[str]]:
+    """
+    Parses the new code string and validates that it contains exactly one function definition
+    matching the expected name, and optionally imports.
+
+    Returns:
+        tuple: (new_function_node, new_imports_list, error_message)
+        If error_message is not None, the other values should be ignored.
+    """
+    try:
+        ast_module = ast.parse(code_string)
+    except SyntaxError as e:
+        return None, [], f"SyntaxError in new_code_string: {e.msg} (line {e.lineno}, offset {e.offset})"
+
+    if not ast_module.body:
+        return None, [], "Error: new_code_string is empty or contains no parsable Python statements."
+
+    new_function_node = None
+    new_imports = []
+
+    for node in ast_module.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if new_function_node is not None:
+                return None, [], "Error: new_code_string contains multiple function definitions. Only one is allowed."
+            new_function_node = node
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            new_imports.append(node)
+        else:
+            return None, [], f"Error: new_code_string contains unsupported top-level statement type: {type(node).__name__}. Only imports and a single function definition are allowed."
+
+    if not new_function_node:
+        return None, [], "Error: new_code_string does not contain a valid function definition."
+    
+    if new_function_node.name != function_name:
+         # Just a warning context, but we return the node. Caller handles logging if needed.
+         pass
+
+    # Validate imports immediately
+    if new_imports:
+        import_errors = _validate_new_imports(new_imports)
+        if import_errors:
+            return None, [], "Critical Safety Review Failed: Invalid Imports Detected.\n" + "\n".join(import_errors)
+
+    return new_function_node, new_imports, None
+
 def get_function_source_code(module_path: str, function_name: str) -> Optional[str]:
     """
     Retrieves the source code of a specified function within a given module.
@@ -298,6 +343,15 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step="Reading original file")
             return err_msg
 
+        # --- EARLY VALIDATION START ---
+        # Validate structure before engaging expensive review or refinement steps
+        _, _, validation_err_msg = _parse_and_validate_function_update(new_code_string, function_name)
+        if validation_err_msg:
+             logger.error(validation_err_msg)
+             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=validation_err_msg, step_desc="Early validation failed")
+             return validation_err_msg
+        # --- EARLY VALIDATION END ---
+
         original_function_code_for_diff = get_function_source_code(module_path, function_name)
         if original_function_code_for_diff is None:
             err_msg = f"Error: Could not retrieve original source code for function '{function_name}' in module '{module_path}' for review."
@@ -455,64 +509,20 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
         # We already read original_source earlier, but let's refresh original_ast just to be clean
         original_ast = ast.parse(original_source, filename=file_path)
 
-        try:
-            new_function_ast_module = ast.parse(new_code_string)
-        except SyntaxError as e_new_code_syn:
-            err_msg = f"SyntaxError in new_code_string: {e_new_code_syn.msg} (line {e_new_code_syn.lineno}, offset {e_new_code_syn.offset})" # pragma: no cover
-            logger.error(f"{err_msg} - New code: \n{new_code_string}") # pragma: no cover
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Syntax error in new code") # pragma: no cover
-            return err_msg # pragma: no cover
-        
-        if not new_function_ast_module.body:
-            err_msg = "Error: new_code_string is empty or contains no parsable Python statements (e.g., only comments)."
-            logger.error(err_msg)
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="New code is empty or invalid")
-            return err_msg
+        # Re-validate (in case of refinement) and parse
+        new_function_node, new_imports, val_err = _parse_and_validate_function_update(new_code_string, function_name)
+        if val_err:
+             # Should be rare if early validation passed and refinement was checking, but essential for safety
+             logger.error(val_err)
+             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=val_err, step_desc="Final validation failed")
+             return val_err
 
-        # Enhanced Validation & Parsing: Allow Imports + Function
-        new_function_node = None
-        new_imports = []
-
-        for node in new_function_ast_module.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if new_function_node is not None:
-                     err_msg = "Error: new_code_string contains multiple function definitions. Only one is allowed."
-                     logger.error(err_msg)
-                     _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Multiple functions in new code")
-                     return err_msg
-                new_function_node = node
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                new_imports.append(node)
-            else:
-                # We could reject other types (ClassDef, Assign, etc) or just ignore them.
-                # For safety, let's reject to prevent accidental global state changes or side effects.
-                err_msg = f"Error: new_code_string contains unsupported top-level statement type: {type(node).__name__}. Only imports and a single function definition are allowed."
-                logger.error(err_msg)
-                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Invalid statement in new code")
-                return err_msg
-
-        if not new_function_node:
-            err_msg = "Error: new_code_string does not contain a valid function definition."
-            logger.error(err_msg)
-            _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="No function found in new code")
-            return err_msg
-        
         if new_function_node.name != function_name:
-            logger.warning(
+             logger.warning(
                 f"The new code defines a function named '{new_function_node.name}', "
                 f"but the target function name is '{function_name}'. "
                 f"The function name in the new code will be used for replacement, effectively renaming the function."
             )
-
-        # --- VALIDATE NEW IMPORTS ---
-        if new_imports:
-            import_errors = _validate_new_imports(new_imports)
-            if import_errors:
-                err_msg = "Critical Safety Review Failed: Invalid Imports Detected.\n" + "\n".join(import_errors)
-                logger.error(err_msg)
-                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=err_msg, step_desc="Import validation failed")
-                return err_msg
-        # ----------------------------
 
         # 1. Identify Import Additions (Textual)
         import_insertion_text = ""

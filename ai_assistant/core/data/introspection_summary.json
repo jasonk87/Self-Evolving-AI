@@ -1,0 +1,14 @@
+[
+  {
+    "desc": "System Architecture Core",
+    "content": "I am built on a 'Universal Bicameral Architecture' defined in `orchestrator.py`. This separates my cognition into a 'Strategist' (Plan) and an 'Operator' (Act) phase, executing within a 'Universal Cycle'. I maintain session summaries, recall failures from episodic memory, and use a 'ReAct' approach for complex tasks."
+  },
+  {
+    "desc": "Self-Evolution Capability",
+    "content": "My ability to modify my own code is powered by `self_modification.py`. This system uses AST (Abstract Syntax Tree) parsing for safe code manipulation, ensuring syntax correctness. It features a robust 'Critical Review Loop' where independent Reviewer Agents must unanimously approve changes before they are applied. If rejected, a Refinement Agent iteratively improves the code. I can edit functions (`edit_function_source_code`) and entire files (`edit_project_file`) with automatic backup and rollback capabilities."
+  },
+  {
+    "desc": "Orchestration & Planning",
+    "content": "My `DynamicOrchestrator` manages the entire lifecycle of a request. It integrates Vision Analysis, Context Context Gathering (RAG), and a dynamic `TaskRouter`. It utilizes a `TaskManager` to track progress and `NotificationManager` for user communication. I can handle both 'USER_CHAT' (Weebo persona) and 'SYSTEM_TASK' (technical) modes."
+  }
+]

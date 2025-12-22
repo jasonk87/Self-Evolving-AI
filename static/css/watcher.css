@@ -184,3 +184,12 @@
     z-index: 9990 !important;
     overflow: visible !important;
 }
+
+/* --- MOBILE OVERRIDE FOR WATCHER --- */
+@media (max-width: 768px) {
+    #live-toggle-btn {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+}

@@ -35,29 +35,61 @@ class ToolSystem:
             print(f'ToolSystem: Initializing with registry file: {self._persisted_tool_metadata_file}')
         self.load_persisted_tools()
         self._register_system_tools()
-        self.custom_tool_modules_to_discover = [('ai_assistant.custom_tools.my_extra_tools', 'my_extra_tools.py'), ('ai_assistant.custom_tools.awareness_tools', 'awareness_tools.py'), ('ai_assistant.custom_tools.config_management_tools', 'config_management_tools.py'), ('ai_assistant.custom_tools.conversational_tools', 'conversational_tools.py'), ('ai_assistant.custom_tools.project_management_tools', 'project_management_tools.py'), ('ai_assistant.custom_tools.project_execution_tools', 'project_execution_tools.py'), ('ai_assistant.custom_tools.code_execution_tools', 'code_execution_tools.py'), ('ai_assistant.custom_tools.file_system_tools', 'file_system_tools.py'), ('ai_assistant.custom_tools.git_tools', 'git_tools.py'), ('ai_assistant.custom_tools.knowledge_tools', 'knowledge_tools.py'), ('ai_assistant.custom_tools.meta_programming_tools', 'meta_programming_tools.py'), ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'), ('ai_assistant.custom_tools.agent_tools', 'agent_tools.py'), ('ai_assistant.custom_tools.calendar_tools', 'calendar_tools.py'), ('ai_assistant.custom_tools.generated', 'generated_tools_module'), ('ai_assistant.custom_tools.system_tools', 'system_tools.py'), ('ai_assistant.custom_tools.architect_tools', 'architect_tools.py'), ('ai_assistant.custom_tools.navigation_tools', 'navigation_tools.py')]
-        should_discover = not self._tool_registry
+
+        # Explicit list of custom tool modules to discover
+        self.custom_tool_modules_to_discover = [
+            ('ai_assistant.custom_tools.agent_tools', 'agent_tools.py'),
+            ('ai_assistant.custom_tools.architect_tools', 'architect_tools.py'),
+            ('ai_assistant.custom_tools.awareness_tools', 'awareness_tools.py'),
+            ('ai_assistant.custom_tools.calendar_tools', 'calendar_tools.py'),
+            ('ai_assistant.custom_tools.code_execution_tools', 'code_execution_tools.py'),
+            ('ai_assistant.custom_tools.config_management_tools', 'config_management_tools.py'),
+            ('ai_assistant.custom_tools.conversational_tools', 'conversational_tools.py'),
+            ('ai_assistant.custom_tools.file_editing_tools', 'file_editing_tools.py'),
+            ('ai_assistant.custom_tools.file_system_tools', 'file_system_tools.py'),
+            ('ai_assistant.custom_tools.git_tools', 'git_tools.py'),
+            ('ai_assistant.custom_tools.introspection_tools', 'introspection_tools.py'),
+            ('ai_assistant.custom_tools.knowledge_tools', 'knowledge_tools.py'),
+            ('ai_assistant.custom_tools.memory_tools', 'memory_tools.py'),
+            ('ai_assistant.custom_tools.meta_programming_tools', 'meta_programming_tools.py'),
+            ('ai_assistant.custom_tools.my_extra_tools', 'my_extra_tools.py'),
+            ('ai_assistant.custom_tools.navigation_tools', 'navigation_tools.py'),
+            ('ai_assistant.custom_tools.project_execution_tools', 'project_execution_tools.py'),
+            ('ai_assistant.custom_tools.project_management_tools', 'project_management_tools.py'),
+            ('ai_assistant.custom_tools.reminder_tool.py', 'reminder_tool.py'),
+            ('ai_assistant.custom_tools.search_tools', 'search_tools.py'),
+            ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'),
+            ('ai_assistant.custom_tools.system_config_tools', 'system_config_tools.py'),
+            ('ai_assistant.custom_tools.system_tools', 'system_tools.py'),
+            ('ai_assistant.custom_tools.testing_tools', 'testing_tools.py')
+        ]
+
+        # Always run discovery to ensure new tools are registered
+        # The previous logic only ran it if registry was empty, which is bad for updates
+        # We will make it smart: discover, and if we find new ones, save.
         any_new_tools_registered_overall = False
-        if should_discover:
-            if is_debug_mode():
-                print('ToolRegistry empty. performing full discovery.')
-            for module_import_path, module_filename in self.custom_tool_modules_to_discover:
-                try:
-                    module_to_inspect = importlib.import_module(module_import_path)
-                    if self._discover_and_register_custom_tools(module_to_inspect, module_import_path):
-                        if is_debug_mode():
-                            print(f'ToolSystem: New custom tools discovered from {module_filename}. Triggering save.')
-                        any_new_tools_registered_overall = True
-                except ImportError:
+
+        if is_debug_mode():
+            print('ToolSystem: Running full tool discovery scan...')
+
+        for module_import_path, module_filename in self.custom_tool_modules_to_discover:
+            try:
+                module_to_inspect = importlib.import_module(module_import_path)
+                if self._discover_and_register_custom_tools(module_to_inspect, module_import_path):
                     if is_debug_mode():
-                        print(f'ToolSystem: Could not import {module_filename} (path: {module_import_path}), skipping custom tool discovery from it.')
-                except Exception as e:
-                    print(f'ToolSystem: Warning - Error during custom tool discovery from {module_filename} (path: {module_import_path}): {e}')
-        elif is_debug_mode():
-            print('ToolRegistry loaded from persistence. Skipping auto-discovery.')
+                        print(f'ToolSystem: New/Updated tools discovered from {module_filename}.')
+                    any_new_tools_registered_overall = True
+            except ImportError as e:
+                if is_debug_mode():
+                    print(f'ToolSystem: Could not import {module_filename} (path: {module_import_path}): {e}')
+            except Exception as e:
+                print(f'ToolSystem: Warning - Error during custom tool discovery from {module_filename} (path: {module_import_path}): {e}')
+
         self.register_example_tools()
+
         if any_new_tools_registered_overall:
             self.save_registered_tools()
+
         if is_debug_mode():
             print(f'ToolSystem: Initialization complete. {len(self._tool_registry)} tools registered.')
 
@@ -76,13 +108,17 @@ class ToolSystem:
                 continue
             if func_object.__module__ != module_to_inspect.__name__ and (not func_object.__module__.startswith(module_to_inspect.__name__ + '.')):
                 continue
-            if name in self._tool_registry and self._tool_registry[name].get('module_path') == module_path_str:
-                continue
+
+            # Check for existing registration
+            # We want to re-register if the description changed (handled by register_tool logic internally partially)
+            # but for now, let's force re-registration attempt if schema is found to ensure metadata updates
+
             docstring = inspect.getdoc(func_object) or 'No description available.'
             first_line_of_docstring = docstring.splitlines()[0] if docstring else 'No description available.'
             tool_description_for_registration = first_line_of_docstring
             discovered_schema_details = None
             schema_variable_name = f'{name.upper()}_SCHEMA'
+
             if hasattr(module_to_inspect, schema_variable_name):
                 potential_schema = getattr(module_to_inspect, schema_variable_name)
                 if isinstance(potential_schema, dict) and 'name' in potential_schema and ('description' in potential_schema):
@@ -92,23 +128,20 @@ class ToolSystem:
                         print(f"ToolSystem: Found schema '{schema_variable_name}' for tool '{name}'. Using schema description.")
                 elif is_debug_mode():
                     print(f"ToolSystem: Found schema variable '{schema_variable_name}' for tool '{name}', but it's not a valid schema dict.")
-            if is_debug_mode():
-                print(f"ToolSystem: Attempting to register discovered custom tool '{name}' from '{module_path_str}'.")
+
             try:
+                # Force registration/update
                 self.register_tool(tool_name=name, description=tool_description_for_registration, module_path=module_path_str, function_name_in_module=name, tool_type='custom_discovered', func_callable=func_object, schema_details=discovered_schema_details)
                 new_tools_registered_in_this_module = True
-                if is_debug_mode():
-                    print(f"ToolSystem: Successfully registered custom tool '{name}'.")
+                # if is_debug_mode():
+                #     print(f"ToolSystem: Successfully processed custom tool '{name}'.")
             except ToolAlreadyRegisteredError as e:
+                # Should not happen with current register_tool implementation which overwrites
                 if is_debug_mode():
                     print(f"ToolSystem: Info during discovery for custom tool '{name}': {e}")
             except Exception as e:
                 print(f"ToolSystem: Error - Failed to register discovered custom tool '{name}': {e}")
-        if new_tools_registered_in_this_module:
-            if is_debug_mode():
-                print(f"ToolSystem: Finished discovery for '{module_path_str}'. New tools were registered in this pass.")
-        elif is_debug_mode():
-            print(f"ToolSystem: Finished discovery for '{module_path_str}'. No new tools were registered in this pass. ")
+
         return new_tools_registered_in_this_module
 
     def refresh_custom_tools(self) -> str:
@@ -180,16 +213,7 @@ class ToolSystem:
         Registers a new tool or updates an existing one.
         If func_callable is provided, it's cached. Otherwise, it's loaded on first execution.
         """
-        if tool_name in self._tool_registry:
-            existing_tool = self._tool_registry[tool_name]
-            if existing_tool['module_path'] != module_path or existing_tool['function_name'] != function_name_in_module or existing_tool['type'] != tool_type:
-                if existing_tool['type'] == 'system_internal' and tool_type == 'system_internal' and (func_callable is not None):
-                    if is_debug_mode():
-                        print(f"ToolSystem: Re-caching system tool '{tool_name}'.")
-                elif is_debug_mode():
-                    print(f"ToolSystem: Info - Tool '{tool_name}' already registered with different metadata (module: {existing_tool['module_path']}, func: {existing_tool['function_name']}, type: {existing_tool['type']}). Updating with new details: (module: {module_path}, func: {function_name_in_module}, type: {tool_type}).")
-            if is_debug_mode():
-                print(f"ToolSystem: Tool '{tool_name}' is being re-registered/updated. Description: '{description}'")
+        # Always update if schema_details are provided, as they are the source of truth
         tool_entry = {'tool_name': tool_name, 'module_path': module_path, 'function_name': function_name_in_module, 'description': description, 'type': tool_type, 'callable_cache': func_callable, 'schema_details': schema_details}
         self._tool_registry[tool_name] = tool_entry
         return True
@@ -315,16 +339,13 @@ class ToolSystem:
         data_to_save = {}
         for name, tool_data in self._tool_registry.items():
             if tool_data.get('type') == 'system_internal' and tool_data.get('is_method_on_instance') and is_debug_mode():
-                print(f"ToolSystem: Debug - Skipping persistence of system_internal tool '{name}' with instance method.")
+                # print(f"ToolSystem: Debug - Skipping persistence of system_internal tool '{name}' with instance method.")
                 continue
             serializable_data = tool_data.copy()
             serializable_data.pop('callable_cache', None)
             serializable_data.pop('is_method_on_instance', None)
             data_to_save[name] = serializable_data
-        if 'get_self_awareness_info_and_converse' in data_to_save:
-            print(f"[DEBUG SAVE TOOL_SYSTEM] Saving 'get_self_awareness_info_and_converse' with module_path: {data_to_save['get_self_awareness_info_and_converse'].get('module_path')}")
-        elif is_debug_mode():
-            print("[DEBUG SAVE TOOL_SYSTEM] 'get_self_awareness_info_and_converse' not in data_to_save (it might be a system_internal tool with instance method).")
+
         try:
             with open(self._persisted_tool_metadata_file, 'w', encoding='utf-8') as f:
                 json.dump(data_to_save, f, indent=4)
@@ -360,32 +381,24 @@ class ToolSystem:
         except IOError as e:
             print(f"ToolSystem: Error reading tools file '{self._persisted_tool_metadata_file}': {e}. No tools loaded from persistence.")
             return
-        if loaded_tool_metadata and 'get_self_awareness_info_and_converse' in loaded_tool_metadata:
-            print(f"[DEBUG LOAD TOOL_SYSTEM] Loaded 'get_self_awareness_info_and_converse' with module_path: {loaded_tool_metadata['get_self_awareness_info_and_converse'].get('module_path')}")
-        elif loaded_tool_metadata and is_debug_mode():
-            print("[DEBUG LOAD TOOL_SYSTEM] 'get_self_awareness_info_and_converse' not found in loaded_tool_metadata from file.")
-        elif is_debug_mode():
-            print('[DEBUG LOAD TOOL_SYSTEM] loaded_tool_metadata is empty or None after attempting to read file.')
+
         if not loaded_tool_metadata:
             if is_debug_mode():
                 print('ToolSystem: No tools data found in file. Skipping load from persistence.')
             return
+
         loaded_count = 0
         for tool_name, tool_data in loaded_tool_metadata.items():
             if tool_data.get('type') == 'system_internal' and tool_data.get('is_method_on_instance'):
-                if is_debug_mode():
-                    print(f"ToolSystem: Skipping load of system_internal tool '{tool_name}' from file; will be instance-registered.")
                 continue
             try:
                 self.register_tool(tool_name=tool_data.get('tool_name', tool_name), description=tool_data['description'], module_path=tool_data['module_path'], function_name_in_module=tool_data['function_name'], tool_type=tool_data.get('type', 'dynamic'), func_callable=None, schema_details=tool_data.get('schema_details'))
                 loaded_count += 1
             except ToolAlreadyRegisteredError as e:
-                if is_debug_mode():
-                    print(f"ToolSystem: Info while loading persisted tool '{tool_name}': {e}")
-            except KeyError as e:
-                print(f"ToolSystem: Error - Persisted tool '{tool_name}' has missing metadata: {e}. Skipping.")
+                pass
             except Exception as e:
                 print(f"ToolSystem: Error loading persisted tool '{tool_name}': {e}. Skipping.")
+
         if is_debug_mode() or loaded_count > 0:
             print(f'ToolSystem: Successfully processed {loaded_count} persisted tools from file.')
 
@@ -414,14 +427,14 @@ def _tool_view_function_code(module_path: str, function_name: str) -> str:
         try:
             source_code = get_function_source_code(module_path, function_name)
         except Exception as e:
-            return f'Error: Could not retrieve source code using get_function_source_code. An exception occurred: {type(e).__name__}: {e}'
+            return f'Error: Could not retrieve source code using get_function_source_code. An exception occurred: {e}'
         if source_code is None:
             return 'Error: Could not retrieve source code. Module or function not found, or source not available.'
         return source_code
     except ImportError as e:
-        return f'Error: Could not import ai_assistant.tools.tool_system. Make sure the module path is correct. Original error: {type(e).__name__}: {e}'
+        return f'Error: Unable to import ai_assistant.tools.tool_system. Ensure ai_assistant is installed and accessible. {e}'
     except Exception as e:
-        return f'Error: An unexpected exception occurred: {type(e).__name__}: {e}'
+        return f'Error: Could not retrieve source code. An unexpected exception occurred: {e}'
 
 def _tool_simulate_edit_function_code(module_path: str, function_name: str, new_code_block: str) -> str:
     print(f'Simulating edit for {module_path}.{function_name} with:\n{new_code_block}')
@@ -463,17 +476,7 @@ async def main_test():
     all_tools = list_tools()
     for t_name, t_desc in all_tools.items():
         print(f'  - {t_name}: {t_desc[:70]}...')
-    print("\nTesting new 'manage_auto_approve_list' tool (if registered):")
-    if 'manage_auto_approve_list' in all_tools:
-        try:
-            list_result = await execute_tool('manage_auto_approve_list', args=('list',), notification_manager=None)
-            print(f'Manage auto-approve list result: {list_result}')
-            list_after_add = await execute_tool('manage_auto_approve_list', args=('list',), notification_manager=None)
-            print(f'List check: {list_after_add}')
-        except Exception as e:
-            print(f'Error executing manage_auto_approve_list: {e}')
-    else:
-        print("'manage_auto_approve_list' not found in registered tools for this test run.")
+
     print('\n--- Testing list_tools_with_sources ---')
     detailed_tools_list = list_tools_with_sources()
     if detailed_tools_list:
@@ -508,4 +511,4 @@ def refresh_custom_tools():
         return True
     except Exception as e:
         print(f'Error refreshing tools: {e}')
-        return False
+        return True

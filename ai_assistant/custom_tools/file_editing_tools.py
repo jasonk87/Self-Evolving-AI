@@ -294,20 +294,15 @@ SCHEMA_UPSERT_IMPORT = {
 }
 
 async def upsert_import(module_path: str, import_statement: str, change_description: str) -> Dict[str, Any]:
-    # Wrapper function name in schema matches exposed name, but implementation can call core
     project_root = os.getcwd()
     try:
-        # Note: Core function is also named upsert_import, importing as core_upsert_import would be cleaner but let's use the module function
         from ai_assistant.core.self_modification import upsert_import as core_upsert_import
-        result_msg = await core_upsert_import(
-            module_path=module_path,
-            import_statement=import_statement,
-            project_root_path=project_root,
-            change_description=change_description
-        )
-        return {"status": "success", "message": result_msg}
+        result_msg = await core_upsert_import(module_path=module_path, import_statement=import_statement, project_root_path=project_root, change_description=change_description)
+        return {'status': 'success', 'message': result_msg}
+    except ImportError as e:
+        return {'status': 'error', 'message': f'Could not import upsert_import from ai_assistant.core.self_modification. Ensure ai_assistant package is installed and in PYTHONPATH. Original error: {str(e)}'}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {'status': 'error', 'message': str(e)}
 
 SCHEMA_INSERT_CODE_BLOCK = {
     "name": "insert_code_block",

@@ -146,11 +146,20 @@ ELEVENLABS_VOICE_ID = "vGWWh1bodhwwi4yHd6qZ" # Marcus (Deep, Authoritative) - Mo
 ELEVENLABS_MODEL_ID = "eleven_turbo_v2" # Low latency model
 MW_TTS_ENABLED = True
 
+
 # Rate Limiting Configuration
 # Set to True to enable rate limiting for API calls (recommended for Free Tier)
 # Set to False to disable rate limiting (recommended for Paid Tier)
 ENABLE_RATE_LIMITING = True
 GLOBAL_RATE_LIMITER = 10
+
+# --- Security Configuration ---
+# Safe Mode prevents execution of potentially dangerous terminal commands via the API.
+# When True, strict allowlisting or user confirmation is required.
+SAFE_MODE = True
+# Key for Flask Session Security (Should be loaded from .env)
+SECRET_KEY = os.environ.get('SECRET_KEY', 'default-insecure-secret-change-in-prod')
+
 
 
 def is_debug_mode() -> bool:

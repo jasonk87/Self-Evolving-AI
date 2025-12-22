@@ -72,6 +72,7 @@ const missionControl = {
                </div>`
             : '';
 
+        // Plan is now hidden in footer by default
         let planHtml = '';
         if (task.task_type === 'HIERARCHICAL_PROJECT_EXECUTION' && task.details.project_plan) {
             planHtml = this.renderHierarchicalPlan(task);
@@ -79,18 +80,98 @@ const missionControl = {
 
         div.innerHTML = `
             <div class="task-header">
-                <span class="task-id">${task.task_id.substring(0, 8)}</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span class="task-expand-icon">▼</span>
+                    <span class="task-id">${task.task_id.substring(0, 8)}</span>
+                </div>
                 <span class="task-status-badge ${statusClass}">${task.status.replace(/_/g, ' ')}</span>
             </div>
             <div class="task-body">
                 <div class="task-desc">${task.description}</div>
                 ${task.current_step_description ? `<div class="task-current-step">▶ ${task.current_step_description}</div>` : ''}
                 ${task.output_preview ? `<div class="task-preview"><code>${this.escapeHtml(task.output_preview)}</code></div>` : ''}
-                ${planHtml}
             </div>
             ${progressHtml}
+            <div class="task-footer">
+                <div class="task-plan-details">
+                    ${planHtml || '<div class="no-plan">No detailed plan available.</div>'}
+                </div>
+                <div class="task-controls">
+                     <button class="btn-control stop" data-action="stop">⛔ STOP TASK</button>
+                </div>
+                <div class="task-feedback">
+                    <input type="text" placeholder="Inject instructions to agent..." class="feedback-input">
+                    <button class="btn-send-feedback">SEND</button>
+                </div>
+            </div>
         `;
+
+        // Event Listeners
+        div.addEventListener('click', (e) => {
+            // Toggle expansion unless clicking interactive elements
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            this.toggleTaskCard(task.task_id);
+        });
+
+        const stopBtn = div.querySelector('.btn-control.stop');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => this.stopTask(task.task_id));
+        }
+
+        const sendBtn = div.querySelector('.btn-send-feedback');
+        const input = div.querySelector('.feedback-input');
+        if (sendBtn && input) {
+            sendBtn.addEventListener('click', () => this.sendTaskMessage(task.task_id, input.value, input));
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') this.sendTaskMessage(task.task_id, input.value, input);
+            });
+        }
+
         return div;
+    },
+
+    toggleTaskCard: function (taskId) {
+        const card = document.getElementById(`task-${taskId}`);
+        if (card) {
+            card.classList.toggle('expanded');
+        }
+    },
+
+    stopTask: async function (taskId) {
+        if (!confirm("Are you sure you want to stop this task?")) return;
+        try {
+            const res = await fetch(`/api/tasks/${taskId}/stop`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                // UI update via socket usually, but alert for now
+                console.log("Task stopped.");
+            } else {
+                alert("Failed to stop task: " + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    sendTaskMessage: async function (taskId, message, inputElem) {
+        if (!message.trim()) return;
+        try {
+            const res = await fetch(`/api/tasks/${taskId}/message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: message })
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (inputElem) inputElem.value = ''; // Clear input
+                // Maybe show a toast
+                console.log("Message sent.");
+            } else {
+                alert("Failed to send message: " + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+        }
     },
 
     renderHierarchicalPlan: function (task) {
@@ -142,9 +223,12 @@ const missionControl = {
     handleTaskUpdate: function (taskData) {
         // Find existing card
         const card = document.getElementById(`task-${taskData.task_id}`);
+        const wasExpanded = card ? card.classList.contains('expanded') : false;
+
         if (card) {
-            // Replace it with new version (simpler than selective DOM update for now)
+            // Replace it with new version
             const newCard = this.createTaskCard(taskData);
+            if (wasExpanded) newCard.classList.add('expanded');
             this.board.replaceChild(newCard, card);
         } else {
             // Add new card

@@ -1,5 +1,6 @@
 from typing import List, Optional
-from ai_assistant.custom_tools.knowledge_tools import load_learned_facts
+from typing import List, Optional
+
 import json
 import logging
 import asyncio
@@ -128,9 +129,14 @@ def recall_facts(query: Optional[str]=None) -> List[str]:
     Retrieves a list of learned facts.
     Now uses RAG for query if provided, otherwise returns all from JSON.
     """
+    from ai_assistant.memory.persistent_memory import load_learned_facts
+    try:
+        all_facts = load_learned_facts()
+    except Exception as e:
+        print(f'Error loading learned facts: {e}')
+        return []
     if not query:
-        return load_learned_facts()
-    all_facts = load_learned_facts()
+        return all_facts
     if isinstance(query, dict):
         query = query.get('query', query.get('text', str(query)))
     if not isinstance(query, str):
