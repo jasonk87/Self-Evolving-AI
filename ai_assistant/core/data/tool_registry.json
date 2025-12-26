@@ -939,5 +939,13 @@
         "description": "Toggles 'Ghost Mode' (visible browser execution) for DeepResearcher and VisionService.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "run_architect_cycle": {
+        "tool_name": "run_architect_cycle",
+        "module_path": "ai_assistant.custom_tools.architect_tools",
+        "function_name": "run_architect_cycle",
+        "description": "Triggers the System Architect's self-diagnosis and goal proposal cycle.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

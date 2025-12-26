@@ -244,19 +244,51 @@ Instructions:
                 print(color_text(f"Step {step_i+1}: {thought}", CLIColors.THOUGHT))
                 print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
 
-                try:
-                    # Convert args/kwargs if needed
-                    result = await tool_system_instance.execute_tool(
-                        tool_name,
-                        args=tuple(args),
-                        kwargs=kwargs,
-                        task_manager=self.task_manager,
-                        notification_manager=self.notification_manager,
-                        action_executor=self.action_executor
-                    )
-                    result_str = str(result)
-                except Exception as e:
-                    result_str = f"Error: {str(e)}"
+                # Robust Tool Execution with Self-Healing
+                execution_success = False
+                result = None
+                result_str = ""
+
+                # Retry loop for self-healing (Attempt -> Fail -> Repair -> Retry)
+                # We try initially (attempt 0), then if repair succeeds, we try once more (attempt 1).
+                # The user requirement implies "Resume: Retry... Fail: Only if repair fails twice".
+                # Interpretation: Try -> Repair -> Retry -> Repair -> Retry -> Fail.
+                # Let's set max_retries = 2 (initial + 2 retries).
+                max_retries = 2
+
+                for attempt in range(max_retries + 1):
+                    try:
+                        # Convert args/kwargs if needed
+                        result = await tool_system_instance.execute_tool(
+                            tool_name,
+                            args=tuple(args),
+                            kwargs=kwargs,
+                            task_manager=self.task_manager,
+                            notification_manager=self.notification_manager,
+                            action_executor=self.action_executor
+                        )
+                        result_str = str(result)
+                        execution_success = True
+                        break # Success!
+                    except Exception as e:
+                        if attempt < max_retries:
+                            # Step A: Notify
+                            print(color_text(f"⚠️  Tool '{tool_name}' crashed. Attempting self-repair (Try {attempt+1}/{max_retries})...", CLIColors.WARNING))
+
+                            # Step B: Heal
+                            repair_success = await self._attempt_auto_repair(tool_name, e)
+
+                            if repair_success:
+                                # Step C: Resume (Retry in next iteration)
+                                print(color_text(f"--> Repair successful. Retrying {tool_name}...", CLIColors.SYSTEM_MESSAGE))
+                                continue
+                            else:
+                                # Repair failed, treat as fatal error for this tool execution
+                                result_str = f"Error: {str(e)} (Auto-repair attempt failed)"
+                                break
+                        else:
+                            # Step D: Fail after retries
+                            result_str = f"Error: {str(e)} (Failed after {max_retries} self-healing attempts)"
 
                 # Append to history
                 step_record = f"Step {step_i+1}:\nThought: {thought}\nAction: {tool_name}({args}, {kwargs})\nResult: {result_str[:1000]}\n"
@@ -357,6 +389,50 @@ Instructions:
             metadata['project_context_hint'] = True
 
         return "\n\n".join(context_parts), metadata
+
+    async def _attempt_auto_repair(self, tool_name: str, error: Exception) -> bool:
+        """
+        Attempts to automatically repair a broken tool using ActionExecutor.
+        """
+        # 1. Check if tool is modifiable
+        tool_info = tool_system_instance.get_tool(tool_name)
+        if not tool_info or tool_info.get("type") != "custom_discovered":
+            logger.info(f"Cannot auto-repair tool '{tool_name}' (Type: {tool_info.get('type') if tool_info else 'Unknown'}).")
+            return False
+
+        module_path = tool_info.get("module_path")
+        function_name = tool_info.get("function_name")
+
+        if not module_path or not function_name:
+            return False
+
+        # 2. Construct Action
+        action_details = {
+            "tool_name": tool_name,
+            "module_path": module_path,
+            "function_name": function_name,
+            "suggested_change_description": f"Runtime Error during execution: {str(error)}. Fix the code to handle this error or correct the logic.",
+            "staging_mode": False # Apply immediately
+        }
+
+        action_payload = {
+            "action_type": "PROPOSE_TOOL_MODIFICATION",
+            "details": action_details,
+            "source_insight_id": "runtime_repair_request"
+        }
+
+        # 3. Execute Repair via ActionExecutor
+        try:
+            success = await self.action_executor.execute_action(action_payload)
+            if success:
+                # Reload tools to ensure new code is picked up
+                tool_system_instance.refresh_custom_tools()
+                return True
+            else:
+                return False
+        except Exception as e:
+            logger.error(f"Auto-repair execution error: {e}")
+            return False
 
     async def get_current_progress(self) -> Dict[str, Any]:
         """Get the current progress and context of task execution."""

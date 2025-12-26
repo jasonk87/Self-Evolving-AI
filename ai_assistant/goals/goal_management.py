@@ -5,7 +5,7 @@ from ai_assistant.memory.persistent_memory import save_goals_to_file, load_goals
 import os
 
 # --- Constants ---
-DEFAULT_GOALS_FILE_DIR = "data"
+DEFAULT_GOALS_FILE_DIR = "ai_assistant/core/data"
 DEFAULT_GOALS_FILE = os.path.join(DEFAULT_GOALS_FILE_DIR, "goals.json")
 
 # --- Goal Data Structure ---
@@ -13,9 +13,10 @@ DEFAULT_GOALS_FILE = os.path.join(DEFAULT_GOALS_FILE_DIR, "goals.json")
 # Example:
 # {
 #     "id": "unique_id_string",
-#     "description": "Achieve world peace.",
-#     "status": "pending",  # "pending", "in_progress", "completed", "failed"
-#     "priority": 1  # Lower number means higher priority
+#     "title": "Achieve world peace",
+#     "description": "Detailed description...",
+#     "status": "PENDING_APPROVAL",  # "PENDING_APPROVAL", "pending", "in_progress", "completed", "failed"
+#     "priority": "HIGH"  # "HIGH", "MEDIUM", "LOW" or int
 # }
 
 # --- In-Memory Storage ---
@@ -73,17 +74,62 @@ def _initialize_goals_db():
 
 # --- CRUD Functions ---
 
-def create_goal(description: str, priority: int = 3) -> Dict:
+def create_goal(title: str, description: str = "", priority: Union[int, str] = 3, **kwargs) -> Dict:
     """
     Creates a new goal and stores it in the in-memory database.
     Does not automatically save to file; call save_current_goals() for that.
+
+    Supports legacy signature: create_goal(description: str, priority: int)
+    where 'title' argument catches the description.
     """
+    # Backward compatibility check
+    # If users call create_goal("My Description", 1),
+    # title="My Description", description="", priority=1 (if passed as keyword) or 3 default.
+    # The signature definition naturally captures the first arg as title.
+    # So if the intent was description, it's now in title.
+    # We can detect this if 'description' is empty and 'title' looks like a description?
+    # Or, we can just accept that the 'title' is now the primary field.
+
+    # However, to be safer for mixed usage:
+    # If the call was create_goal(description="Desc", priority=1) [keyword args],
+    # then 'title' would be missing and raise TypeError if it didn't have a default.
+    # But here 'title' is positional.
+
+    # If we want to strictly support old positional `create_goal(desc, prio)`:
+    # title receives desc. description receives prio (if passed as second pos arg).
+    # wait, existing signature was `create_goal(description, priority=3)`.
+    # New: `create_goal(title, description="", priority=3)`.
+    # Call: `create_goal("Fix X", 1)`.
+    # title="Fix X". description=1. priority=3.
+    # This is bad because description is now int 1.
+
+    # Correct fix:
+    # def create_goal(title_or_desc: str, priority_or_desc: Union[int, str, None] = None, priority: Union[int, str] = 3, **kwargs):
+    # But that's messy.
+
+    # Let's inspect arguments to handle dynamic dispatch.
+    real_title = title
+    real_description = description
+    real_priority = priority
+
+    # Check if 'description' arg captured the priority (int)
+    if isinstance(description, int) and priority == 3:
+         # Likely legacy call: create_goal(desc, priority) mapping to (title, description)
+         real_priority = description
+         real_description = ""
+         # In legacy, the first arg was description. We'll use it as title.
+
+    # Handle kwargs if someone used specific keywords
+    if 'description' in kwargs and not real_description:
+        real_description = kwargs['description']
+
     goal_id = _generate_goal_id()
     goal = {
         "id": goal_id,
-        "description": description,
-        "status": "pending",
-        "priority": priority,
+        "title": real_title,
+        "description": real_description,
+        "status": "PENDING_APPROVAL",
+        "priority": real_priority,
     }
     _goals_db[goal_id] = goal
     return goal
@@ -100,13 +146,14 @@ def get_goal(goal_id: str) -> Optional[Dict]:
     """
     return _goals_db.get(goal_id)
 
-def update_goal(goal_id: str, description: Optional[str] = None, 
-                status: Optional[str] = None, priority: Optional[int] = None) -> Optional[Dict]:
+def update_goal(goal_id: str, title: Optional[str] = None, description: Optional[str] = None,
+                status: Optional[str] = None, priority: Optional[Union[int, str]] = None) -> Optional[Dict]:
     """
     Updates an existing goal.
 
     Args:
         goal_id: The ID of the goal to update.
+        title: The new title (if provided).
         description: The new description (if provided).
         status: The new status (if provided).
         priority: The new priority (if provided).
@@ -116,17 +163,20 @@ def update_goal(goal_id: str, description: Optional[str] = None,
     """
     goal = _goals_db.get(goal_id)
     if goal:
+        if title is not None:
+            goal["title"] = title
         if description is not None:
             goal["description"] = description
         if status is not None:
             # Basic validation for status, can be expanded
-            valid_statuses = ["pending", "in_progress", "completed", "failed"]
+            valid_statuses = ["PENDING_APPROVAL", "pending", "in_progress", "completed", "failed"]
             if status in valid_statuses:
                 goal["status"] = status
             else:
-                print(f"Warning: Invalid status '{status}' for goal '{goal_id}'. Not updated.")
+                # Allow flexible statuses for now
+                goal["status"] = status
         if priority is not None:
-            goal["priority"] = int(priority) # Ensure priority is stored as int
+            goal["priority"] = priority
         return goal
     return None
 
@@ -216,7 +266,7 @@ if __name__ == '__main__':
     
     print(f"Goals after loading: {list_goals()}")
     # Verify that g1 and g2 (or their equivalents) are present
-    found_g1 = any(g['description'] == "Test persistence goal 1" for g in _goals_db.values())
+    found_g1 = any(g['title'] == "Test persistence goal 1" for g in _goals_db.values())
     assert found_g1, "Goal 1 not found after loading."
     print("Verified that loaded goals include the saved ones.")
 
