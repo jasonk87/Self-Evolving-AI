@@ -83,6 +83,7 @@ _orchestrator = None
 # Autonomous Goal Processing State
 _last_autonomous_goal_check_time: float = 0.0
 _autonomous_goal_check_interval_seconds = 30 # Check every 30 seconds
+_last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
@@ -321,6 +322,73 @@ async def _background_loop_async():
 
     while _background_service_active:
         current_loop_time = time.time()
+
+        # --- Daily Briefing (Agenda Check) ---
+        current_date_str = time.strftime('%Y-%m-%d')
+        global _last_agenda_briefing_date
+
+        # Load last briefing date from file if not in memory (on first run)
+        if _last_agenda_briefing_date is None:
+            briefing_file_path = os.path.join(get_data_dir(), "last_agenda_briefing.txt")
+            if os.path.exists(briefing_file_path):
+                _last_agenda_briefing_date = read_text_from_file(briefing_file_path).strip()
+
+        if _last_agenda_briefing_date != current_date_str:
+            # It's a new day (or first run of the day)
+            logger.info("BackgroundService: First run of the day detected. Attempting Daily Agenda Briefing...")
+            try:
+                # Import here to avoid circular dependencies if any
+                from ai_assistant.integrations.google_calendar import CalendarManager
+                from ai_assistant.core.reflection import ActionableInsight, InsightType
+
+                cal_manager = CalendarManager()
+                # Only proceed if authenticated (or can authenticate silently)
+                # We don't want to pop up a browser in background thread unexpectedly,
+                # but if tokens exist, it works.
+                if os.path.exists(cal_manager.token_path):
+                    agenda_text = cal_manager.get_day_agenda('today')
+
+                    if agenda_text and "Error" not in agenda_text:
+                        # Create Insight
+                        if learning_agent:
+                            briefing_insight = ActionableInsight(
+                                type=InsightType.USER_FEEDBACK, # Using FEEDBACK as closest proxy for "System Info" regarding user
+                                description=f"Daily Agenda Loaded: {agenda_text}",
+                                source_reflection_entry_ids=[],
+                                related_tool_name="google_calendar",
+                                priority=5,
+                                status="NEW",
+                                metadata={
+                                    "source": "daily_briefing",
+                                    "date": current_date_str
+                                }
+                            )
+                            learning_agent.insights.append(briefing_insight)
+                            learning_agent._save_insights()
+
+                            # Log success
+                            logger.info(f"BackgroundService: Daily Briefing insight created for {current_date_str}.")
+
+                            # Notify
+                            if learning_agent.notification_manager:
+                                learning_agent.notification_manager.add_notification(
+                                    event_type=NotificationType.SYSTEM_ALERT,
+                                    summary_message="Daily Briefing: Agenda loaded into context.",
+                                    details_payload={"agenda": agenda_text}
+                                )
+                    else:
+                        logger.info("BackgroundService: Daily Briefing - No agenda retrieved or error (likely not auth).")
+                else:
+                    logger.info("BackgroundService: Skipping Daily Briefing - Calendar not authenticated.")
+
+            except ImportError:
+                 logger.warning("BackgroundService: Could not import CalendarManager for Daily Briefing.")
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during Daily Briefing: {e}")
+
+            # Update state
+            _last_agenda_briefing_date = current_date_str
+            write_text_to_file(os.path.join(get_data_dir(), "last_agenda_briefing.txt"), current_date_str)
         
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
