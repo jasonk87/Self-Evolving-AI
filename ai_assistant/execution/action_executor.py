@@ -7,23 +7,23 @@ import os
 import uuid
 import logging
 
-from ai_assistant.config import is_debug_mode
+from ai_assistant.config import is_debug_mode, get_model_for_task
 from ai_assistant.core import self_modification
-from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
+from ..core.reflection import global_reflection_log, ReflectionLogEntry
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
-from ai_assistant.core.suggestion_manager import mark_suggestion_implemented # Added import
-import json # Added for parsing LLM response in _is_fact_valuable
+from ai_assistant.core.suggestion_manager import mark_suggestion_implemented
+import json
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
-from ai_assistant.code_services.service import CodeService # Added
-from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus # Added for UCWS
-from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
-from ..core.notification_manager import NotificationManager, NotificationType # Added
+from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus
+from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus
+from ..core.notification_manager import NotificationManager, NotificationType
 from ai_assistant.custom_tools.agent_tools import spawn_ephemeral_agent, run_agent_code, submit_agent_report
-from datetime import timezone # Ensure timezone is available
+from datetime import timezone
+from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 if TYPE_CHECKING:
-    from ai_assistant.learning.learning import LearningAgent # For type hinting only
+    from ai_assistant.learning.learning import LearningAgent
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class ActionExecutor:
     """
     def __init__(self, learning_agent: "LearningAgent",
                  task_manager: Optional[TaskManager] = None,
-                 notification_manager: Optional[NotificationManager] = None): # New parameter
+                 notification_manager: Optional[NotificationManager] = None):
         """
         Initializes the ActionExecutor.
         """
@@ -105,20 +105,19 @@ class ActionExecutor:
         print("ActionExecutor initialized.")
         self.learning_agent = learning_agent
         self.task_manager = task_manager
-        self.notification_manager = notification_manager # Store it
+        self.notification_manager = notification_manager
 
-        from ai_assistant.llm_interface import ollama_client as default_llm_provider
-        from ai_assistant.core import self_modification as default_self_modification_service
+        # Initialize the LLM provider directly
+        self.llm_provider = OllamaProvider()
 
-        self.code_service = CodeService(
-            llm_provider=default_llm_provider,
-            self_modification_service=default_self_modification_service,
-            task_manager=self.task_manager,
-            notification_manager=self.notification_manager # Add this line
-        )
-        self.code_synthesis_service = CodeSynthesisService() # Initialize UCWS
+        # Initialize UCWS service
+        self.code_synthesis_service = CodeSynthesisService()
+
+        # We also need explicit self_modification service access for some operations if not covered by UCWS fully or for legacy reasons
+        # but UCWS should handle it.
+        # ActionExecutor logic uses `self_modification` module directly in `_apply_test_and_revert_code` which is imported.
+
         if is_debug_mode():
-            print(f"[DEBUG] CodeService instance in ActionExecutor: {self.code_service}")
             print(f"[DEBUG] CodeSynthesisService instance in ActionExecutor: {self.code_synthesis_service}")
             print(f"[DEBUG] TaskManager instance in ActionExecutor: {self.task_manager}")
             print(f"[DEBUG] NotificationManager instance in ActionExecutor: {self.notification_manager}")
@@ -144,7 +143,7 @@ class ActionExecutor:
         """
         Analyzes telemetry updates from a running project and decides if a proactive response is needed.
         """
-        if not self.code_service or not self.code_service.llm_provider:
+        if not self.llm_provider:
              logger.warning("LLM Provider not available for telemetry analysis.")
              return None
 
@@ -165,15 +164,9 @@ class ActionExecutor:
         """
 
         try:
-            model_name = "gemini-2.0-flash-exp" # Default fallback
-            if hasattr(self.code_service.llm_provider, 'model'):
-                model_name = self.code_service.llm_provider.model
-            elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
-                model_name = self.code_service.llm_provider.DEFAULT_MODEL
-            elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
-                 model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
+            model_name = get_model_for_task("reasoning")
 
-            llm_response = await self.code_service.llm_provider.invoke_ollama_model_async(
+            llm_response = await self.llm_provider.invoke_ollama_model_async(
                 prompt, model_name=model_name, temperature=0.5
             )
 
@@ -406,21 +399,14 @@ class ActionExecutor:
         """
         prompt = LLM_FACT_VALUE_ASSESSMENT_PROMPT_TEMPLATE.format(fact_to_assess=fact_to_assess)
 
-        if not self.code_service or not self.code_service.llm_provider:
-            logger.error("LLM Provider for CodeService not available in ActionExecutor for fact assessment.")
+        if not self.llm_provider:
+            logger.error("LLM Provider not available in ActionExecutor for fact assessment.")
             return False, "LLM provider not available for assessment."
 
         try:
-            model_name = "gemini-2.0-flash-exp" # Default fallback
-            if hasattr(self.code_service.llm_provider, 'model'):
-                model_name = self.code_service.llm_provider.model
-            elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
-                model_name = self.code_service.llm_provider.DEFAULT_MODEL
-            elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
-                 # It might be the module itself if not instantiated
-                 model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
+            model_name = get_model_for_task("reasoning")
 
-            llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
+            llm_response_str = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
                 temperature=0.2
@@ -462,24 +448,24 @@ class ActionExecutor:
         prompt = LLM_FACT_CATEGORY_PROMPT_TEMPLATE.format(fact_text=fact_text)
         default_category = "general"
 
-        if not self.code_service or not self.code_service.llm_provider: # pragma: no cover
-            logger.error("LLM Provider for CodeService not available for fact categorization.")
+        if not self.llm_provider:
+            logger.error("LLM Provider not available for fact categorization.")
             return default_category
 
         try:
-            model_name = self.code_service.llm_provider.model
-            llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
+            model_name = get_model_for_task("reasoning")
+            llm_response_str = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
                 model_name=model_name,
                 temperature=0.2
             )
 
-            if not llm_response_str or not llm_response_str.strip(): # pragma: no cover
+            if not llm_response_str or not llm_response_str.strip():
                 logger.warning("Fact categorization LLM returned empty response. Defaulting to 'general'.")
                 return default_category
 
             cleaned_response_str = llm_response_str.strip()
-            if cleaned_response_str.startswith("```json"): # pragma: no cover
+            if cleaned_response_str.startswith("```json"):
                 cleaned_response_str = cleaned_response_str[len("```json"):].strip()
                 if cleaned_response_str.endswith("```"):
                     cleaned_response_str = cleaned_response_str[:-len("```")].strip()
@@ -489,10 +475,10 @@ class ActionExecutor:
 
             return category if category else default_category
 
-        except json.JSONDecodeError as e: # pragma: no cover
+        except json.JSONDecodeError as e:
             logger.error(f"Failed to parse fact category JSON: {e}. Response: {llm_response_str[:200]}. Defaulting to 'general'.")
             return default_category
-        except Exception as e: # pragma: no cover
+        except Exception as e:
             logger.error(f"Unexpected error during fact category assessment: {e}. Defaulting to 'general'.", exc_info=True)
             return default_category
 
@@ -693,6 +679,92 @@ class ActionExecutor:
         return False
 
 
+    async def _execute_ephemeral_agent_task(self, details: Dict[str, Any], action_task_id: str) -> bool:
+        task_description = details.get("task_description")
+        if not task_description:
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing task_description", step_desc="Validation failed")
+            return False
+
+        self._update_task_if_manager(action_task_id, ActiveTaskStatus.INITIALIZING, step_desc="Spawning ephemeral agent")
+        try:
+            # 1. Spawn Agent
+            spawn_result = spawn_ephemeral_agent(task_description)
+            agent_id = spawn_result.get("agent_id")
+            workspace_path = spawn_result.get("workspace_path")
+
+            if not agent_id or not workspace_path:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Failed to spawn agent: {spawn_result}", step_desc="Spawn failed")
+                 return False
+
+            # 2. Generate Code
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating agent script")
+
+            prompt_for_code = (
+                f"Write a standalone Python script to accomplish the following task: {task_description}.\n"
+                "The script should be self-contained. It should print the final result or answer to stdout.\n"
+                "Do not use external libraries unless they are standard Python libraries or 'requests', 'aiohttp', 'prompt_toolkit', 'duckduckgo_search'.\n"
+                "The file will be named 'agent_script.py'."
+            )
+
+            if not self.llm_provider:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
+                 return False
+
+            # generate_code_async doesn't usually take model argument?
+            # We should check invoke_ollama_model_async usage or if generate_code_async supports model override.
+            # OllamaProvider.generate_code_async usually uses DEFAULT_MODEL or self.model.
+            # Let's assume we should call invoke_ollama_model_async for control, or if provider supports overrides.
+            # Actually, let's look at OllamaProvider. It might not support dynamic model in generate_code_async easily.
+            # But let's check if we can pass it.
+
+            # If OllamaProvider doesn't support model arg in generate_code_async, we might need to rely on default or change logic.
+            # Assuming for now we can't easily change it without reading OllamaProvider code.
+            # But wait, reviewer complained about configuration regression.
+            # I will use invoke_ollama_model_async which definitely supports it.
+
+            model_name = get_model_for_task("code_generation")
+            generated_code = await self.llm_provider.invoke_ollama_model_async(prompt_for_code, model_name=model_name)
+
+            if not generated_code:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")
+                 return False
+
+            # Clean code (remove markdown)
+            cleaned_code = generated_code
+            if cleaned_code.startswith("```python"):
+                cleaned_code = cleaned_code[9:]
+            elif cleaned_code.startswith("```"):
+                cleaned_code = cleaned_code[3:]
+            if cleaned_code.endswith("```"):
+                cleaned_code = cleaned_code[:-3]
+
+            # 3. Run Agent Code
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Running agent {agent_id}")
+
+            # run_agent_code is synchronous in its current definition in agent_tools.py?
+            # agent_tools.py uses subprocess.run, which is blocking.
+            # We should wrap it in to_thread to avoid blocking the event loop.
+
+            run_result = await asyncio.to_thread(run_agent_code, agent_id, "agent_script.py", cleaned_code)
+
+            stdout = run_result.get("stdout", "")
+            stderr = run_result.get("stderr", "")
+            return_code = run_result.get("return_code")
+
+            final_report = f"Task: {task_description}\n\nExecution Result (Exit Code {return_code}):\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+
+            # 4. Submit Report
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Submitting report")
+
+            submit_agent_report(agent_id, final_report, self.notification_manager)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error executing ephemeral agent task: {e}", exc_info=True)
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during agent execution")
+            return False
+
 if __name__ == '__main__': # pragma: no cover
     from dataclasses import dataclass, field
     from ai_assistant.config import get_data_dir
@@ -812,79 +884,3 @@ if __name__ == '__main__': # pragma: no cover
 
 
     asyncio.run(main_test())
-
-    async def _execute_ephemeral_agent_task(self, details: Dict[str, Any], action_task_id: str) -> bool:
-        task_description = details.get("task_description")
-        if not task_description:
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing task_description", step_desc="Validation failed")
-            return False
-
-        self._update_task_if_manager(action_task_id, ActiveTaskStatus.INITIALIZING, step_desc="Spawning ephemeral agent")
-        try:
-            # 1. Spawn Agent
-            spawn_result = spawn_ephemeral_agent(task_description)
-            agent_id = spawn_result.get("agent_id")
-            workspace_path = spawn_result.get("workspace_path")
-
-            if not agent_id or not workspace_path:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Failed to spawn agent: {spawn_result}", step_desc="Spawn failed")
-                 return False
-
-            # 2. Generate Code
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating agent script")
-
-            prompt_for_code = (
-                f"Write a standalone Python script to accomplish the following task: {task_description}.\n"
-                "The script should be self-contained. It should print the final result or answer to stdout.\n"
-                "Do not use external libraries unless they are standard Python libraries or 'requests', 'aiohttp', 'prompt_toolkit', 'duckduckgo_search'.\n"
-                "The file will be named 'agent_script.py'."
-            )
-
-            # Use CodeService's underlying LLM to generate the script
-            # We don't need 'modify_code' logic here, just generation.
-            # Using llm_provider directly if available
-            if not self.code_service.llm_provider:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
-                 return False
-
-            generated_code = await self.code_service.llm_provider.generate_code_async(prompt_for_code)
-
-            if not generated_code:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")
-                 return False
-
-            # Clean code (remove markdown)
-            cleaned_code = generated_code
-            if cleaned_code.startswith("```python"):
-                cleaned_code = cleaned_code[9:]
-            elif cleaned_code.startswith("```"):
-                cleaned_code = cleaned_code[3:]
-            if cleaned_code.endswith("```"):
-                cleaned_code = cleaned_code[:-3]
-
-            # 3. Run Agent Code
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Running agent {agent_id}")
-
-            # run_agent_code is synchronous in its current definition in agent_tools.py?
-            # agent_tools.py uses subprocess.run, which is blocking.
-            # We should wrap it in to_thread to avoid blocking the event loop.
-
-            run_result = await asyncio.to_thread(run_agent_code, agent_id, "agent_script.py", cleaned_code)
-
-            stdout = run_result.get("stdout", "")
-            stderr = run_result.get("stderr", "")
-            return_code = run_result.get("return_code")
-
-            final_report = f"Task: {task_description}\n\nExecution Result (Exit Code {return_code}):\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-
-            # 4. Submit Report
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Submitting report")
-
-            submit_agent_report(agent_id, final_report, self.notification_manager)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error executing ephemeral agent task: {e}", exc_info=True)
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during agent execution")
-            return False

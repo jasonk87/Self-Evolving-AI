@@ -33,7 +33,7 @@ from ai_assistant.utils.display_utils import (
     format_status, draw_separator
 )
 from ai_assistant.core.refinement import RefinementAgent
-from ai_assistant.code_services.service import CodeService
+# from ai_assistant.code_services.service import CodeService # REMOVED: Using CodeSynthesisService instead
 from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.core.orchestrator import DynamicOrchestrator
@@ -41,7 +41,7 @@ from ai_assistant.core import project_manager
 from ai_assistant.core import suggestion_manager as suggestion_manager_module
 from ai_assistant.core import status_reporting
 from ai_assistant.utils.conversational_helpers import rephrase_error_message_conversationally # Added
-from ai_assistant.llm_interface.ollama_client import OllamaProvider # Added
+from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async, OllamaProvider # Added
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner # Added
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -348,56 +348,42 @@ async def _handle_code_generation_and_registration(
                         os.makedirs(test_target_dir, exist_ok=True)
                         test_target_path = os.path.join(test_target_dir, test_filename)
 
-                        # Use legacy CodeService for scaffold generation for now, as UCWS context not yet migrated fully
-                        # But CodeService instantiation was removed. We need to instantiate it or use UCWS if supported.
-                        # The plan was to refactor tool generation. Scaffold generation is a sub-task.
-                        # Let's instantiate CodeService locally for this legacy part or migrate it.
-                        # Migrating it to UCWS is better but requires UCWS support for GENERATE_UNIT_TEST_SCAFFOLD.
-                        # Checking CodeService.generate_code... it supports GENERATE_UNIT_TEST_SCAFFOLD.
-                        # UCWS does not seem to support it yet in the new implementation (CodeSynthesisService).
-                        # So I will re-instantiate CodeService here for legacy support.
+                        # Note: UCWS (CodeSynthesisService) does not yet support GENERATE_UNIT_TEST_SCAFFOLD directly.
+                        # We should either add it to UCWS or do it via direct LLM call here using OllamaProvider.
+                        # For now, let's do direct call to keep CodeService removed.
 
-                        from ai_assistant.llm_interface import ollama_client as default_llm_provider
-                        from ai_assistant.core import self_modification as default_self_modification_service
-
-                        legacy_code_service = CodeService(
-                            llm_provider=default_llm_provider,
-                            self_modification_service=default_self_modification_service,
-                            task_manager=task_manager,
-                            notification_manager=notification_manager
+                        prompt_for_scaffold = (
+                            f"Generate a unit test scaffold for the following Python code using 'unittest'.\n"
+                            f"The code is in module '{module_path_for_registration}'.\n"
+                            f"Code:\n```python\n{cleaned_code}\n```\n"
+                            "Provide only the Python test code."
                         )
 
-                        scaffold_gen_result = await legacy_code_service.generate_code(
-                            context="GENERATE_UNIT_TEST_SCAFFOLD",
-                            prompt_or_description=cleaned_code,
-                            additional_context={"module_name_hint": module_path_for_registration},
-                            target_path=test_target_path
-                        )
+                        llm_provider = OllamaProvider()
+                        scaffold_code = await llm_provider.generate_code_async(prompt_for_scaffold)
 
-                        if not scaffold_gen_result:
-                            print_formatted_text(ANSI(color_text("Error: Failed to generate unit test scaffold - no result returned", CLIColors.ERROR_MESSAGE)))
-                            return
+                        if scaffold_code:
+                            # Clean markdown
+                            if scaffold_code.startswith("```python"):
+                                scaffold_code = scaffold_code[9:]
+                            elif scaffold_code.startswith("```"):
+                                scaffold_code = scaffold_code[3:]
+                            if scaffold_code.endswith("```"):
+                                scaffold_code = scaffold_code[:-3]
 
-                        status = scaffold_gen_result.get("status")
-                        saved_path = scaffold_gen_result.get("saved_to_path")
-                        error_msg = scaffold_gen_result.get("error", "Unknown error occurred")
-
-                        if status == "SUCCESS_CODE_GENERATED" and saved_path:
-                            print_formatted_text(ANSI(color_text(f"Unit test scaffold successfully generated and saved to: {saved_path}", CLIColors.AI_RESPONSE)))
-                            global_reflection_log.log_execution(
-                                goal_description=f"Unit test scaffold generation for tool {tool_name_for_registration_final}",
-                                plan=[{'action_type': 'SCAFFOLD_GENERATION_CLI', 'tool_module': module_path_for_registration}],
-                                execution_results=[f"Scaffold saved to {saved_path}"],
-                                overall_success=True, status_override="SCAFFOLD_GEN_SAVE_SUCCESS"
-                            )
+                            if write_to_file(test_target_path, scaffold_code):
+                                print_formatted_text(ANSI(color_text(f"Unit test scaffold successfully generated and saved to: {test_target_path}", CLIColors.AI_RESPONSE)))
+                                global_reflection_log.log_execution(
+                                    goal_description=f"Unit test scaffold generation for tool {tool_name_for_registration_final}",
+                                    plan=[{'action_type': 'SCAFFOLD_GENERATION_CLI', 'tool_module': module_path_for_registration}],
+                                    execution_results=[f"Scaffold saved to {test_target_path}"],
+                                    overall_success=True, status_override="SCAFFOLD_GEN_SAVE_SUCCESS"
+                                )
+                            else:
+                                print_formatted_text(ANSI(color_text(f"Failed to save unit test scaffold to {test_target_path}", CLIColors.ERROR_MESSAGE)))
                         else:
-                            print_formatted_text(ANSI(color_text(f"Failed to generate or save unit test scaffold: {error_msg}", CLIColors.ERROR_MESSAGE)))
-                            global_reflection_log.log_execution(
-                                goal_description=f"Unit test scaffold generation for tool {tool_name_for_registration_final}",
-                                plan=[{'action_type': 'SCAFFOLD_GENERATION_CLI', 'tool_module': module_path_for_registration}],
-                                execution_results=[f"Scaffold generation failed. Status: {status}, Error: {error_msg}"],
-                                overall_success=False, status_override=f"SCAFFOLD_GEN_FAILED_{status or 'UNKNOWN_ERR'}"
-                            )
+                            print_formatted_text(ANSI(color_text(f"Failed to generate unit test scaffold (LLM returned empty).", CLIColors.ERROR_MESSAGE)))
+
             elif filepath_to_save and not should_save_and_register:
                  global_reflection_log.log_execution(
                     goal_description=f"File saving for generated tool (no registration): {tool_description_for_generation}",

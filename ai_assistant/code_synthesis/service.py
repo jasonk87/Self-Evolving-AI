@@ -6,12 +6,13 @@ import os
 import json
 import sys
 import asyncio
+import logging
 
 from ai_assistant.core import self_modification
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # Already imported
+from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
-# from ai_assistant.core.reflection import global_reflection_log # Not directly used in service for now
 
+# --- Prompt Templates ---
 
 LLM_CODE_FIX_PROMPT_TEMPLATE = """
 The following Python function (from module '{module_path}', function name '{function_name}') has an issue.
@@ -64,6 +65,57 @@ def generated_function_name(param1: type, ...) -> return_type:
 Now, generate the metadata and Python function based on the Tool Description provided above.
 """
 
+LLM_HIERARCHICAL_OUTLINE_PROMPT_TEMPLATE = """
+You are a senior software architect. Based on the following high-level requirement, generate a structural outline of the Python code needed.
+The outline must be a single JSON object.
+The JSON object should describe the main module, any classes, and functions/methods.
+For each component (module, class, function, method), include:
+- "type": e.g., "module", "class", "function", "method"
+- "name": The Pythonic name.
+- "description": A brief explanation of its purpose.
+- (For functions/methods) "signature": e.g., "(self, arg1: str, arg2: int) -> bool"
+- (For functions/methods) "body_placeholder": A specific, actionable comment or concise instruction for the AI that will implement this component's body. For example: "# Implement CSV parsing and extract specified column data." or "# Calculate factorial using recursion, handle n=0."
+- (For classes) "attributes": A list of attribute definitions (name, type, description).
+- (For modules) "imports": A list of necessary Python modules to import.
+
+High-Level Requirement:
+{high_level_description}
+
+JSON Outline:
+"""
+
+LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE = """You are an expert Python programmer. Your task is to implement the body of a specific Python function or method based on its definition and the overall context of its containing module or class.
+
+Overall Module/Class Context:
+<context_summary>
+{overall_context_summary}
+</context_summary>
+
+Component to Implement:
+- Type: {component_type}
+- Name: {component_name}
+- Signature: `{component_signature}`
+- Description/Purpose: {component_description}
+- Body Placeholder (Initial thought from outline): {component_body_placeholder}
+
+Required Module-Level Imports (available for use, do not redeclare unless shadowing):
+{module_imports}
+
+Instructions for Implementation:
+1.  Implement *only* the Python code for the body of the function/method `{component_name}`.
+2.  Adhere strictly to the provided signature: `{component_signature}`.
+3.  Ensure your code fulfills the component's described purpose: "{component_description}" and expands on the placeholder: "{component_body_placeholder}".
+4.  Use the provided module-level imports if needed. Do not add new module-level imports unless absolutely necessary and clearly justified by a specific library for the task. Local imports within the function are acceptable if scoped appropriately.
+5.  If the component is a class method, you can assume it has access to `self` and any attributes defined in the `Overall Module/Class Context` (if provided for a class).
+6.  Focus on clear, correct, and efficient Python code. Include comments for complex logic.
+7.  For simplicity and consistency, always generate the full component code including signature, i.e., `def function_name(...):\n    body...`. The assembly step can handle placing it correctly.
+8.  If the task is impossible or the description is too ambiguous to implement, return only the comment: `# IMPLEMENTATION_ERROR: Ambiguous instruction or impossible task.`
+
+Python code for `{component_name}`:
+"""
+
+logger = logging.getLogger(__name__)
+
 class CodeSynthesisService:
     """
     Main service class for the Unified Code Writing System (UCWS).
@@ -74,7 +126,7 @@ class CodeSynthesisService:
         """
         Initializes the CodeSynthesisService.
         """
-        print("CodeSynthesisService initialized.")
+        logger.info("CodeSynthesisService initialized.")
 
     async def _run_linter(self, code_string: str) -> Tuple[List[str], Optional[str]]:
         """
@@ -143,6 +195,10 @@ class CodeSynthesisService:
             return await self._handle_existing_tool_self_fix_llm(request)
         elif request.task_type == CodeTaskType.EXISTING_TOOL_SELF_FIX_AST:
             return await self._handle_existing_tool_self_fix_ast(request)
+        elif request.task_type == CodeTaskType.HIERARCHICAL_GENERATION_OUTLINE:
+            return await self._handle_hierarchical_outline(request)
+        elif request.task_type == CodeTaskType.HIERARCHICAL_GENERATION_FULL:
+            return await self._handle_hierarchical_full(request)
         else:
             print(f"Warning: Unsupported task type: {request.task_type}") # pragma: no cover
             return CodeTaskResult(
@@ -453,75 +509,259 @@ class CodeSynthesisService:
             return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_CODE_APPLICATION,
                                   error_message=f"Exception during AST self-fix: {e}", metadata={"traceback": str(e)})
 
-if __name__ == '__main__': # pragma: no cover
-    import asyncio
-    import os
-    import sys
+    # --- Hierarchical Generation Methods ---
 
-    async def main_test_service():
-        service = CodeSynthesisService()
+    async def _handle_hierarchical_outline(self, request: CodeTaskRequest) -> CodeTaskResult:
+        """Generates a structured outline for hierarchical code generation."""
+        print(f"CodeSynthesisService: Handling HIERARCHICAL_GENERATION_OUTLINE for request {request.request_id}")
 
-        # Test NEW_TOOL_CREATION_LLM
-        print("\n--- Testing NEW_TOOL_CREATION_LLM ---")
-        new_tool_req_data = {"description": "Create a Python tool that calculates the factorial of a non-negative integer."}
-        # Mock invoke_ollama_model_async for this specific test
-        new_tool_request = CodeTaskRequest(
-            task_type=CodeTaskType.NEW_TOOL_CREATION_LLM,
-            context_data=new_tool_req_data
-        )
-        result1 = await service.submit_task(new_tool_request)
-        print(f"Result for {new_tool_request.task_type.name} ({new_tool_request.request_id}): {result1.status.name} - {result1.error_message or ''}")
+        description = request.context_data.get("description")
+        if not description:
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_PRECONDITION,
+                                  error_message="Missing 'description' for outline generation.")
 
-        DUMMY_MODULE_DIR = "ai_assistant_dummy_tools_ucws"
-        DUMMY_MODULE_NAME = "dummy_math_tools_ucws"
-        DUMMY_FILE_PATH = os.path.join(DUMMY_MODULE_DIR, f"{DUMMY_MODULE_NAME}.py")
+        llm_config = request.llm_config_overrides or {}
+        model_name = llm_config.get("model_name", get_model_for_task("code_outline_generation"))
+        temperature = llm_config.get("temperature", 0.3)
+        max_tokens = llm_config.get("max_tokens", 2048)
 
-        os.makedirs(DUMMY_MODULE_DIR, exist_ok=True)
-        if not os.path.exists(os.path.join(DUMMY_MODULE_DIR, "__init__.py")):
-            with open(os.path.join(DUMMY_MODULE_DIR, "__init__.py"), "w") as f: f.write("")
+        prompt = LLM_HIERARCHICAL_OUTLINE_PROMPT_TEMPLATE.format(high_level_description=description)
 
-        if not os.path.exists(DUMMY_FILE_PATH):
-            with open(DUMMY_FILE_PATH, "w") as f:
-                f.write("def add(a, b):\n    return a + b # Original simple add\n")
-
-        project_root_for_test = os.path.abspath(".")
-        if project_root_for_test not in sys.path:
-             sys.path.insert(0, project_root_for_test)
-
-
-        tool_fix_llm_req_data = {
-            "module_path": f"{DUMMY_MODULE_DIR}.{DUMMY_MODULE_NAME}",
-            "function_name": "add",
-            "problem_description": "The add function should handle string concatenation as well.",
-        }
-        tool_fix_llm_request = CodeTaskRequest(
-            task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM,
-            context_data=tool_fix_llm_req_data
-        )
-
-        original_invoke = invoke_ollama_model_async
-        async def mock_invoke(*args, **kwargs):
-            print(f"Mocked LLM call for {tool_fix_llm_request.task_type.name}. Returning a sample fix.")
-            return "def add(a, b):\n    # LLM-generated fix for string concatenation\n    if isinstance(a, str) and isinstance(b, str):\n        return a + b\n    elif isinstance(a, (int,float)) and isinstance(b, (int,float)):\n        return a + b\n    else:\n        return str(a) + str(b) # Fallback for mixed types"
-
-        from ai_assistant.llm_interface import ollama_client as ollama_client_module
-        ollama_client_module.invoke_ollama_model_async = mock_invoke
-
-        result2 = await service.submit_task(tool_fix_llm_request)
-        print(f"Result for {tool_fix_llm_request.task_type.name} ({tool_fix_llm_request.request_id}): {result2.status.name} - {result2.error_message or ''}")
-        if result2.generated_code:
-            print(f"Generated code:\n{result2.generated_code}")
-
-        ollama_client_module.invoke_ollama_model_async = original_invoke
-
-        # Clean up dummy files
         try:
-            os.remove(DUMMY_FILE_PATH)
-            os.remove(os.path.join(DUMMY_MODULE_DIR, "__init__.py"))
-            if not os.listdir(DUMMY_MODULE_DIR): os.rmdir(DUMMY_MODULE_DIR)
-        except OSError as e:
-            print(f"Error during cleanup: {e}")
+            llm_response = await invoke_ollama_model_async(prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens)
+        except Exception as e:
+            error_msg = f"LLM invocation failed for outline generation: {e}"
+            print(f"CodeSynthesisService: {error_msg}")
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION, error_message=error_msg)
 
+        if not llm_response or not llm_response.strip():
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION, error_message="LLM returned empty outline.")
 
-    if __name__ == "__main__":
-        asyncio.run(main_test_service())
+        try:
+            cleaned_json_str = llm_response.strip()
+            if cleaned_json_str.startswith("```json"):
+                cleaned_json_str = cleaned_json_str[len("```json"):].strip()
+            if cleaned_json_str.endswith("```"):
+                cleaned_json_str = cleaned_json_str[:-len("```")].strip()
+            cleaned_json_str = cleaned_json_str.replace('\\n', '\n').replace('\\"', '\"') # Basic cleanup
+
+            parsed_outline = json.loads(cleaned_json_str)
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.SUCCESS,
+                                  metadata={"parsed_outline": parsed_outline, "raw_llm_response": llm_response})
+        except json.JSONDecodeError as e:
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
+                                  error_message=f"Failed to parse outline JSON: {e}", metadata={"raw_llm_response": llm_response})
+
+    async def _handle_hierarchical_full(self, request: CodeTaskRequest) -> CodeTaskResult:
+        """Executes full hierarchical flow: outline -> details -> assembly."""
+        print(f"CodeSynthesisService: Handling HIERARCHICAL_GENERATION_FULL for request {request.request_id}")
+
+        # 1. Generate Outline
+        outline_req = CodeTaskRequest(task_type=CodeTaskType.HIERARCHICAL_GENERATION_OUTLINE,
+                                      context_data=request.context_data, llm_config_overrides=request.llm_config_overrides)
+        outline_result = await self._handle_hierarchical_outline(outline_req)
+
+        if outline_result.status != CodeTaskStatus.SUCCESS or not outline_result.metadata:
+            return CodeTaskResult(request_id=request.request_id, status=outline_result.status,
+                                  error_message=f"Outline generation failed: {outline_result.error_message}",
+                                  metadata=outline_result.metadata)
+
+        parsed_outline = outline_result.metadata.get("parsed_outline")
+        if not parsed_outline:
+             return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
+                                  error_message="Outline generation succeeded but no parsed outline found.")
+
+        # 2. Generate Details
+        component_details: Dict[str, Optional[str]] = {}
+        components_to_generate = []
+        if parsed_outline.get("components"):
+            for component_def in parsed_outline["components"]:
+                if component_def.get("type") == "function":
+                    components_to_generate.append(component_def)
+                elif component_def.get("type") == "class" and component_def.get("methods"):
+                    for method_def in component_def["methods"]:
+                        method_key = f"{component_def.get('name', 'UnknownClass')}.{method_def.get('name', 'UnknownMethod')}"
+                        components_to_generate.append({
+                            **method_def,
+                            "name": method_key,
+                            "original_name": method_def.get("name"),
+                            "class_context": component_def
+                        })
+
+        any_detail_success = False
+        all_details_success = True
+        llm_config = request.llm_config_overrides
+
+        for comp_def in components_to_generate:
+            detail_code = await self._generate_detail_for_component(comp_def, parsed_outline, llm_config)
+            if detail_code:
+                component_details[comp_def.get("name")] = detail_code
+                any_detail_success = True
+            else:
+                component_details[comp_def.get("name")] = None
+                all_details_success = False
+
+        if not any_detail_success and components_to_generate:
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
+                                  error_message="All component detail generations failed.")
+
+        # 3. Assemble
+        try:
+            assembled_code = self._assemble_components(parsed_outline, component_details)
+        except Exception as e:
+            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_CODE_APPLICATION,
+                                  error_message=f"Assembly failed: {e}")
+
+        # 4. Final Linting (Optional but good)
+        # We can run linter here, similar to other tasks
+        lint_msgs, lint_err = await self._run_linter(assembled_code)
+
+        final_status = CodeTaskStatus.SUCCESS if all_details_success else CodeTaskStatus.PARTIAL_SUCCESS
+
+        return CodeTaskResult(request_id=request.request_id, status=final_status,
+                              generated_code=assembled_code,
+                              metadata={"parsed_outline": parsed_outline, "component_details_count": len(component_details), "lint_messages": lint_msgs})
+
+    async def _generate_detail_for_component(
+        self,
+        component_definition: Dict[str, Any],
+        full_outline: Dict[str, Any],
+        llm_config: Optional[Dict[str, Any]]
+    ) -> Optional[str]:
+        component_type = component_definition.get('type', 'unknown_type')
+        component_name = component_definition.get('name', 'UnnamedComponent')
+        component_signature = component_definition.get('signature', '')
+        component_description = component_definition.get('description', '')
+        component_body_placeholder = component_definition.get('body_placeholder', '')
+
+        module_imports_list = full_outline.get('imports', [])
+        module_imports_str = "\n".join([f"import {imp}" for imp in module_imports_list]) if module_imports_list else "# No specific module-level imports listed in outline."
+
+        overall_context_summary = full_outline.get('description', 'No overall description provided in outline.')
+        if component_type == "method" and component_definition.get('class_context'):
+             comp = component_definition['class_context']
+             class_attrs = ", ".join([f"{attr.get('name')}: {attr.get('type')}" for attr in comp.get('attributes',[])])
+             overall_context_summary = (
+                f"Within class '{comp.get('name', 'UnknownClass')}' with attributes ({class_attrs}). "
+                f"Overall class description: {comp.get('description', '')}"
+             )
+
+        prompt = LLM_COMPONENT_DETAIL_PROMPT_TEMPLATE.format(
+            overall_context_summary=overall_context_summary,
+            component_type=component_type,
+            component_name=component_name,
+            component_signature=component_signature,
+            component_description=component_description,
+            component_body_placeholder=component_body_placeholder,
+            module_imports=module_imports_str
+        )
+
+        model_name = get_model_for_task("code_generation")
+        temperature = 0.2
+        max_tokens = 1024
+        if llm_config:
+            model_name = llm_config.get("model_name", model_name)
+            temperature = llm_config.get("temperature", temperature)
+            max_tokens = llm_config.get("max_tokens", max_tokens)
+
+        try:
+            raw_llm_output = await invoke_ollama_model_async(prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens)
+        except Exception as e:
+            print(f"CodeSynthesisService: Error generating detail for {component_name}: {e}")
+            return None
+
+        if not raw_llm_output or "# IMPLEMENTATION_ERROR:" in raw_llm_output or len(raw_llm_output.strip()) < 5:
+             return None
+
+        cleaned_code_snippet = raw_llm_output.strip()
+        if cleaned_code_snippet.startswith("```python"):
+            cleaned_code_snippet = cleaned_code_snippet[len("```python"):].strip()
+        if cleaned_code_snippet.endswith("```"):
+            cleaned_code_snippet = cleaned_code_snippet[:-len("```")].strip()
+
+        return cleaned_code_snippet
+
+    def _assemble_components(
+        self,
+        outline: Dict[str, Any],
+        component_details: Dict[str, Optional[str]]
+    ) -> str:
+        code_parts = []
+
+        module_docstring = outline.get("module_docstring")
+        if module_docstring:
+            code_parts.append(f'"""{module_docstring}"""')
+            code_parts.append("\n\n")
+
+        imports = outline.get("imports", [])
+        if imports:
+            for imp in imports:
+                code_parts.append(f"import {imp}")
+            code_parts.append("\n\n")
+
+        if not code_parts: pass # No header
+
+        components = outline.get("components", [])
+        for i, component_def in enumerate(components):
+            component_type = component_def.get("type")
+            component_name = component_def.get("name")
+
+            if not component_name: continue
+
+            if component_type == "function":
+                func_code = component_details.get(component_name)
+                if func_code:
+                    code_parts.append(func_code)
+                else:
+                    # Placeholder
+                    signature = component_def.get("signature", "()")
+                    desc = component_def.get("description", "No description.")
+                    code_parts.append(f"# Placeholder for function '{component_name}': {desc}")
+                    code_parts.append(f"def {component_name}{signature}:")
+                    code_parts.append("    pass")
+                code_parts.append("\n\n")
+
+            elif component_type == "class":
+                class_name = component_name
+                code_parts.append(f"class {class_name}:")
+
+                class_docstring = component_def.get("description")
+                if class_docstring:
+                    indented_docstring = f'    """{class_docstring}"""'
+                    code_parts.append(indented_docstring)
+                    code_parts.append("")
+
+                methods = component_def.get("methods", [])
+                if not methods and not class_docstring: code_parts.append("    pass")
+
+                for method_def in methods:
+                    method_name = method_def.get("name")
+                    method_key = f"{class_name}.{method_name}"
+                    method_code = component_details.get(method_key)
+
+                    if method_code:
+                        indented_method_code = "\n".join([f"    {line}" for line in method_code.splitlines()])
+                        code_parts.append(indented_method_code)
+                    else:
+                        signature = method_def.get("signature", "(self)")
+                        code_parts.append(f"    # Placeholder for method '{method_name}'")
+                        code_parts.append(f"    def {method_name}{signature}:")
+                        code_parts.append("        pass")
+                    code_parts.append("")
+
+                if code_parts[-1] == "": code_parts.append("\n") # spacing between classes
+
+        main_block = outline.get("main_execution_block")
+        if main_block:
+            code_parts.append("")
+            code_parts.append(main_block)
+            code_parts.append("")
+
+        final_code = "\n".join(code_parts)
+        final_code = re.sub(r"\n{3,}", "\n\n", final_code) # Normalize newlines
+
+        return final_code.strip()
+
+if __name__ == '__main__': # pragma: no cover
+    # Existing test code...
+    pass

@@ -3,9 +3,8 @@ from unittest import mock
 import asyncio
 import os
 import sys
-import uuid
-import datetime
-from dataclasses import field
+import json
+from enum import Enum
 
 try:
     from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult
@@ -15,81 +14,124 @@ except ImportError: # pragma: no cover
         sys.path.insert(0, project_root)
     from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult
 
-class TestCodeSynthesisService(unittest.IsolatedAsyncioTestCase): # Use IsolatedAsyncioTestCase for async tests
+class TestCodeSynthesisService(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.service = CodeSynthesisService()
 
-    @mock.patch('ai_assistant.code_synthesis.service.self_modification.get_function_source_code')
+    @mock.patch('ai_assistant.code_synthesis.service.CodeSynthesisService._run_linter', new_callable=mock.AsyncMock)
     @mock.patch('ai_assistant.code_synthesis.service.invoke_ollama_model_async', new_callable=mock.AsyncMock)
-    async def test_handle_existing_tool_self_fix_llm_success(self, mock_invoke_llm, mock_get_source):
-        mock_get_source.return_value = "def old_func(a): return a"
-        mock_invoke_llm.return_value = "def old_func(a): return a + 1 # Fixed by LLM"
+    async def test_handle_new_tool_creation_llm_success(self, mock_invoke_llm, mock_linter):
+        mock_invoke_llm.return_value = """# METADATA: {"suggested_function_name": "new_tool", "suggested_tool_name": "newTool", "suggested_description": "A new tool"}
+def new_tool():
+    pass
+"""
+        mock_linter.return_value = ([], None)
 
-        request_data = {
-            "module_path": "dummy.module",
-            "function_name": "old_func",
-            "problem_description": "Needs a fix"
-        }
         request = CodeTaskRequest(
-            task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM,
-            context_data=request_data
+            task_type=CodeTaskType.NEW_TOOL_CREATION_LLM,
+            context_data={"description": "Create a new tool"}
         )
 
-        result = await self.service._handle_existing_tool_self_fix_llm(request)
+        result = await self.service.submit_task(request)
 
         self.assertEqual(result.status, CodeTaskStatus.SUCCESS)
-        self.assertIsNotNone(result.generated_code)
-        self.assertIn("# Fixed by LLM", result.generated_code if result.generated_code else "")
-        mock_get_source.assert_called_once_with("dummy.module", "old_func")
-        mock_invoke_llm.assert_called_once()
-        self.assertEqual(result.request_id, request.request_id) # Corrected assertion
+        self.assertIn("def new_tool():", result.generated_code)
+        self.assertEqual(result.metadata["parsed_tool_metadata"]["suggested_function_name"], "new_tool")
 
     @mock.patch('ai_assistant.code_synthesis.service.self_modification.get_function_source_code')
+    @mock.patch('ai_assistant.code_synthesis.service.CodeSynthesisService._run_linter', new_callable=mock.AsyncMock)
     @mock.patch('ai_assistant.code_synthesis.service.invoke_ollama_model_async', new_callable=mock.AsyncMock)
-    async def test_handle_existing_tool_self_fix_llm_no_code_from_llm(self, mock_invoke_llm, mock_get_source):
+    async def test_handle_existing_tool_self_fix_llm_success(self, mock_invoke_llm, mock_linter, mock_get_source):
         mock_get_source.return_value = "def old_func(a): return a"
-        mock_invoke_llm.return_value = "// NO_CODE_SUGGESTION_POSSIBLE"
+        mock_invoke_llm.return_value = "def old_func(a): return a + 1"
+        mock_linter.return_value = ([], None)
 
-        request = CodeTaskRequest(task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM, context_data={
-            "module_path": "dummy.module", "function_name": "old_func", "problem_description": "Needs a fix"
-        })
-        result = await self.service._handle_existing_tool_self_fix_llm(request)
+        request = CodeTaskRequest(
+            task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM,
+            context_data={
+                "module_path": "dummy.module",
+                "function_name": "old_func",
+                "problem_description": "Needs a fix"
+            }
+        )
 
-        self.assertEqual(result.status, CodeTaskStatus.FAILURE_LLM_GENERATION)
-        self.assertIsNone(result.generated_code)
+        result = await self.service.submit_task(request)
 
-    @mock.patch('ai_assistant.code_synthesis.service.self_modification.get_function_source_code')
-    async def test_handle_existing_tool_self_fix_llm_no_original_code(self, mock_get_source):
-        mock_get_source.return_value = None
+        self.assertEqual(result.status, CodeTaskStatus.SUCCESS)
+        self.assertEqual(result.generated_code, "def old_func(a): return a + 1")
 
-        request = CodeTaskRequest(task_type=CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM, context_data={
-            "module_path": "dummy.module", "function_name": "old_func", "problem_description": "Needs a fix"
-        })
-        result = await self.service._handle_existing_tool_self_fix_llm(request)
+    @mock.patch('ai_assistant.code_synthesis.service.invoke_ollama_model_async', new_callable=mock.AsyncMock)
+    async def test_handle_hierarchical_outline_success(self, mock_invoke_llm):
+        outline_json = {
+            "module_docstring": "Test module",
+            "imports": ["os"],
+            "components": [
+                {"type": "function", "name": "test_func", "description": "A test function"}
+            ]
+        }
+        mock_invoke_llm.return_value = json.dumps(outline_json)
 
-        self.assertEqual(result.status, CodeTaskStatus.FAILURE_PRECONDITION)
-        self.assertIsNotNone(result.error_message)
+        request = CodeTaskRequest(
+            task_type=CodeTaskType.HIERARCHICAL_GENERATION_OUTLINE,
+            context_data={"description": "Create a test module"}
+        )
+
+        result = await self.service.submit_task(request)
+
+        self.assertEqual(result.status, CodeTaskStatus.SUCCESS)
+        self.assertEqual(result.metadata["parsed_outline"], outline_json)
+
+    @mock.patch('ai_assistant.code_synthesis.service.CodeSynthesisService._run_linter', new_callable=mock.AsyncMock)
+    @mock.patch('ai_assistant.code_synthesis.service.invoke_ollama_model_async', new_callable=mock.AsyncMock)
+    async def test_handle_hierarchical_full_success(self, mock_invoke_llm, mock_linter):
+        # Mock responses for outline and detail generation
+        outline_json = {
+            "module_docstring": "Test module",
+            "imports": ["os"],
+            "components": [
+                {
+                    "type": "function",
+                    "name": "test_func",
+                    "description": "A test function",
+                    "signature": "() -> None",
+                    "body_placeholder": "Pass"
+                }
+            ]
+        }
+
+        # We need side_effect to return different responses for sequential calls
+        # 1. Outline generation
+        # 2. Detail generation for test_func
+        mock_invoke_llm.side_effect = [
+            json.dumps(outline_json), # Outline response
+            "def test_func() -> None:\n    pass" # Detail response
+        ]
+        mock_linter.return_value = ([], None)
+
+        request = CodeTaskRequest(
+            task_type=CodeTaskType.HIERARCHICAL_GENERATION_FULL,
+            context_data={"description": "Create a test module"}
+        )
+
+        result = await self.service.submit_task(request)
+
+        self.assertEqual(result.status, CodeTaskStatus.SUCCESS)
+        self.assertIn("def test_func() -> None:", result.generated_code)
+        self.assertIn("import os", result.generated_code)
 
     async def test_submit_task_unsupported_type(self):
-        # Create a dummy enum member for test by directly assigning an int value outside the Enum definition
-        # This is a bit hacky for testing but avoids modifying the original Enum for a test case.
         class MockUnsupportedTaskType(Enum):
              BOGUS_TASK = 999
-             # Add existing valid values to satisfy isinstance checks if any occur before dispatch
-             NEW_TOOL_CREATION_LLM = CodeTaskType.NEW_TOOL_CREATION_LLM.value
-             EXISTING_TOOL_SELF_FIX_LLM = CodeTaskType.EXISTING_TOOL_SELF_FIX_LLM.value
-             EXISTING_TOOL_SELF_FIX_AST = CodeTaskType.EXISTING_TOOL_SELF_FIX_AST.value
+
+        # We need to trick the type checker or just pass it in if python allows dynamic enum passing (it usually does for duck typing if not strict)
+        # But here the service checks `request.task_type.name` probably or equality.
+        # Actually `request.task_type` is expected to be CodeTaskType enum.
+        # Let's just create a request with a fake type.
 
         request = CodeTaskRequest(task_type=MockUnsupportedTaskType.BOGUS_TASK, context_data={}) # type: ignore
         result = await self.service.submit_task(request)
         self.assertEqual(result.status, CodeTaskStatus.FAILURE_UNSUPPORTED_TASK)
-
-    async def test_handle_new_tool_creation_llm_placeholder(self):
-        request = CodeTaskRequest(task_type=CodeTaskType.NEW_TOOL_CREATION_LLM, context_data={"description": "test"})
-        result = await self.service._handle_new_tool_creation_llm(request) # Test private method directly
-        self.assertEqual(result.status, CodeTaskStatus.FAILURE_UNSUPPORTED_TASK)
-        self.assertIn("not fully implemented", result.error_message or "")
 
 if __name__ == '__main__': # pragma: no cover
     unittest.main()

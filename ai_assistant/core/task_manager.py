@@ -26,6 +26,7 @@ class ActiveTaskStatus(Enum):
     PROJECT_PLAN_FAILED_STEP = auto()
     # Added from later inspection
     FAILED_CODE_GENERATION = auto()
+    REFINING_PLAN = auto()
 
 
 class ActiveTaskType(Enum):
