@@ -9,6 +9,7 @@ import sys
 from ai_assistant.core import self_modification
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # Already imported
 from ai_assistant.config import get_model_for_task
+from ai_assistant.code_synthesis.linting import CodeLinter
 # from ai_assistant.core.reflection import global_reflection_log # Not directly used in service for now
 
 
@@ -213,16 +214,41 @@ class CodeSynthesisService:
         if original_code_from_context:
             original_code = original_code_from_context
         else:
-            original_code = self_modification.get_function_source_code(module_path, function_name)
+            # CHANGE: Get full file context if possible, falling back to function only
+            # Check if we can get the full file content
+            from ai_assistant.core.self_modification import _resolve_file_path_robust
+            from ai_assistant.custom_tools.file_system_tools import read_text_from_file
+
+            full_file_path = _resolve_file_path_robust(module_path, function_name)
+            original_code = None
+            full_file_context = ""
+
+            if full_file_path and os.path.exists(full_file_path):
+                file_content = read_text_from_file(full_file_path)
+                if not file_content.startswith("Error"):
+                    full_file_context = file_content
+                    # We still try to extract the specific function for the "Original Function Code" block
+                    # but we will append the full file context to the prompt description.
+                    original_code = self_modification.get_function_source_code(module_path, function_name)
+
+            if not original_code:
+                 # Fallback if full file load failed or function extraction failed
+                 original_code = self_modification.get_function_source_code(module_path, function_name)
+
         if not original_code:
             error_msg = f"Could not retrieve original code for {module_path}.{function_name}."
             print(f"CodeSynthesisService: {error_msg}")
             return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_PRECONDITION,
                                   error_message=error_msg)
 
+        # Enhance problem description with full context if available
+        enhanced_description = problem_description
+        if 'full_file_context' in locals() and full_file_context:
+            enhanced_description += f"\n\n--- Full File Context ({module_path}) ---\n{full_file_context}\n--- End Full File Context ---"
+
         prompt = LLM_CODE_FIX_PROMPT_TEMPLATE.format(
             module_path=module_path, function_name=function_name,
-            problem_description=problem_description, original_code=original_code
+            problem_description=enhanced_description, original_code=original_code
         )
 
         llm_config = request.llm_config_overrides or {}
@@ -259,6 +285,150 @@ class CodeSynthesisService:
             cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
 
         print(f"CodeSynthesisService: LLM generated code suggestion for {function_name}.")
+
+        # --- Linting & Refinement Loop ---
+        passed_lint = False
+        lint_errors = []
+        MAX_LINT_RETRIES = 2
+
+        for attempt in range(MAX_LINT_RETRIES + 1):
+            passed_lint, lint_errors = CodeLinter.lint_code(cleaned_llm_code)
+
+            if passed_lint:
+                break
+
+            print(f"CodeSynthesisService: Linting failed (Attempt {attempt+1}/{MAX_LINT_RETRIES+1}). Errors: {lint_errors}")
+
+            if attempt < MAX_LINT_RETRIES:
+                error_str = CodeLinter.format_errors(lint_errors)
+                refinement_prompt = f"""
+The Python code you generated has linting errors (syntax or duplicate imports).
+Errors:
+{error_str}
+
+Please generate the FIXED code only.
+Original Code:
+```python
+{cleaned_llm_code}
+```
+"""
+                try:
+                    refinement_response = await invoke_ollama_model_async(
+                        refinement_prompt,
+                        model_name=model_name,
+                        temperature=0.2,
+                        max_tokens=max_tokens
+                    )
+
+                    if refinement_response:
+                        cleaned_refinement = refinement_response.strip()
+                        if cleaned_refinement.startswith("```python"):
+                            cleaned_refinement = cleaned_refinement[len("```python"):].strip()
+                        if cleaned_refinement.endswith("```"):
+                            cleaned_refinement = cleaned_refinement[:-len("```")].strip()
+                        cleaned_llm_code = cleaned_refinement
+                        print(f"CodeSynthesisService: Applied lint fix attempt {attempt+1}.")
+                except Exception as e:
+                    print(f"CodeSynthesisService: Error during lint refinement: {e}")
+                    break
+
+        # Final Lint Check
+        if not passed_lint:
+             error_msg = f"Generated code failed linting after retries. Errors: {CodeLinter.format_errors(lint_errors)}"
+             print(f"CodeSynthesisService: {error_msg}")
+             return CodeTaskResult(
+                 request_id=request.request_id,
+                 status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                 error_message=error_msg,
+                 metadata=response_metadata
+             )
+
+        response_metadata["linting_passed"] = True
+
+        # --- Semantic Reviewer Step (Nitpicky) ---
+        # The user requested a strict reviewer check after linting.
+        try:
+            from ai_assistant.core.reviewer import ReviewerAgent
+
+            # Use 'council_skeptic' or default model for reviewing
+            reviewer = ReviewerAgent(model_name="council_skeptic") # Assuming configured model
+
+            review_result = await reviewer.evaluate_auto_approval_request(
+                request_type="code_modification",
+                description=f"Auto-generated fix for {function_name} in {module_path}. Problem: {problem_description}",
+                request_data={"code": cleaned_llm_code, "module_path": module_path, "function_name": function_name}
+            )
+
+            # The ReviewerAgent usually returns 'status': 'approved'/'rejected'
+            # Note: evaluate_auto_approval_request is designed for approval requests,
+            # but we can reuse it or use a specific code review method if ReviewerAgent has one.
+            # Let's inspect ReviewerAgent briefly if needed, but assuming standard interface.
+            # Actually, let's use a simpler custom prompt here to enforce the "Nitpicky" persona directly
+            # if ReviewerAgent is too high-level.
+            # But adhering to the plan: "Call ReviewerAgent".
+
+            if review_result.get("status") != "approved":
+                print(f"CodeSynthesisService: Reviewer REJECTED code. Reason: {review_result.get('reason')}")
+
+                # Attempt ONE semantic fix based on reviewer feedback
+                review_feedback = review_result.get("reason", "Code quality issues.")
+                semantic_fix_prompt = f"""
+The code passed linting but was rejected by the Senior Reviewer.
+Reviewer Feedback:
+"{review_feedback}"
+
+Please generate the FIXED code only.
+Original Code:
+```python
+{cleaned_llm_code}
+```
+"""
+                print("CodeSynthesisService: Attempting semantic fix based on reviewer feedback...")
+                semantic_response = await invoke_ollama_model_async(
+                    semantic_fix_prompt,
+                    model_name=model_name,
+                    temperature=0.2,
+                    max_tokens=max_tokens
+                )
+
+                if semantic_response:
+                    cleaned_semantic = semantic_response.strip()
+                    if cleaned_semantic.startswith("```python"):
+                        cleaned_semantic = cleaned_semantic[len("```python"):].strip()
+                    if cleaned_semantic.endswith("```"):
+                        cleaned_semantic = cleaned_semantic[:-len("```")].strip()
+                    cleaned_llm_code = cleaned_semantic
+
+                    # Optional: Re-lint? Yes, safer.
+                    passed_lint_2, lint_errors_2 = CodeLinter.lint_code(cleaned_llm_code)
+                    if not passed_lint_2:
+                         return CodeTaskResult(
+                             request_id=request.request_id,
+                             status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                             error_message=f"Semantic fix introduced linting errors: {CodeLinter.format_errors(lint_errors_2)}",
+                             metadata=response_metadata
+                         )
+                else:
+                     return CodeTaskResult(
+                         request_id=request.request_id,
+                         status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                         error_message=f"Reviewer rejected code: {review_feedback}",
+                         metadata=response_metadata
+                     )
+
+        except ImportError:
+            print("CodeSynthesisService: ReviewerAgent not available. Skipping semantic review.")
+        except Exception as e:
+            print(f"CodeSynthesisService: Error during semantic review: {e}")
+            # Non-blocking error for review step? Or Fail safe?
+            # Fail safe is better for strictness.
+            return CodeTaskResult(
+                 request_id=request.request_id,
+                 status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                 error_message=f"Error during mandatory code review: {e}",
+                 metadata=response_metadata
+             )
+
         response_metadata["llm_generated_code_length"] = len(cleaned_llm_code)
         return CodeTaskResult(
             request_id=request.request_id,

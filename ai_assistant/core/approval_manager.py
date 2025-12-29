@@ -81,6 +81,24 @@ class ApprovalManager:
             return True
         return False
 
+    def resolve_request_manually(self, req_id: str) -> bool:
+        """
+        Marks a request as 'resolved' or 'patched' without executing the callback.
+        This is distinct from denial as it implies the underlying goal was achieved manually.
+        """
+        if req_id in self.pending_requests:
+            logger.info(f"Marking request {req_id} as manually resolved/patched")
+
+            # Logic to handle side-effects (like updating insights) if needed
+            req_data = self.pending_requests[req_id]
+
+            # If we need to notify the source (like LearningAgent), we might need a separate callback or event.
+            # For now, we assume the caller handles the insight update, or we add a 'on_resolve' callback support later.
+
+            self._cleanup(req_id)
+            return True
+        return False
+
     def _cleanup(self, req_id: str):
         if req_id in self.pending_requests:
             del self.pending_requests[req_id]

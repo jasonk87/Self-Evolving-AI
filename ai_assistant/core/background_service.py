@@ -109,6 +109,29 @@ _last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 _last_reminder_check_time: float = 0.0
 _reminder_check_interval_seconds = 10 # Check frequently
 
+# Detailed Status Trackers
+_last_dream_status: str = "No dreams realized yet."
+_last_architect_status: str = "No architectural audits performed yet."
+
+# --- User Activity Beacon ---
+_last_user_activity_ts: float = 0.0
+# Default threshold: 5 minutes (300 seconds)
+# Configurable via ai_assistant.config if needed in future
+BACKGROUND_IDLE_THRESHOLD_SECONDS = 300
+
+def report_user_activity():
+    """
+    Called by the UI/API to indicate the user is active.
+    Resets the idle timer, pausing heavy background tasks.
+    """
+    global _last_user_activity_ts
+    _last_user_activity_ts = time.time()
+    # logger.debug("User activity reported. Background tasks paused.")
+
+def is_user_active(threshold: int = BACKGROUND_IDLE_THRESHOLD_SECONDS) -> bool:
+    """Checks if the user has been active recently."""
+    return (time.time() - _last_user_activity_ts) < threshold
+
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
     global _orchestrator
@@ -186,6 +209,57 @@ def get_service_status():
         "last_visual_audit_timestamp": _last_visual_audit_time,
         "autonomous_learning_enabled": globals().get('AUTONOMOUS_LEARNING_ENABLED', False)
     }
+
+def get_background_activity_report() -> str:
+    """
+    Returns a human-readable report of the background service's status and recent activities.
+    """
+    if not _background_service_active:
+        return "Background Service: INACTIVE (Processes are not running)"
+
+    now = time.time()
+    report = ["Background Service: ACTIVE (Running autonomous loops)"]
+
+    def fmt_time(t):
+        if t == 0: return "Never"
+        diff = int(now - t)
+        if diff < 60: return f"{diff}s ago"
+        if diff < 3600: return f"{diff//60}m ago"
+        return f"{diff//3600}h ago"
+
+    # Dream Mode
+    dream_time = globals().get('_last_dream_time', 0)
+    dream_stat = globals().get('_last_dream_status', 'No data')
+    report.append(f"- Dreamer (Simulation): Last run {fmt_time(dream_time)}. Status: {dream_stat}")
+
+    # Evolutionary Architect
+    arch_time = globals().get('_last_architect_audit_timestamp', 0)
+    arch_stat = globals().get('_last_architect_status', 'No data')
+    report.append(f"- Evolutionary Architect: Last audit {fmt_time(arch_time)}. Status: {arch_stat}")
+
+    # Self-Healing
+    heal_time = globals().get('_last_self_healing_time', 0)
+    report.append(f"- Self-Healing (Immune System): Last scan {fmt_time(heal_time)}")
+
+    # Visual Audit
+    vis_time = globals().get('_last_visual_audit_time', 0)
+    report.append(f"- Visual Audit: Last scan {fmt_time(vis_time)}")
+
+    # Auto-Approval
+    auto_time = globals().get('_last_auto_approve_check_time', 0)
+    report.append(f"- Auto-Approval Gatekeeper: Last check {fmt_time(auto_time)}")
+
+    # Autonomous Goals
+    goal_time = globals().get('_last_autonomous_goal_check_time', 0)
+    report.append(f"- Autonomous Goal Processor: Last check {fmt_time(goal_time)}")
+
+    # User Activity
+    last_act = globals().get('_last_user_activity_ts', 0)
+    is_active = (now - last_act) < BACKGROUND_IDLE_THRESHOLD_SECONDS
+    status_str = "ACTIVE (Pausing heavy tasks)" if is_active else "IDLE (Heavy tasks enabled)"
+    report.append(f"- User Activity: Last detected {fmt_time(last_act)}. Status: {status_str}")
+
+    return "\n".join(report)
 
 async def run_autonomous_goal_processor():
     """
@@ -677,8 +751,12 @@ async def _background_loop_async():
             
             _last_reminder_check_time = time.time()
 
-        # --- Visual Audit Task ---
-        if vision_service and current_loop_time >= next_visual_audit_run_time:
+        # === IDLE GATED TASKS ===
+        # The following tasks are "Heavy" and should pause if the user is active.
+        user_is_idle = not is_user_active()
+
+        # --- Visual Audit Task (Heavy) ---
+        if user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
             logger.info("BackgroundService: Running Visual Audit...")
             try:
                 if os.path.isdir(BASE_PROJECTS_DIR):
@@ -759,8 +837,8 @@ async def _background_loop_async():
             _last_visual_audit_time = time.time()
             next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
 
-        # --- Autonomous Project Coding Task ---
-        if PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
+        # --- Autonomous Project Coding Task (Heavy) ---
+        if user_is_idle and PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
             current_time_str_project_exec = await asyncio.to_thread(time.strftime, '%Y-%m-%d %H:%M:%S')
             print(f"BackgroundService (Async): Scanning for projects with planned tasks (current time: {current_time_str_project_exec})...")
             projects_worked_on_this_cycle = 0
@@ -814,8 +892,8 @@ async def _background_loop_async():
             _last_project_execution_scan_time = time.time()
             next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
 
-        # --- Autonomous Self-Healing Task ---
-        if learning_agent and current_loop_time >= next_self_healing_run_time:
+        # --- Autonomous Self-Healing Task (Heavy) ---
+        if user_is_idle and learning_agent and current_loop_time >= next_self_healing_run_time:
             try:
                 # Restore Autonomous Self-Healing
                 # The user can still intervene via the UI because we expose 'NEW' insights
@@ -828,7 +906,7 @@ async def _background_loop_async():
             
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
 
-        # --- General Insight Processing (Learning) ---
+        # --- General Insight Processing (Learning - Always Run) ---
         # Checks for NEW insights (Frustrations, Preferences) and proposes actions
         if learning_agent and current_loop_time >= next_self_healing_run_time + 5: # Offset slightly from self-healing
              try:
@@ -838,8 +916,8 @@ async def _background_loop_async():
                  logger.error(f"BackgroundService: Error during general insight processing: {e}", exc_info=True)
 
 
-        # --- Evolutionary Architect Audit Task ---
-        if current_loop_time >= next_architect_audit_run_time:
+        # --- Evolutionary Architect Audit Task (Heavy) ---
+        if user_is_idle and current_loop_time >= next_architect_audit_run_time:
              logger.info(f"BackgroundService: Running Evolutionary Architect Audit...")
              try:
                  proposal = await perform_architectural_audit()
@@ -857,8 +935,10 @@ async def _background_loop_async():
                          execute_func=_apply_proposal
                      )
                      logger.info(f"BackgroundService: Queued evolution proposal for {target_file}")
+                     globals()['_last_architect_status'] = f"Proposed changes for {os.path.basename(target_file)}: {summary}"
                  elif not proposal:
                      logger.info("BackgroundService: No proposal generated during audit.")
+                     globals()['_last_architect_status'] = "Audit completed. No improvements proposed."
 
                  _last_architect_audit_timestamp = time.time()
                  _save_architect_state()
@@ -869,12 +949,12 @@ async def _background_loop_async():
                  # Retry later to avoid rapid error loop
                  next_architect_audit_run_time = time.time() + 3600
 
-        # --- DREAM MODE (Autonomous Deep Simulation) ---
+        # --- DREAM MODE (Autonomous Deep Simulation - Heavy) ---
         global _last_dream_time, _dream_interval_seconds
         if '_last_dream_time' not in globals(): _last_dream_time = 0.0
         if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 300 # 5 minutes
 
-        if current_loop_time >= _last_dream_time + _dream_interval_seconds:
+        if user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
             try:
                 # Lazy init Dreamer
@@ -919,6 +999,7 @@ async def _background_loop_async():
                         # Analyze Result
                         if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
                             logger.warning(f"BackgroundService: Nightmare realized! Tool '{target_tool}' failed hypothetical scenario.")
+                            globals()['_last_dream_status'] = f"Nightmare realized! Tool '{target_tool}' failed simulation."
                             
                             # ACTIVE IMMUNE SYSTEM: Attempt to fix
                             if learning_agent and learning_agent.action_executor and learning_agent.action_executor.code_service:
@@ -993,6 +1074,7 @@ async def _background_loop_async():
                                             # Check Verification Result
                                             if "DREAM_SURVIVED" in stdout_str_v:
                                                  logger.info(f"BackgroundService: Immune Response Successful! Fix verified for '{target_tool}'.")
+                                                 globals()['_last_dream_status'] = f"Nightmare realized for '{target_tool}', but Immune System successfully generated and verified a fix."
 
                                                  # 3. Submit Proposal
                                                  approval_manager.add_request(
@@ -1049,6 +1131,7 @@ async def _background_loop_async():
 
                         else:
                             logger.info(f"BackgroundService: Tool '{target_tool}' survived the dream scenario.")
+                            globals()['_last_dream_status'] = f"Tool '{target_tool}' survived dream scenario '{dream_result.get('scenario_name')}'."
                     
             except Exception as e:
                 logger.error(f"BackgroundService: Error during Dream Mode: {e}", exc_info=True)

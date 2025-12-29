@@ -157,6 +157,8 @@ class ReviewerAgent:
         tests_for_prompt = related_tests if related_tests and related_tests.strip() else "No specific tests provided for review context."
         code_diff_for_prompt = code_diff if code_diff and code_diff.strip() else "No diff provided. Full code is under review."
 
+        # Note: REVIEW_CODE_PROMPT_TEMPLATE expects code_to_review, code_diff, original_requirements, related_tests
+        # We ensure all are passed.
         prompt = REVIEW_CODE_PROMPT_TEMPLATE.format(
             code_to_review=code_to_review,
             code_diff=code_diff_for_prompt,

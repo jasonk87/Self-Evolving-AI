@@ -246,46 +246,53 @@ Available Tools:
 Strategist's Plan:
 {strategist_response}
 
+MANDATORY: ALL RESPONSES MUST BE VALID JSON.
+You must return a single JSON object. Do not include markdown code blocks or additional text.
+
+Schema:
+{{
+  "thought": "Brief reasoning for this action",
+  "type": "tool_call" OR "final_answer",
+  "name": "tool_name_if_tool_call",
+  "params": {{ ... arguments for tool or message content ... }}
+}}
+
 Few-Shot Examples (How to Act):
 Example 1 (Tool Call):
 Strategist: "I need to search for 'latest python version'."
 Operator:
-```json
 {{
-  "action": "search_web",
-  "args": ["latest python version"],
-  "kwargs": {{}},
-  "thought": "Searching for python version as planned."
+  "thought": "Searching for python version as planned.",
+  "type": "tool_call",
+  "name": "search_web",
+  "params": {{ "query": "latest python version" }}
 }}
-```
-
-Example 3 (Visual Request):
-Strategist: "The user wants a button. Use dynamic HTML."
-Operator:
-```json
-{{
-  "action": "chat_dynamic_html",
-  "args": ["A button styled with CSS that says 'Click Me'"],
-  "kwargs": {{}},
-  "thought": "Generating styled button."
-}}
-```
 
 Example 2 (Final Answer):
 Strategist: "I have the info. Answer the user: It is 3.12."
 Operator:
-FINAL ANSWER: The latest Python version is 3.12.
+{{
+  "thought": "Answering the user.",
+  "type": "final_answer",
+  "name": null,
+  "params": {{ "message": "The latest Python version is 3.12." }}
+}}
 
 Instructions:
 1. Follow the Strategist's plan exactly.
-2. If the plan is to use a tool, output the tool call JSON.
-3. If the plan is to answer the user, output: FINAL ANSWER: [Your Answer]
-4. Do NOT deviate from the plan.
-5. STRICT FORMATTING: Use ONLY the JSON format shown above for tool calls. Do NOT use `tool_code` blocks, python code blocks, or any other format.
-6. Check the Available Tools list carefully. If a tool requires arguments, ensure they are provided in the 'args' list or 'kwargs' dictionary.
+2. Output STRICT JSON only.
+3. If the plan is to use a tool, set "type" to "tool_call" and "name" to the tool name. Put arguments in "params".
+   **IMPORTANT:** If a tool takes positional arguments (like `args=['val']` in Python), map them to named parameters if possible, or use a "args" list in "params" if the tool schema requires it. (Ideally, use the tool's defined parameter names).
+   *Compatibility Note:* If the system expects "args" list and "kwargs" dict, structure "params" as `{{"args": [...], "kwargs": {{...}}}}` OR just flat parameters if the tool system handles mapping.
+   *Current System Constraint:* The tool executor expects `args` (list) and `kwargs` (dict). You can output:
+   `"params": {{ "args": ["arg1"], "kwargs": {{ "key": "val" }} }}`
+   OR
+   `"params": {{ "arg1": "val1", "arg2": "val2" }}` (The system will try to map these to kwargs).
+
+4. If the plan is to answer the user, set "type" to "final_answer" and put the response string in "params": `{{"message": "..."}}`.
 """
                 # We append execution history to operator too so it knows what happened
-                operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction:"
+                operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction (JSON):"
 
                 operator_response, operator_thoughts = await invoke_split_brain_async(
                     prompt=operator_prompt,
@@ -296,22 +303,51 @@ Instructions:
                 # Log the deep thought
                 # print(color_text(f"Operator Thoughts:\n{operator_thoughts}", CLIColors.THOUGHT))
 
-
-
                 # Phase 3: Loop Logic
-                tool_call = self._parse_tool_call(operator_response)
+                parsed_response = self._parse_tool_call(operator_response) # Reuse parser, effectively parsing JSON
 
-                if "FINAL ANSWER:" in operator_response:
-                    final_answer = operator_response.split("FINAL ANSWER:")[-1].strip()
-                    success = True
+                # Normalize the new schema to the old internal variables
+                tool_call = None
 
-                    # Context-Aware Exit Logic
-                    if context_source == "SYSTEM":
-                        # If this is a background system task, we ensure we don't accidentally reply with a "Hello" unless it's part of the task.
-                        # We trust the LLM followed the "SYSTEM TASK" persona instructions, but we can wrap the log.
-                        # Since we must return a string, we return the final answer which should be the log/status.
-                        logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
-                    break
+                if parsed_response:
+                    resp_type = parsed_response.get("type")
+
+                    if resp_type == "final_answer":
+                        # Extract message
+                        params = parsed_response.get("params", {})
+                        if isinstance(params, dict):
+                            final_answer = params.get("message", "")
+                        else:
+                            final_answer = str(params)
+
+                        success = True
+
+                        # Context-Aware Exit Logic
+                        if context_source == "SYSTEM":
+                            logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
+                        break
+
+                    elif resp_type == "tool_call":
+                        # Adapt to tool execution format
+                        tool_call = {
+                            "action": parsed_response.get("name"),
+                            "thought": parsed_response.get("thought"),
+                            # Handle params mapping to args/kwargs
+                        }
+                        params = parsed_response.get("params", {})
+
+                        # Support explicit args/kwargs structure if LLM used it
+                        if "args" in params and isinstance(params["args"], list):
+                            tool_call["args"] = params["args"]
+                            tool_call["kwargs"] = params.get("kwargs", {})
+                        else:
+                            # Treat flat params as kwargs
+                            tool_call["args"] = []
+                            tool_call["kwargs"] = params
+
+                    # Support legacy fallback if LLM ignored strict instructions (Re-Act style)
+                    elif "action" in parsed_response:
+                         tool_call = parsed_response
 
                 if tool_call:
                     # Execute Tool
@@ -490,10 +526,34 @@ Instructions:
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
 
-        # 2. Project Context (Simplified)
+        # 2. Project Context (Simplified & Proactive)
         prompt_lower = prompt.lower()
+        file_mentions = re.findall(r'[\w./-]+\.py', prompt)
+
+        if file_mentions:
+            context_parts.append("Potential File Context:")
+            from ai_assistant.core.self_modification import _resolve_file_path_robust
+            from ai_assistant.custom_tools.file_system_tools import read_text_from_file
+
+            for fname in file_mentions:
+                # Naive resolution: check if it exists in current dir or basic project structure
+                # We reuse the logic in self_modification to find likely paths even if partial
+                # Note: This is read-only peek for context
+
+                # Check absolute or cwd relative
+                if os.path.exists(fname):
+                    try:
+                        content = read_text_from_file(fname)
+                        if not content.startswith("Error"):
+                            context_parts.append(f"--- Content of {fname} ---\n{content}\n--- End of {fname} ---")
+                            metadata[f'file_context_{fname}'] = "Loaded"
+                    except Exception:
+                        pass
+                # Check module path like behavior if it looks like a module but has .py
+                # (handled loosely by re above)
+
         if "project" in prompt_lower or ".py" in prompt_lower:
-            context_parts.append("Note: If this is a project request, use file tools to explore the codebase.")
+            context_parts.append("Note: If specific files were not loaded above, use file tools to explore the codebase.")
             metadata['project_context_hint'] = True
 
         return "\n\n".join(context_parts), metadata

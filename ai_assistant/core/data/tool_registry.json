@@ -1080,5 +1080,29 @@
         "description": "No description available.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "execute_deep_research": {
+        "tool_name": "execute_deep_research",
+        "module_path": "ai_assistant.custom_tools.search_tools",
+        "function_name": "execute_deep_research",
+        "description": "Performs 'Deep Research' by searching Google, visiting the top results, reading their content,",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "google_custom_search": {
+        "tool_name": "google_custom_search",
+        "module_path": "ai_assistant.custom_tools.search_tools",
+        "function_name": "google_custom_search",
+        "description": "Your primary tool for finding information online using Google Search. Use this for questions",
+        "type": "custom_discovered",
+        "schema_details": null
+    },
+    "web_search_images": {
+        "tool_name": "web_search_images",
+        "module_path": "ai_assistant.custom_tools.search_tools",
+        "function_name": "web_search_images",
+        "description": "Searches for images on the web, downloads them locally, and returns their paths for display.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

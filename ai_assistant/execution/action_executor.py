@@ -148,19 +148,22 @@ class ActionExecutor:
         
         # Define protected directories
         # Note: custom_tools is explicitly EXCLUDED from protection to allow standard self-healing.
+        # We check both with and without leading slash to handle different relative path formats
         protected_segments = [
-            "/ai_assistant/core/",
-            "/ai_assistant/learning/",
-            "/ai_assistant/memory/",
-            "/ai_assistant/planning/",
-            "/ai_assistant/execution/",
-            "/ai_assistant/llm_interface/",
-            "/ai_assistant/utils/",
-            "/ai_assistant/code_services/"
+            "ai_assistant/core/",
+            "ai_assistant/learning/",
+            "ai_assistant/memory/",
+            "ai_assistant/planning/",
+            "ai_assistant/execution/",
+            "ai_assistant/llm_interface/",
+            "ai_assistant/utils/",
+            "ai_assistant/code_services/",
+            "ai_assistant/code_synthesis/"
         ]
         
         for segment in protected_segments:
-            if segment in normalized_path:
+            # Check if segment is in path (handling both /path/to/ai_assistant/... and ai_assistant/...)
+            if f"/{segment}" in normalized_path or normalized_path.startswith(segment):
                 return True
                 
         # Also protect root files like main.py or web_app.py if needed, 
