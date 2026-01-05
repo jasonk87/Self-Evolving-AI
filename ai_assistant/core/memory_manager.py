@@ -55,6 +55,18 @@ class MemoryManager:
 
     # --- Facts Management ---
 
+    def get_all_memories_structured(self) -> Dict[str, Any]:
+        """
+        Returns a structured dictionary of memories for visualization.
+        """
+        facts = load_learned_facts()
+        insights = load_actionable_insights()
+
+        return {
+            "facts": facts,
+            "insights": insights
+        }
+
     def get_all_facts(self) -> List[Dict[str, Any]]:
         """Returns all learned facts."""
         return load_learned_facts()

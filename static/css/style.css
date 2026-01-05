@@ -518,6 +518,7 @@ body {
     border-top: var(--glass-border);
     display: flex;
     gap: 10px;
+    align-items: center; /* Center items vertically */
 }
 
 #chat-input {
@@ -529,6 +530,49 @@ body {
     padding: 10px;
     outline: none;
     resize: none;
+}
+
+/* Voice Controls */
+.voice-controls {
+    display: flex;
+    align-items: center;
+}
+
+#mic-btn, #voice-toggle-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#mic-btn:hover, #voice-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+#mic-btn.listening {
+    color: #ff4757;
+    border-color: #ff4757;
+    animation: pulse-red 1.5s infinite;
+}
+
+#voice-toggle-btn.active {
+    color: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+}
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 71, 87, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
 }
 
 #send-btn {

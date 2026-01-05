@@ -25,6 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatSessionsList = document.getElementById('chat-sessions-list');
     const newChatBtn = document.getElementById('new-chat-btn');
 
+    // Voice Elements
+    const micBtn = document.getElementById('mic-btn');
+    const voiceToggleBtn = document.getElementById('voice-toggle-btn');
+
     // Editor State
     let currentProject = null;
     let currentFilePath = null;
@@ -110,6 +114,87 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             console.log("Notification skipped. Hidden:", document.hidden, "Focused:", document.hasFocus(), "Perm:", notificationPermission);
         }
+    }
+
+    // --- Voice Logic (Speech-to-Text & Text-to-Speech) ---
+    let recognition = null;
+    let isListening = false;
+    let autoSpeakEnabled = false; // "Voice Toggle"
+    let lastInputWasVoice = false; // Track if we should reply with voice
+
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = false; // Auto-stop after phrase
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            isListening = true;
+            micBtn.classList.add('listening');
+            chatInput.placeholder = "Listening...";
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            micBtn.classList.remove('listening');
+            chatInput.placeholder = "Instructions...";
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            chatInput.value = transcript;
+            lastInputWasVoice = true; // Mark as voice input
+            sendMessage(); // Auto-send
+        };
+
+        recognition.onerror = (event) => {
+            console.error("Speech Error:", event.error);
+            isListening = false;
+            micBtn.classList.remove('listening');
+            chatInput.placeholder = "Error. Try again.";
+        };
+    } else {
+        if (micBtn) micBtn.style.display = 'none'; // Hide if not supported
+    }
+
+    if (micBtn) {
+        micBtn.addEventListener('click', () => {
+            if (!recognition) return;
+            if (isListening) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+    }
+
+    if (voiceToggleBtn) {
+        voiceToggleBtn.addEventListener('click', () => {
+            autoSpeakEnabled = !autoSpeakEnabled;
+            voiceToggleBtn.classList.toggle('active', autoSpeakEnabled);
+            voiceToggleBtn.title = autoSpeakEnabled ? "Auto-Speech (On)" : "Auto-Speech (Off)";
+        });
+    }
+
+    function speakText(text) {
+        if (!('speechSynthesis' in window)) return;
+
+        // Strip markdown/code for reading
+        const cleanText = text.replace(/```[\s\S]*?```/g, " code block ")
+                              .replace(/`([^`]+)`/g, "$1")
+                              .replace(/[*_#]/g, "");
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.1;
+        utterance.pitch = 1.0;
+
+        // Try to select a good voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha"));
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        window.speechSynthesis.speak(utterance);
     }
 
     // --- Navigation Logic ---
@@ -680,6 +765,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // So we MUST append here.
                 appendMessage('assistant', data.response);
                 notifyIfHidden("AI Assistant", data.response);
+
+                // Handle Voice Response
+                if (lastInputWasVoice || autoSpeakEnabled) {
+                    speakText(data.response);
+                }
+                lastInputWasVoice = false; // Reset for next turn
             }
         } catch (e) {
             removeTypingIndicator();

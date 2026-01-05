@@ -18,7 +18,11 @@ from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
 # Added for self-healing
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.core.task_manager import TaskManager
-from ai_assistant.core.notification_manager import NotificationManager
+from ai_assistant.core.notification_manager import NotificationManager, NotificationType
+
+# Added for Evolutionary Architect
+from ai_assistant.learning.evolutionary_architect import perform_architectural_audit
+from ai_assistant.config import get_data_dir
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -53,6 +57,9 @@ _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0 # New state for project execution
 _last_self_healing_time: float = 0.0 # State for self-healing
 _self_healing_interval_seconds = 600 # Check every 10 minutes
+_last_architect_audit_timestamp: float = 0.0
+_architect_audit_interval_seconds = 900 # 15 minutes for debugging
+ARCHITECT_STATE_FILE = "architect_state.json"
 
 def sanitize_project_name(name: str) -> str:
     """
@@ -135,13 +142,38 @@ def read_text_from_file(filepath: str) -> str:
         return f"Error reading file '{filepath}': {e} (IOError)"
 
 # --- Asyncio Version ---
+def _load_architect_state():
+    global _last_architect_audit_timestamp
+    state_file = os.path.join(get_data_dir(), ARCHITECT_STATE_FILE)
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r') as f:
+                data = json.load(f)
+                _last_architect_audit_timestamp = data.get("last_audit_timestamp", 0.0)
+                logger.info(f"BackgroundService: Loaded architect state. Last audit: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(_last_architect_audit_timestamp))}")
+        except Exception as e:
+            logger.error(f"BackgroundService: Failed to load architect state: {e}")
+            _last_architect_audit_timestamp = 0.0
+    else:
+        _last_architect_audit_timestamp = 0.0
+
+def _save_architect_state():
+    state_file = os.path.join(get_data_dir(), ARCHITECT_STATE_FILE)
+    try:
+        with open(state_file, 'w') as f:
+            json.dump({"last_audit_timestamp": _last_architect_audit_timestamp}, f)
+    except Exception as e:
+        logger.error(f"BackgroundService: Failed to save architect state: {e}")
+
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
     _last_self_healing_time = time.time()
     
+    _load_architect_state()
+
     # Track limits to avoid processing
     _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
     
@@ -158,6 +190,12 @@ async def _background_loop_async():
     next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
     next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_self_healing_run_time = time.time() + _self_healing_interval_seconds
+
+    # Logic to run architect audit immediately if overdue
+    if time.time() - _last_architect_audit_timestamp > _architect_audit_interval_seconds:
+         next_architect_audit_run_time = time.time()
+    else:
+         next_architect_audit_run_time = _last_architect_audit_timestamp + _architect_audit_interval_seconds
 
     # Initialize LearningAgent for self-healing
     # We create local instances as this service might run independently or alongside web_app
@@ -322,14 +360,42 @@ async def _background_loop_async():
                 logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
             _last_self_healing_time = time.time()
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
+
+        # --- Evolutionary Architect Audit Task ---
+        if current_loop_time >= next_architect_audit_run_time:
+             logger.info(f"BackgroundService: Running Evolutionary Architect Audit...")
+             try:
+                 proposal = await perform_architectural_audit()
+                 if proposal and learning_agent and learning_agent.notification_manager:
+                     summary = proposal.get('proposal', {}).get('summary', 'No summary provided')
+                     target_file = proposal.get('target_file', 'unknown file')
+
+                     learning_agent.notification_manager.add_notification(
+                         event_type=NotificationType.EVOLUTION_PROPOSAL,
+                         summary_message=f"Architect Proposal for {os.path.basename(target_file)}: {summary}",
+                         details_payload=proposal
+                     )
+                     logger.info(f"BackgroundService: Generated evolution proposal for {target_file}")
+                 elif not proposal:
+                     logger.info("BackgroundService: No proposal generated during audit.")
+
+                 _last_architect_audit_timestamp = time.time()
+                 _save_architect_state()
+                 next_architect_audit_run_time = time.time() + _architect_audit_interval_seconds
+
+             except Exception as e:
+                 logger.error(f"BackgroundService: Error during Evolutionary Architect audit: {e}", exc_info=True)
+                 # Retry later to avoid rapid error loop
+                 next_architect_audit_run_time = time.time() + 3600
         
         # Determine sleep time until the next event
         time_until_next_reflection = max(0, next_reflection_run_time - time.time())
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
         time_until_next_healing = max(0, next_self_healing_run_time - time.time()) if learning_agent else float('inf')
+        time_until_next_audit = max(0, next_architect_audit_run_time - time.time())
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover
@@ -340,6 +406,7 @@ async def _background_loop_async():
                     debug_msg_parts.append(f"next project exec scan in {time_until_next_project_exec:.0f}s")
                 if learning_agent:
                     debug_msg_parts.append(f"next self-healing in {time_until_next_healing:.0f}s")
+                debug_msg_parts.append(f"next audit in {time_until_next_audit:.0f}s")
                 logger.debug(f"[DEBUG BACKGROUND_SERVICE] {', '.join(debug_msg_parts)}.")
             await asyncio.sleep(sleep_duration)
         except asyncio.CancelledError: # pragma: no cover

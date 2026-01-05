@@ -49,6 +49,9 @@ class NotificationType(Enum):
     SELF_MODIFICATION_REJECTED_CRITICS = auto()
     SELF_MODIFICATION_FAILED_TESTS = auto()
 
+    # Evolution Proposals
+    EVOLUTION_PROPOSAL = auto()
+
     # General System Info
     GENERAL_INFO = auto()
     WARNING = auto()
