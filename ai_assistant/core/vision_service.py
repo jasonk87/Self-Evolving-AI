@@ -7,6 +7,7 @@ import json
 from typing import Optional, Dict, Any
 from playwright.async_api import async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+import ai_assistant.config as config
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,22 @@ class VisionService:
     def __init__(self):
         pass
 
+    def _get_hud_script_path(self):
+        return os.path.join(os.path.dirname(__file__), 'hud_injector.js')
+
+    async def _inject_hud(self, page):
+        """Injects the Visual HUD if Ghost Mode is enabled."""
+        if config.GHOST_MODE:
+            try:
+                hud_path = self._get_hud_script_path()
+                if os.path.exists(hud_path):
+                    await page.add_init_script(path=hud_path)
+                    logger.info("VisionService: HUD injected for Ghost Mode.")
+                else:
+                    logger.warning(f"VisionService: HUD script not found at {hud_path}")
+            except Exception as e:
+                logger.error(f"VisionService: Failed to inject HUD: {e}")
+
     async def capture_page_screenshot(self, file_path_or_url: str) -> Optional[str]:
         """
         Captures a screenshot of the given file path or URL.
@@ -29,8 +46,18 @@ class VisionService:
         browser = None
         try:
             playwright = await async_playwright().start()
-            browser = await playwright.chromium.launch(headless=True)
-            page = await browser.new_page()
+
+            headless_mode = not config.GHOST_MODE
+            slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
+
+            browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
+
+            if config.GHOST_MODE:
+                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+            else:
+                page = await browser.new_page()
+
+            await self._inject_hud(page)
 
             # Handle local files specifically if needed, or assume standard URL structure
             target_url = file_path_or_url
@@ -68,10 +95,21 @@ class VisionService:
         browser = None
         try:
             playwright = await async_playwright().start()
-            browser = await playwright.chromium.launch(headless=True)
-            page = await browser.new_page()
+
+            headless_mode = not config.GHOST_MODE
+            slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
+
+            browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
+
+            if config.GHOST_MODE:
+                page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+            else:
+                page = await browser.new_page()
 
             logger.info(f"VisionService: Scraping text from {url}")
+
+            await self._inject_hud(page)
+
             await page.goto(url, wait_until="domcontentloaded", timeout=30000) # 30s timeout default, can be overridden by caller if we passed it
 
             # Extract text
@@ -86,6 +124,62 @@ class VisionService:
                 await browser.close()
             if playwright:
                 await playwright.stop()
+
+    async def click_element(self, page, selector: str):
+        """
+        Performs a human-like click on an element.
+        Should be used when an active page object is available.
+        """
+        try:
+            if config.GHOST_MODE:
+                # 1. Move mouse to element to trigger Ghost Cursor
+                locator = page.locator(selector).first
+                box = await locator.bounding_box()
+                if box:
+                    x = box['x'] + box['width'] / 2
+                    y = box['y'] + box['height'] / 2
+                    await page.mouse.move(x, y)
+
+                # 2. Highlight target using element handle (works with complex selectors)
+                await locator.evaluate("el => window.highlightTargetElement(el)")
+
+                # 3. Wait for visual effect
+                await page.wait_for_timeout(300)
+
+            # 4. Perform Click
+            await page.click(selector)
+
+        except Exception as e:
+            logger.error(f"VisionService: Error clicking element {selector}: {e}")
+            raise
+
+    async def type_text(self, page, selector: str, text: str):
+        """
+        Performs a human-like typing action.
+        """
+        try:
+            if config.GHOST_MODE:
+                 # 1. Move mouse to element
+                locator = page.locator(selector).first
+                box = await locator.bounding_box()
+                if box:
+                    x = box['x'] + box['width'] / 2
+                    y = box['y'] + box['height'] / 2
+                    await page.mouse.move(x, y)
+
+                # 2. Highlight target
+                await locator.evaluate("el => window.highlightTargetElement(el)")
+                await page.wait_for_timeout(300)
+
+            # 3. Click to focus
+            await page.click(selector)
+
+            # 4. Type text
+            await page.type(selector, text, delay=50 if config.GHOST_MODE else 0)
+
+        except Exception as e:
+            logger.error(f"VisionService: Error typing text into {selector}: {e}")
+            raise
 
     async def analyze_visuals(self, image_data: str, context: str) -> Dict[str, Any]:
         """
