@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from ai_assistant.core.enums import ExecutionMode
 from ai_assistant.core.router import TaskRouter
 import ai_assistant.config as config
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_parallel_thinking
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
@@ -42,7 +42,7 @@ MAX_REACT_STEPS = 10
 class DynamicOrchestrator:
     """
     Orchestrates the dynamic planning and execution of user prompts.
-    Implements a Tri-State Execution Architecture (Direct, Fast ReAct, Thinking Pro).
+    Implements a Universal Bicameral Architecture (Strategist -> Operator).
     """
 
     def __init__(self, 
@@ -74,9 +74,9 @@ class DynamicOrchestrator:
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
 
-    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None) -> Tuple[bool, str, Optional[List[str]]]:
+    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> Tuple[bool, str, Optional[List[str]]]:
         """
-        Process a user prompt by routing it to the appropriate execution engine.
+        Process a user prompt using the Universal Bicameral Brain architecture.
         Returns (success, response_message, images)
         """
         try:
@@ -86,103 +86,29 @@ class DynamicOrchestrator:
             prompt_with_context = await self._enrich_prompt_with_vision(prompt, images)
 
             # 2. Context Gathering (RAG, Project Context)
-            # We do this before routing because context might influence routing (e.g. complexity)
-            # But strictly, DIRECT mode shouldn't need heavy context.
-            # Let's do a lightweight check or just gather it. For now, gather it as it helps even in Fast mode.
             full_context_str, context_metadata = await self._gather_context(prompt_with_context)
 
-            # 3. Determine Mode
-            mode = ExecutionMode.FAST_REACT # Default
-            if config.DEFAULT_EXECUTION_MODE == "AUTO":
-                mode = await self.router.determine_mode(prompt_with_context, context=context_metadata)
-            else:
-                try:
-                    mode = ExecutionMode[config.DEFAULT_EXECUTION_MODE]
-                except KeyError:
-                    mode = ExecutionMode.FAST_REACT
+            logger.info(f"DynamicOrchestrator: Starting Universal Cycle for prompt: {prompt[:50]}...")
+            print(color_text(f"--> Strategy: Universal Bicameral", CLIColors.SYSTEM_MESSAGE))
 
-            logger.info(f"DynamicOrchestrator: Routing to {mode.value} for prompt: {prompt[:50]}...")
-            print(color_text(f"--> Mode Selected: {mode.value}", CLIColors.SYSTEM_MESSAGE))
-
-            # 4. Dispatch
-            if mode == ExecutionMode.DIRECT:
-                # Direct mode doesn't support tools, so no images
-                success, response = await self._run_direct_mode(prompt_with_context, conversation_history)
-                return success, response, None
-            elif mode == ExecutionMode.FAST_REACT:
-                return await self._run_fast_react_mode(prompt_with_context, full_context_str, conversation_history, session_id)
-            elif mode == ExecutionMode.THINKING_PRO:
-                return await self._run_thinking_pro_mode(prompt_with_context, full_context_str, conversation_history, session_id)
-            else:
-                # Fallback
-                return await self._run_fast_react_mode(prompt_with_context, full_context_str, conversation_history, session_id)
+            # 3. Execute Universal Cycle
+            return await self._execute_universal_cycle(prompt_with_context, full_context_str, conversation_history, session_id, context_source)
 
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            return False, f"An unexpected error occurred: {str(e)}", None, 
+            return False, f"An unexpected error occurred: {str(e)}", None
 
         finally:
             # 5. Session Level Summarization (Rolling)
-            # Only trigger if we have a session ID and it wasn't a direct failure that crashed everything logic
-            if session_id and self.task_manager: # Ensure we have deps
+            if session_id and self.task_manager:
                  try:
-                     # Fire-and-forget or await? Let's await to be safe for now, or create task.
-                     # Since this is "higher level" learning, async background is best.
                      asyncio.create_task(self._update_session_summary(session_id, conversation_history))
                  except Exception as e:
                      logger.error(f"Failed to trigger session summary: {e}")
 
-    async def _run_direct_mode(self, prompt: str, history: Optional[List[Dict[str, str]]]) -> Tuple[bool, str]:
+    async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
         """
-        Engine 1: Direct Mode (Non-ReAct). Zero overhead.
-        """
-        # Construct simple conversation context
-        messages = []
-        if history:
-            # Flatten history to text or use as is if client supports it.
-            # Our gemini client mainly takes a string prompt, so we append.
-            pass
-
-        # Simple generation
-        response = await invoke_gemini_model_async(
-            prompt=prompt,
-            model_name="gemini-2.0-flash", # Use fast model
-            temperature=0.7
-        )
-
-        if response:
-            return True, response
-        return False, "Failed to generate response in Direct Mode."
-
-    async def _run_fast_react_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
-        """
-        Engine 2: Fast ReAct Mode. Standard loop (Think -> Act -> Observe).
-        """
-        return await self._execute_react_loop(
-            prompt,
-            context,
-            history,
-            session_id,
-            use_parallel_thinking=False,
-            model_name="gemini-2.0-flash"
-        )
-
-    async def _run_thinking_pro_mode(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str]) -> Tuple[bool, str, Optional[List[str]]]:
-        """
-        Engine 3: Thinking Pro Mode. Parallel Branching ReAct.
-        """
-        return await self._execute_react_loop(
-            prompt,
-            context,
-            history,
-            session_id,
-            use_parallel_thinking=True,
-            model_name="gemini-2.0-flash-exp" # Use stronger model for thinking
-        )
-
-    async def _execute_react_loop(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], use_parallel_thinking: bool, model_name: str) -> Tuple[bool, str, Optional[List[str]]]:
-        """
-        Shared ReAct loop logic.
+        The Universal Bicameral Cycle: Strategist (Think) -> Operator (Act) -> Loop.
         """
         # Step A: Recall Failures
         failure_warning = await self.episodic_manager.recall_failures(prompt)
@@ -193,66 +119,107 @@ class DynamicOrchestrator:
         current_steps = []
         max_steps = MAX_REACT_STEPS
         collected_images = []
-
         tools_desc = tool_system_instance.get_tools_description()
 
-        system_prompt = f"""You are a capable AI Assistant.
-Goal: {prompt}
-
-Context:
-{context}
-
-Available Tools:
-{tools_desc}
-
-Instructions:
-1. Analyze the goal and context.
-2. Decide on the next step.
-3. IMPORTANT: If the goal is conversational or a simple greeting (e.g., "Hello", "How are you?"), responding directly is the correct action. Do NOT use tools to "wait" for input.
-4. OUTPUT FORMAT:
-   - If you need to use a tool, output a JSON block:
-     ```json
-     {{
-       "action": "tool_name",
-       "args": [arg1, arg2],
-       "kwargs": {{ "key": "value" }},
-       "thought": "Reasoning for this action"
-     }}
-     ```
-   - If you have the final answer or are done, output:
-     FINAL ANSWER: [Your Answer]
-
-5. Loop until you achieve the goal or hit the limit.
-"""
-
+        # Initial Strategist Prompt
         execution_history = ""
         final_answer = ""
         success = False
 
+        # Define persona guidance based on context_source
+        persona_guide = ""
+        if context_source == "SYSTEM":
+            persona_guide = "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. Be technical, concise, and results-oriented. If you finish, output the status/log as the FINAL ANSWER."
+        else:
+            persona_guide = "MODE: USER CHAT. You are assisting a user. Be helpful, conversational, and clear."
+
+        # We loop through cycles
         for step_i in range(max_steps):
-            step_prompt = f"{system_prompt}\n\nExecution History:\n{execution_history}\n\nStep {step_i+1}:"
+            print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
 
-            if use_parallel_thinking:
-                response = await invoke_parallel_thinking(
-                    prompt=step_prompt,
-                    model_name=model_name,
-                    num_branches=3
-                )
-            else:
-                response = await invoke_gemini_model_async(
-                    prompt=step_prompt,
-                    model_name=model_name
-                )
+            # Phase 1: Strategist (Think)
+            strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action.
+Goal: {prompt}
+{persona_guide}
 
-            if not response:
-                return False, "AI stopped responding.", None
+Context:
+{context}
 
-            # Parse Response
-            tool_call = self._parse_tool_call(response)
+Execution History:
+{execution_history}
 
-            if "FINAL ANSWER:" in response:
-                final_answer = response.split("FINAL ANSWER:")[-1].strip()
+Instructions:
+1. Analyze the current situation.
+2. Determine if the goal is met.
+3. If not met, plan the EXACT next step for the Operator.
+4. Do NOT execute tools yourself. You only PLAN.
+5. If the goal is met or you have a final answer, instruct the Operator to provide it.
+
+Output strictly your reasoning and the plan for the Operator.
+"""
+            strategist_response = await invoke_gemini_model_async(
+                prompt=strategist_prompt,
+                model_name=config.DEFAULT_MODEL
+            )
+
+            if not strategist_response:
+                return False, "System paused (Strategist silent).", None
+
+            print(color_text(f"Strategist Plan: {strategist_response[:200]}...", CLIColors.THOUGHT))
+
+            # Phase 2: Operator (Act)
+            print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
+
+            operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
+Goal: {prompt}
+{persona_guide}
+
+Available Tools:
+{tools_desc}
+
+Strategist's Plan:
+{strategist_response}
+
+Instructions:
+1. Follow the Strategist's plan exactly.
+2. If the plan is to use a tool, output the tool call JSON.
+   ```json
+   {{
+     "action": "tool_name",
+     "args": [arg1, arg2],
+     "kwargs": {{ "key": "value" }},
+     "thought": "Brief reason"
+   }}
+   ```
+3. If the plan is to answer the user, output:
+   FINAL ANSWER: [Your Answer]
+
+4. Do NOT deviate from the plan.
+"""
+            # We append execution history to operator too so it knows what happened
+            operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction:"
+
+            operator_response = await invoke_gemini_model_async(
+                prompt=operator_prompt,
+                model_name=config.DEFAULT_MODEL
+            )
+
+            if not operator_response:
+                 return False, "System paused (Operator silent).", None
+
+            # Phase 3: Loop Logic
+            tool_call = self._parse_tool_call(operator_response)
+
+            if "FINAL ANSWER:" in operator_response:
+                final_answer = operator_response.split("FINAL ANSWER:")[-1].strip()
                 success = True
+
+                # Context-Aware Exit Logic
+                if context_source == "SYSTEM":
+                    # If this is a background system task, we ensure we don't accidentally reply with a "Hello" unless it's part of the task.
+                    # We trust the LLM followed the "SYSTEM TASK" persona instructions, but we can wrap the log.
+                    # Since we must return a string, we return the final answer which should be the log/status.
+                    logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
                 break
 
             if tool_call:
@@ -262,24 +229,16 @@ Instructions:
                 kwargs = tool_call.get("kwargs", {})
                 thought = tool_call.get("thought", "")
 
-                print(color_text(f"Step {step_i+1}: {thought}", CLIColors.THOUGHT))
+                print(color_text(f"Operator Action: {thought}", CLIColors.THOUGHT))
                 print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
 
-                # Robust Tool Execution with Self-Healing
+                # Tool Execution Logic (with self-healing)
                 execution_success = False
-                result = None
                 result_str = ""
-
-                # Retry loop for self-healing (Attempt -> Fail -> Repair -> Retry)
-                # We try initially (attempt 0), then if repair succeeds, we try once more (attempt 1).
-                # The user requirement implies "Resume: Retry... Fail: Only if repair fails twice".
-                # Interpretation: Try -> Repair -> Retry -> Repair -> Retry -> Fail.
-                # Let's set max_retries = 2 (initial + 2 retries).
                 max_retries = 2
 
                 for attempt in range(max_retries + 1):
                     try:
-                        # Convert args/kwargs if needed
                         result = await tool_system_instance.execute_tool(
                             tool_name,
                             args=tuple(args),
@@ -289,72 +248,51 @@ Instructions:
                             action_executor=self.action_executor
                         )
 
-                        # Check for images in result
                         if isinstance(result, dict) and 'images' in result:
-                            # Add new images to collection
                             new_images = result.get('images', [])
                             if new_images:
                                 collected_images.extend(new_images)
 
-                        # Check for PAUSED status (Conversational tools)
                         if isinstance(result, dict) and result.get('status') == 'PAUSED':
-                            # Stop execution and return this special status event
-                            # We stringify it for the 'response' field, but the caller should detect it.
                             result_str = str(result)
-                            # We set final_answer to this result so the loop breaks and returns it
                             final_answer = result_str
                             success = True
-                            execution_success = True
-                            print(color_text(f"--> Pausing for user clarification: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
-                            break # Break retry loop
+                            print(color_text(f"--> Paused for user: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                            break
 
                         result_str = str(result)
                         execution_success = True
-                        break # Success!
+                        break
                     except Exception as e:
                         if attempt < max_retries:
-                            # Step A: Notify
-                            print(color_text(f"⚠️  Tool '{tool_name}' crashed. Attempting self-repair (Try {attempt+1}/{max_retries})...", CLIColors.WARNING))
-
-                            # Step B: Heal
-                            repair_success = await self._attempt_auto_repair(tool_name, e)
-
-                            if repair_success:
-                                # Step C: Resume (Retry in next iteration)
-                                print(color_text(f"--> Repair successful. Retrying {tool_name}...", CLIColors.SYSTEM_MESSAGE))
-                                continue
-                            else:
-                                # Repair failed, treat as fatal error for this tool execution
-                                result_str = f"Error: {str(e)} (Auto-repair attempt failed)"
-                                break
+                            print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
+                            # Optional: auto-repair logic could go here
+                            await asyncio.sleep(1)
                         else:
-                            # Step D: Fail after retries
-                            result_str = f"Error: {str(e)} (Failed after {max_retries} self-healing attempts)"
+                            result_str = f"Error: {str(e)}"
 
                 # Append to history
-                step_record = f"Step {step_i+1}:\nThought: {thought}\nAction: {tool_name}({args}, {kwargs})\nResult: {result_str[:1000]}\n"
+                step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
                 execution_history += step_record
                 current_steps.append({
-                    "tool_name": tool_name,
-                    "args": args,
+                    "cycle": step_i + 1,
+                    "strategist": strategist_response,
+                    "tool": tool_name,
                     "result": result_str
                 })
-
             else:
-                # No tool call found, assume text response or query
-                # If the model didn't say FINAL ANSWER but just talked, treat as answer
-                final_answer = response
+                # Operator didn't use a tool or say FINAL ANSWER. Treat as a conversational response or error?
+                # If it's just chatting, treat as final answer.
+                final_answer = operator_response
                 success = True
                 break
 
         if not success and not final_answer:
-            final_answer = "Maximum steps reached without definitive completion."
+            final_answer = "Maximum cycles reached."
 
-        # Step B: Record Experience & Add Visible Episode
-        tools_used_names = [step['tool_name'] for step in current_steps if 'tool_name' in step]
+        # Record Experience
+        tools_used_names = [step['tool'] for step in current_steps if 'tool' in step]
         outcome = "SUCCESS" if success else "FAILURE"
-
-        # We await this to ensure we get the lesson for the UI episode
         lesson = await self.episodic_manager.record_experience(
             prompt=prompt,
             plan=current_steps,
@@ -362,28 +300,6 @@ Instructions:
             tools_used=tools_used_names
         )
 
-        # Create UI-Visible Episode
-        if self.memory_manager:
-            try:
-                # Use the session_id if available, or a placeholder
-                sid = session_id if session_id else "auto_generated"
-                
-                # Title based on goal (truncated)
-                title = prompt[:50] + "..." if len(prompt) > 50 else prompt
-                
-                # Summary = Outcome + Lesson
-                summary_text = f"Outcome: {outcome}\nLesson: {lesson}"
-                
-                self.memory_manager.add_episode(
-                    summary=summary_text,
-                    title=title,
-                    session_id=sid,
-                    topics=tools_used_names
-                )
-                print(color_text(f"--> Episode added to Timeline: {title}", CLIColors.SYSTEM_MESSAGE))
-            except Exception as e:
-                logger.error(f"Failed to add UI episode: {e}")
-            
         return success, final_answer, collected_images
 
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
@@ -440,104 +356,32 @@ Instructions:
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
 
-        # 2. Project Context (Simplified from original)
+        # 2. Project Context (Simplified)
         prompt_lower = prompt.lower()
         if "project" in prompt_lower or ".py" in prompt_lower:
-            # This is a basic placeholder for the complex project context gathering in the original
-            # In a full refactor, we'd extract the ProjectContextManager into a separate class
-            # For now, we rely on tools to read files if the model decides to.
-            # But we can add a hint.
             context_parts.append("Note: If this is a project request, use file tools to explore the codebase.")
             metadata['project_context_hint'] = True
 
         return "\n\n".join(context_parts), metadata
 
-    async def _attempt_auto_repair(self, tool_name: str, error: Exception) -> bool:
-        """
-        Attempts to automatically repair a broken tool using ActionExecutor.
-        """
-        # 1. Check if tool is modifiable
-        tool_info = tool_system_instance.get_tool(tool_name)
-        if not tool_info or tool_info.get("type") != "custom_discovered":
-            logger.info(f"Cannot auto-repair tool '{tool_name}' (Type: {tool_info.get('type') if tool_info else 'Unknown'}).")
-            return False
-
-        module_path = tool_info.get("module_path")
-        function_name = tool_info.get("function_name")
-
-        if not module_path or not function_name:
-            return False
-
-        # 2. Construct Action
-        action_details = {
-            "tool_name": tool_name,
-            "module_path": module_path,
-            "function_name": function_name,
-            "suggested_change_description": f"Runtime Error during execution: {str(error)}. Fix the code to handle this error or correct the logic.",
-            "staging_mode": False # Apply immediately
-        }
-
-        action_payload = {
-            "action_type": "PROPOSE_TOOL_MODIFICATION",
-            "details": action_details,
-            "source_insight_id": "runtime_repair_request"
-        }
-
-        # 3. Execute Repair via ActionExecutor
-        try:
-            success = await self.action_executor.execute_action(action_payload)
-            if success:
-                # Reload tools to ensure new code is picked up
-                tool_system_instance.refresh_custom_tools()
-                return True
-            else:
-                return False
-        except Exception as e:
-            logger.error(f"Auto-repair execution error: {e}")
-            return False
-
     async def _update_session_summary(self, session_id: str, history: Optional[List[Dict[str, str]]]):
         """
         Updates the episodic memory for the current session.
-        Creates a new episode if one doesn't exist, or updates the existing one.
         """
         if not history or not self.memory_manager:
             return
 
-        from ai_assistant.core.chat_manager import ChatSessionManager
-        # We need access to chat manager to get metadata. 
-        # But Orchestrator doesn't have direct ref to ChatSessionManager instance usually, 
-        # it relies on history passed in.
-        # However, `web_app.py` has the `chat_manager`. 
-        # Ideally Orchestrator should have it inject if we want to read metadata.
-        # For now, we unfortunately can't read the metadata easily if not passed in.
-        
-        # Workaround: pass `chat_manager` to Orchestrator init or just use a dedicated logical store.
-        # Check if `self.chat_manager` exists (it wasn't in init). 
-        # Let's assume we can't easily get the metadata regarding `current_episode_id` 
-        # unless we pass it.
-        
-        # Actually, `process_prompt` gets `session_id`.
-        # Taking a dependency on `ai_assistant.core.chat_manager` here is circular if not careful.
-        # Let's check `web_app.py` - it instantiates both.
-        # Maybe we assume `add_episode` and `update_episode` handle the "find by session_id" logic?
-        # `add_episode` stores session_id.
-        # So we can search episodes by session_id!
-        
         # 1. Find existing episode for this session
         episodes = self.memory_manager.get_all_episodes()
         existing_episode = next((e for e in episodes if e.get("session_id") == session_id), None)
         
         # 2. Summarize History
-        # We use a simple summarization prompt
         try:
-            # Format history for LLM
             chat_text = ""
-            # Limit to last 30 messages to avoid context overflow for summary
             recent_history = history[-30:] 
             for msg in recent_history:
                 role = msg.get('role', 'unknown').upper()
-                content = str(msg.get('content', ''))[:500] # Truncate
+                content = str(msg.get('content', ''))[:500]
                 chat_text += f"{role}: {content}\n"
                 
             prompt = f"""Summarize this chat session into a high-level narrative.
@@ -547,23 +391,17 @@ Chat History:
 
 Output ONLY the summary text."""
 
-            # Use internal LLM
             summary = await invoke_gemini_model_async(prompt, model_name="gemini-2.0-flash")
             if not summary:
                 return
 
             if existing_episode:
-                # Update
                 self.memory_manager.update_episode(
                     episode_id=existing_episode['episode_id'],
                     summary=summary,
-                    # Keep original title or update? Let's update title if it's generic
                     title=existing_episode.get('title') 
                 )
-                logger.info(f"Updated session summary for {session_id}")
             else:
-                # Create New
-                # Generate a title too
                 title_prompt = f"Generate a short (3-5 words) title for this chat:\n{summary}"
                 title = await invoke_gemini_model_async(title_prompt, model_name="gemini-2.0-flash")
                 title = title.strip().replace('"', '') if title else "Chat Session"
@@ -573,7 +411,6 @@ Output ONLY the summary text."""
                     title=title,
                     session_id=session_id
                 )
-                logger.info(f"Created new session summary for {session_id}")
                 
         except Exception as e:
             logger.error(f"Error in _update_session_summary: {e}")
@@ -582,7 +419,7 @@ Output ONLY the summary text."""
         """Get the current progress and context of task execution."""
         return {
             'current_goal': self.current_goal,
-            'current_plan': self.current_plan, # Might be None in new modes
+            'current_plan': self.current_plan,
             'context': self.context,
             'last_success': self.context.get('last_success')
         }
