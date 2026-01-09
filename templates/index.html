@@ -280,6 +280,19 @@
                     <div class="voice-controls">
                         <button id="voice-toggle-btn" class="btn-icon" title="Auto-Speech (Off)">🔈</button>
                     </div>
+                    <!-- Image Upload Elements -->
+                    <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
+                    <button id="image-upload-btn" class="btn-icon" title="Add Image">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <div id="image-preview-container" class="image-preview-container hidden">
+                        <img id="image-preview-img" src="" alt="Preview">
+                        <button id="clear-image-btn" class="btn-icon-small">×</button>
+                    </div>
+
                     <textarea id="chat-input" placeholder="Instructions..." rows="1"></textarea>
                     <button id="mic-btn" class="btn-icon" title="Voice Input">🎤</button>
                     <button id="send-btn" class="btn-icon" title="Send Message">

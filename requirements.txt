@@ -9,3 +9,5 @@ python-dotenv
 numpy
 pytest
 chromadb
+playwright
+pillow

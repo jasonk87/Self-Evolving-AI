@@ -68,6 +68,10 @@ ARCHITECT_STATE_FILE = "architect_state.json"
 _last_auto_approve_check_time: float = 0.0
 _auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
 
+# Vision Service State
+_last_visual_audit_time: float = 0.0
+_visual_audit_interval_seconds = 900 # 15 minutes
+
 def sanitize_project_name(name: str) -> str:
     """
     Sanitizes a project name to create a safe directory name.
@@ -173,12 +177,13 @@ def _save_architect_state():
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
 
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
     _last_self_healing_time = time.time()
     _last_auto_approve_check_time = time.time()
+    _last_visual_audit_time = time.time()
     
     _load_architect_state()
 
@@ -199,12 +204,21 @@ async def _background_loop_async():
     next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_self_healing_run_time = time.time() + _self_healing_interval_seconds
     next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
+    next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
 
     # Logic to run architect audit immediately if overdue
     if time.time() - _last_architect_audit_timestamp > _architect_audit_interval_seconds:
          next_architect_audit_run_time = time.time()
     else:
          next_architect_audit_run_time = _last_architect_audit_timestamp + _architect_audit_interval_seconds
+
+    # Initialize Vision Service (lazy loaded later if needed, but import here to ensure available)
+    try:
+        from ai_assistant.core.vision_service import VisionService
+        vision_service = VisionService()
+    except ImportError as e:
+        logger.error(f"BackgroundService: Failed to import VisionService: {e}")
+        vision_service = None
 
     # Initialize LearningAgent for self-healing
     # We create local instances as this service might run independently or alongside web_app
@@ -312,6 +326,88 @@ async def _background_loop_async():
                 _last_fact_curation_time = time.time()
                 next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
         
+        # --- Visual Audit Task ---
+        if vision_service and current_loop_time >= next_visual_audit_run_time:
+            logger.info("BackgroundService: Running Visual Audit...")
+            try:
+                if os.path.isdir(BASE_PROJECTS_DIR):
+                    for project_name in os.listdir(BASE_PROJECTS_DIR):
+                        project_path = os.path.join(BASE_PROJECTS_DIR, project_name)
+                        if os.path.isdir(project_path):
+                            # Look for index.html or main entry points
+                            entry_points = ["index.html", "main.html", "game.html", "dashboard.html"]
+                            target_html = None
+                            for ep in entry_points:
+                                if os.path.exists(os.path.join(project_path, ep)):
+                                    target_html = os.path.join(project_path, ep)
+                                    break
+
+                            if target_html:
+                                logger.info(f"BackgroundService: Auditing visuals for {project_name} ({os.path.basename(target_html)})...")
+                                screenshot_b64 = await vision_service.capture_page_screenshot(target_html)
+
+                                if screenshot_b64:
+                                    # Save screenshot for debug
+                                    screenshots_dir = os.path.join(get_data_dir(), "screenshots")
+                                    os.makedirs(screenshots_dir, exist_ok=True)
+                                    # Save image file
+                                    import base64
+                                    img_data = base64.b64decode(screenshot_b64)
+                                    screenshot_filename = f"{project_name}_{int(time.time())}.png"
+                                    screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+                                    with open(screenshot_path, "wb") as f:
+                                        f.write(img_data)
+
+                                    # Analyze
+                                    analysis = await vision_service.analyze_visuals(
+                                        image_data=screenshot_b64,
+                                        context=f"Project: {project_name}. File: {os.path.basename(target_html)}"
+                                    )
+
+                                    if analysis.get("status") == "FAIL":
+                                        logger.warning(f"Visual Audit Failed for {project_name}: {analysis.get('issues')}")
+
+                                        # Create Insight
+                                        if learning_agent:
+                                            from ai_assistant.core.reflection import ActionableInsight, InsightType
+                                            # Ensure NotificationType is available if needed, though it is imported globally
+                                            from ai_assistant.core.notification_manager import NotificationType
+
+                                            insight = ActionableInsight(
+                                                type=InsightType.VISUAL_DEFECT_DETECTED,
+                                                description=f"Visual Audit failed for project '{project_name}'.",
+                                                source_reflection_entry_ids=[],
+                                                related_tool_name="vision_service",
+                                                priority=8,
+                                                status="NEW",
+                                                metadata={
+                                                    "project_name": project_name,
+                                                    "screenshot_path": screenshot_path,
+                                                    "issues": analysis.get("issues", []),
+                                                    "suggestion": analysis.get("suggestion")
+                                                }
+                                            )
+                                            learning_agent.insights.append(insight)
+                                            learning_agent._save_insights()
+
+                                            # Notify
+                                            if learning_agent.notification_manager:
+                                                learning_agent.notification_manager.add_notification(
+                                                    event_type=NotificationType.SYSTEM_ALERT,
+                                                    summary_message=f"Visual Audit Alert: {project_name} has UI defects.",
+                                                    details_payload={
+                                                        "title": "Visual Audit Failed",
+                                                        "issues": analysis.get("issues")
+                                                    }
+                                                )
+                                else:
+                                    logger.warning(f"BackgroundService: Failed to capture screenshot for {project_name}")
+            except Exception as e:
+                logger.error(f"BackgroundService: Error during Visual Audit: {e}", exc_info=True)
+
+            _last_visual_audit_time = time.time()
+            next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
+
         # --- Autonomous Project Coding Task ---
         if PROJECT_TOOLS_AVAILABLE and current_loop_time >= next_project_execution_run_time:
             current_time_str_project_exec = await asyncio.to_thread(time.strftime, '%Y-%m-%d %H:%M:%S')
@@ -707,8 +803,9 @@ async def _background_loop_async():
         time_until_next_healing = max(0, next_self_healing_run_time - time.time()) if learning_agent else float('inf')
         time_until_next_audit = max(0, next_architect_audit_run_time - time.time())
         time_until_next_auto_approve = max(0, next_auto_approve_check_time - time.time())
+        time_until_next_visual_audit = max(0, next_visual_audit_run_time - time.time())
         
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover

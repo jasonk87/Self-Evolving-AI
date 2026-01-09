@@ -20,6 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatContainer = document.getElementById('chat-container');
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
+    const imageUploadInput = document.getElementById('image-upload-input');
+    const imageUploadBtn = document.getElementById('image-upload-btn');
+    const imagePreviewContainer = document.getElementById('image-preview-container');
+    const imagePreviewImg = document.getElementById('image-preview-img');
+    const clearImageBtn = document.getElementById('clear-image-btn');
     const fileTreeContainer = document.getElementById('file-tree');
     const editorContainer = document.getElementById('editor-container');
     const chatSessionsList = document.getElementById('chat-sessions-list');
@@ -1088,9 +1093,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const message = chatInput.value.trim();
-        if (!message) return;
-        appendMessage('user', message);
+        // Allow sending if image is present even if text is empty? For now require either.
+        if (!message && !currentImageBase64) return;
+
+        // Display Image in Chat History if present
+        let displayMessage = message;
+        if (currentImageBase64) {
+             displayMessage = `<div class="user-uploaded-image"><img src="${currentImageBase64}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>` + displayMessage;
+        }
+
+        appendMessage('user', displayMessage);
         chatInput.value = '';
+
+        // Prepare images list
+        let images = [];
+        if (currentImageBase64) {
+            // Strip the data URL prefix "data:image/png;base64," as backend likely expects pure b64
+            // But gemini_client handles pure b64. Let's send raw base64 data only.
+            const base64Data = currentImageBase64.split(',')[1];
+            images.push(base64Data);
+
+            // Clear image after sending
+            currentImageBase64 = null;
+            if (imageUploadInput) imageUploadInput.value = '';
+            if (imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
+        }
+
         showTypingIndicator(); // Show typing immediately
 
         // Prepare context
@@ -1112,6 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message,
+                    images: images,
                     context: context,
                     session_id: currentSessionId
                 })
@@ -1164,6 +1193,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 sendMessage();
             }
+        });
+    }
+
+    // --- Image Upload Logic ---
+    let currentImageBase64 = null;
+
+    if (imageUploadBtn && imageUploadInput) {
+        imageUploadBtn.addEventListener('click', () => {
+            imageUploadInput.click();
+        });
+
+        imageUploadInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64String = event.target.result; // "data:image/png;base64,..."
+                currentImageBase64 = base64String;
+
+                // Show Preview
+                if (imagePreviewImg && imagePreviewContainer) {
+                    imagePreviewImg.src = base64String;
+                    imagePreviewContainer.classList.remove('hidden');
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (clearImageBtn) {
+        clearImageBtn.addEventListener('click', () => {
+            currentImageBase64 = null;
+            if (imageUploadInput) imageUploadInput.value = ''; // Reset file input
+            if (imagePreviewContainer) imagePreviewContainer.classList.add('hidden');
         });
     }
 

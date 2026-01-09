@@ -180,10 +180,17 @@ async def invoke_gemini_model_async(
     prompt: str,
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
-    max_tokens: int = 1500
+    max_tokens: int = 1500,
+    images: Optional[List[str]] = None
 ) -> Optional[str]:
     """
     Asynchronously invokes the Google Gemini model.
+    Args:
+        prompt: The text prompt.
+        model_name: Model name.
+        temperature: Sampling temperature.
+        max_tokens: Max output tokens.
+        images: Optional list of base64 encoded strings for multimodal input.
     """
     # Wait for rate limit
     await GLOBAL_RATE_LIMITER.wait_async()
@@ -196,9 +203,20 @@ async def invoke_gemini_model_async(
     url = GEMINI_API_URL.format(model=model_name)
     headers = {"Content-Type": "application/json"}
     
+    parts = [{"text": prompt}]
+
+    if images:
+        for b64_img in images:
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": b64_img
+                }
+            })
+
     payload = {
         "contents": [{
-            "parts": [{"text": prompt}]
+            "parts": parts
         }],
         "generationConfig": {
             "temperature": temperature,
