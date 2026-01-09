@@ -16,7 +16,9 @@ from ai_assistant.config import (
     DEFAULT_TEMPERATURE_RESPONSE,
     THINKING_CONFIG,
     LLM_PROVIDER,
-    VERBOSE_LLM_LOGGING
+    VERBOSE_LLM_LOGGING,
+    REASONING_STRATEGIES,
+    PARALLEL_THINKING_CONFIG
 )
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
@@ -75,10 +77,13 @@ def invoke_ollama_model(
     prompt: str,
     model_name: str = DEFAULT_OLLAMA_MODEL,
     temperature: float = 0.7,
-    max_tokens: int = 1500
+    max_tokens: int = 1500,
+    task_name: Optional[str] = None
 ) -> Optional[str]:
 
     if LLM_PROVIDER == "gemini":
+        # Note: Synchronous parallel thinking is not currently supported.
+        # If task_name implies parallel, it will fall back to standard sync call.
         return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens)
 
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
@@ -205,11 +210,30 @@ async def invoke_ollama_model_async_internal(
     model_name: str = DEFAULT_OLLAMA_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 1500,
-    api_endpoint_override: Optional[str] = None
+    api_endpoint_override: Optional[str] = None,
+    task_name: Optional[str] = None
 ) -> Optional[str]:
 
+    # Check Reasoning Strategy
+    reasoning_mode = "STANDARD"
+    if task_name:
+        reasoning_mode = REASONING_STRATEGIES.get(task_name, "STANDARD")
+    elif "default" in REASONING_STRATEGIES:
+         reasoning_mode = REASONING_STRATEGIES["default"]
+
     if LLM_PROVIDER == "gemini":
-        return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
+        if reasoning_mode == "PARALLEL":
+            return await gemini_client.invoke_parallel_thinking(
+                prompt,
+                model_name=model_name,
+                temperature=PARALLEL_THINKING_CONFIG.get("temperature_branches", temperature),
+                max_tokens=max_tokens,
+                num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3),
+                merge_model=PARALLEL_THINKING_CONFIG.get("merge_model"),
+                temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2)
+            )
+        else:
+            return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
 
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
     enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
@@ -322,7 +346,17 @@ async def invoke_ollama_model_async_internal(
         except json.JSONDecodeError: print("Error: Failed to parse JSON response from Ollama (async)."); return None
         except Exception as e: print(f"An unexpected error occurred during the async request: {e}"); return None
 
-invoke_ollama_model_async = retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)
+async def invoke_ollama_model_async(
+    prompt: str,
+    model_name: str = DEFAULT_OLLAMA_MODEL,
+    temperature: float = 0.7,
+    max_tokens: int = 1500,
+    api_endpoint_override: Optional[str] = None,
+    task_name: Optional[str] = None
+) -> Optional[str]:
+    return await retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)(
+        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_name
+    )
 
 class OllamaProvider:
     """
@@ -375,7 +409,8 @@ class OllamaProvider:
         prompt: str,
         model_name: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1500
+        max_tokens: int = 1500,
+        task_name: Optional[str] = None
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         enable_thinking = ENABLE_THINKING and effective_model_name in THINKING_SUPPORTED_MODELS
@@ -387,7 +422,8 @@ class OllamaProvider:
             model_name=effective_model_name,
             temperature=temperature,
             max_tokens=max_tokens,
-            api_endpoint_override=api_to_use
+            api_endpoint_override=api_to_use,
+            task_name=task_name
         )
 
     def invoke_ollama_model(
@@ -395,14 +431,16 @@ class OllamaProvider:
         prompt: str,
         model_name: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1500
+        max_tokens: int = 1500,
+        task_name: Optional[str] = None
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         return invoke_ollama_model(
             prompt=prompt,
             model_name=effective_model_name,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            task_name=task_name
         )
 
     async def list_models_async(self) -> List[Dict[str, Any]]:

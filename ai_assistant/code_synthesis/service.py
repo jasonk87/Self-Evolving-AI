@@ -118,7 +118,11 @@ class CodeSynthesisService:
         print(f"CodeSynthesisService: Sending new tool prompt to LLM (model: {model_name})...")
         try:
             llm_response = await invoke_ollama_model_async(
-                prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens
+                prompt,
+                model_name=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                task_name="code_generation"
             )
         except Exception as e:
             error_msg = f"LLM invocation failed for new tool generation: {e}"
@@ -228,7 +232,13 @@ class CodeSynthesisService:
 
         print(f"CodeSynthesisService: Sending code fix prompt to LLM (model: {model_name})...")
 
-        llm_response = await invoke_ollama_model_async(prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens)
+        llm_response = await invoke_ollama_model_async(
+            prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            task_name="code_generation"
+        )
 
         response_metadata = {
             "llm_model_used": model_name,
