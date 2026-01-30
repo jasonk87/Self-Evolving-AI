@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task, is_debug_mode
+from ai_assistant.core.events import emit_system_event
 
 REFINE_CODE_PROMPT_TEMPLATE = """
 You are an AI assistant tasked with refining Python code based on a review.
@@ -79,6 +80,11 @@ class RefinementAgent:
             review_comments=review_comments,
             review_suggestions=review_suggestions
         )
+
+        emit_system_event("refinement_started", {
+            "message": "Refiner is analyzing feedback and patching code...",
+            "feedback_summary": f"Status: {review_status}"
+        })
 
         if is_debug_mode():
             print(f"[DEBUG] RefinementAgent: requirements={requirements}")
