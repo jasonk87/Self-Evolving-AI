@@ -1,10 +1,11 @@
 # ai_assistant/code_synthesis/service.py
 from .data_structures import CodeTaskRequest, CodeTaskResult, CodeTaskType, CodeTaskStatus
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 import re
 import os
 import json
 import sys
+import asyncio
 
 from ai_assistant.core import self_modification
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # Already imported
@@ -75,6 +76,60 @@ class CodeSynthesisService:
         """
         print("CodeSynthesisService initialized.")
 
+    async def _run_linter(self, code_string: str) -> Tuple[List[str], Optional[str]]:
+        """
+        Runs 'ruff' linter on the provided code string.
+        Returns a tuple: (list_of_lint_messages, error_string_if_execution_failed).
+        """
+        lint_messages: List[str] = []
+        error_string: Optional[str] = None
+
+        if not code_string or not code_string.strip():
+            return [], None
+
+        try:
+            # Try JSON output first for parsing
+            process = await asyncio.create_subprocess_exec(
+                'ruff', 'check', '--output-format=json', '--stdin-filename', '<stdin>', '-',
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate(input=code_string.encode('utf-8'))
+
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+
+            # Ruff usually returns 1 if violations found, 0 if success.
+            # However, if we get JSON, we can parse it.
+            if stdout_str.strip():
+                try:
+                    ruff_issues = json.loads(stdout_str)
+                    if isinstance(ruff_issues, list):
+                        for issue in ruff_issues:
+                            msg = (
+                                f"LINT: {issue.get('code')} at "
+                                f"{issue.get('location',{}).get('row',0)}:{issue.get('location',{}).get('column',0)}: "
+                                f"{issue.get('message','')}."
+                            )
+                            lint_messages.append(msg)
+                except json.JSONDecodeError:
+                    # Fallback if not JSON or mixed output
+                    if "syntax error" in stdout_str.lower():
+                         lint_messages.append(f"LINT RAW: {stdout_str.strip()}")
+
+            if stderr_str:
+                 # Check if it's a critical error or just info
+                 if "error" in stderr_str.lower():
+                     error_string = f"Ruff execution stderr: {stderr_str}"
+
+        except FileNotFoundError:
+            error_string = "Ruff linter not found in environment."
+        except Exception as e:
+            error_string = f"Exception running linter: {e}"
+
+        return lint_messages, error_string
+
     async def submit_task(self, request: CodeTaskRequest) -> CodeTaskResult:
         """
         Primary method to request code synthesis.
@@ -116,71 +171,122 @@ class CodeSynthesisService:
         max_tokens = llm_config.get("max_tokens", 2048) # Increased for potentially larger tools
 
         print(f"CodeSynthesisService: Sending new tool prompt to LLM (model: {model_name})...")
-        try:
-            llm_response = await invoke_ollama_model_async(
-                prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens
-            )
-        except Exception as e:
-            error_msg = f"LLM invocation failed for new tool generation: {e}"
-            print(f"CodeSynthesisService: {error_msg}")
-            return CodeTaskResult(
-                request_id=request.request_id,
-                status=CodeTaskStatus.FAILURE_LLM_GENERATION,
-                error_message=error_msg,
-                metadata={"llm_model_used": model_name, "llm_prompt_preview": prompt[:300]+"..."}
-            )
 
-        response_metadata_log = {
-            "llm_model_used": model_name,
-            "llm_prompt_preview": prompt[:300]+"...",
-            "llm_response_preview": (llm_response[:200] + "...") if llm_response else "None"
-        }
+        max_retries = 3
+        current_prompt = prompt
+        attempt_log = []
 
-        if not llm_response or not llm_response.strip():
-            error_msg = "LLM did not provide a response for new tool generation."
-            print(f"CodeSynthesisService: {error_msg}")
-            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
-                                  error_message=error_msg, metadata=response_metadata_log)
-
-        parsed_metadata: Optional[Dict[str, str]] = None
-        actual_code_str: str = ""
-
-        if llm_response.startswith("# METADATA:"):
+        for attempt in range(max_retries):
+            print(f"CodeSynthesisService: Generation Attempt {attempt + 1}/{max_retries}")
             try:
-                lines = llm_response.split('\n', 1)
-                metadata_line = lines[0]
-                metadata_json_str_match = re.search(r"{\s*.*?\s*}", metadata_line)
-                if metadata_json_str_match:
-                    metadata_json_str = metadata_json_str_match.group(0)
-                    parsed_metadata = json.loads(metadata_json_str)
-                    actual_code_str = lines[1] if len(lines) > 1 else ""
-                else:
-                    actual_code_str = llm_response # Assume no valid metadata line
+                llm_response = await invoke_ollama_model_async(
+                    current_prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens
+                )
             except Exception as e:
-                print(f"CodeSynthesisService: Error parsing metadata for new tool: {e}. Treating response as code only.")
-                actual_code_str = llm_response.lstrip("# METADATA:") if llm_response.startswith("# METADATA:") else llm_response
-        else:
-            actual_code_str = llm_response
+                error_msg = f"LLM invocation failed for new tool generation: {e}"
+                print(f"CodeSynthesisService: {error_msg}")
+                return CodeTaskResult(
+                    request_id=request.request_id,
+                    status=CodeTaskStatus.FAILURE_LLM_GENERATION,
+                    error_message=error_msg,
+                    metadata={"llm_model_used": model_name, "attempt_log": attempt_log}
+                )
 
-        cleaned_llm_code = actual_code_str.strip()
-        if cleaned_llm_code.startswith("```python"):
-            cleaned_llm_code = cleaned_llm_code[len("```python"):].strip()
-        if cleaned_llm_code.endswith("```"):
-            cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
+            if not llm_response or not llm_response.strip():
+                attempt_log.append(f"Attempt {attempt+1}: Empty response.")
+                continue
 
-        if not cleaned_llm_code or not parsed_metadata:
-            error_msg = "LLM response for new tool generation was missing code or parsable metadata."
-            print(f"CodeSynthesisService: {error_msg}")
-            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
-                                  error_message=error_msg, generated_code=cleaned_llm_code, metadata=response_metadata_log)
-        
-        response_metadata_log["parsed_tool_metadata"] = parsed_metadata
-        response_metadata_log["generated_code_length"] = len(cleaned_llm_code)
+            parsed_metadata: Optional[Dict[str, str]] = None
+            actual_code_str: str = ""
+
+            # Attempt to separate metadata and code
+            if llm_response.startswith("# METADATA:"):
+                try:
+                    lines = llm_response.split('\n', 1)
+                    metadata_line = lines[0]
+                    metadata_json_str_match = re.search(r"{\s*.*?\s*}", metadata_line)
+                    if metadata_json_str_match:
+                        metadata_json_str = metadata_json_str_match.group(0)
+                        parsed_metadata = json.loads(metadata_json_str)
+                        actual_code_str = lines[1] if len(lines) > 1 else ""
+                    else:
+                        actual_code_str = llm_response # Assume no valid metadata line
+                except Exception as e:
+                    print(f"CodeSynthesisService: Error parsing metadata for new tool: {e}. Treating response as code only.")
+                    actual_code_str = llm_response.lstrip("# METADATA:") if llm_response.startswith("# METADATA:") else llm_response
+            else:
+                actual_code_str = llm_response
+
+            cleaned_llm_code = actual_code_str.strip()
+            if cleaned_llm_code.startswith("```python"):
+                cleaned_llm_code = cleaned_llm_code[len("```python"):].strip()
+            if cleaned_llm_code.endswith("```"):
+                cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
+
+            if not cleaned_llm_code:
+                attempt_log.append(f"Attempt {attempt+1}: No code found.")
+                continue
+
+            # Run Linter
+            lint_messages, lint_error = await self._run_linter(cleaned_llm_code)
+
+            if lint_error:
+                print(f"CodeSynthesisService: Linter execution failed: {lint_error}. Accepting code with warning.")
+                attempt_log.append(f"Attempt {attempt+1}: Linter execution error ({lint_error}). Code accepted.")
+                # If linter itself fails, we might still accept the code or fallback.
+                # Let's accept it but log the issue.
+
+                response_metadata_log = {
+                    "llm_model_used": model_name,
+                    "attempt_log": attempt_log,
+                    "parsed_tool_metadata": parsed_metadata,
+                    "generated_code_length": len(cleaned_llm_code)
+                }
+                return CodeTaskResult(
+                    request_id=request.request_id,
+                    status=CodeTaskStatus.SUCCESS,
+                    generated_code=cleaned_llm_code,
+                    metadata=response_metadata_log
+                )
+
+            if lint_messages:
+                print(f"CodeSynthesisService: Linting issues found on attempt {attempt+1}: {lint_messages[:2]}")
+                attempt_log.append(f"Attempt {attempt+1}: Lint errors: {lint_messages}")
+
+                # Feedback loop
+                error_feedback = "\n".join(lint_messages)
+                correction_instruction = (
+                    f"\nThe generated code had the following linting/syntax errors:\n{error_feedback}\n"
+                    f"Code causing errors:\n```python\n{cleaned_llm_code}\n```\n"
+                    "Please regenerate the code fixing these errors. Ensure valid Python syntax. "
+                    "Provide the complete corrected code with the metadata line."
+                )
+                current_prompt = f"{prompt}\n\n{correction_instruction}"
+                continue # Retry
+            else:
+                # Success!
+                print(f"CodeSynthesisService: Code passed linting on attempt {attempt+1}.")
+                response_metadata_log = {
+                    "llm_model_used": model_name,
+                    "attempt_log": attempt_log,
+                    "parsed_tool_metadata": parsed_metadata,
+                    "generated_code_length": len(cleaned_llm_code)
+                }
+                return CodeTaskResult(
+                    request_id=request.request_id,
+                    status=CodeTaskStatus.SUCCESS,
+                    generated_code=cleaned_llm_code,
+                    metadata=response_metadata_log
+                )
+
+        # Max retries reached
+        error_msg = f"Failed to generate valid code after {max_retries} attempts. Last lint errors: {attempt_log[-1] if attempt_log else 'Unknown'}"
+        print(f"CodeSynthesisService: {error_msg}")
         return CodeTaskResult(
             request_id=request.request_id,
-            status=CodeTaskStatus.SUCCESS,
-            generated_code=cleaned_llm_code,
-            metadata=response_metadata_log
+            status=CodeTaskStatus.FAILURE_MAX_RETRIES_REACHED,
+            error_message=error_msg,
+            metadata={"llm_model_used": model_name, "attempt_log": attempt_log}
         )
 
     async def _handle_existing_tool_self_fix_llm(self, request: CodeTaskRequest) -> CodeTaskResult:
@@ -228,33 +334,76 @@ class CodeSynthesisService:
 
         print(f"CodeSynthesisService: Sending code fix prompt to LLM (model: {model_name})...")
 
-        llm_response = await invoke_ollama_model_async(prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens)
+        max_retries = 3
+        current_prompt = prompt
+        attempt_log = []
 
-        response_metadata = {
-            "llm_model_used": model_name,
-            "llm_prompt_preview": prompt[:300]+"...",
-            "llm_response_preview": (llm_response[:200] + "...") if llm_response else "None"
-        }
+        for attempt in range(max_retries):
+            print(f"CodeSynthesisService: Fix Attempt {attempt + 1}/{max_retries}")
 
-        if not llm_response or "// NO_CODE_SUGGESTION_POSSIBLE" in llm_response or len(llm_response.strip()) < 10:
-            error_msg = f"LLM did not provide a usable code suggestion. Response: {llm_response}"
-            print(f"CodeSynthesisService: {error_msg}")
-            return CodeTaskResult(request_id=request.request_id, status=CodeTaskStatus.FAILURE_LLM_GENERATION,
-                                  error_message=error_msg, metadata=response_metadata)
+            llm_response = await invoke_ollama_model_async(current_prompt, model_name=model_name, temperature=temperature, max_tokens=max_tokens)
 
-        cleaned_llm_code = llm_response.strip()
-        if cleaned_llm_code.startswith("```python"): # pragma: no cover
-            cleaned_llm_code = cleaned_llm_code[len("```python"):].strip()
-        if cleaned_llm_code.endswith("```"): # pragma: no cover
-            cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
+            if not llm_response or "// NO_CODE_SUGGESTION_POSSIBLE" in llm_response or len(llm_response.strip()) < 10:
+                msg = f"Attempt {attempt+1}: No usable suggestion."
+                attempt_log.append(msg)
+                continue
 
-        print(f"CodeSynthesisService: LLM generated code suggestion for {function_name}.")
-        response_metadata["llm_generated_code_length"] = len(cleaned_llm_code)
+            cleaned_llm_code = llm_response.strip()
+            if cleaned_llm_code.startswith("```python"):
+                cleaned_llm_code = cleaned_llm_code[len("```python"):].strip()
+            if cleaned_llm_code.endswith("```"):
+                cleaned_llm_code = cleaned_llm_code[:-len("```")].strip()
+
+            # Run Linter
+            lint_messages, lint_error = await self._run_linter(cleaned_llm_code)
+
+            if lint_error:
+                # Linter failed, proceed cautiously or fallback
+                attempt_log.append(f"Attempt {attempt+1}: Linter execution error ({lint_error}). Accepting code.")
+                response_metadata = {
+                    "llm_model_used": model_name,
+                    "attempt_log": attempt_log,
+                    "llm_generated_code_length": len(cleaned_llm_code)
+                }
+                return CodeTaskResult(
+                    request_id=request.request_id,
+                    status=CodeTaskStatus.SUCCESS,
+                    generated_code=cleaned_llm_code,
+                    metadata=response_metadata
+                )
+
+            if lint_messages:
+                attempt_log.append(f"Attempt {attempt+1}: Lint errors: {lint_messages}")
+                # Feedback loop
+                error_feedback = "\n".join(lint_messages)
+                correction_instruction = (
+                    f"\nThe corrected code you provided has the following linting/syntax errors:\n{error_feedback}\n"
+                    f"Code causing errors:\n```python\n{cleaned_llm_code}\n```\n"
+                    "Please regenerate the code fixing these errors. Only output the raw Python code."
+                )
+                current_prompt = f"{prompt}\n\n{correction_instruction}"
+                continue
+            else:
+                # Success
+                print(f"CodeSynthesisService: Fix passed linting on attempt {attempt+1}.")
+                response_metadata = {
+                    "llm_model_used": model_name,
+                    "attempt_log": attempt_log,
+                    "llm_generated_code_length": len(cleaned_llm_code)
+                }
+                return CodeTaskResult(
+                    request_id=request.request_id,
+                    status=CodeTaskStatus.SUCCESS,
+                    generated_code=cleaned_llm_code,
+                    metadata=response_metadata
+                )
+
+        error_msg = f"Failed to generate valid fix after {max_retries} attempts."
         return CodeTaskResult(
             request_id=request.request_id,
-            status=CodeTaskStatus.SUCCESS,
-            generated_code=cleaned_llm_code,
-            metadata=response_metadata
+            status=CodeTaskStatus.FAILURE_MAX_RETRIES_REACHED,
+            error_message=error_msg,
+            metadata={"attempt_log": attempt_log}
         )
 
     async def _handle_existing_tool_self_fix_ast(self, request: CodeTaskRequest) -> CodeTaskResult:

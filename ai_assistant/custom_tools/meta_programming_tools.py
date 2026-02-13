@@ -9,6 +9,7 @@ import inspect # Ensure this is imported
 import asyncio # For __main__ if any async test code is added
 
 from ai_assistant.config import get_model_for_task # To get the right LLM model
+from ai_assistant.code_synthesis import CodeTaskRequest, CodeTaskType, CodeTaskStatus
 
 if TYPE_CHECKING:
     from ai_assistant.core.action_executor import ActionExecutor
@@ -50,139 +51,172 @@ async def generate_new_tool_from_description(
     Returns:
         A string indicating the result of the operation.
     """
-    # Ensure action_executor is provided as it's needed for LLM calls
-    has_llm = (action_executor and hasattr(action_executor, 'llm_interface')) or \
-              (action_executor and hasattr(action_executor, 'code_service') and hasattr(action_executor.code_service, 'llm_provider'))
-    if not has_llm:
-        return "Error: ActionExecutor with LLM interface (or CodeService) is required for tool generation."
+    # Check for CodeSynthesisService first
+    if action_executor and hasattr(action_executor, 'code_synthesis_service') and action_executor.code_synthesis_service:
+        logger.info("Using CodeSynthesisService for tool generation.")
 
-    function_name_guidance = f"The primary tool function should be named: `{suggested_tool_function_name}`." if suggested_tool_function_name else ""
-    
-    if suggested_filename:
-        processed_sugg_filename = os.path.basename(suggested_filename)
-        if not processed_sugg_filename.endswith(".py"):
-            processed_sugg_filename += ".py"
-        filename_guidance = f"Save the tool in a file named: `{processed_sugg_filename}`."
+        request = CodeTaskRequest(
+            task_type=CodeTaskType.NEW_TOOL_CREATION_LLM,
+            context_data={"description": tool_description}
+        )
+
+        result = await action_executor.code_synthesis_service.submit_task(request)
+
+        if result.status == CodeTaskStatus.SUCCESS and result.generated_code:
+            generated_code = result.generated_code
+
+            # Determine filename
+            final_filename = ""
+            if suggested_filename:
+                final_filename = os.path.basename(suggested_filename)
+                if not final_filename.endswith(".py"): final_filename += ".py"
+            elif result.metadata and result.metadata.get("parsed_tool_metadata") and result.metadata["parsed_tool_metadata"].get("suggested_function_name"):
+                final_filename = f"{result.metadata['parsed_tool_metadata']['suggested_function_name']}.py"
+
+            # Fallback handled later if needed
+        else:
+            return f"Error: CodeSynthesisService failed. Status: {result.status}, Error: {result.error_message}"
+
     else:
-        filename_guidance = "Suggest a suitable, PEP8-compliant Python filename for this tool (e.g., `utility_helpers.py` or `data_processor_tool.py`)."
+        # Legacy fallback
+        # Ensure action_executor is provided as it's needed for LLM calls
+        has_llm = (action_executor and hasattr(action_executor, 'llm_interface')) or \
+                  (action_executor and hasattr(action_executor, 'code_service') and hasattr(action_executor.code_service, 'llm_provider'))
+        if not has_llm:
+            return "Error: ActionExecutor with LLM interface (or CodeService) is required for tool generation."
 
-    base_prompt = f"""
-You are an expert Python programmer assisting an AI agent by creating new tools.
-Your task is to generate the complete Python code for a new tool based on the following description.
+        function_name_guidance = f"The primary tool function should be named: `{suggested_tool_function_name}`." if suggested_tool_function_name else ""
 
-Tool Description:
-"{tool_description}"
+        if suggested_filename:
+            processed_sugg_filename = os.path.basename(suggested_filename)
+            if not processed_sugg_filename.endswith(".py"):
+                processed_sugg_filename += ".py"
+            filename_guidance = f"Save the tool in a file named: `{processed_sugg_filename}`."
+        else:
+            filename_guidance = "Suggest a suitable, PEP8-compliant Python filename for this tool (e.g., `utility_helpers.py` or `data_processor_tool.py`)."
 
-{function_name_guidance}
-{filename_guidance}
+        base_prompt = f"""
+    You are an expert Python programmer assisting an AI agent by creating new tools.
+    Your task is to generate the complete Python code for a new tool based on the following description.
 
-Your output MUST strictly follow this format:
-1.  The Python code block for the tool, enclosed in triple backticks (```python ... ```).
-2.  On a new line, after the code block, the suggested filename using the prefix "Suggested Filename: ".
+    Tool Description:
+    "{tool_description}"
 
-The Python code should:
-- Be a single, self-contained Python script/module.
-- Include a clear function definition for the tool.
-- Use type hints for all arguments and return types.
-- Have a comprehensive docstring for the main tool function, explaining what it does, its arguments (name, type, description), and what it returns (type, description). This docstring will be used by the AI assistant.
-- Include necessary import statements at the top of the script.
-- Implement the core logic to fulfill the described functionality.
-- Handle potential errors gracefully (e.g., using try-except blocks).
-- If the tool needs `action_executor` (e.g., to call other tools), it should accept `action_executor: ActionExecutor` as its first argument.
+    {function_name_guidance}
+    {filename_guidance}
 
-Example Tool Structure:
-```python
-import os
-from typing import TYPE_CHECKING, List
+    Your output MUST strictly follow this format:
+    1.  The Python code block for the tool, enclosed in triple backticks (```python ... ```).
+    2.  On a new line, after the code block, the suggested filename using the prefix "Suggested Filename: ".
 
-if TYPE_CHECKING:
-    from ai_assistant.core.action_executor import ActionExecutor
+    The Python code should:
+    - Be a single, self-contained Python script/module.
+    - Include a clear function definition for the tool.
+    - Use type hints for all arguments and return types.
+    - Have a comprehensive docstring for the main tool function, explaining what it does, its arguments (name, type, description), and what it returns (type, description). This docstring will be used by the AI assistant.
+    - Include necessary import statements at the top of the script.
+    - Implement the core logic to fulfill the described functionality.
+    - Handle potential errors gracefully (e.g., using try-except blocks).
+    - If the tool needs `action_executor` (e.g., to call other tools), it should accept `action_executor: ActionExecutor` as its first argument.
 
-async def example_tool_function(action_executor: "ActionExecutor", items: List[str]) -> str:
-    \"\"\"
-    This is an example docstring. It processes items.
-    Args:
-        action_executor: The action executor.
-        items (List[str]): A list of strings to process.
-    Returns:
-        str: A summary of the processing.
-    \"\"\"
+    Example Tool Structure:
+    ```python
+    import os
+    from typing import TYPE_CHECKING, List
+
+    if TYPE_CHECKING:
+        from ai_assistant.core.action_executor import ActionExecutor
+
+    async def example_tool_function(action_executor: "ActionExecutor", items: List[str]) -> str:
+        \"\"\"
+        This is an example docstring. It processes items.
+        Args:
+            action_executor: The action executor.
+            items (List[str]): A list of strings to process.
+        Returns:
+            str: A summary of the processing.
+        \"\"\"
+        try:
+            # Tool logic here
+            return f"Processed {{len(items)}} items."
+        except Exception as e:
+            # import logging; logger = logging.getLogger(__name__); logger.error(f"Error: {{e}}")
+            return f"Error: {{e}}"
+    ```
+    Now, generate the Python code and the suggested filename for the described tool.
+    """
+        try:
+            model_name = get_model_for_task("tool_creation")
+
+            # Locate LLM provider
+            llm = None
+            if hasattr(action_executor, 'llm_interface'):
+                llm = action_executor.llm_interface
+            elif hasattr(action_executor, 'code_service') and hasattr(action_executor.code_service, 'llm_provider'):
+                llm = action_executor.code_service.llm_provider
+
+            if not llm:
+                 return "Error: Could not find LLM provider in ActionExecutor."
+
+            max_retries = 3
+            generated_code = ""
+            final_filename = ""
+            last_error = ""
+
+            for attempt in range(max_retries):
+                current_prompt = base_prompt
+                if attempt > 0:
+                    current_prompt += f"\n\nIMPORTANT: Your previous attempt failed verification with the following error:\n{last_error}\nPlease fix the code and ensure it is valid Python."
+
+                logger.info(f"Tool generation attempt {attempt + 1}/{max_retries}")
+
+                # Execute request based on available method
+                if hasattr(llm, 'send_request'):
+                     llm_response = await llm.send_request(prompt=current_prompt, model_name=model_name, temperature=0.2)
+                elif hasattr(llm, 'invoke_ollama_model_async'):
+                     llm_response = await llm.invoke_ollama_model_async(current_prompt, model_name=model_name, temperature=0.2)
+                else:
+                     return f"Error: LLM provider {llm} has neither 'send_request' nor 'invoke_ollama_model_async'."
+
+                if not isinstance(llm_response, str) or not llm_response.strip():
+                    last_error = "LLM returned empty response."
+                    continue
+
+                code_match = re.search(r"```python\n(.*?)\n```", llm_response, re.DOTALL)
+                filename_match = re.search(r"Suggested Filename:\s*([\w_.-]+\.py)", llm_response)
+
+                if not code_match:
+                    last_error = "LLM did not provide a Python code block."
+                    continue
+
+                candidate_code = code_match.group(1).strip()
+
+                # Syntax Verification using AST
+                try:
+                    ast.parse(candidate_code)
+                    generated_code = candidate_code # It's valid!
+
+                    # Capture filename if valid
+                    if suggested_filename:
+                        final_filename = os.path.basename(suggested_filename)
+                        if not final_filename.endswith(".py"): final_filename += ".py"
+                    elif filename_match:
+                        final_filename = filename_match.group(1).strip()
+
+                    break # Success, exit loop
+                except SyntaxError as e:
+                    last_error = f"SyntaxError: {e}"
+                    logger.warning(f"Generated code failed syntax check on attempt {attempt + 1}: {e}")
+                    continue
+
+            if not generated_code:
+                return f"Error: Failed to generate valid Python tool code after {max_retries} attempts. Last error: {last_error}"
+        except Exception as e:
+            logger.error(f"Error in legacy tool generation: {e}", exc_info=True)
+            return f"An unexpected error occurred during legacy tool generation: {e}"
+
+    # Common finalization logic (saving file)
     try:
-        # Tool logic here
-        return f"Processed {{len(items)}} items."
-    except Exception as e:
-        # import logging; logger = logging.getLogger(__name__); logger.error(f"Error: {{e}}")
-        return f"Error: {{e}}"
-```
-Now, generate the Python code and the suggested filename for the described tool.
-"""
-    try:
-        model_name = get_model_for_task("tool_creation")
-        
-        # Locate LLM provider
-        llm = None
-        if hasattr(action_executor, 'llm_interface'):
-            llm = action_executor.llm_interface
-        elif hasattr(action_executor, 'code_service') and hasattr(action_executor.code_service, 'llm_provider'):
-            llm = action_executor.code_service.llm_provider
-            
-        if not llm:
-             return "Error: Could not find LLM provider in ActionExecutor."
-
-        max_retries = 3
-        generated_code = ""
-        final_filename = ""
-        last_error = ""
-
-        for attempt in range(max_retries):
-            current_prompt = base_prompt
-            if attempt > 0:
-                current_prompt += f"\n\nIMPORTANT: Your previous attempt failed verification with the following error:\n{last_error}\nPlease fix the code and ensure it is valid Python."
-
-            logger.info(f"Tool generation attempt {attempt + 1}/{max_retries}")
-
-            # Execute request based on available method
-            if hasattr(llm, 'send_request'):
-                 llm_response = await llm.send_request(prompt=current_prompt, model_name=model_name, temperature=0.2)
-            elif hasattr(llm, 'invoke_ollama_model_async'):
-                 llm_response = await llm.invoke_ollama_model_async(current_prompt, model_name=model_name, temperature=0.2)
-            else:
-                 return f"Error: LLM provider {llm} has neither 'send_request' nor 'invoke_ollama_model_async'."
-
-            if not isinstance(llm_response, str) or not llm_response.strip():
-                last_error = "LLM returned empty response."
-                continue
-
-            code_match = re.search(r"```python\n(.*?)\n```", llm_response, re.DOTALL)
-            filename_match = re.search(r"Suggested Filename:\s*([\w_.-]+\.py)", llm_response)
-
-            if not code_match:
-                last_error = "LLM did not provide a Python code block."
-                continue
-            
-            candidate_code = code_match.group(1).strip()
-
-            # Syntax Verification using AST
-            try:
-                ast.parse(candidate_code)
-                generated_code = candidate_code # It's valid!
-                
-                # Capture filename if valid
-                if suggested_filename:
-                    final_filename = os.path.basename(suggested_filename)
-                    if not final_filename.endswith(".py"): final_filename += ".py"
-                elif filename_match:
-                    final_filename = filename_match.group(1).strip()
-                
-                break # Success, exit loop
-            except SyntaxError as e:
-                last_error = f"SyntaxError: {e}"
-                logger.warning(f"Generated code failed syntax check on attempt {attempt + 1}: {e}")
-                continue
-
-        if not generated_code:
-            return f"Error: Failed to generate valid Python tool code after {max_retries} attempts. Last error: {last_error}"
-
         if not final_filename: # Fallback if no filename determined
             func_name_match = re.search(r"def\s+([\w_]+)\s*\(", generated_code)
             base_name = func_name_match.group(1) if func_name_match else f"generated_tool_{int(time.time())}"
