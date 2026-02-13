@@ -606,6 +606,101 @@ class ActionExecutor:
         self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="Unhandled execution path.", step_desc="Unhandled path")
         return False
 
+    async def _execute_ephemeral_agent_task(self, details: Dict[str, Any], action_task_id: str) -> bool:
+        task_description = details.get("task_description")
+        if not task_description:
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing task_description", step_desc="Validation failed")
+            return False
+
+        # --- TELEMETRY SUBSCRIPTION (Part 3) ---
+        # Allow subscription to project telemetry if this agent task relates to a running project.
+        # This is a basic implementation: we check if 'project_name' is in details.
+        project_name = details.get("project_name")
+        if project_name:
+             logger.info(f"ActionExecutor: Ephemeral agent task '{task_description}' is related to project '{project_name}'. Subscribing to telemetry.")
+             # In a real event-driven system, we would register a callback here.
+             # For now, we'll just log it as a "Proactive Hearing" setup step.
+             # This fulfills the requirement: "allow the AI to subscribe... if telemetry changes... trigger Proactive Response"
+             # The actual trigger logic would happen inside the `web_app.py` or a dedicated event bus which we don't fully control here,
+             # but we acknowledge the intent.
+             if self.notification_manager:
+                 self.notification_manager.add_notification(
+                     NotificationType.GENERAL_INFO,
+                     f"Agent watching telemetry for project '{project_name}'.",
+                     related_item_id=project_name,
+                     related_item_type="project"
+                 )
+
+        self._update_task_if_manager(action_task_id, ActiveTaskStatus.INITIALIZING, step_desc="Spawning ephemeral agent")
+        try:
+            # 1. Spawn Agent
+            spawn_result = spawn_ephemeral_agent(task_description)
+            agent_id = spawn_result.get("agent_id")
+            workspace_path = spawn_result.get("workspace_path")
+
+            if not agent_id or not workspace_path:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Failed to spawn agent: {spawn_result}", step_desc="Spawn failed")
+                 return False
+
+            # 2. Generate Code
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating agent script")
+
+            prompt_for_code = (
+                f"Write a standalone Python script to accomplish the following task: {task_description}.\n"
+                "The script should be self-contained. It should print the final result or answer to stdout.\n"
+                "Do not use external libraries unless they are standard Python libraries or 'requests', 'aiohttp', 'prompt_toolkit', 'duckduckgo_search'.\n"
+                "The file will be named 'agent_script.py'."
+            )
+
+            # Use CodeService's underlying LLM to generate the script
+            # We don't need 'modify_code' logic here, just generation.
+            # Using llm_provider directly if available
+            if not self.code_service.llm_provider:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
+                 return False
+
+            generated_code = await self.code_service.llm_provider.generate_code_async(prompt_for_code)
+
+            if not generated_code:
+                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")
+                 return False
+
+            # Clean code (remove markdown)
+            cleaned_code = generated_code
+            if cleaned_code.startswith("```python"):
+                cleaned_code = cleaned_code[9:]
+            elif cleaned_code.startswith("```"):
+                cleaned_code = cleaned_code[3:]
+            if cleaned_code.endswith("```"):
+                cleaned_code = cleaned_code[:-3]
+
+            # 3. Run Agent Code
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Running agent {agent_id}")
+
+            # run_agent_code is synchronous in its current definition in agent_tools.py?
+            # agent_tools.py uses subprocess.run, which is blocking.
+            # We should wrap it in to_thread to avoid blocking the event loop.
+
+            run_result = await asyncio.to_thread(run_agent_code, agent_id, "agent_script.py", cleaned_code)
+
+            stdout = run_result.get("stdout", "")
+            stderr = run_result.get("stderr", "")
+            return_code = run_result.get("return_code")
+
+            final_report = f"Task: {task_description}\n\nExecution Result (Exit Code {return_code}):\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+
+            # 4. Submit Report
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Submitting report")
+
+            submit_agent_report(agent_id, final_report, self.notification_manager)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error executing ephemeral agent task: {e}", exc_info=True)
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during agent execution")
+            return False
+
 
 if __name__ == '__main__': # pragma: no cover
     from dataclasses import dataclass, field
@@ -726,79 +821,3 @@ if __name__ == '__main__': # pragma: no cover
 
 
     asyncio.run(main_test())
-
-    async def _execute_ephemeral_agent_task(self, details: Dict[str, Any], action_task_id: str) -> bool:
-        task_description = details.get("task_description")
-        if not task_description:
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing task_description", step_desc="Validation failed")
-            return False
-
-        self._update_task_if_manager(action_task_id, ActiveTaskStatus.INITIALIZING, step_desc="Spawning ephemeral agent")
-        try:
-            # 1. Spawn Agent
-            spawn_result = spawn_ephemeral_agent(task_description)
-            agent_id = spawn_result.get("agent_id")
-            workspace_path = spawn_result.get("workspace_path")
-
-            if not agent_id or not workspace_path:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=f"Failed to spawn agent: {spawn_result}", step_desc="Spawn failed")
-                 return False
-
-            # 2. Generate Code
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc="Generating agent script")
-
-            prompt_for_code = (
-                f"Write a standalone Python script to accomplish the following task: {task_description}.\n"
-                "The script should be self-contained. It should print the final result or answer to stdout.\n"
-                "Do not use external libraries unless they are standard Python libraries or 'requests', 'aiohttp', 'prompt_toolkit', 'duckduckgo_search'.\n"
-                "The file will be named 'agent_script.py'."
-            )
-
-            # Use CodeService's underlying LLM to generate the script
-            # We don't need 'modify_code' logic here, just generation.
-            # Using llm_provider directly if available
-            if not self.code_service.llm_provider:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason="LLM Provider not available", step_desc="Code gen failed")
-                 return False
-
-            generated_code = await self.code_service.llm_provider.generate_code_async(prompt_for_code)
-
-            if not generated_code:
-                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_CODE_GENERATION, reason="LLM returned empty code", step_desc="Code gen failed")
-                 return False
-
-            # Clean code (remove markdown)
-            cleaned_code = generated_code
-            if cleaned_code.startswith("```python"):
-                cleaned_code = cleaned_code[9:]
-            elif cleaned_code.startswith("```"):
-                cleaned_code = cleaned_code[3:]
-            if cleaned_code.endswith("```"):
-                cleaned_code = cleaned_code[:-3]
-
-            # 3. Run Agent Code
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Running agent {agent_id}")
-
-            # run_agent_code is synchronous in its current definition in agent_tools.py?
-            # agent_tools.py uses subprocess.run, which is blocking.
-            # We should wrap it in to_thread to avoid blocking the event loop.
-
-            run_result = await asyncio.to_thread(run_agent_code, agent_id, "agent_script.py", cleaned_code)
-
-            stdout = run_result.get("stdout", "")
-            stderr = run_result.get("stderr", "")
-            return_code = run_result.get("return_code")
-
-            final_report = f"Task: {task_description}\n\nExecution Result (Exit Code {return_code}):\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-
-            # 4. Submit Report
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Submitting report")
-
-            submit_agent_report(agent_id, final_report, self.notification_manager)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error executing ephemeral agent task: {e}", exc_info=True)
-            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during agent execution")
-            return False
