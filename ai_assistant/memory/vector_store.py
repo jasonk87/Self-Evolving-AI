@@ -1,26 +1,61 @@
-import numpy as np
 import os
-import json
 import logging
+import hashlib
 from typing import List, Dict, Any, Optional
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    CHROMADB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 class VectorStore:
     """
-    A simple file-based vector store using NumPy for cosine similarity.
+    A persistent vector store using ChromaDB.
     """
     def __init__(self, storage_path: str):
         self.storage_path = storage_path
-        self.vectors: List[np.ndarray] = []
-        self.documents: List[str] = []
-        self.metadata: List[Dict[str, Any]] = []
-        self._load()
+
+        # Determine the directory for ChromaDB
+        # If storage_path is a file path (like rag_vector_store.json),
+        # use its parent directory + 'chroma_db'
+        if storage_path.endswith('.json'):
+            self.persist_directory = os.path.join(os.path.dirname(storage_path), "chroma_db")
+        else:
+            self.persist_directory = os.path.join(storage_path, "chroma_db")
+
+        if not CHROMADB_AVAILABLE:
+            logger.error("ChromaDB is not installed. VectorStore will not function correctly.")
+            self.client = None
+            self.collection = None
+            return
+
+        try:
+            os.makedirs(self.persist_directory, exist_ok=True)
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
+
+            # Get or create the collection
+            self.collection = self.client.get_or_create_collection(
+                name="learned_facts",
+                metadata={"hnsw:space": "cosine"} # Use cosine similarity
+            )
+            logger.info(f"Initialized ChromaDB at {self.persist_directory}")
+        except Exception as e:
+            logger.error(f"Failed to initialize ChromaDB: {e}")
+            self.client = None
+            self.collection = None
 
     def add_documents(self, texts: List[str], embeddings: List[List[float]], metadatas: Optional[List[Dict[str, Any]]] = None):
         """
         Adds documents and their embeddings to the store.
         """
+        if not self.collection:
+            logger.warning("ChromaDB collection is not initialized.")
+            return
+
         if not texts or not embeddings:
             return
 
@@ -30,96 +65,90 @@ class VectorStore:
         if metadatas and len(metadatas) != len(texts):
             raise ValueError("Number of metadata items must match texts.")
 
-        new_vectors = [np.array(e, dtype=np.float32) for e in embeddings]
+        # Generate IDs based on content hash to avoid exact duplicates
+        ids = [self._generate_id(text) for text in texts]
 
-        # Normalize vectors for cosine similarity
-        new_vectors = [v / np.linalg.norm(v) if np.linalg.norm(v) > 0 else v for v in new_vectors]
-
-        self.vectors.extend(new_vectors)
-        self.documents.extend(texts)
-        if metadatas:
-            self.metadata.extend(metadatas)
-        else:
-            self.metadata.extend([{} for _ in texts])
-
-        self._save()
+        try:
+            self.collection.upsert(
+                documents=texts,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids
+            )
+        except Exception as e:
+            logger.error(f"Error adding documents to ChromaDB: {e}")
 
     def search(self, query_embedding: List[float], k: int = 5, score_threshold: float = 0.0) -> List[Dict[str, Any]]:
         """
         Searches for the k most similar documents to the query embedding.
         """
-        if not self.vectors:
+        if not self.collection:
+            logger.warning("ChromaDB collection is not initialized.")
             return []
 
-        query_vec = np.array(query_embedding, dtype=np.float32)
-        norm = np.linalg.norm(query_vec)
-        if norm > 0:
-            query_vec = query_vec / norm
+        try:
+            # ChromaDB expects a list of query embeddings
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=k
+            )
 
-        # Compute cosine similarity
-        # Stack vectors into a matrix
-        matrix = np.stack(self.vectors)
-        scores = np.dot(matrix, query_vec)
+            # ChromaDB returns lists of lists (one per query)
+            # Structure:
+            # results['documents'][0] -> list of texts
+            # results['metadatas'][0] -> list of metadatas
+            # results['distances'][0] -> list of distances
 
-        # Get top k indices
-        top_k_indices = np.argsort(scores)[::-1][:k]
+            processed_results = []
 
-        results = []
-        for idx in top_k_indices:
-            score = float(scores[idx])
-            if score < score_threshold:
-                continue
+            if not results['documents']:
+                return []
 
-            results.append({
-                "text": self.documents[idx],
-                "metadata": self.metadata[idx],
-                "score": score
-            })
+            documents = results['documents'][0]
+            metadatas = results['metadatas'][0]
+            distances = results['distances'][0]
+            ids = results['ids'][0]
 
-        return results
+            for i in range(len(documents)):
+                # Chroma returns distance (dissimilarity) for cosine usually,
+                # but "hnsw:space": "cosine" returns cosine distance (1 - similarity).
+                # However, we want similarity score.
+                # Distance range for cosine is [0, 2]. 0 is identical.
+                # Similarity = 1 - distance.
 
-    def _save(self):
+                distance = distances[i]
+                similarity = 1 - distance
+
+                if similarity < score_threshold:
+                    continue
+
+                processed_results.append({
+                    "text": documents[i],
+                    "metadata": metadatas[i] if metadatas else {},
+                    "score": similarity,
+                    "id": ids[i]
+                })
+
+            return processed_results
+
+        except Exception as e:
+            logger.error(f"Error searching ChromaDB: {e}")
+            return []
+
+    def delete(self, ids: List[str]):
         """
-        Saves the store to disk using JSON (safer than pickle).
+        Deletes documents by ID.
         """
-        # Convert numpy arrays to lists for JSON serialization
-        vectors_list = [v.tolist() for v in self.vectors]
+        if not self.collection:
+            return
 
-        data = {
-            "vectors": vectors_list,
-            "documents": self.documents,
-            "metadata": self.metadata
-        }
-        os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
-        # Change file extension if it was pkl
-        save_path = self.storage_path
-        if save_path.endswith(".pkl"):
-            save_path = save_path.replace(".pkl", ".json")
+        try:
+            self.collection.delete(ids=ids)
+        except Exception as e:
+            logger.error(f"Error deleting from ChromaDB: {e}")
 
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-
-    def _load(self):
+    def _generate_id(self, text: str) -> str:
         """
-        Loads the store from disk.
+        Generates a deterministic ID based on the text content.
         """
-        load_path = self.storage_path
-        if load_path.endswith(".pkl"):
-             load_path = load_path.replace(".pkl", ".json")
-
-        if os.path.exists(load_path):
-            try:
-                with open(load_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                vectors_list = data.get("vectors", [])
-                # Convert back to numpy arrays
-                self.vectors = [np.array(v, dtype=np.float32) for v in vectors_list]
-                self.documents = data.get("documents", [])
-                self.metadata = data.get("metadata", [])
-            except Exception as e:
-                logger.error(f"Failed to load vector store from {load_path}: {e}")
-                # Initialize empty if load fails
-                self.vectors = []
-                self.documents = []
-                self.metadata = []
+        return hashlib.md5(text.encode('utf-8')).hexdigest()

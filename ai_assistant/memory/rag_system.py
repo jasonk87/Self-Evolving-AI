@@ -49,15 +49,36 @@ class RAGSystem:
             logger.error(f"Error retrieving context from RAG system: {e}")
             return []
 
+    def delete_fact_by_id(self, fact_id: str):
+        """
+        Deletes a fact from the vector store by its ID.
+        """
+        try:
+            self.vector_store.delete([fact_id])
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting fact by ID {fact_id}: {e}")
+            return False
+
+    def generate_id(self, text: str) -> str:
+        """
+        Exposes the ID generation logic (which is effectively in VectorStore, but convenient here).
+        Actually VectorStore has _generate_id. We can use that or replicate logic.
+        """
+        return self.vector_store._generate_id(text)
+
     async def sync_existing_facts(self, all_facts: List[Dict[str, Any]]):
         """
         Syncs existing facts from MemoryManager to the VectorStore if needed.
-        (This is a basic implementation; ideally, we track which facts are already indexed).
         """
-        # For simplicity, we can check if the store is empty.
-        # A more robust solution would check IDs.
-        if not self.vector_store.documents and all_facts:
-            logger.info(f"Syncing {len(all_facts)} existing facts to RAG system...")
+        # With Chroma, we can just upsert everything; it handles duplicates by ID.
+        if all_facts:
+            logger.info(f"Syncing {len(all_facts)} facts to RAG system (upsert)...")
+
+            # To be efficient, we might want to batch this, but for now simple loop or bulk add
+            # Note: We need embeddings for all of them. This might be slow if we do it one by one.
+            # But get_embeddings_async is likely single-item.
+
             for fact in all_facts:
                 text = fact.get("text")
                 if text:
