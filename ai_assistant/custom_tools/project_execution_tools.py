@@ -217,10 +217,9 @@ async def generate_and_review_code_tool(
 
     current_generated_code = cleaned_code
 
-    # Initialize Critical Review Components
-    critic1 = ReviewerAgent()
-    critic2 = ReviewerAgent()
-    coordinator = CriticalReviewCoordinator(critic1, critic2)
+    # Initialize Critical Review Components (Single Critic)
+    critic = ReviewerAgent()
+    coordinator = CriticalReviewCoordinator(critic)
     refinement_agent = RefinementAgent()
 
     max_refinement_attempts = 3 # Increased attempts
@@ -229,10 +228,10 @@ async def generate_and_review_code_tool(
 
     for attempt in range(max_refinement_attempts + 1): 
         review_attempt_number = attempt + 1
-        print(f"generate_and_review_code_tool: Requesting critical review (Attempt {review_attempt_number})...")
+        # print(f"generate_and_review_code_tool: Requesting critical review (Attempt {review_attempt_number})...")
 
         try:
-            # Using CriticalReviewCoordinator for multi-agent review
+            # Using CriticalReviewCoordinator for single-agent review
             approved, reviews = await coordinator.request_critical_review(
                 original_code=None, # Not modifying existing code in this tool, so None is fine or handle appropriately
                 new_code_string=current_generated_code,
@@ -266,13 +265,13 @@ async def generate_and_review_code_tool(
             }
             break 
 
-        print(f"generate_and_review_code_tool: Review Status (Attempt {review_attempt_number}): {final_review_status.upper()}")
+        # print(f"generate_and_review_code_tool: Review Status (Attempt {review_attempt_number}): {final_review_status.upper()}")
 
         if approved:
             break 
 
         if final_review_status in ["requires_changes", "rejected"] and attempt < max_refinement_attempts:
-            print(f"generate_and_review_code_tool: Code requires changes. Attempting refinement {attempt + 1}/{max_refinement_attempts}...")
+            # print(f"generate_and_review_code_tool: Code requires changes. Attempting refinement {attempt + 1}/{max_refinement_attempts}...")
 
             # Pass aggregated feedback to refiner
             refined_code_str = await refinement_agent.refine_code(
@@ -281,12 +280,12 @@ async def generate_and_review_code_tool(
                 review_feedback=final_review_data
             )
             if not refined_code_str or not refined_code_str.strip(): # pragma: no cover
-                print(f"generate_and_review_code_tool: Refinement attempt {attempt + 1} did not produce new code. Using previous code.")
+                # print(f"generate_and_review_code_tool: Refinement attempt {attempt + 1} did not produce new code. Using previous code.")
                 break 
             current_generated_code = refined_code_str
-        elif attempt >= max_refinement_attempts : # pragma: no cover
-             print(f"generate_and_review_code_tool: Max refinement attempts reached. Using last reviewed code.")
-             break
+        # elif attempt >= max_refinement_attempts : # pragma: no cover
+             # print(f"generate_and_review_code_tool: Max refinement attempts reached. Using last reviewed code.")
+             # break
 
     return {
         "generated_code": current_generated_code,
