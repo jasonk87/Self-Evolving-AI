@@ -899,5 +899,13 @@
         "description": "Generates safe HTML, CSS, and JavaScript code based on a given idea, suitable for inline inclusion in a chat response.",
         "type": "custom_discovered",
         "schema_details": null
+    },
+    "execute_deep_research": {
+        "tool_name": "execute_deep_research",
+        "module_path": "ai_assistant.custom_tools.search_tools",
+        "function_name": "execute_deep_research",
+        "description": "Performs 'Deep Research' by searching Google, visiting the top results, reading their content, and synthesizing a comprehensive answer. Use this for complex coding questions, API documentation lookups, or when standard snippets are insufficient.",
+        "type": "custom_discovered",
+        "schema_details": null
     }
 }

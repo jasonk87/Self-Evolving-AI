@@ -267,3 +267,7 @@ if __name__ == '__main__':
 
 
     print("--- Configuration Tests Passed ---")
+
+# --- Deep Research Configuration ---
+DEEP_RESEARCH_MAX_URLS = 3
+DEEP_RESEARCH_TIMEOUT = 60
