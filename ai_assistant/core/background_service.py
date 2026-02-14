@@ -114,8 +114,9 @@ _last_architect_status: str = "No architectural audits performed yet."
 # --- User Activity Beacon ---
 _last_user_activity_ts: float = 0.0
 # Default threshold: 5 minutes (300 seconds)
-# Configurable via ai_assistant.config if needed in future
 BACKGROUND_IDLE_THRESHOLD_SECONDS = 300
+# Deep Sleep threshold: 1 hour (3600 seconds)
+DEEP_SLEEP_THRESHOLD_SECONDS = 3600
 
 def report_user_activity():
     """
@@ -124,11 +125,14 @@ def report_user_activity():
     """
     global _last_user_activity_ts
     _last_user_activity_ts = time.time()
-    # logger.debug("User activity reported. Background tasks paused.")
 
 def is_user_active(threshold: int = BACKGROUND_IDLE_THRESHOLD_SECONDS) -> bool:
     """Checks if the user has been active recently."""
     return (time.time() - _last_user_activity_ts) < threshold
+
+def is_deep_sleep_active() -> bool:
+    """Checks if the system should be in deep sleep (no polling)."""
+    return (time.time() - _last_user_activity_ts) > DEEP_SLEEP_THRESHOLD_SECONDS
 
 def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
@@ -529,6 +533,13 @@ async def _background_loop_async():
     while _background_service_active:
         current_loop_time = time.time()
         
+        # --- Deep Sleep Check ---
+        if is_deep_sleep_active():
+            if is_debug_mode():
+                 logger.debug("BackgroundService: Deep Sleep Mode active. Skipping all background checks.")
+            await asyncio.sleep(60) # Sleep for a minute before checking again
+            continue
+
         # --- Memory Maintenance Task ---
         # NOW MOVED TO IDLE GATED SECTION
         pass

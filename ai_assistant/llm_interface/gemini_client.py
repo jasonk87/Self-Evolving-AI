@@ -17,6 +17,7 @@ from ai_assistant.config import (
     THINKING_SUPPORTED_MODELS,
     VERBOSE_LLM_LOGGING
 )
+from ai_assistant.core.telemetry import telemetry_tracker
 
 THINKING_SYSTEM_INSTRUCTION = "You are a deep thinking AI. You MUST first think through the Logic, Edge cases, and Plan in a <think> block before answering. <think> ... </think>"
 
@@ -155,6 +156,7 @@ def _invoke_raw_gemini_sync(
                  raw_text = candidate["content"]["parts"][0]["text"]
                  if VERBOSE_LLM_LOGGING:
                      print(color_text(f"<<< [Gemini Sync] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
+                 telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task="gemini_sync")
                  return _extract_and_log_thinking(raw_text)
             elif "finishReason" in candidate:
                 reason = candidate['finishReason']
@@ -237,6 +239,7 @@ async def _invoke_raw_gemini_async(
                                 raw_text = candidate["content"]["parts"][0]["text"]
                                 if VERBOSE_LLM_LOGGING:
                                      print(color_text(f"<<< [Gemini Async] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
+                                telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task="gemini_async")
                                 return _extract_and_log_thinking(raw_text)
                             elif "finishReason" in candidate:
                                 reason = candidate['finishReason']

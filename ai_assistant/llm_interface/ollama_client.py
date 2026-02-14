@@ -22,6 +22,7 @@ from ai_assistant.config import (
 )
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
+from ai_assistant.core.telemetry import telemetry_tracker
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
@@ -130,6 +131,8 @@ def invoke_ollama_model(
             final_result = final_response.json().get("response", "").strip()
             if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
                 print(f"[DEBUG] CoT Final Response: {final_result[:200]}...")
+
+            telemetry_tracker.track_call(model_name, len(prompt), len(final_result), task=f"ollama_sync_cot_{task_name or 'unknown'}")
             return final_result
         except requests.exceptions.RequestException as e:
             print(f"Error during chain of thought process: {e}")
@@ -199,6 +202,7 @@ def invoke_ollama_model(
             elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
                 print(f"[DEBUG] Native thinking enabled for {model_name}, but no thinking process was returned by the model.")
         if is_debug_mode(): print(f"[DEBUG] Final content being returned: {content[:200]}...")
+        telemetry_tracker.track_call(model_name, len(prompt), len(content), task=f"ollama_sync_{task_name or 'unknown'}")
         return content
     except json.JSONDecodeError:
         print("Error: Failed to parse JSON response from Ollama.")
@@ -291,6 +295,7 @@ async def invoke_ollama_model_async_internal(
                         final_result = final_data.get("response", "").strip()
                         if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
                              print(f"[DEBUG] Async CoT Final Response: {final_result[:200]}...")
+                        telemetry_tracker.track_call(model_name, len(prompt), len(final_result), task=f"ollama_async_cot_{task_name or 'unknown'}")
                         return final_result
             except aiohttp.ClientError as e: print(f"HTTP error occurred in async CoT: {e}"); return None
             except json.JSONDecodeError as e: print(f"Error decoding JSON in async CoT: {e}"); return None
@@ -353,6 +358,7 @@ async def invoke_ollama_model_async_internal(
                     elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
                         print(f"[DEBUG] Async native thinking enabled for {model_name}, but no thinking process was returned by the model.")
                 if is_debug_mode() and not VERBOSE_LLM_LOGGING: print(f"[DEBUG] Async final content being returned: {content[:200]}...")
+                telemetry_tracker.track_call(model_name, len(prompt), len(content), task=f"ollama_async_{task_name or 'unknown'}")
                 return content
         except aiohttp.ClientError as e: print(f"HTTP error occurred in async call: {e}"); return None
         except json.JSONDecodeError: print("Error: Failed to parse JSON response from Ollama (async)."); return None
