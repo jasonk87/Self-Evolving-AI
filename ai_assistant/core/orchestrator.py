@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from ai_assistant.core.enums import ExecutionMode
 from ai_assistant.core.router import TaskRouter
 import ai_assistant.config as config
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
@@ -210,23 +210,23 @@ Instructions:
 
 Output strictly your reasoning and the plan for the Operator.
 """
-                strategist_response, strategist_thoughts = await invoke_split_brain_async(
+                # Use RAW strategy to avoid double-thinking (The Strategist IS the thinker)
+                strategist_response = await invoke_gemini_model_async(
                     prompt=strategist_prompt,
                     model_name=config.DEFAULT_MODEL,
-                    context_text=f"Chat History Size: {len(history) if history else 0} msgs. Context Size: {len(context)} chars."
+                    strategy="RAW"
                 )
+                strategist_thoughts = "Strategist reasoning is embedded in the plan."
                 
-                # Log the deep thought
-                print(color_text(f"Strategist Thoughts:\n{strategist_thoughts}", CLIColors.THOUGHT))
+                # Log the deep thought (The whole response is the thought/plan)
+                # print(color_text(f"Strategist Thoughts:\n{strategist_thoughts}", CLIColors.THOUGHT))
                 
                 # Emit thought event for UI
                 EventEmitter.emit("thought_update", {
                     "role": "Strategist",
-                    "thought": strategist_thoughts,
+                    "thought": strategist_response, # The whole plan is the thought
                     "cycle": step_i + 1
                 })
-
-
 
                 print(color_text(f"Strategist Plan: {strategist_response[:200]}...", CLIColors.THOUGHT))
                 
@@ -302,14 +302,14 @@ Instructions:
                 # We append execution history to operator too so it knows what happened
                 operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction (JSON):"
 
-                operator_response, operator_thoughts = await invoke_split_brain_async(
+                # Use RAW strategy. The Operator prompt asks for JSON. Hidden thoughts are handled by <think> removal in client if present.
+                operator_response = await invoke_gemini_model_async(
                     prompt=operator_prompt,
                     model_name=config.DEFAULT_MODEL,
-                    context_text=f"Strategist Plan: {strategist_response[:100]}...\nCurrent Cycle: {step_i+1}"
+                    strategy="RAW"
                 )
 
-                # Log the deep thought
-                # print(color_text(f"Operator Thoughts:\n{operator_thoughts}", CLIColors.THOUGHT))
+                # Operator thoughts are inside the JSON "thought" field usually.
 
                 # Phase 3: Loop Logic
                 parsed_response = self._parse_tool_call(operator_response) # Reuse parser, effectively parsing JSON

@@ -232,7 +232,16 @@ async def invoke_ollama_model_async_internal(
                 merge_model=PARALLEL_THINKING_CONFIG.get("merge_model"),
                 temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2)
             )
+        elif reasoning_mode == "RAW":
+            return await gemini_client.invoke_gemini_model_async(
+                prompt,
+                model_name=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                strategy="RAW"
+            )
         else:
+            # Default to SPLIT_BRAIN (UNIVERSAL_BICAMERAL)
             return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
 
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS

@@ -78,17 +78,18 @@ TASK_MODELS: Dict[str, Optional[str]] = {
 }
 
 # Reasoning Strategies Configuration
-# Maps specific tasks to a strategy: "STANDARD" or "PARALLEL".
-# "STANDARD": Singular call (with <think> if enabled).
-# "PARALLEL": Parallel Thinking (3 passes + Merge).
+# Maps specific tasks to a strategy: "RAW", "STANDARD" (SPLIT_BRAIN), or "PARALLEL".
+# "RAW": Direct single call (Efficient).
+# "STANDARD" / "UNIVERSAL_BICAMERAL": Split Brain (Think -> Act) (Robust).
+# "PARALLEL": Parallel Thinking (3 passes + Merge) (Deepest).
 REASONING_STRATEGIES: Dict[str, str] = {
-    "planning": "UNIVERSAL_BICAMERAL",
-    "code_generation": "UNIVERSAL_BICAMERAL",
-    "conversation_intelligence": "UNIVERSAL_BICAMERAL",
-    "council_judge": "UNIVERSAL_BICAMERAL",
-    "reviewing": "UNIVERSAL_BICAMERAL",
-    "summarization": "UNIVERSAL_BICAMERAL",
-    "default": "UNIVERSAL_BICAMERAL"
+    "planning": "RAW",
+    "code_generation": "RAW",
+    "conversation_intelligence": "RAW",
+    "council_judge": "RAW",
+    "reviewing": "RAW",
+    "summarization": "RAW",
+    "default": "RAW"
 }
 
 # Parallel Thinking Configuration
@@ -103,10 +104,10 @@ PARALLEL_THINKING_CONFIG = {
 CONVERSATION_HISTORY_TURNS = 5
 
 # Number of seconds to wait before re-executing the project plan.
-PROJECT_EXECUTION_INTERVAL_SECONDS = 150 
+PROJECT_EXECUTION_INTERVAL_SECONDS = 900  # 15 minutes
 
 # Number of seconds to wait before running the background fact store curation.
-FACT_CURATION_INTERVAL_SECONDS = 3600  # Default to 1 hour
+FACT_CURATION_INTERVAL_SECONDS = 21600  # 6 hours
 
 # Enable or disable the AI's ability to autonomously learn facts from conversation.
 AUTONOMOUS_LEARNING_ENABLED = True # MODIFIED FOR SCENARIO 5

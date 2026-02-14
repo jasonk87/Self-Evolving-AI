@@ -181,6 +181,13 @@ async def detect_missed_tool_opportunity(
                     "conversational_response": welcome_msg,
                     "autonomously_executed": False
                 }
+            else:
+                 # It's just a greeting and no pending proposals. Avoid LLM call for tool detection.
+                 # Return None so the caller (if any) proceeds to normal conversation.
+                 if is_debug_mode():
+                     print("[DEBUG CONV_INTEL] Greeting detected with no proposals. Skipping tool detection.")
+                 return None
+
         except Exception as e:
             if is_debug_mode():
                 print(f"[DEBUG CONV_INTEL] Error checking for evolution proposals: {e}")

@@ -71,32 +71,29 @@ except ImportError: # pragma: no cover
 # --- Service State ---
 _background_service_active = False
 _background_task: Optional[asyncio.Task] = None
-_polling_interval_seconds = 300  # For self-reflection # FACT_CURATION_INTERVAL_SECONDS will be used from config
+_polling_interval_seconds = 3600  # Self-reflection: 1 hour
 _last_fact_curation_time: float = 0.0
-_last_project_execution_scan_time: float = 0.0 # New state for project execution
-_last_self_healing_time: float = 0.0 # State for self-healing
-_self_healing_interval_seconds = 600 # Check every 10 minutes
+_last_project_execution_scan_time: float = 0.0
+_last_self_healing_time: float = 0.0
+_self_healing_interval_seconds = 3600 # Self-healing: 1 hour (was 10 mins)
 _last_architect_audit_timestamp: float = 0.0
-_architect_audit_interval_seconds = 900 # 15 minutes for debugging
+_architect_audit_interval_seconds = 7200 # Architect: 2 hours (was 15 mins)
 ARCHITECT_STATE_FILE = "architect_state.json"
-_last_auto_approve_check_time: float = 0.0
-_auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
 
 _last_auto_approve_check_time: float = 0.0
-_auto_approve_check_interval_seconds = 60 # Check frequently, but action depends on request age
+_auto_approve_check_interval_seconds = 60 # Keep frequent for responsiveness
 
 # Memory Maintenance State
 _last_memory_maintenance_time: float = 0.0
-_last_memory_maintenance_time: float = 0.0
-_memory_maintenance_interval_seconds = 1800 # Run once every 30 minutes (idle only)
+_memory_maintenance_interval_seconds = 3600 # 1 hour (was 30 mins)
 
 # Learning & Conversation Scan State
 _last_conversation_scan_time: float = 0.0
-_conversation_scan_interval_seconds = 600 # Check frequent conversations
+_conversation_scan_interval_seconds = 1800 # 30 mins (was 10 mins)
 
 # Vision Service State
 _last_visual_audit_time: float = 0.0
-_visual_audit_interval_seconds = 900 # 15 minutes
+_visual_audit_interval_seconds = 3600 # 1 hour (was 15 mins)
 
 # Orchestrator Injection
 _orchestrator = None
@@ -955,9 +952,12 @@ async def _background_loop_async():
         # --- DREAM MODE (Autonomous Deep Simulation - Heavy) ---
         global _last_dream_time, _dream_interval_seconds
         if '_last_dream_time' not in globals(): _last_dream_time = 0.0
-        if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 300 # 5 minutes
+        if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 86400 # 24 hours (Disabled effectively)
 
-        if user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
+        # Check for explicit DREAM_MODE enable via config or env if needed
+        ENABLE_DREAM_MODE = os.environ.get("ENABLE_DREAM_MODE", "False").lower() == "true"
+
+        if ENABLE_DREAM_MODE and user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
             try:
                 # Lazy init Dreamer
