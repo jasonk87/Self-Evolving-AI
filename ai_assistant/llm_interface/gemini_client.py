@@ -17,6 +17,7 @@ from ai_assistant.config import (
     THINKING_SUPPORTED_MODELS,
     VERBOSE_LLM_LOGGING
 )
+from ai_assistant.core.telemetry import telemetry_tracker
 
 THINKING_SYSTEM_INSTRUCTION = "You are a deep thinking AI. You MUST first think through the Logic, Edge cases, and Plan in a <think> block before answering. <think> ... </think>"
 
@@ -155,6 +156,7 @@ def _invoke_raw_gemini_sync(
                  raw_text = candidate["content"]["parts"][0]["text"]
                  if VERBOSE_LLM_LOGGING:
                      print(color_text(f"<<< [Gemini Sync] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
+                 telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task="gemini_sync")
                  return _extract_and_log_thinking(raw_text)
             elif "finishReason" in candidate:
                 reason = candidate['finishReason']
@@ -237,6 +239,7 @@ async def _invoke_raw_gemini_async(
                                 raw_text = candidate["content"]["parts"][0]["text"]
                                 if VERBOSE_LLM_LOGGING:
                                      print(color_text(f"<<< [Gemini Async] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
+                                telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task="gemini_async")
                                 return _extract_and_log_thinking(raw_text)
                             elif "finishReason" in candidate:
                                 reason = candidate['finishReason']
@@ -387,15 +390,30 @@ Instructions: Execute the strategy. Best possible response.
 
 # --- PUBLIC WRAPPERS (Enforcing Split Brain) ---
 
+def invoke_raw_gemini_sync(prompt: str, model_name: str = "gemini-2.0-flash-exp", temperature: float = 0.7, max_tokens: int = 8192) -> str:
+    """Public wrapper for raw sync invocation."""
+    return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens)
+
+async def invoke_raw_gemini_async(prompt: str, model_name: str = "gemini-2.0-flash-exp", temperature: float = 0.7, max_tokens: int = 8192, images: Optional[List[str]] = None) -> str:
+    """Public wrapper for raw async invocation."""
+    return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images)
+
 def invoke_gemini_model(
     prompt: str,
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
-    max_tokens: int = 8192
+    max_tokens: int = 8192,
+    strategy: str = "SPLIT_BRAIN"
 ) -> str:
     """
-    Synchronously invokes Gemini using Split Brain strategy by default.
+    Synchronously invokes Gemini using specified strategy.
+    Strategies:
+      - SPLIT_BRAIN: Default. Thinking -> Execution (2 calls).
+      - RAW: Direct call (1 call).
     """
+    if strategy == "RAW":
+        return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens)
+
     response, _ = invoke_split_brain_sync(prompt, model_name, temperature, max_tokens)
     return response
 
@@ -404,11 +422,18 @@ async def invoke_gemini_model_async(
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
     max_tokens: int = 8192,
-    images: Optional[List[str]] = None
+    images: Optional[List[str]] = None,
+    strategy: str = "SPLIT_BRAIN"
 ) -> str:
     """
-    Asynchronously invokes Gemini using Split Brain strategy by default.
+    Asynchronously invokes Gemini using specified strategy.
+    Strategies:
+      - SPLIT_BRAIN: Default. Thinking -> Execution (2 calls).
+      - RAW: Direct call (1 call).
     """
+    if strategy == "RAW":
+        return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images)
+
     response, _ = await invoke_split_brain_async(
         prompt, model_name, temperature, max_tokens, images
     )

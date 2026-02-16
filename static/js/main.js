@@ -427,4 +427,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Default View
     Layout.openMainView('view-chat', 'Chat');
+
+    // --- Telemetry Polling ---
+    function updateTokenTelemetry() {
+        fetch('/api/telemetry/tokens')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const usage = data.usage;
+                    // Create or update badge in header toolbar
+                    let badge = document.getElementById('token-usage-badge');
+                    if (!badge) {
+                        const toolbar = document.querySelector('.header-toolbar');
+                        if (toolbar) {
+                            badge = document.createElement('div');
+                            badge.id = 'token-usage-badge';
+                            badge.className = 'toolbar-item';
+                            badge.style.fontSize = '12px';
+                            badge.style.padding = '0 10px';
+                            badge.style.display = 'flex';
+                            badge.style.alignItems = 'center';
+                            badge.style.color = 'var(--text-secondary)';
+                            badge.style.borderLeft = '1px solid var(--border-color)';
+                            toolbar.insertBefore(badge, toolbar.firstChild);
+                        }
+                    }
+                    if (badge) {
+                        badge.textContent = `⚡ $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
+                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens}`;
+                    }
+                }
+            })
+            .catch(err => console.error("Telemetry error:", err));
+    }
+
+    // Update every 10 seconds
+    setInterval(updateTokenTelemetry, 10000);
+    updateTokenTelemetry(); // Initial call
 });

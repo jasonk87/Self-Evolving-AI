@@ -44,6 +44,9 @@ from ai_assistant.core.shutdown_manager import shutdown_manager, register_signal
 from routes import api_bp, views_bp, chat, live
 from socket_events import register_socket_events, watch_telemetry
 
+# Import Telemetry Tracker
+from ai_assistant.core.telemetry import telemetry_tracker
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -94,6 +97,14 @@ logging.getLogger("werkzeug").addFilter(filter_polling_logs)
 # Initialize Login Manager (Placeholder)
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+@app.route('/api/telemetry/tokens', methods=['GET'])
+def get_token_usage():
+    """Returns estimated token usage and cost."""
+    return jsonify({
+        "success": True,
+        "usage": telemetry_tracker.get_usage()
+    })
 
 class User(UserMixin):
     def __init__(self, id):
