@@ -1,13 +1,121 @@
 
 from flask import request, jsonify
+from ai_assistant.core.conversational_alerts import execute_alert_action
 from . import api_bp
 import logging
 import app_globals
 from ai_assistant.core.project_manager import find_project
 from ai_assistant.llm_interface.gemini_client import invoke_split_brain_async
 import json
+from ai_assistant.custom_tools.reminder_tool import set_reminder, list_reminders, delete_reminder
 
 logger = logging.getLogger(__name__)
+
+
+def _handle_chat_config_command(session_id, message, images=None):
+    stripped_message = (message or '').strip()
+    managed_settings = app_globals.config_manager.get_all_settings()
+
+    if stripped_message.startswith('/show-config'):
+        parts = stripped_message.split(maxsplit=1)
+        if len(parts) == 1:
+            available_keys = ', '.join(sorted(managed_settings.keys()))
+            response = f"Managed settings: {available_keys}. Use /show-config <KEY> to inspect."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": True, "status_code": 200}
+
+        key = parts[1].strip()
+        if key not in managed_settings:
+            response = f"Unknown setting '{key}'. Use /show-config to list available keys."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        value = managed_settings[key]
+        response = f"{key} = {json.dumps(value) if isinstance(value, (dict, list)) else value}"
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', response)
+        return {"response": response, "success": True, "status_code": 200}
+
+    if stripped_message.startswith('/set-config '):
+        parts = stripped_message.split(maxsplit=2)
+        if len(parts) < 3:
+            response = 'Usage: /set-config <SETTING_KEY> <value>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        key = parts[1].strip()
+        raw_value = parts[2].strip()
+        if key not in managed_settings:
+            response = f"Unknown setting '{key}'. Use /show-config to list available keys."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        try:
+            coerced_value = app_globals.config_manager.coerce_setting_value(key, raw_value)
+        except (TypeError, ValueError) as e:
+            response = f"Failed to parse value for {key}: {e}"
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        updated = app_globals.config_manager.update_setting(key, coerced_value)
+        response = f"Updated {key} to {coerced_value}." if updated else f"Failed to update {key}."
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', response)
+        return {"response": response, "success": bool(updated), "status_code": 200 if updated else 400}
+
+    if stripped_message.startswith('/set-reminder '):
+        payload = stripped_message[len('/set-reminder '):].strip()
+        if '::' not in payload:
+            response = 'Usage: /set-reminder <time> :: <message> (example: /set-reminder in 5 minutes :: stretch)'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        time_str, reminder_message = [segment.strip() for segment in payload.split('::', 1)]
+        if not time_str or not reminder_message:
+            response = 'Usage: /set-reminder <time> :: <message>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        result = set_reminder(reminder_message, time_str)
+        success = not str(result).startswith('Error:')
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": success, "status_code": 200 if success else 400}
+
+    if stripped_message.startswith('/list-reminders'):
+        parts = stripped_message.split(maxsplit=1)
+        status = 'pending'
+        if len(parts) == 2 and parts[1].strip().lower() in {'pending', 'fired', 'all'}:
+            status = parts[1].strip().lower()
+        result = list_reminders(status=status)
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": True, "status_code": 200}
+
+    if stripped_message.startswith('/delete-reminder '):
+        parts = stripped_message.split(maxsplit=1)
+        if len(parts) < 2:
+            response = 'Usage: /delete-reminder <reminder_id>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        reminder_id = parts[1].strip()
+        result = delete_reminder(reminder_id)
+        success = 'deleted' in result.lower()
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": success, "status_code": 200 if success else 404}
+
+    return None
+
 
 # --- Session Management Endpoints ---
 
@@ -138,9 +246,6 @@ def chat():
     from ai_assistant.core.background_service import report_user_activity
     report_user_activity() # Signal user activity
     
-    if not app_globals.orchestrator:
-        return jsonify({"error": "Orchestrator not initialized"}), 500
-
     data = request.json
     message = data.get('message')
     images = data.get('images') # List of base64 strings
@@ -198,11 +303,47 @@ def chat():
 
     full_message = system_context + "\n" + message if system_context else message
 
+    stripped_message = (message or "").strip()
+    if stripped_message.startswith('/task-action '):
+        parts = stripped_message.split(maxsplit=2)
+        if len(parts) < 3:
+            action_response = "Usage: /task-action <task_id> <retry|summarize|pause>"
+            app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+            app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+            return jsonify({"response": action_response, "session_id": session_id, "success": False, "images": []}), 400
+
+        task_id = parts[1].strip()
+        action = parts[2].strip().lower()
+        result = execute_alert_action(task_id, action)
+        action_response = result.get("message") or result.get("error") or "Action processed."
+
+        app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+        app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+
+        return jsonify({
+            "response": action_response,
+            "session_id": session_id,
+            "success": bool(result.get("success")),
+            "images": []
+        }), (200 if result.get("success") else 400)
+
+    config_command_result = _handle_chat_config_command(session_id, message, images=images)
+    if config_command_result:
+        return jsonify({
+            "response": config_command_result["response"],
+            "session_id": session_id,
+            "success": config_command_result["success"],
+            "images": []
+        }), config_command_result["status_code"]
+
     updated_session = app_globals.chat_manager.add_message(session_id, "user", message, images=images)
     if not updated_session:
          updated_session = session_data 
     
     current_history_list = updated_session.get('history', [])
+
+    if not app_globals.orchestrator:
+        return jsonify({"error": "Orchestrator not initialized", "success": False, "session_id": session_id}), 500
     
     try:
         import asyncio
