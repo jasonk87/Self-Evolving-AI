@@ -7,6 +7,64 @@ import { cyrb53, notifyIfHidden } from './utils.js';
 let currentSessionId = null;
 let lastResponseHash = "";
 
+function extractTaskActionCommands(text) {
+    const commandPattern = /\/task-action\s+([^\s`]+)\s+(retry|summarize|pause)/gi;
+    const found = [];
+    let match;
+    while ((match = commandPattern.exec(text || "")) !== null) {
+        const taskId = match[1];
+        const action = match[2].toLowerCase();
+        const command = `/task-action ${taskId} ${action}`;
+        if (!found.find(item => item.command === command)) {
+            found.push({ taskId, action, command });
+        }
+    }
+    return found;
+}
+
+function parseActionFromCommand(command) {
+    const parts = (command || '').trim().split(/\s+/);
+    return parts.length >= 3 ? parts[2].toLowerCase() : '';
+}
+
+function confirmTaskActionFromChip(command, onConfirm) {
+    const action = parseActionFromCommand(command);
+    if (action === 'pause') {
+        showModal(
+            'Pause Autonomous Retries',
+            'This will pause autonomous retries for the mission. You can resume by issuing a retry action later.',
+            onConfirm,
+            false,
+            true,
+            'Pause Auto'
+        );
+        return;
+    }
+    onConfirm();
+}
+
+async function runTaskActionFromChip(command, container) {
+    appendMessage(container, 'user', command);
+    showTypingIndicator(container, 'Applying action...');
+
+    try {
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: command,
+                session_id: currentSessionId
+            })
+        });
+        const data = await res.json();
+        removeTypingIndicator();
+        appendMessage(container, 'assistant', data.response || data.error || 'Action processed.');
+    } catch (e) {
+        removeTypingIndicator();
+        appendMessage(container, 'assistant', `Failed to run action: ${e.message}`);
+    }
+}
+
 export function getCurrentSessionId() {
     return currentSessionId;
 }
@@ -128,8 +186,20 @@ export function appendMessage(container, role, text, images = null) {
         }
     });
 
-    msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${imagesHtml}${finalHtml}</div>`;
+    const actionCommands = role === 'assistant' ? extractTaskActionCommands(text) : [];
+    const actionChipsHtml = actionCommands.length > 0
+        ? `<div class="task-action-chips">${actionCommands.map(item => `<button class="task-action-chip" data-command="${escapeHtml(item.command)}">${item.action.toUpperCase()} · ${escapeHtml(item.taskId.slice(0, 8))}</button>`).join('')}</div>`
+        : '';
+
+    msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${imagesHtml}${finalHtml}${actionChipsHtml}</div>`;
     container.appendChild(msgDiv);
+
+    if (actionCommands.length > 0) {
+        msgDiv.querySelectorAll('.task-action-chip').forEach(btn => {
+            btn.addEventListener('click', () => confirmTaskActionFromChip(btn.dataset.command, () => runTaskActionFromChip(btn.dataset.command, container)));
+        });
+    }
+
     container.scrollTop = container.scrollHeight;
 }
 

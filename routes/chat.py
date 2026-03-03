@@ -1,5 +1,6 @@
 
 from flask import request, jsonify
+from ai_assistant.core.conversational_alerts import execute_alert_action
 from . import api_bp
 import logging
 import app_globals
@@ -138,9 +139,6 @@ def chat():
     from ai_assistant.core.background_service import report_user_activity
     report_user_activity() # Signal user activity
     
-    if not app_globals.orchestrator:
-        return jsonify({"error": "Orchestrator not initialized"}), 500
-
     data = request.json
     message = data.get('message')
     images = data.get('images') # List of base64 strings
@@ -198,11 +196,38 @@ def chat():
 
     full_message = system_context + "\n" + message if system_context else message
 
+    stripped_message = (message or "").strip()
+    if stripped_message.startswith('/task-action '):
+        parts = stripped_message.split(maxsplit=2)
+        if len(parts) < 3:
+            action_response = "Usage: /task-action <task_id> <retry|summarize|pause>"
+            app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+            app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+            return jsonify({"response": action_response, "session_id": session_id, "success": False, "images": []}), 400
+
+        task_id = parts[1].strip()
+        action = parts[2].strip().lower()
+        result = execute_alert_action(task_id, action)
+        action_response = result.get("message") or result.get("error") or "Action processed."
+
+        app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+        app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+
+        return jsonify({
+            "response": action_response,
+            "session_id": session_id,
+            "success": bool(result.get("success")),
+            "images": []
+        }), (200 if result.get("success") else 400)
+
     updated_session = app_globals.chat_manager.add_message(session_id, "user", message, images=images)
     if not updated_session:
          updated_session = session_data 
     
     current_history_list = updated_session.get('history', [])
+
+    if not app_globals.orchestrator:
+        return jsonify({"error": "Orchestrator not initialized", "success": False, "session_id": session_id}), 500
     
     try:
         import asyncio

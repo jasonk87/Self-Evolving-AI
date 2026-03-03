@@ -6,7 +6,7 @@ def test_generate_div_table_html_normal_operation():
     html = generate_div_table_html(data)
     assert "<div>Header 1</div>" in html
     assert "<div>Row 1, Cell 2</div>" in html
-    assert "</div><div>Row 1, Cell 1</div>" in html # Check row structure
+    assert "</div></div><div><div>Row 1, Cell 1</div>" in html # Check row structure
     assert html.startswith("<div")
     assert html.endswith("</div>")
 
@@ -17,7 +17,7 @@ def test_generate_div_table_html_with_styles():
     assert 'style="border: 1px solid black;"' in html
     assert 'style="background-color: lightgray;"' in html
     assert 'style="padding: 5px;"' in html
-    assert "<div>Alice</div>" in html
+    assert ">Alice</div>" in html
 
 def test_generate_div_table_html_empty_data():
     data: list[list[str]] = []

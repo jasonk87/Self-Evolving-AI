@@ -2,7 +2,8 @@
 
 # Default model to be used by the Ollama client if no specific model is requested for a task.
 # Options: "gemini", "ollama"
-from dotenv import load_dotenv
+import importlib
+import importlib.util
 import os
 
 LLM_PROVIDER = "gemini" 
@@ -11,8 +12,38 @@ DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
-load_dotenv(env_path)
+
+def _load_env_file(path: str) -> None:
+    """Load environment values from a .env file when python-dotenv is available."""
+    dotenv_spec = importlib.util.find_spec("dotenv")
+    if dotenv_spec is None:
+        return
+
+    dotenv_module = importlib.import_module("dotenv")
+    load_dotenv = getattr(dotenv_module, "load_dotenv", None)
+    if callable(load_dotenv):
+        load_dotenv(path)
+
+_load_env_file(env_path)
 from typing import Optional, Dict, List
+
+# Runtime environment profile
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV in {"prod", "production"}
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    """Parse boolean-like environment flags with a safe default."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
 
 def _get_api_key() -> str:
     """Retrieves the Google API Key from config or environment."""
@@ -122,10 +153,10 @@ AUTO_APPROVE_DELAY_SECONDS = 600
 CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP = False # Default to False to preserve data
 
 # Debug mode flag (set in config file)
-DEBUG_MODE = True
+DEBUG_MODE = _env_flag("DEBUG_MODE", default=not IS_PRODUCTION)
 
 # Verbose Logging for LLM (Prints full prompts and responses to console)
-VERBOSE_LLM_LOGGING = True
+VERBOSE_LLM_LOGGING = _env_flag("VERBOSE_LLM_LOGGING", default=not IS_PRODUCTION)
 
 # --- Google Custom Search API Configuration ---
 # IMPORTANT: For security, it is recommended to set your GOOGLE_API_KEY and
@@ -138,11 +169,10 @@ VERBOSE_LLM_LOGGING = True
 # Load Google API Key from environment variable GOOGLE_API_KEY
 GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 # Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
-# Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 
 # --- ElevenLabs TTS Configuration ---
-ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY', 'sk_d9e48139e28969d63940d026c8a62013f956fe764d64a94c') # User provided key
+ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY')
 ELEVENLABS_VOICE_ID = "vGWWh1bodhwwi4yHd6qZ" # Marcus (Deep, Authoritative) - Morgan Freeman style approximation
 ELEVENLABS_MODEL_ID = "eleven_turbo_v2" # Low latency model
 MW_TTS_ENABLED = True
@@ -160,6 +190,9 @@ GLOBAL_RATE_LIMITER = 10
 SAFE_MODE = True
 # Key for Flask Session Security (Should be loaded from .env)
 SECRET_KEY = os.environ.get('SECRET_KEY', 'default-insecure-secret-change-in-prod')
+
+if IS_PRODUCTION and SECRET_KEY == 'default-insecure-secret-change-in-prod':
+    raise RuntimeError('SECRET_KEY must be set to a secure value when APP_ENV is production.')
 
 
 
