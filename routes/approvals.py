@@ -6,9 +6,21 @@ import app_globals
 from ai_assistant.core.approval_manager import approval_manager
 from ai_assistant.learning.learning import ActionableInsight, InsightType
 from ai_assistant.core.task_manager import ActiveTaskStatus
+from ai_assistant.core.status_reporting import get_status_snapshot
+from ai_assistant.core.conversational_alerts import execute_alert_action
 from dataclasses import asdict
+from datetime import datetime, timezone
+import importlib.util
 
 logger = logging.getLogger(__name__)
+
+
+
+def _is_optional_dependency_available(module_name: str) -> bool:
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except Exception:
+        return False
 
 def serialize_approval_data(data):
     if isinstance(data, ActionableInsight):
@@ -18,6 +30,86 @@ def serialize_approval_data(data):
     return data # Fallback
 
 # --- Mission Control Endpoints ---
+
+@api_bp.route('/status/snapshot', methods=['GET'])
+def mission_control_status_snapshot():
+    """Returns a structured Mission Control status snapshot."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        active_tasks = app_globals.orchestrator.task_manager.list_active_tasks()
+        snapshot = get_status_snapshot(active_tasks_count=len(active_tasks))
+        generated_at = datetime.now(timezone.utc)
+        return jsonify({
+            "success": True,
+            "schema_version": 1,
+            "generated_at": generated_at.isoformat(),
+            "generated_at_ms": int(generated_at.timestamp() * 1000),
+            "snapshot": snapshot,
+        })
+    except Exception as e:
+        logger.error(f"Error generating status snapshot: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+
+
+
+@api_bp.route('/status/health-audit', methods=['GET'])
+def mission_control_health_audit():
+    """Returns a lightweight operational health audit for Mission Control."""
+    optional_dependencies = {
+        "playwright": _is_optional_dependency_available('playwright'),
+        "chromadb": _is_optional_dependency_available('chromadb'),
+        "pyaudio": _is_optional_dependency_available('pyaudio'),
+    }
+
+    generated_at = datetime.now(timezone.utc)
+
+    checks = [
+        {
+            "key": "orchestrator",
+            "label": "Core Orchestrator",
+            "ok": bool(app_globals.orchestrator),
+            "details": "Initialized" if app_globals.orchestrator else "Not initialized",
+        },
+        {
+            "key": "chat_manager",
+            "label": "Chat Manager",
+            "ok": bool(app_globals.chat_manager),
+            "details": "Available" if app_globals.chat_manager else "Unavailable",
+        },
+        {
+            "key": "playwright",
+            "label": "Vision/Browser Automation",
+            "ok": optional_dependencies["playwright"],
+            "details": "Installed" if optional_dependencies["playwright"] else "Missing optional dependency 'playwright'",
+        },
+        {
+            "key": "chromadb",
+            "label": "Vector Memory (ChromaDB)",
+            "ok": optional_dependencies["chromadb"],
+            "details": "Installed" if optional_dependencies["chromadb"] else "Missing optional dependency 'chromadb'",
+        },
+        {
+            "key": "pyaudio",
+            "label": "Live Mode Audio",
+            "ok": optional_dependencies["pyaudio"],
+            "details": "Installed" if optional_dependencies["pyaudio"] else "Missing optional dependency 'pyaudio'",
+        },
+    ]
+
+    return jsonify({
+        "success": True,
+        "schema_version": 1,
+        "health": {
+            "healthy": all(item["ok"] for item in checks),
+            "checks": checks,
+            "failing_count": sum(1 for item in checks if not item["ok"]),
+            "generated_at": generated_at.isoformat(),
+            "generated_at_ms": int(generated_at.timestamp() * 1000),
+        }
+    })
 
 @api_bp.route('/tasks', methods=['GET'])
 def list_active_tasks():
@@ -32,6 +124,18 @@ def list_active_tasks():
     except Exception as e:
         logger.error(f"Error listing active tasks: {e}")
         return jsonify({"error": str(e), "success": False}), 500
+
+
+
+@api_bp.route('/tasks/<task_id>/assistant-action', methods=['POST'])
+def task_assistant_action(task_id):
+    """Executes a conversationally suggested action for a failed task."""
+    data = request.json or {}
+    action = data.get('action', '')
+
+    result = execute_alert_action(task_id, action)
+    status_code = 200 if result.get('success') else 400
+    return jsonify(result), status_code
 
 @api_bp.route('/tasks/<task_id>/stop', methods=['POST'])
 def stop_task(task_id):
