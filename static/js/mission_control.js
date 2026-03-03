@@ -8,6 +8,7 @@ const missionControl = {
     board: document.getElementById('mission-control-board'),
     statusPanel: document.getElementById('mission-control-status'),
     healthPanel: document.getElementById('mission-control-health'),
+    cadencePanel: document.getElementById('mission-control-cadence'),
     refreshBtn: document.getElementById('refresh-tasks-btn'),
     statusPollIntervalMs: 8000,
     staleAfterMs: 20000,
@@ -21,6 +22,7 @@ const missionControl = {
         this.fetchTasks();
         this.fetchStatusSnapshot();
         this.fetchHealthAudit();
+        this.fetchBackgroundCadence();
         this.startStatusPolling();
 
         if (this.refreshBtn) {
@@ -28,6 +30,7 @@ const missionControl = {
                 this.fetchTasks();
                 this.fetchStatusSnapshot();
                 this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
             });
         }
 
@@ -38,6 +41,7 @@ const missionControl = {
                 this.startStatusPolling();
                 this.fetchStatusSnapshot();
                 this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
             }
         });
 
@@ -47,6 +51,7 @@ const missionControl = {
                 this.handleTaskUpdate(taskData);
                 this.fetchStatusSnapshot();
                 this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
             });
         }
     },
@@ -64,6 +69,7 @@ const missionControl = {
             if (document.hidden || !this.isMissionControlActive()) return;
             this.fetchStatusSnapshot();
             this.fetchHealthAudit();
+            this.fetchBackgroundCadence();
         }, this.statusPollIntervalMs);
 
         this.staleCheckTimer = setInterval(() => {
@@ -137,6 +143,36 @@ const missionControl = {
         } catch (e) {
             console.error('Fetch health audit error:', e);
             this.healthPanel.innerHTML = `<div class="error">Health audit link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+
+    fetchBackgroundCadence: async function () {
+        if (!this.cadencePanel) return;
+
+        try {
+            const response = await fetch('/api/status/background-cadence');
+            const data = await response.json();
+            if (!data.success) {
+                this.cadencePanel.innerHTML = `<div class="error">Cadence unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            const cadence = data.cadence || {};
+            this.cadencePanel.innerHTML = `
+                <div class="mission-status-header-row">
+                    <div class="mission-status-header">Background Cadence</div>
+                    <div class="mission-status-freshness">Runtime Tunable</div>
+                </div>
+                <div class="mission-kv-grid">
+                    <div class="mission-kv-item"><span>Dream Mode</span><strong>${cadence.dream_mode_enabled ? 'On' : 'Off'}</strong></div>
+                    <div class="mission-kv-item"><span>Dream Interval</span><strong>${cadence.dream_interval_seconds || 0}s</strong></div>
+                    <div class="mission-kv-item"><span>Reminder Poll</span><strong>${cadence.reminder_check_interval_seconds || 0}s</strong></div>
+                    <div class="mission-kv-item"><span>Auto Web PiP</span><strong>${cadence.auto_web_pip ? 'On' : 'Off'}</strong></div>
+                </div>
+            `;
+        } catch (e) {
+            this.cadencePanel.innerHTML = `<div class="error">Cadence link failure: ${this.escapeHtml(e.message)}</div>`;
         }
     },
 
@@ -370,6 +406,7 @@ const missionControl = {
                 this.fetchTasks();
                 this.fetchStatusSnapshot();
                 this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
             } else {
                 alert(data.error || `Action '${action}' failed.`);
             }

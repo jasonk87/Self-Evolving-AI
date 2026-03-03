@@ -8,6 +8,7 @@ from ai_assistant.learning.learning import ActionableInsight, InsightType
 from ai_assistant.core.task_manager import ActiveTaskStatus
 from ai_assistant.core.status_reporting import get_status_snapshot
 from ai_assistant.core.conversational_alerts import execute_alert_action
+from ai_assistant.core.background_service import get_service_status
 from dataclasses import asdict
 from datetime import datetime, timezone
 import importlib.util
@@ -109,6 +110,33 @@ def mission_control_health_audit():
             "generated_at": generated_at.isoformat(),
             "generated_at_ms": int(generated_at.timestamp() * 1000),
         }
+    })
+
+
+@api_bp.route('/status/background-cadence', methods=['GET'])
+def mission_control_background_cadence():
+    """Returns runtime cadence controls and recent scheduler activity."""
+    settings = app_globals.config_manager.get_all_settings() if app_globals.config_manager else {}
+    service_status = get_service_status()
+
+    cadence = {
+        "dream_mode_enabled": bool(settings.get("ENABLE_DREAM_MODE", False)),
+        "dream_interval_seconds": int(settings.get("DREAM_INTERVAL_SECONDS", 86400)),
+        "reminder_check_interval_seconds": int(settings.get("REMINDER_CHECK_INTERVAL_SECONDS", 10)),
+        "auto_web_pip": bool(settings.get("AUTO_WEB_PIP", True)),
+    }
+
+    recent = {
+        "last_dream_timestamp": service_status.get("last_dream_timestamp", 0),
+        "last_visual_audit_timestamp": service_status.get("last_visual_audit_timestamp", 0),
+        "last_self_healing_timestamp": service_status.get("last_self_healing_timestamp", 0),
+    }
+
+    return jsonify({
+        "success": True,
+        "schema_version": 1,
+        "cadence": cadence,
+        "recent": recent,
     })
 
 @api_bp.route('/tasks', methods=['GET'])
