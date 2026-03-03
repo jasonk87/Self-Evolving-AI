@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Layout Repro</title>
+    <style>
+        /* Extract relevant CSS from style.css */
+        :root {
+            --glass-bg: rgba(20, 20, 25, 0.65);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+            --text-primary: #f0f6fc;
+            --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+            --accent-cyan: #00e5ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #050505;
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .app-layout {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .activity-bar {
+            width: 60px;
+            background: #111;
+            border-right: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        .sidebar-panel {
+            width: 320px;
+            background: #222;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            /* My previous fix */
+        }
+
+        .main-stage {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-width: 0;
+            /* My previous fix */
+        }
+
+        .view-container {
+            display: flex;
+            flex: 1;
+            height: 100%;
+            flex-direction: column;
+            min-width: 0;
+            /* My previous fix */
+        }
+
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            /* overflow-x: hidden; -- REMOVED in last step, simulating current state */
+        }
+
+        .message {
+            display: flex;
+            gap: 15px;
+        }
+
+        .message .content {
+            background: rgba(30, 35, 45, 0.7);
+            border: 1px solid #444;
+            padding: 14px 18px;
+            border-radius: 0px 12px 12px 12px;
+            max-width: 85%;
+            line-height: 1.6;
+
+            /* Nuclear Option */
+            white-space: pre-line;
+            /* Collapse spaces, wrap on newlines. Safer. */
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+            /* aggressive breaking */
+            max-width: 100%;
+            /* Previous "redundant" rule I likely left in or removed? Repro should match file. */
+        }
+
+        /* Test Content Styles */
+        .long-text {
+            color: yellow;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-layout">
+        <div class="activity-bar">Bar</div>
+        <div class="sidebar-panel">Sidebar (Width 320px)</div>
+        <div class="main-stage">
+            <div class="view-container">
+                <div id="chat-container">
+                    <div class="message">
+                        <div class="content">
+                            Short message works fine.
+                        </div>
+                    </div>
+                    <div class="message">
+                        <div class="content">
+                            <span class="long-text">
+                                ThisIsAVeryLongStringThatShouldWrapButMightNotIfStylesAreBrokenAndItShouldDefinitelyNotCutOffAtTheEdgeOfTheBoxRight?LetUsSeeWhatHappensWhenWeHaveTypicallyLongURLsOrStackTracesLike
+                                Error: Exception in thread "main" java.lang.RuntimeException: Something went wrong
+                                at com.example.MyClass.method(MyClass.java:123)
+                                at com.example.MyClass.method(MyClass.java:123)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

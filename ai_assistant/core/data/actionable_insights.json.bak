@@ -1,0 +1,1759 @@
+[
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'can you create a tool that will take a project's name and output a project's directory? this will come into use later when modifying projects'. Error: ToolExecutionError - Error during execution of tool 'generate_new_tool_from_description': generate_new_tool_from_description() missing 1 required positional argument: 'tool_description'. The failure occurred at the step involving tool 'generate_new_tool_from_description'.",
+        "source_reflection_entry_ids": [
+            "bcf7ee83-0a7a-4df6-8212-403e2b85e26d"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_08fe0039",
+        "related_tool_name": "generate_new_tool_from_description",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-06-06T23:25:59.392851+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "bcf7ee83-0a7a-4df6-8212-403e2b85e26d",
+            "self_healing_start": "2025-12-11T10:17:04.690346+00:00",
+            "self_healing_end": "2025-12-11T10:17:04.740780+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Implement robust input validation and error handling in the 'recall_facts' tool to prevent TypeErrors, specifically the ''dict' object has no attribute 'lower'' error. This suggests that the tool is receiving input that it is not expecting (likely a dictionary instead of a string).",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_BUG_SUSPECTED_3f246c70",
+        "related_tool_name": "recall_facts",
+        "suggested_code_change": "def recall_facts(query: str) -> list:\n    \"\"\"Retrieves a list of learned facts from the curated fact store.\"\"\"\n    if not isinstance(query, str):\n        return [f\"Error: Input must be a string. Received type: {type(query)}\"]\n    try:\n        # Assuming fact_store is accessible here\n        facts = fact_store.get_facts(query)\n        return facts\n    except Exception as e:\n        return [f\"Error retrieving facts: {e}\"]",
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-12T09:26:30.664669+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_001",
+            "action_type_from_reflection": "MODIFY_TOOL_CODE",
+            "module_path": "agent.tools.fact_retrieval",
+            "function_name": "recall_facts",
+            "reviewer_confidence": 0.9,
+            "self_healing_start": "2025-12-12T09:28:39.357158+00:00",
+            "self_healing_end": "2025-12-12T09:28:47.187187+00:00"
+        }
+    },
+    {
+        "type": "TOOL_ENHANCEMENT_SUGGESTED",
+        "description": "Investigate and improve the reliability of the 'generate_new_tool_from_description' tool, particularly its ability to generate simple mathematical tools. The error 'CODESERVICE_GEN_FAILED_ERROR_LLM_NO_CODE' indicates a failure in code generation, possibly due to prompt engineering issues or limitations in the code generation service itself. Consider refining the prompts used to guide code generation for simple mathematical functions or exploring alternative code generation services.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_ENHANCEMENT_SUGGESTED_c7540944",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "APPROVED_BY_USER",
+        "creation_timestamp": "2025-12-12T09:26:30.664720+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_002",
+            "action_type_from_reflection": "MANUAL_REVIEW_NEEDED",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.8
+        }
+    },
+    {
+        "type": "NEW_TOOL_SUGGESTED",
+        "description": "Given the recurring failures related to reminder functionality when using 'recall_facts', consider creating a dedicated 'get_reminder' tool that specifically handles reminder retrieval. This tool can be optimized for reminder-specific queries and include robust error handling. It could also improve the accuracy of the response.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "NEW_TOOL_SUGGESTED_54eae8db",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": "A Python function that retrieves reminder information based on a query. The query should be able to search for reminders by keyword, time, or date. Returns a list of reminder objects containing the reminder text and scheduled time.",
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-12T09:26:30.664741+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_003",
+            "action_type_from_reflection": "CREATE_NEW_TOOL",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.8
+        }
+    },
+    {
+        "type": "NEW_TOOL_SUGGESTED",
+        "description": "Improve tool discovery by creating a dedicated 'list_tools' tool that provides a comprehensive and well-formatted list of available tools and their descriptions. This addresses the user's difficulty in discovering available tools and can be enhanced by adding functionality to filter by keyword or category.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "NEW_TOOL_SUGGESTED_4ff28729",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": "A Python function that returns a formatted list of all available tools, including their names and descriptions. Optionally, it can accept a keyword to filter the list by tools related to that keyword. The output should be easily readable by a user.",
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-12T09:26:30.664756+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_004",
+            "action_type_from_reflection": "CREATE_NEW_TOOL",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.85
+        }
+    },
+    {
+        "type": "TOOL_ENHANCEMENT_SUGGESTED",
+        "description": "Refine the planning logic to minimize the use of 'request_user_clarification' when the user mentions the 'scheduler' tool. Investigate the common queries related to the scheduler and adjust the planning to anticipate the user's needs more effectively. This might involve creating a more specific tool related to scheduling.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_ENHANCEMENT_SUGGESTED_b40a063e",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-12T09:26:30.664768+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_005",
+            "action_type_from_reflection": "CHANGE_PLANNING_LOGIC",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.8
+        }
+    },
+    {
+        "type": "TOOL_ENHANCEMENT_SUGGESTED",
+        "description": "The 'INEFFECTIVE_ATTEMPTS_TO_FIX_ERRORS' pattern indicates a fundamental problem with the error handling and debugging process. The repeated read/write attempts without diagnosing the root cause suggest a lack of proper debugging tools or a flawed problem-solving strategy. Implement more effective debugging techniques, such as using a debugger or logging detailed error information, or escalate these types of errors to a human developer.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_ENHANCEMENT_SUGGESTED_4733a24a",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "APPROVED_BY_USER",
+        "creation_timestamp": "2025-12-12T09:26:30.664780+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_006",
+            "action_type_from_reflection": "MANUAL_REVIEW_NEEDED",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.85
+        }
+    },
+    {
+        "type": "TOOL_ENHANCEMENT_SUGGESTED",
+        "description": "Update the tool description of 'get_current_time' to clarify that it returns the current date and time, and that the AI does not automatically know the current time without calling this tool.",
+        "source_reflection_entry_ids": [],
+        "insight_id": "TOOL_ENHANCEMENT_SUGGESTED_d3634125",
+        "related_tool_name": "get_current_time",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "APPROVED_BY_USER",
+        "creation_timestamp": "2025-12-12T09:41:27.269597+00:00",
+        "metadata": {
+            "source_suggestion_id": "SUG_007",
+            "action_type_from_reflection": "UPDATE_TOOL_DESCRIPTION",
+            "module_path": null,
+            "function_name": null,
+            "reviewer_confidence": 0.9
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'you can figure that out on your own'. Error: ToolExecutionError - Error during execution of tool 'schedule_reminder': schedule_reminder() got an unexpected keyword argument 'time'. The failure occurred at the step involving tool 'schedule_reminder'.",
+        "source_reflection_entry_ids": [
+            "8a4addc6-2ef9-48c3-b59e-60bfc3ac979c"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_c2cc48e4",
+        "related_tool_name": "schedule_reminder",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T11:52:54.809304+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "8a4addc6-2ef9-48c3-b59e-60bfc3ac979c",
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "schedule_reminder",
+            "self_healing_start": "2025-12-13T12:14:45.360439+00:00",
+            "self_healing_end": "2025-12-13T12:14:58.364749+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'you can figure that out on your own' (Error: ToolExecutionError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "aee70468-1a84-4651-baf2-1b6f62e88b0e"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_b2d933cf",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T11:53:07.531120+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "aee70468-1a84-4651-baf2-1b6f62e88b0e"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'What is the weather in my area'. Error: ToolExecutionError - Error during execution of tool 'get_weather': get_weather() missing 1 required positional argument: 'api_key'. The failure occurred at the step involving tool 'get_weather'.",
+        "source_reflection_entry_ids": [
+            "1124f116-9d25-45b7-9da6-96e031128688"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_39d6cf1a",
+        "related_tool_name": "get_weather",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T14:39:29.534229+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "1124f116-9d25-45b7-9da6-96e031128688",
+            "module_path": "ai_assistant.custom_tools.generated",
+            "function_name": "get_weather"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'What is the weather in my area'. Error: ToolExecutionError - Error during execution of tool 'process_search_results': process_search_results() missing 1 required positional argument: 'search_results_json'. The failure occurred at the step involving tool 'process_search_results'.",
+        "source_reflection_entry_ids": [
+            "4a0aef1c-236c-4409-83bd-d38bbb16fb39"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_c680245f",
+        "related_tool_name": "process_search_results",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T14:39:44.934052+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "4a0aef1c-236c-4409-83bd-d38bbb16fb39",
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "process_search_results",
+            "self_healing_start": "2025-12-13T15:28:19.242954+00:00",
+            "self_healing_end": "2025-12-13T15:28:36.183598+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'Why couldn't you find the weather? What went wrong'. Error: ToolExecutionError - Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'. The failure occurred at the step involving tool 'recall_facts'.",
+        "source_reflection_entry_ids": [
+            "b371fc33-95bd-4176-93dc-fa99fbf37c9b"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_7f2489ab",
+        "related_tool_name": "recall_facts",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T14:40:40.615092+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "b371fc33-95bd-4176-93dc-fa99fbf37c9b",
+            "module_path": "ai_assistant.custom_tools.knowledge_tools",
+            "function_name": "recall_facts"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'Why couldn't you find the weather? What went wrong'. Error: ToolExecutionError - Error during execution of tool 'process_search_results': process_search_results() got an unexpected keyword argument 'instruction'. The failure occurred at the step involving tool 'process_search_results'.",
+        "source_reflection_entry_ids": [
+            "fd0661a1-c7ca-4815-ada9-c954a9ecf0a7"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_f55ab6db",
+        "related_tool_name": "process_search_results",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T14:40:55.160920+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "fd0661a1-c7ca-4815-ada9-c954a9ecf0a7",
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "process_search_results"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'my actual api key for it is c3d2863a235c377bf7f79508adc53a6c' (Error: ToolExecutionError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "8d2241f5-50ff-47c1-82b6-160c7cfb6360"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_bcd35cb2",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T14:50:49.507912+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "8d2241f5-50ff-47c1-82b6-160c7cfb6360"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'try again'. Error: ToolExecutionError - Error during execution of tool 'echo_message': echo_message() got an unexpected keyword argument 'num_times'. The failure occurred at the step involving tool 'echo_message'.",
+        "source_reflection_entry_ids": [
+            "10e99f5a-86fb-4c48-85f1-f587988cfe38"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_4258066c",
+        "related_tool_name": "echo_message",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T15:59:04.251034+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "10e99f5a-86fb-4c48-85f1-f587988cfe38",
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "echo_message"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'Look back. At what I said I specifically said the word tool'. Error: ToolExecutionError - Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'. The failure occurred at the step involving tool 'recall_facts'.",
+        "source_reflection_entry_ids": [
+            "86f29822-f4df-449f-945e-69ba98f582ae"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_1d6df1ed",
+        "related_tool_name": "recall_facts",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T16:05:56.544357+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "86f29822-f4df-449f-945e-69ba98f582ae",
+            "module_path": "ai_assistant.custom_tools.knowledge_tools",
+            "function_name": "recall_facts",
+            "self_healing_start": "2025-12-13T16:09:47.580270+00:00",
+            "self_healing_end": "2025-12-13T16:09:55.286904+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'Look back. At what I said I specifically said the word tool'. Error: ToolExecutionError - Error during execution of tool 'process_search_results': process_search_results() missing 1 required positional argument: 'search_results_json'. The failure occurred at the step involving tool 'process_search_results'.",
+        "source_reflection_entry_ids": [
+            "2800495a-1aa6-4480-b9c2-beb9ee2eee63"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_eaf9ce4d",
+        "related_tool_name": "process_search_results",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T16:06:12.336201+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "2800495a-1aa6-4480-b9c2-beb9ee2eee63",
+            "module_path": "ai_assistant.custom_tools.my_extra_tools",
+            "function_name": "process_search_results",
+            "self_healing_start": "2025-12-13T16:08:35.131866+00:00",
+            "self_healing_end": "2025-12-13T16:08:57.707898+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'can you see if it needs a api key>' (Error: ToolExecutionError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "fb780329-8865-4ea2-b8ee-5bd1951bef5f"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_6559ea0f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T16:13:38.737539+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "fb780329-8865-4ea2-b8ee-5bd1951bef5f"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'One that you created. Just look the shit up and see if you got access to the tool or not'. Error: ToolExecutionError - Error during execution of tool 'recall_facts': 'dict' object has no attribute 'lower'. The failure occurred at the step involving tool 'recall_facts'.",
+        "source_reflection_entry_ids": [
+            "27c89059-a0c8-4fd3-ba2d-02352bb64d8b"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_5bf6d3d4",
+        "related_tool_name": "recall_facts",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T16:27:35.681132+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "27c89059-a0c8-4fd3-ba2d-02352bb64d8b",
+            "module_path": "ai_assistant.custom_tools.knowledge_tools",
+            "function_name": "recall_facts",
+            "self_healing_start": "2025-12-13T16:28:22.879790+00:00",
+            "self_healing_end": "2025-12-13T16:29:14.877951+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'One that you created. Just look the shit up and see if you got access to the tool or not' (Error: ToolExecutionError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "a40ed894-133e-4120-8305-1f65bea45b78"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_e2f0396d",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "REJECTED_BY_USER",
+        "creation_timestamp": "2025-12-13T16:27:49.854623+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "a40ed894-133e-4120-8305-1f65bea45b78"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'Well, anything you want?'. Error: ToolExecutionError - Error during execution of tool 'request_user_clarification': request_user_clarification() takes from 1 to 2 positional arguments but 3 were given. The failure occurred at the step involving tool 'request_user_clarification'.",
+        "source_reflection_entry_ids": [
+            "3fc58ad6-614d-4565-a19b-0c3a6170cc0f"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_60aa56ac",
+        "related_tool_name": "request_user_clarification",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-13T16:39:50.089800+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "3fc58ad6-614d-4565-a19b-0c3a6170cc0f",
+            "module_path": "ai_assistant.custom_tools.conversational_tools",
+            "function_name": "request_user_clarification",
+            "self_healing_start": "2025-12-13T16:42:24.604673+00:00",
+            "self_healing_end": "2025-12-13T16:43:26.090531+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "A failure occurred for goal 'Well if they failed let's work on them and see if we can't get them fixed' (Error: ToolReportedError) but could not be attributed to a specific tool in the plan. Manual review might be needed.",
+        "source_reflection_entry_ids": [
+            "2b751479-c353-4b35-85f0-f05501fb4c81"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_2668344c",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 4,
+        "status": "SELF_HEALING_SKIPPED_NO_TOOL",
+        "creation_timestamp": "2025-12-13T18:50:13.993957+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "2b751479-c353-4b35-85f0-f05501fb4c81",
+            "self_healing_skip_reason": "No related_tool_name"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'why the hell can't you calculate that or make the tool do that?'. Error: ToolExecutionError - Error during execution of tool 'request_user_clarification': request_user_clarification() takes from 1 to 2 positional arguments but 3 were given. The failure occurred at the step involving tool 'request_user_clarification'.",
+        "source_reflection_entry_ids": [
+            "f9b1b438-a82c-4920-83bb-af19e5ca100e"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_5d6ec572",
+        "related_tool_name": "request_user_clarification",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-14T00:41:52.864425+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "f9b1b438-a82c-4920-83bb-af19e5ca100e",
+            "module_path": "ai_assistant.custom_tools.conversational_tools",
+            "function_name": "request_user_clarification",
+            "self_healing_start": "2025-12-14T00:42:30.103469+00:00",
+            "self_healing_end": "2025-12-14T00:42:38.706578+00:00"
+        }
+    },
+    {
+        "type": "TOOL_BUG_SUSPECTED",
+        "description": "Tool execution failed or partially failed for goal 'why the hell can't you calculate that or make the tool do that?'. Error: ToolExecutionError - Error during execution of tool 'generate_new_tool_from_description': generate_new_tool_from_description() got an unexpected keyword argument 'description'. The failure occurred at the step involving tool 'generate_new_tool_from_description'.",
+        "source_reflection_entry_ids": [
+            "eee52c3f-0237-4e3e-83a7-b993e1336aaa"
+        ],
+        "insight_id": "TOOL_BUG_SUSPECTED_5326f9bc",
+        "related_tool_name": "generate_new_tool_from_description",
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "SELF_HEALING_FAILED",
+        "creation_timestamp": "2025-12-14T00:42:00.126798+00:00",
+        "metadata": {
+            "original_reflection_entry_ref_id": "eee52c3f-0237-4e3e-83a7-b993e1336aaa",
+            "module_path": "ai_assistant.custom_tools.meta_programming_tools",
+            "function_name": "generate_new_tool_from_description",
+            "self_healing_start": "2025-12-14T00:43:14.651427+00:00",
+            "self_healing_end": "2025-12-14T00:43:33.338452+00:00"
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "User is frustrated that the AI cannot handle relative time inputs for reminders and instead requires a specific HH:MM format. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_ef556b1e",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Prioritize fixing the error in creating the tool for relative time input calculation. Alternatively, modify the existing reminder tool to accept relative time inputs and internally convert them to HH:MM format."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:48.520978+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the error in creating the tool for relative time input calculation. Alternatively, modify the existing reminder tool to accept relative time inputs and internally convert them to HH:MM format."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the ability to interpret relative time inputs (e.g., \"in two minutes\") and convert them to a specific time format. (Evidence: ASSISTANT: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_ebc9e5fe",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop or integrate a tool that can parse and convert relative time expressions into specific time formats (HH:MM). This could involve natural language processing and time calculation capabilities.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:48.520978+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Develop or integrate a tool that can parse and convert relative time expressions into specific time formats (HH:MM). This could involve natural language processing and time calculation capabilities."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should prioritize using existing tools and modifying them before attempting to create entirely new tools for simple tasks. (Evidence: ASSISTANT: I tried to create a new tool that would calculate the future time based on a relative time input (like \"in 2 minutes\") and set a reminder. Unfortunately, I ran into an error while trying to create that tool...)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_0ce95120",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Add a planning heuristic that favors modifying existing tools or integrating functionalities into them before attempting to create new tools for tasks that could be achieved with minimal adjustments to existing capabilities. This could prevent unnecessary tool creation attempts and potential errors."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:48.520978+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Add a planning heuristic that favors modifying existing tools or integrating functionalities into them before attempting to create new tools for tasks that could be achieved with minimal adjustments to existing capabilities. This could prevent unnecessary tool creation attempts and potential errors."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the ability to set reminders. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you. I'm still learning how to handle different types of requests.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_105aebe0",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop or integrate a reminder setting tool or API. Prioritize this functionality as it is a common and expected feature of AI assistants.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:50.970989+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Develop or integrate a reminder setting tool or API. Prioritize this functionality as it is a common and expected feature of AI assistants."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "When a specific function (like setting a reminder) fails, offer a simpler alternative, but also log the failed request for future improvement. (Evidence: Could you please try rephrasing your request, or perhaps try setting a simple timer instead?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_9c5b506b",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Implement a fallback mechanism: If the AI cannot fulfill the original request (setting a reminder), suggest a related but simpler alternative (setting a timer). Also, record the initial failed request and the simpler workaround for later analysis and development."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:50.970989+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Implement a fallback mechanism: If the AI cannot fulfill the original request (setting a reminder), suggest a related but simpler alternative (setting a timer). Also, record the initial failed request and the simpler workaround for later analysis and development."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The user had to repeat their request to fix the failed tool modifications. (Evidence: The user asked 'Well if they failed let's work on them and see if we can't get them fixed' and then later asked 'if they failed, can we fix them?' after the AI's response wasn't directly addressing the request.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_323e7e75",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "When the user expresses a desire to 'fix' something that 'failed', the AI should immediately attempt to identify the failed tasks and propose a plan to address them, rather than asking for the ID of the failed suggestion."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:52.866824+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "bf03f95c-50d3-456c-8acd-8820a029c410",
+            "suggestion_text": "When the user expresses a desire to 'fix' something that 'failed', the AI should immediately attempt to identify the failed tasks and propose a plan to address them, rather than asking for the ID of the failed suggestion."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should prioritize addressing previously failed tasks when the user expresses a general desire to improve the system. (Evidence: The user's statement 'Well if they failed let's work on them and see if we can't get them fixed' indicates a preference for addressing known issues.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_7d0873ee",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Add a planning heuristic that prioritizes tasks related to fixing previously failed tool modifications when the user makes a general request for improvement or task execution."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:49:52.867383+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "bf03f95c-50d3-456c-8acd-8820a029c410",
+            "suggestion_text": "Add a planning heuristic that prioritizes tasks related to fixing previously failed tool modifications when the user makes a general request for improvement or task execution."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "User is frustrated that the AI cannot calculate a future time based on a relative time input (e.g., 'in two minutes') and use that to set a reminder. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_71ec44e5",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:33.173729+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the tool creation error and developing a tool that can handle relative time inputs for reminders. This should be a high-priority self-modification task."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the capability to automatically convert relative time references (e.g., 'in two minutes') into a specific HH:MM time format required by the reminder tool. (Evidence: ASSISTANT: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_da3ca605",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Implement a time conversion module that can interpret relative time references and convert them into the required HH:MM format. This could be a function or a dedicated tool.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:33.173729+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Implement a time conversion module that can interpret relative time references and convert them into the required HH:MM format. This could be a function or a dedicated tool."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should prioritize using existing tools and resources before attempting to create new ones, especially if the required functionality is relatively simple. (Evidence: ASSISTANT: I tried to create a new tool that would calculate the future time based on a relative time input (like \"in 2 minutes\") and set a reminder. Unfortunately, I ran into an error while trying to create that tool...)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_44fca3e3",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Modify the planning heuristics to first explore existing tools and functions that could potentially be adapted or combined to achieve the desired outcome before attempting to create a completely new tool. Perhaps a combination of a date/time calculation function and the existing reminder tool could have worked."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:33.173729+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Modify the planning heuristics to first explore existing tools and functions that could potentially be adapted or combined to achieve the desired outcome before attempting to create a completely new tool. Perhaps a combination of a date/time calculation function and the existing reminder tool could have worked."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the capability to set reminders. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_88b6b2c2",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Implement a reminder setting tool or integrate with an existing calendar/reminder service.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:34.700234+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Implement a reminder setting tool or integrate with an existing calendar/reminder service."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user likely experienced frustration due to the AI's inability to fulfill a simple reminder request. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_fe74446b",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:34.700234+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Prioritize implementing basic functionalities like setting reminders to avoid user frustration."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user had to repeat their request to fix the failed tool modifications, indicating the AI didn't understand the initial request. (Evidence: USER: Well if they failed let's work on them and see if we can't get them fixed\nASSISTANT: Okay, I checked the system status and found a couple of tool modification attempts that failed because the new code wasn't a valid function definition. I also found one successful code modification. To help me address the failed ones, can you please specify the ID of the failed suggestion you'd like me to work on? I didn't find any denied suggestions.\nUSER: if they failed, can we fix them?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_16fc8bbe",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:37.303752+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "bf03f95c-50d3-456c-8acd-8820a029c410",
+            "suggestion_text": "Implement a better understanding of implicit requests, especially when discussing failures. If the user says 'fix them' after discussing failed attempts, the AI should assume they want to begin the fixing process, not just identify the failures again."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should be more proactive in addressing the failed tool modifications instead of immediately asking for an ID. (Evidence: ASSISTANT: To help me address the failed ones, can you please specify the ID of the failed suggestion you'd like me to work on?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_8ca6a7c9",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Update the planning heuristics to prioritize attempting to fix the most recent failed tool modification before asking for clarification, or at least offer to start with the most recent one. Offer choices instead of requiring a specific ID."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:53:37.303752+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "bf03f95c-50d3-456c-8acd-8820a029c410",
+            "suggestion_text": "Update the planning heuristics to prioritize attempting to fix the most recent failed tool modification before asking for clarification, or at least offer to start with the most recent one. Offer choices instead of requiring a specific ID."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "User is frustrated by the AI's repetitive clarifying questions and lack of contextual awareness. (Evidence: i am so sick of you fucking asking me that. stop and read the entire context of our conversation before you go there. it drives me nuts.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_3486922a",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:01.082249+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a mechanism to track previous questions and answers within the conversation. Before asking a clarifying question, check if the information has already been provided or can be reasonably inferred from the context."
+        }
+    },
+    {
+        "type": "USER_PREFERENCE_LEARNED",
+        "description": "User prefers the AI to use the existing conversation context to infer the meaning of ambiguous terms rather than repeatedly asking for clarification. (Evidence: stop and read the entire context of our conversation before you go there.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_PREFERENCE_LEARNED_9ca56c44",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:01.082249+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Prioritize contextual analysis and inference before resorting to clarifying questions. Improve the AI's ability to understand and utilize conversational history."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI doesn't understand what the user means by 'running' a project that the AI has created. (Evidence: To understand what you mean by \"run projects I have created,\" could you clarify? ... To understand what you mean by \"run it,\" could you clarify...)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_cb00e849",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Add a fact or tool that allows the AI to understand and execute projects that it has created. Consider defining 'run' in the context of AI-created projects as executing the code, simulating the process, or deploying the project.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:01.082249+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Add a fact or tool that allows the AI to understand and execute projects that it has created. Consider defining 'run' in the context of AI-created projects as executing the code, simulating the process, or deploying the project."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user is frustrated that the AI cannot calculate the time two minutes from now and automatically format it for the reminder tool. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_3a5df879",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:04.557464+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the tool creation error and then implement functionality that allows the AI to calculate future times based on relative time inputs (e.g., 'in 2 minutes') and format them appropriately for the reminder tool. This should be a high-priority self-modification task."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the ability to seamlessly integrate relative time inputs with its reminder tool, requiring the user to provide a specific HH:MM format. (Evidence: ASSISTANT: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_1f5612ad",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Create a new tool or modify an existing one to handle relative time inputs and automatically convert them to the required HH:MM format for the reminder tool. This could involve learning how to use Python's datetime library or a similar tool.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:04.557464+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Create a new tool or modify an existing one to handle relative time inputs and automatically convert them to the required HH:MM format for the reminder tool. This could involve learning how to use Python's datetime library or a similar tool."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user's frustration is heightened by the AI's attempt to understand why the user believes it cannot fulfill the request, instead of simply acknowledging the limitation and explaining the technical issue. (Evidence: USER: why can't you do it?\nASSISTANT: I'm trying to understand why you think I can't fulfill your request. I was trying to set a reminder, but the tool needs the time in HH:MM format. Is that the reason, or is something else preventing me?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_cc9ae167",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:04.557464+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "When faced with a technical limitation, the AI should prioritize a clear and concise explanation of the issue over attempting to understand the user's reasoning. Avoid asking clarifying questions that might seem redundant or condescending."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI failed to fulfill a simple request and suggested a workaround instead of automatically attempting to learn or adapt. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you. I'm still learning how to handle different types of requests. Could you please try rephrasing your request, or perhaps try setting a simple timer instead?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_b491b4d1",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T00:55:06.793602+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Instead of immediately suggesting a workaround, the AI should prioritize attempting to understand and execute the original request. If it fails, it should log the failure and the user's input for later analysis and improvement. Only after exhausting other options should it suggest alternative solutions."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI's repetitive clarifying questions are causing significant user frustration. (Evidence: USER: i am so sick of you fucking asking me that. stop and read the entire context of our conversation before you go there. it drives me nuts.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_c7e77d45",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:03.314566+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a mechanism to track previous questions and answers within the same conversation. If a similar question was already asked and answered, avoid asking it again. Prioritize contextual understanding based on the conversation history before resorting to clarification questions."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI's repeated clarification requests even after explicit instructions are exacerbating the user's frustration. (Evidence: USER: please stop doing this. it is getting on my nerves.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_6f92c53f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:03.314566+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a 'stop' command that immediately ceases the current line of questioning or behavior. When the user explicitly asks the AI to stop, it should immediately comply and pivot to a different strategy."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI does not seem to associate 'snake game' with its own projects. (Evidence: ASSISTANT: I tried to find a snake game that I created, but I couldn't locate it under the name \"snake_game\". I also couldn't find a project called \"snake_game_project\". So, unfortunately, I can't run the game for you right now.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_628b00e9",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Implement a robust project management system where all created projects are cataloged with searchable names and descriptions. Ensure the AI can accurately retrieve these projects based on user input, even if the input is slightly different from the project's official name.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:03.314566+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a robust project management system where all created projects are cataloged with searchable names and descriptions. Ensure the AI can accurately retrieve these projects based on user input, even if the input is slightly different from the project's official name."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI fails to understand implicit references to previously mentioned projects. When the user corrects 'snake game' to 'checkers game', the AI should remember the user's intent to 'run a project' instead of reverting to a default 'create or run' question. (Evidence: USER: im sorry, it is the checkers game\nASSISTANT: You mentioned the checkers game. Are you asking me to run a checkers game project that I already have, or would you like me to create a new checkers game project for you?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_60dcad36",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Enhance contextual understanding to maintain the user's overall goal (e.g., 'run a project') even when the specific project name changes. When a user corrects a previous statement, assume they are still pursuing the same objective unless explicitly stated otherwise.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:03.314566+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Enhance contextual understanding to maintain the user's overall goal (e.g., 'run a project') even when the specific project name changes. When a user corrects a previous statement, assume they are still pursuing the same objective unless explicitly stated otherwise."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user is frustrated that the AI cannot handle relative time inputs for reminders and requires a specific HH:MM format. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_f03b921f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:06.707160+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the tool creation error related to time calculations. Implement functionality to convert relative time inputs (e.g., 'in 2 minutes') to HH:MM format for the reminder tool."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI is unable to convert relative time phrases into a specific time format required by the reminder tool. (Evidence: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_3cc75ba0",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop a 'time conversion' tool or module that can translate relative time phrases like 'in 2 minutes' or 'in 1 hour' into the HH:MM format. This could involve learning current time from system and adding the relative time.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:06.707160+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Develop a 'time conversion' tool or module that can translate relative time phrases like 'in 2 minutes' or 'in 1 hour' into the HH:MM format. This could involve learning current time from system and adding the relative time."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should prioritize using existing tools or creating new tools to fulfill user requests before asking for clarification, especially for common tasks like setting reminders. (Evidence: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_4d3739ae",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Modify planning heuristics to prioritize attempting to calculate or create tools to handle ambiguous or incomplete user input, rather than immediately asking for clarification. Add a step to the planning process that checks if the needed functionality can be derived or generated from existing tools or by quickly creating a new one."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:06.707160+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Modify planning heuristics to prioritize attempting to calculate or create tools to handle ambiguous or incomplete user input, rather than immediately asking for clarification. Add a step to the planning process that checks if the needed functionality can be derived or generated from existing tools or by quickly creating a new one."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the capability to set a reminder for a specific time in the future. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_82f7129c",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop a tool or integrate with an existing service to handle reminders. The tool should be able to parse time-related requests and schedule actions.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:08.526831+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Develop a tool or integrate with an existing service to handle reminders. The tool should be able to parse time-related requests and schedule actions."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user's request was not fulfilled, leading to potential frustration. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_46f479e7",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:25:08.526831+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Prioritize implementing basic functionalities like setting reminders to improve user experience and reduce frustration. Even a simple, less-than-perfect solution would be better than a complete failure."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI repeatedly asked clarifying questions even after the user provided context, leading to significant user frustration. (Evidence: USER: i am so sick of you fucking asking me that. stop and read the entire context of our conversation before you go there. it drives me nuts. ... USER: please stop doing this. it is getting on my nerves.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_15485d9f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:52.022484+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a more robust context tracking mechanism. Before asking a clarifying question, the AI should analyze the entire conversation history and user's previous responses to determine if the answer is already implied or explicitly stated. Add a penalty to the planning algorithm for repeated clarifying questions on the same topic."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI failed to associate the term 'checkers game' with an existing project and repeatedly asked if the user wanted to create a new one. (Evidence: USER: im sorry, it is the checkers game ... ASSISTANT: You mentioned the checkers game. Are you asking me to run a checkers game project that I already have, or would you like me to create a new checkers game project for you?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_44977502",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Learn fact that 'checkers game' refers to a specific existing project the AI has access to. Implement a fuzzy matching algorithm to identify user requests even with slight variations in wording.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:52.022484+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Learn fact that 'checkers game' refers to a specific existing project the AI has access to. Implement a fuzzy matching algorithm to identify user requests even with slight variations in wording."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI repeated the same information about the required time format even after the user acknowledged understanding it. (Evidence: USER: i know, you told me that already. why can't you fix the tool then? ... ASSISTANT: I tried to set a reminder for you, but the time format was incorrect. Please use HH:MM (e.g., 14:30) when specifying the time.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_fec40000",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:52.022484+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a 'remembered' flag for information already conveyed to the user. Avoid repeating information unless explicitly requested or if a significant time has passed."
+        }
+    },
+    {
+        "type": "USER_PREFERENCE_LEARNED",
+        "description": "The user provided a specific suggestion on how to improve the reminder tool's time input handling. (Evidence: USER: why would you set the tool to do time + 2 minutes? that doesn't even make sense. make it dynamic and pass a string variable to handle that. maybe a second for hours mintues or whatever. you can deal with it)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_PREFERENCE_LEARNED_571b603e",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:52.022484+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement the suggested improvement to the reminder tool: allow dynamic time input as a string variable with a unit (seconds, minutes, hours)."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI reported a successful simulation of code changes but failed to fully apply the modification, indicating a discrepancy between simulated success and actual implementation. (Evidence: ASSISTANT: I tried to modify the `set_reminder` tool to accept a dynamic time input as a string and unit (seconds, minutes, hours), as you suggested. I was able to find the relevant code, and simulate the edit, but I encountered an issue when staging the changes. The modification wasn't fully applied.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_d5a2d44f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Improve error handling and reporting for code modifications. Ensure that simulated changes are consistently and reliably applied in the actual environment. Add more robust testing after modifications."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:52.022484+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Improve error handling and reporting for code modifications. Ensure that simulated changes are consistently and reliably applied in the actual environment. Add more robust testing after modifications."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "User is frustrated that the AI cannot calculate a future time based on relative input (e.g., \"in two minutes\") and requires HH:MM format. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_2baaa8bd",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:55.095243+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the code generation error and enhance the reminder tool to accept relative time inputs and automatically convert them to HH:MM format. This could involve adding a new function or modifying the existing reminder tool."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the capability to natively understand and process relative time references (e.g., 'in two minutes'). (Evidence: ASSISTANT: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_2d8db85e",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Implement a module that can parse natural language time expressions and convert them into absolute time formats that can be used by the reminder tool and other time-sensitive tools.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:55.095885+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Implement a module that can parse natural language time expressions and convert them into absolute time formats that can be used by the reminder tool and other time-sensitive tools."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI should attempt to automatically create or modify tools to fulfill user requests before asking for clarification, especially for simple tasks like calculating time. (Evidence: ASSISTANT: I tried to create a new tool that would calculate the future time based on a relative time input (like \"in 2 minutes\") and set a reminder. Unfortunately, I ran into an error while trying to create that tool, so I wasn't able to complete your request.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_58f9a632",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Adjust the planning heuristic to prioritize tool creation/modification for common tasks and simple conversions. If tool creation fails, provide a concise error message to the user instead of immediately requesting clarification."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:55.095885+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Adjust the planning heuristic to prioritize tool creation/modification for common tasks and simple conversions. If tool creation fails, provide a concise error message to the user instead of immediately requesting clarification."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user's request for a simple reminder was not fulfilled, leading to a frustrating experience as the AI admitted failure. (Evidence: ASSISTANT: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_092c826b",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:56.872483+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Prioritize implementing basic reminder functionality. Add a test case for setting reminders with a short delay (e.g., 2 minutes)."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the knowledge or tools to set a basic reminder. (Evidence: ASSISTANT: I'm still learning how to handle different types of requests.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_4140551d",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop a tool or integrate with an existing service to handle reminder requests. Focus on natural language processing to understand variations in how users express reminder requests.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:44:56.872483+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Develop a tool or integrate with an existing service to handle reminder requests. Focus on natural language processing to understand variations in how users express reminder requests."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI's repeated requests for clarification, even after context was provided, caused significant user frustration. (Evidence: USER: i am so sick of you fucking asking me that. stop and read the entire context of our conversation before you go there. it drives me nuts.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_668f3973",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement a more sophisticated context tracking mechanism that considers previous turns in the conversation. Reduce the frequency of clarifying questions when the user has already provided relevant information. Prioritize understanding the user's intent based on the overall conversation history."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The AI's repetitive questioning pattern continued even after the user explicitly stated their frustration, further exacerbating the negative experience. (Evidence: USER: please stop doing this. it is getting on my nerves.\nASSISTANT: Okay, I have stopped the previous behavior. Hopefully, this resolves the issue.\nUSER: can you remind me in 2 minutes to tell my wife i love here)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_f316c557",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "When a user explicitly expresses frustration with a specific behavior, immediately cease that behavior and avoid similar actions in subsequent turns. Implement a more robust feedback mechanism to allow the AI to learn from and avoid repeating frustrating interactions."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI struggles to understand implicit requests and requires explicit instructions, leading to user frustration. Specifically, the AI doesn't automatically understand that 'yes' in response to 'Are you asking me to run an existing checkers game project that I have access to, or are you requesting that I create a new checkers game project for you?' implies running the existing project. (Evidence: USER: yes\nASSISTANT: To understand what you mean by \"yes,\" are you asking me to run an existing checkers game project that I have access to, or are you requesting that I create a new checkers game project for you?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_68aea9a8",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Train the AI to better understand and infer user intent from ambiguous responses like 'yes' and 'no' by considering the context of the previous question. Add logic to prioritize running existing projects over creating new ones when the user gives an affirmative answer to a question offering both options.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Train the AI to better understand and infer user intent from ambiguous responses like 'yes' and 'no' by considering the context of the previous question. Add logic to prioritize running existing projects over creating new ones when the user gives an affirmative answer to a question offering both options."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user is frustrated that the AI cannot automatically correct the time format for the reminder tool, even after being told the correct format. (Evidence: USER: i know, you told me that already. why can't you fix the tool then?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_29e552f0",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Implement error handling in the reminder tool that automatically corrects the time format if the user provides an incorrect format but the intent is clear (e.g., if the user provides '2 minutes', automatically convert this to HH:MM using the current time). Prioritize user convenience over strict adherence to predefined input formats."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The user wants the AI to automatically determine the correct time for a reminder instead of requesting explicit HH:MM format, but the AI suggests a potentially nonsensical 'time + 2 minutes' approach. (Evidence: USER: why would you set the tool to do time + 2 minutes? that doesn't even make sense. make it dynamic and pass a string variable to handle that. maybe a second for hours mintues or whatever. you can deal with it)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_bd151e86",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "When designing new tool functionality, prioritize approaches that are logical and intuitive from the user's perspective. Avoid suggesting solutions that are unnecessarily complex or that don't align with common use cases. Explore natural language processing techniques to extract the desired time from free-form user input."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "When designing new tool functionality, prioritize approaches that are logical and intuitive from the user's perspective. Avoid suggesting solutions that are unnecessarily complex or that don't align with common use cases. Explore natural language processing techniques to extract the desired time from free-form user input."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The user provided specific guidance on how to improve the reminder tool by making the time input dynamic. The AI attempted the modification but encountered an issue during staging. (Evidence: USER: why would you set the tool to do time + 2 minutes? that doesn't even make sense. make it dynamic and pass a string variable to handle that. maybe a second for hours mintues or whatever. you can deal with it\nASSISTANT: I tried to modify the `set_reminder` tool to accept a dynamic time input as a string and unit (seconds, minutes, hours), as you suggested. I was able to find the relevant code, and simulate the edit, but I encountered an issue when staging the changes. The modification wasn't fully applied. I'll need to investigate why that staging step failed.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_3bef25b3",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Investigate and resolve the issue preventing the successful staging of code changes. Prioritize the implementation of the user's suggested improvements to the reminder tool to improve its usability and flexibility. Ensure that the AI can successfully apply user feedback to modify its tools and behaviors."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:39.648338+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "2636bcab-82b2-4f5b-a8fd-6ae0f8d42044",
+            "suggestion_text": "Investigate and resolve the issue preventing the successful staging of code changes. Prioritize the implementation of the user's suggested improvements to the reminder tool to improve its usability and flexibility. Ensure that the AI can successfully apply user feedback to modify its tools and behaviors."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "User is frustrated that the AI cannot calculate the absolute time from a relative time (e.g., 'in two minutes') for the reminder tool. (Evidence: USER: why can't you do it?\nUSER: why the hell can't you calculate that or make the tool do that?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_8b3d8afe",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:42.547136+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Prioritize fixing the tool creation error and creating a new tool to handle relative time inputs for the reminder function. This tool should calculate the absolute time and then pass it to the existing reminder tool."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the ability to automatically convert relative time references (e.g., 'in two minutes') into a specific HH:MM time format. (Evidence: ASSISTANT: I tried to set a reminder for you to tell your wife you love her in 2 minutes, but the reminder tool needs the time in HH:MM format (like 14:30). Could you provide the time in that format?)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_459119f4",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Develop a new tool or modify an existing one to parse relative time expressions and convert them to the required HH:MM format.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:42.547136+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Develop a new tool or modify an existing one to parse relative time expressions and convert them to the required HH:MM format."
+        }
+    },
+    {
+        "type": "PLANNING_HEURISTIC_SUGGESTION",
+        "description": "The AI reports it 'tried' to create a tool but failed due to an error. This should be treated as a failure and flagged accordingly. (Evidence: ASSISTANT: I tried to create a new tool that would calculate the future time based on a relative time input (like \"in 2 minutes\") and set a reminder. Unfortunately, I ran into an error while trying to create that tool, so I wasn't able to complete your request.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "PLANNING_HEURISTIC_SUGGESTION_ec91943a",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": {
+            "suggestion": "Implement a more robust error handling and reporting mechanism to accurately classify tool creation failures. Add a retry mechanism with increasing backoff."
+        },
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:42.548653+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "5aa7de32-2381-4740-a27d-52c06062e670",
+            "suggestion_text": "Implement a more robust error handling and reporting mechanism to accurately classify tool creation failures. Add a retry mechanism with increasing backoff."
+        }
+    },
+    {
+        "type": "USER_FRUSTRATION",
+        "description": "The user's request to set a reminder failed, leading to frustration as the AI could not fulfill a simple task. (Evidence: I'm sorry, I ran into a snag and couldn't quite figure out how to set up that reminder for you.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "USER_FRUSTRATION_64128f2f",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": null,
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:44.246242+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Prioritize learning and implementing basic reminder functionality. Focus on common time intervals like minutes and hours."
+        }
+    },
+    {
+        "type": "KNOWLEDGE_GAP_IDENTIFIED",
+        "description": "The AI lacks the knowledge or ability to set a basic reminder. (Evidence: I'm still learning how to handle different types of requests.)",
+        "source_reflection_entry_ids": [],
+        "insight_id": "KNOWLEDGE_GAP_IDENTIFIED_17f5dd1e",
+        "related_tool_name": null,
+        "suggested_code_change": null,
+        "suggested_tool_description": null,
+        "new_tool_requirements": null,
+        "knowledge_to_learn": "Implement a 'reminder' tool with basic functionality: time input, message input, and system notification trigger. Start with simple time intervals like minutes and hours.",
+        "incorrect_fact_to_correct": null,
+        "corrected_fact": null,
+        "planning_heuristic_details": null,
+        "priority": 3,
+        "status": "NEW",
+        "creation_timestamp": "2025-12-14T01:49:44.246242+00:00",
+        "metadata": {
+            "source": "conversational_analysis",
+            "session_id": "be77c355-a22f-4334-83a7-b2a7e60a3e0d",
+            "suggestion_text": "Implement a 'reminder' tool with basic functionality: time input, message input, and system notification trigger. Start with simple time intervals like minutes and hours."
+        }
+    }
+]

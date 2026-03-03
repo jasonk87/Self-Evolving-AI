@@ -1,0 +1,15 @@
+************* Module custom_tools.inferargumentvalue
+ai_assistant/custom_tools/inferargumentvalue.py:3:0: C0301: Line too long (103/100) (line-too-long)
+ai_assistant/custom_tools/inferargumentvalue.py:8:0: C0301: Line too long (102/100) (line-too-long)
+ai_assistant/custom_tools/inferargumentvalue.py:23:0: C0304: Final newline missing (missing-final-newline)
+ai_assistant/custom_tools/inferargumentvalue.py:1:0: C0114: Missing module docstring (missing-module-docstring)
+ai_assistant/custom_tools/inferargumentvalue.py:1:64: E0602: Undefined variable 'Any' (undefined-variable)
+ai_assistant/custom_tools/inferargumentvalue.py:1:79: E0602: Undefined variable 'Any' (undefined-variable)
+************* Module custom_tools.projectfinder
+ai_assistant/custom_tools/projectfinder.py:19:0: C0304: Final newline missing (missing-final-newline)
+ai_assistant/custom_tools/projectfinder.py:1:0: C0114: Missing module docstring (missing-module-docstring)
+ai_assistant/custom_tools/projectfinder.py:14:4: C0415: Import outside toplevel (os) (import-outside-toplevel)
+ai_assistant/custom_tools/projectfinder.py:16:4: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+
+------------------------------------------------------------------
+Your code has been rated at 0.00/10 (previous run: 0.00/10, +0.00)

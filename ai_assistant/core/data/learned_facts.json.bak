@@ -1,0 +1,124 @@
+[
+    {
+        "fact_id": "fact_8a32adc0",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'Maximum cycles reached' response suggests a potential loop or failure in the AI's planning or execution process after the initial failure to enable 'Ghost Mode'. (Evidence: ASSISTANT: Maximum cycles reached.)' with reason: this loop has been fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T16:00:37.356842+00:00",
+        "updated_at": "2025-12-18T16:00:37.356842+00:00"
+    },
+    {
+        "fact_id": "fact_3fbe98cd",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'Maximum cycles reached' response suggests a potential loop or failure in the AI's planning or execution process after the initial failure to enable 'Ghost Mode'. (Evidence: ASSISTANT: Maximum cycles reached.)' with reason: this is supposed to be fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T16:38:09.215284+00:00",
+        "updated_at": "2025-12-18T16:38:09.215284+00:00"
+    },
+    {
+        "fact_id": "fact_94be762e",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'awaiting user response' tool or related logic is suspected of malfunctioning, potentially causing infinite loops and the 'Maximum cycles reached' error. (Evidence: Maximum cycles reached. ... It looks like you're using some kind of tool called a weight user response or something like this.)' with reason: this tool should be removed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T16:38:18.892570+00:00",
+        "updated_at": "2025-12-18T16:38:18.892570+00:00"
+    },
+    {
+        "fact_id": "fact_73110271",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'awaiting user response' tool (or similar) may have a bug causing the AI to get stuck. The 'Maximum cycles reached' message suggests a potential issue with loop control. (Evidence: Maximum cycles reached.)' with reason: this has been removed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:01:35.772371+00:00",
+        "updated_at": "2025-12-18T17:01:35.772371+00:00"
+    },
+    {
+        "fact_id": "fact_4605344e",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'Maximum cycles reached' error likely indicates a bug in a tool related to processing search results, potentially causing an infinite loop or exceeding resource limits during planning or execution. (Evidence: The user states 'i think i have fixed your issues with processed search results' after the AI initially fails with 'Maximum cycles reached'. The user's attempts to fix the issue imply the problem is fixable.)' with reason: this has been fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:01:41.952753+00:00",
+        "updated_at": "2025-12-18T17:01:41.952753+00:00"
+    },
+    {
+        "fact_id": "fact_be4b81be",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'awaiting user response' tool or process may be malfunctioning, causing the AI to get stuck and delaying responses. (Evidence: It looks like you're using some kind of tool called a weight user response or something like this.)' with reason: this has been fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:01:47.998267+00:00",
+        "updated_at": "2025-12-18T17:01:47.998267+00:00"
+    },
+    {
+        "fact_id": "fact_bcfd28aa",
+        "text": "User rejected insight 'ISSUE DETECTED: The AI should ideally have access to an image search tool or image generation tool to fulfill the user request. The lack of response indicates a potential tool bug or missing tool. (Evidence: ASSISTANT: I apologize, but I do not have the capability to directly generate images. I am unable to show you a picture of a 1969 Camaro.)' with reason: fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:38:02.205677+00:00",
+        "updated_at": "2025-12-18T17:38:02.205677+00:00"
+    },
+    {
+        "fact_id": "fact_fac764c0",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'Maximum cycles reached' error suggests a potential bug in the planning process or the image retrieval tool, possibly leading to an infinite loop or resource exhaustion. (Evidence: ASSISTANT: Maximum cycles reached.)' with reason: fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:38:07.364323+00:00",
+        "updated_at": "2025-12-18T17:38:07.364323+00:00"
+    },
+    {
+        "fact_id": "fact_3fc2ecf7",
+        "text": "User rejected insight 'ISSUE DETECTED: The 'Maximum cycles reached' error, combined with the user's claim of fixing the AI's issues, suggests a potential bug in the planning or execution logic, specifically within the tool responsible for processing search results. (Evidence: The AI responded with 'Maximum cycles reached' repeatedly. The user stated 'i think i have fixed your issues with processed search results' and 'now humor me, i think i did fix it this time.')' with reason: fixed",
+        "category": "manual",
+        "source": "user_interface",
+        "created_at": "2025-12-18T17:38:11.096387+00:00",
+        "updated_at": "2025-12-18T17:38:11.096387+00:00"
+    },
+    {
+        "fact_id": "fact_80997d2e",
+        "text": "The backend API runs on Flask.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "created_at": "2025-12-20T10:53:47.754064+00:00",
+        "updated_at": "2025-12-20T10:53:47.754074+00:00"
+    },
+    {
+        "fact_id": "fact_8134f27d",
+        "text": "The database is ChromaDB for vector storage.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "created_at": "2025-12-20T10:53:48.158515+00:00",
+        "updated_at": "2025-12-20T10:53:48.158526+00:00"
+    },
+    {
+        "fact_id": "fact_19b2adea",
+        "text": "The 'ai_assistant' package contains the core logic.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "created_at": "2025-12-20T10:53:48.598331+00:00",
+        "updated_at": "2025-12-20T10:53:48.598340+00:00"
+    },
+    {
+        "fact_id": "fact_a585454a",
+        "text": "Configuration is stored in 'config.py'.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "created_at": "2025-12-20T10:53:48.925903+00:00",
+        "updated_at": "2025-12-20T10:53:48.925919+00:00"
+    },
+    {
+        "fact_id": "fact_48fc89a7",
+        "text": "The project uses Flask.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "permanence": "permanent",
+        "created_at": "2025-12-20T11:10:06.717241+00:00",
+        "updated_at": "2025-12-20T11:10:06.717252+00:00"
+    },
+    {
+        "fact_id": "fact_fedcc9e8",
+        "text": "My son's name is Thomas.",
+        "category": "learned_fact",
+        "source": "Test Simulation",
+        "permanence": "permanent",
+        "created_at": "2025-12-20T11:10:07.078564+00:00",
+        "updated_at": "2025-12-20T11:10:07.078581+00:00"
+    }
+]

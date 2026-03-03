@@ -1,0 +1,205 @@
+
+// static/js/modules/chat.js
+import { socket } from './socket_client.js';
+import { escapeHtml, showTypingIndicator, removeTypingIndicator, showAlert, showModal } from './ui.js';
+import { cyrb53, notifyIfHidden } from './utils.js';
+
+let currentSessionId = null;
+let lastResponseHash = "";
+
+export function getCurrentSessionId() {
+    return currentSessionId;
+}
+
+export function setCurrentSessionId(id) {
+    currentSessionId = id;
+}
+
+export async function loadSessions(listElement, onSessionSelected) {
+    if (!listElement) return;
+    listElement.innerHTML = '<div class="loading">Loading chats...</div>';
+    try {
+        const res = await fetch('/api/sessions');
+        const data = await res.json();
+        if (data.success) {
+            listElement.innerHTML = '';
+            if (!data.sessions || data.sessions.length === 0) {
+                listElement.innerHTML = '<div style="padding:10px; color:#666;">No active chats. Start a new one!</div>';
+            } else {
+                data.sessions.forEach(s => {
+                    const el = document.createElement('div');
+                    el.className = `session-item ${s.id === currentSessionId ? 'active' : ''}`;
+                    el.innerHTML = `
+                        <div class="session-title">${escapeHtml(s.title)}</div>
+                        <div class="session-meta">
+                            <span>${new Date(s.updated_at * 1000).toLocaleDateString()}</span>
+                            <span class="btn-delete-session" data-id="${s.id}">🗑️</span>
+                        </div>
+                    `;
+                    el.addEventListener('click', () => {
+                        if (onSessionSelected) onSessionSelected(s.id);
+                    });
+
+                    // Delete Handler
+                    el.querySelector('.btn-delete-session').addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        showModal(
+                            "Delete Chat",
+                            `Are you sure you want to delete "${s.title}"?`,
+                            async () => {
+                                await fetch(`/api/sessions/${s.id}`, { method: 'DELETE' });
+                                if (currentSessionId === s.id) {
+                                    currentSessionId = null;
+                                    document.getElementById('chat-container').innerHTML = '';
+                                }
+                                loadSessions(listElement, onSessionSelected); // Reload
+                            },
+                            true
+                        );
+                    });
+                    listElement.appendChild(el);
+                });
+            }
+        }
+    } catch (e) {
+        listElement.innerHTML = 'Error loading sessions';
+    }
+}
+
+export async function loadChatSession(sessionId, container) {
+    currentSessionId = sessionId;
+    container.innerHTML = '<div class="loading">Loading history...</div>';
+
+    try {
+        const res = await fetch(`/api/sessions/${sessionId}`);
+        const data = await res.json();
+        container.innerHTML = '';
+
+        if (data.success && data.session) {
+            if (data.session.history && data.session.history.length > 0) {
+                data.session.history.forEach(msg => {
+                    appendMessage(container, msg.role, msg.content, msg.images);
+                });
+            } else {
+                appendMessage(container, 'system', '<div class="bubble">New conversation started.</div>');
+            }
+            return true;
+        }
+    } catch (e) {
+        container.innerHTML = 'Error loading chat history.';
+        return false;
+    }
+}
+
+export function appendMessage(container, role, text, images = null) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${role}`;
+    let avatarText = role === 'user' ? '👤' : 'AI';
+
+    let imagesHtml = '';
+    if (images && images.length > 0) {
+        images.forEach(imgB64 => {
+            let src = imgB64;
+            if (!src.startsWith('data:image')) {
+                src = `data:image/png;base64,${imgB64}`;
+            }
+            imagesHtml += `<div class="user-uploaded-image"><img src="${src}" style="max-width: 200px; border-radius: 5px; margin-bottom: 5px;"></div>`;
+        });
+    }
+
+    // Basic Markdown Parsing (Simplified for module)
+    // In production we might use a library like 'marked', but sticking to the custom logic from main.js
+    let parts = text.split(/(```html-dynamic[\s\S]*?```)/g);
+    let finalHtml = "";
+
+    parts.forEach(part => {
+        if (part.startsWith("```html-dynamic") && part.endsWith("```")) {
+            let rawHtml = part.replace(/^```html-dynamic\s*/, "").replace(/```$/, "");
+            let cleanHtml = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(rawHtml) : "<i>(DOMPurify missing)</i>";
+            finalHtml += `<div class="dynamic-html-wrapper">${cleanHtml}</div>`;
+        } else {
+            let md = part
+                .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="chat-image" style="max-width: 100%; border-radius: 5px; margin: 5px 0;">')
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-light);">$1</a>')
+                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+            finalHtml += md;
+        }
+    });
+
+    msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${imagesHtml}${finalHtml}</div>`;
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
+
+export async function sendMessage(inputEl, container, editor, contextData = {}) {
+    const message = inputEl.value.trim();
+    // Use images from contextData if passed, or manage global state? 
+    // Ideally pass image array in contextData.
+    const images = contextData.images || [];
+
+    if (!message && images.length === 0) return;
+
+    // Display
+    appendMessage(container, 'user', message, [...images]);
+    inputEl.value = '';
+
+    // Prepare images
+    let imagesToSend = images.map(img => {
+        if (img.includes(',')) return img.split(',')[1];
+        return img;
+    });
+
+    showTypingIndicator(container);
+
+    // Context from editor
+    let context = {};
+    if (editor && contextData.currentFilePath) {
+        context.currentFile = {
+            path: contextData.currentFilePath,
+            project: contextData.currentProject,
+            content: editor.getValue()
+        };
+    }
+    if (contextData.terminalOutput) {
+        context.terminalOutput = contextData.terminalOutput;
+    }
+
+    try {
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message,
+                images: imagesToSend,
+                context: context,
+                session_id: currentSessionId
+            })
+        });
+        const data = await res.json();
+        removeTypingIndicator();
+
+        if (data.success || data.response) {
+            // Update Session ID if new
+            if (data.session_id && currentSessionId !== data.session_id) {
+                currentSessionId = data.session_id;
+                // Callback to reload session list?
+                if (contextData.onSessionChanged) contextData.onSessionChanged();
+            }
+
+            // Cleanup ephemeral
+            document.querySelectorAll('.app-layout .thought-bubble').forEach(el => el.remove());
+            document.querySelectorAll('.app-layout .message.status-log').forEach(el => el.remove());
+
+            lastResponseHash = cyrb53(data.response);
+            appendMessage(container, 'assistant', data.response, data.images);
+            notifyIfHidden("AI Assistant", data.response);
+
+            return data.response;
+        }
+    } catch (e) {
+        removeTypingIndicator();
+        appendMessage(container, 'assistant', 'Error sending.');
+    }
+}

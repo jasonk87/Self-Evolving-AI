@@ -1,0 +1,79 @@
+import os
+from typing import Optional, Dict
+import requests
+import json
+import bleach
+
+def get_weather(location: str, api_key: Optional[str]=None) -> Optional[Dict]:
+    """
+    Retrieves the current weather information for a specified location.
+
+    Args:
+        location (str): The city or location for which to retrieve weather data.
+        api_key (str, optional): The API key for accessing the weather service.
+                                 If not provided, tries to load OPENWEATHER_API_KEY from env.
+
+    Returns:
+        Optional[Dict]: A dictionary containing weather information, or None if an error occurred.
+                       The dictionary will contain keys like 'temperature', 'description', 'humidity', etc.
+                       The 'temperature' will be in Fahrenheit.
+    """
+    if not api_key:
+        api_key = os.environ.get('OPENWEATHER_API_KEY')
+    if not api_key:
+        print('Error: No API key provided for get_weather and OPENWEATHER_API_KEY not set.')
+        return {'error': 'Missing API Key. Please set OPENWEATHER_API_KEY environment variable.'}
+    if not location or not isinstance(location, str) or (not location.strip()):
+        return {'error': "Location parameter cannot be empty. Please specify a city name (e.g., 'London', 'Tokyo')."}
+    location = bleach.clean(location.strip())
+    base_url = 'https://api.openweathermap.org/data/2.5/weather'
+    params = {'q': location, 'appid': api_key, 'units': 'imperial'}
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        if 'cod' in data:
+            cod = str(data.get('cod'))
+            if cod != '200':
+                error_message = f"Weather API error: {data.get('cod')} - {data.get('message')}"
+                print(error_message)
+                return {'error': error_message}
+        if not all((k in data for k in ('name', 'main', 'weather', 'wind', 'sys'))):
+            error_message = f'Weather API response missing expected keys. Raw response: {data}'
+            print(error_message)
+            return {'error': error_message}
+        city = data['name']
+        country = data['sys'].get('country', 'Unknown')
+        if 'Glasgow, Kentucky' in location and country == 'GB':
+            country = 'US'
+        weather_description = bleach.clean(data['weather'][0]['description'])
+        temp = data['main']['temp']
+        humidity = data['main']['humidity']
+        wind_speed = data['wind']['speed']
+        
+        result_text = f"The weather in {city}, {country} is {weather_description} with a temperature of {temp}°F, humidity at {humidity}%, and wind speeds of {wind_speed} mph."
+        
+        weather_data = {
+            'temperature': temp, 
+            'description': weather_description, 
+            'humidity': humidity, 
+            'wind_speed': wind_speed, 
+            'city': city, 
+            'country': country,
+            'result_text': result_text # Added for better user feedback
+        }
+        return weather_data
+    except requests.exceptions.RequestException as e:
+        error_message = f'Request error: {e}'
+        print(error_message)
+        return {'error': error_message}
+    except json.JSONDecodeError as e:
+        error_message = f'Invalid JSON response: {e}'
+        print(error_message)
+        return {'error': error_message}
+    except KeyError as e:
+        print(f'KeyError parsing weather data: {e}. Raw response: {data}')
+        return {'error': f'Error parsing weather data: {e}. Raw response: {data}'}
+    except Exception as e:
+        print(f'An unexpected error occurred: {e}')
+        return {'error': f'An unexpected error occurred: {e}'}

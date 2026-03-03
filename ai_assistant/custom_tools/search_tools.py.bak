@@ -1,0 +1,71 @@
+import asyncio
+import json
+from googleapiclient.discovery import build
+from ai_assistant.config import GOOGLE_API_KEY, GOOGLE_CSE_ID
+from typing import List, Dict, Any, Optional
+import asyncio
+
+def google_custom_search(query: str, num_results: int=5) -> Optional[List[Dict[str, Any]]]:
+    """
+    Your primary tool for finding information online using Google Search. Use this for questions
+    like 'what is X?', 'who is Y?', 'explain Z', 'search for A', 'find information on B',
+    or when you need current, up-to-date facts and details.
+    Args:
+        query (str): The search query.
+        num_results (int): The number of search results to return (default is 5, max is 10).
+    Returns:
+        Optional[List[Dict[str, Any]]]: A list of search results, or None if an error occurs or keys are missing.
+    """
+    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+        print('Error: Google API Key or CSE ID is not configured.')
+        return None
+    try:
+        service = build('customsearch', 'v1', developerKey=GOOGLE_API_KEY)
+        num_results = max(1, min(num_results, 10))
+        res = service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_results).execute()
+        search_results = []
+        if 'items' in res:
+            for item in res['items']:
+                search_results.append({'title': item.get('title'), 'link': item.get('link'), 'snippet': item.get('snippet')})
+            return search_results
+        else:
+            return []
+    except Exception as e:
+        print(f'An error occurred during Google Custom Search: {e}')
+        return None
+
+def execute_deep_research(query: str) -> str:
+    """
+    Performs 'Deep Research' by searching Google, visiting the top results, reading their content,
+    and synthesizing a comprehensive answer. Use this for complex coding questions, API documentation lookups,
+    or when standard snippets are insufficient.
+
+    Args:
+        query (str): The research question.
+
+    Returns:
+        str: A detailed research summary with sources.
+    """
+    from ai_assistant.core.deep_research import DeepResearcher
+    researcher = DeepResearcher()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    async def run_research(query):
+        result = await researcher.perform_deep_research(query)
+        return result['summary']
+    if loop.is_running():
+        import nest_asyncio
+        nest_asyncio.apply()
+        try:
+            return loop.run_until_complete(run_research(query))
+        except RuntimeError as e:
+            if 'This event loop is already running' in str(e):
+                raise RuntimeError('Cannot execute deep research within an existing event loop.  Consider making the tool async.') from e
+            else:
+                raise
+    else:
+        return asyncio.run(run_research(query))

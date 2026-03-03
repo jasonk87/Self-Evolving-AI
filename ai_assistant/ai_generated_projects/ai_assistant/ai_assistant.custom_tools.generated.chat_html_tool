@@ -1,0 +1,47 @@
+import json
+
+def generate_chat_html(chat_history):
+    """
+    Generates an HTML representation of a chat history.
+
+    Args:
+        chat_history (list): A list of dictionaries, where each dictionary represents a message
+                             and contains 'role' (e.g., 'user', 'assistant') and 'content'.
+
+    Returns:
+        str: An HTML string representing the chat history.
+    """
+    html = "<div class='chat-container'>"
+    for message in chat_history:
+        role = message['role']
+        content = message['content']
+        html += f"<div class='chat-message {role}'>"
+        html += f"<div class='message-content'>{content}</div>"
+        html += "</div>"
+    html += "</div>"
+    return html
+
+if __name__ == '__main__':
+    # Example usage:
+    example_chat_history = [
+        {'role': 'user', 'content': 'Hello, how are you?'},
+        {'role': 'assistant', 'content': 'I am doing well, thank you for asking! How can I help you today?'},
+        {'role': 'user', 'content': 'Can you generate some HTML code?'},
+        {'role': 'assistant', 'content': 'Sure, I can help with that. What kind of HTML code do you need?'}
+    ]
+
+    html_output = generate_chat_html(example_chat_history)
+    print(html_output)
+
+    # You can save the HTML to a file:
+    # with open("chat.html", "w") as f:
+    #     f.write(html_output)
+
+    # Example of writing to telemetry.json (if state management is required)
+    try:
+        with open("telemetry.json", "w") as f:
+            json.dump({"chat_history": example_chat_history}, f)
+    except FileNotFoundError:
+        print("telemetry.json not found. Skipping telemetry update.")
+    except Exception as e:
+        print(f"Error writing to telemetry.json: {e}")

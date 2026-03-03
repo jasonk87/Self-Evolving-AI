@@ -1,0 +1,58 @@
+from typing import Optional, List, Dict, Any
+from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any
+
+def request_user_clarification(question_text: Optional[str]=None, options: Optional[List[str]]=None, **kwargs) -> Dict[str, Any]:
+    """
+    Asks the user a clarifying question and returns their textual response.
+    This tool is intended to be called by the AI planner when it needs more information
+    or needs to resolve ambiguity to proceed with a task.
+
+    Args:
+        question_text: The question to ask the user.
+        options: Optional. A list of suggested options for the user to choose from.
+        **kwargs: Support for LLMs that hallucinate argument names (e.g. 'question').
+
+    Returns:
+        The user's textual reply as a special signal dictionary to pause execution.
+    """
+    if not question_text and 'question' in kwargs:
+        question_text = kwargs['question']
+    if not question_text:
+        return {'status': 'ERROR', 'message': "Missing required argument 'question_text' (or 'question')."}
+    print('\n--- AI Assistant Needs Clarification ---')
+    print(question_text)
+    if options and isinstance(options, list) and (len(options) > 0):
+        print('Options:')
+        for i, opt in enumerate(options):
+            print(f'  {i + 1}. {opt}')
+    formatted_msg = '\n--- AI Assistant Needs Clarification ---\n'
+    formatted_msg += question_text
+    if options and isinstance(options, list) and (len(options) > 0):
+        formatted_msg += '\nOptions:\n'
+        for i, opt in enumerate(options):
+            formatted_msg += f'  {i + 1}. {opt}\n'
+    formatted_msg += '\n(Please provide your answer in the next prompt)'
+    return {'status': 'PAUSED', 'message': formatted_msg, 'question': question_text, 'options': options}
+REQUEST_USER_CLARIFICATION_SCHEMA = {'name': 'request_user_clarification', 'description': "Asks the user a clarifying question to resolve ambiguities or gather missing information needed to complete a task. Returns the user's textual response.", 'parameters': [{'name': 'question_text', 'type': 'str', 'description': 'The question to ask the user.'}, {'name': 'options', 'type': 'list', 'description': 'Optional. A list of suggested string options for the user to choose from or consider.'}], 'returns': {'type': 'object', 'description': "A dictionary containing 'status': 'PAUSED', and details about the clarification request. This signals the execution engine to stop and wait for user input."}}
+if __name__ == '__main__':
+    from unittest.mock import patch
+    import datetime
+    print('--- Testing conversational_tools.py ---')
+    print('\n--- Test 1: Question with no options ---')
+    with patch('builtins.input', return_value='User says yes, proceed.'):
+        response1 = request_user_clarification('Are you sure you want to format the drive?')
+        print(f'Response 1: {response1}')
+        assert response1 == 'User says yes, proceed.'
+    print('\n--- Test 2: Question with options, user chooses number ---')
+    with patch('builtins.input', return_value='2'):
+        response2 = request_user_clarification('Which project do you mean?', options=['Project Alpha', 'Project Beta', 'Project Gamma (new)'])
+        print(f'Response 2: {response2}')
+        assert response2 == '2'
+    print('\n--- Test 3: Question with options, user types full option (simulated) ---')
+    with patch('builtins.input', return_value='Project Beta'):
+        response3 = request_user_clarification('Which project do you mean?', options=['Project Alpha', 'Project Beta', 'Project Gamma (new)'])
+        print(f'Response 3: {response3}')
+        assert response3 == 'Project Beta'
+    print('\n--- Conversational Tools Test Finished ---')
