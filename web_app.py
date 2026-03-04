@@ -213,13 +213,18 @@ if __name__ == '__main__':
     # Register Signal Handlers
     register_signal_handlers()
     
-    # Register Live Mode cleanup
-    import ai_live_link
-    def cleanup_live_mode():
-        logger.info("Shutdown: Stopping Live Mode...")
-        ai_live_link.stop_live_mode()
-        
-    shutdown_manager.register_handler(cleanup_live_mode)
+    # Register Live Mode cleanup (optional dependency safe)
+    try:
+        import ai_live_link
+    except Exception:
+        ai_live_link = None
+
+    if ai_live_link is not None:
+        def cleanup_live_mode():
+            logger.info("Shutdown: Stopping Live Mode...")
+            ai_live_link.stop_live_mode()
+
+        shutdown_manager.register_handler(cleanup_live_mode)
 
     # Start Background Threads
     t1 = threading.Thread(target=watch_telemetry, args=(shutdown_manager,), daemon=True)
