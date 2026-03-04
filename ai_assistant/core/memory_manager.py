@@ -71,6 +71,112 @@ class MemoryManager:
             "episodes": episodes
         }
 
+    def _parse_timestamp(self, timestamp: Optional[str]) -> Optional[datetime.datetime]:
+        """Parses an ISO timestamp safely and returns a timezone-aware datetime when possible."""
+        if not timestamp or not isinstance(timestamp, str):
+            return None
+
+        try:
+            parsed = datetime.datetime.fromisoformat(timestamp)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            return parsed
+        except (TypeError, ValueError):
+            return None
+
+    def get_cortex_activity_summary(
+        self,
+        lookback_hours: int = 24,
+        limit: int = 10,
+        kinds: Optional[List[str]] = None,
+        source: Optional[str] = None,
+        permanence: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Builds a compact summary of recent memory-cortex activity."""
+        selected_kinds = set(kinds or ["facts", "insights", "episodes"])
+
+        facts = load_learned_facts() if "facts" in selected_kinds else []
+        insights = load_actionable_insights() if "insights" in selected_kinds else []
+        episodes = load_episodic_memories() if "episodes" in selected_kinds else []
+
+        if source:
+            facts = [fact for fact in facts if fact.get("source") == source]
+
+        if permanence:
+            facts = [fact for fact in facts if fact.get("permanence") == permanence]
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(hours=lookback_hours)
+
+        recent_additions = {"facts": 0, "insights": 0, "episodes": 0}
+        recent_updates = {"facts": 0, "insights": 0, "episodes": 0}
+        latest_changes = []
+
+        def process_items(items, bucket_name, id_key, label_fn):
+            for item in items:
+                created_at = self._parse_timestamp(item.get("created_at"))
+                updated_at = self._parse_timestamp(item.get("updated_at"))
+
+                if created_at and created_at >= cutoff:
+                    recent_additions[bucket_name] += 1
+
+                changed_at = updated_at or created_at
+                if changed_at and changed_at >= cutoff:
+                    is_updated = bool(updated_at and created_at and updated_at > created_at)
+                    if is_updated:
+                        recent_updates[bucket_name] += 1
+
+                    latest_changes.append({
+                        "kind": bucket_name[:-1],
+                        "id": item.get(id_key),
+                        "label": label_fn(item),
+                        "changed_at": changed_at.isoformat(),
+                        "change_type": "updated" if is_updated else "created",
+                    })
+
+        process_items(facts, "facts", "fact_id", lambda x: x.get("text", "")[:80])
+        process_items(insights, "insights", "insight_id", lambda x: x.get("description", "")[:80])
+        process_items(episodes, "episodes", "episode_id", lambda x: x.get("title", "")[:80])
+
+        latest_changes.sort(key=lambda item: item["changed_at"], reverse=True)
+
+        total_recent_changes = sum(recent_additions.values()) + sum(recent_updates.values())
+        anomalies = []
+        if total_recent_changes >= 25:
+            anomalies.append({
+                "level": "warning",
+                "metric": "recent_change_volume",
+                "message": f"High memory churn detected ({total_recent_changes} changes in the lookback window).",
+            })
+        if total_recent_changes == 0 and (len(facts) + len(insights) + len(episodes)) > 0:
+            anomalies.append({
+                "level": "info",
+                "metric": "recent_change_volume",
+                "message": "No recent memory mutations detected in the selected window.",
+            })
+
+        return {
+            "lookback_hours": lookback_hours,
+            "generated_at": now.isoformat(),
+            "filters": {
+                "kinds": sorted(selected_kinds),
+                "source": source,
+                "permanence": permanence,
+            },
+            "totals": {
+                "facts": len(facts),
+                "insights": len(insights),
+                "episodes": len(episodes),
+            },
+            "recent": {
+                "added": recent_additions,
+                "updated": recent_updates,
+            },
+            "total_recent_changes": total_recent_changes,
+            "anomalies": anomalies,
+            "latest_changes": latest_changes[:limit],
+        }
+
     # --- Episodic Memory Management ---
 
     def get_all_episodes(self) -> List[Dict[str, Any]]:

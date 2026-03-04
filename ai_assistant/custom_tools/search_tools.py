@@ -18,12 +18,12 @@ async def google_custom_search(query: str, num_results: int = 5) -> Dict[str, An
     """
     # 1. VISUALIZATION (Ghost Mode)
     images = []
-    if config.GHOST_MODE:
+    if getattr(config, "AUTO_WEB_PIP", False) or config.GHOST_MODE:
         try:
             from ai_assistant.core.vision_service import VisionService
             vision = VisionService()
             encoded_query = urllib.parse.quote(query)
-            search_url = f"https://duckduckgo.com/?q={encoded_query}"
+            search_url = f"https://www.google.com/search?q={encoded_query}"
             
             print(f"Ghost Mode: Visualizing search for '{query}'...")
             b64_screenshot = await vision.capture_page_screenshot(search_url)
@@ -137,7 +137,7 @@ async def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
         num_images = 1
 
     # Ghost Mode Visualization
-    if config.GHOST_MODE:
+    if getattr(config, "AUTO_WEB_PIP", False) or config.GHOST_MODE:
         try:
             from ai_assistant.core.vision_service import VisionService
             import urllib.parse

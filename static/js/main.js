@@ -401,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mic
     document.getElementById('mic-btn')?.addEventListener('click', Voice.toggleListening);
 
+
     // Socket Events
     socket.on('response', (data) => {
         if (Terminal.getWaitingForTerminal()) {
@@ -415,6 +416,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     let hasAutoOpenedTerminal = false;
+
+
+    socket.on('assistant_alert', (data) => {
+        try {
+            const message = data?.message || '⚠️ System alert received.';
+            const alertSessionId = data?.session_id || null;
+
+            if (alertSessionId && Chat.getCurrentSessionId() === alertSessionId) {
+                Chat.appendMessage(chatContainer, 'assistant', message);
+            } else {
+                UI.showAlert('AI System Warning', 'A background mission failed. Open chat for details.');
+                if (chatContainer) {
+                    Chat.appendMessage(chatContainer, 'assistant', message);
+                }
+            }
+
+            notifyIfHidden('AI System Warning', message);
+            Chat.loadSessions(chatSessionsList, (sid) => {
+                Chat.loadChatSession(sid, chatContainer);
+                Layout.openMainView('view-chat', 'Chat');
+            });
+        } catch (alertErr) {
+            console.error('[System] assistant_alert handling failed:', alertErr);
+        }
+    });
 
     socket.on('log_event', (data) => {
         // 1. Append to Council Log

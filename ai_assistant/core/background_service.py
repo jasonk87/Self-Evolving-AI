@@ -17,6 +17,7 @@ from ai_assistant.tools import tool_system # To get available tools
 from ai_assistant.custom_tools.knowledge_tools import run_periodic_fact_store_curation_async
 from ai_assistant.memory.persistent_memory import LEARNED_FACTS_FILEPATH # Import constant for dirty check
 from ai_assistant.config import is_debug_mode, FACT_CURATION_INTERVAL_SECONDS
+import ai_assistant.config as runtime_config
 # Added for self-healing
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.core.task_manager import TaskManager
@@ -105,7 +106,7 @@ _last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 
 # Reminder System State
 _last_reminder_check_time: float = 0.0
-_reminder_check_interval_seconds = 10 # Check frequently
+_reminder_check_interval_seconds = getattr(runtime_config, "REMINDER_CHECK_INTERVAL_SECONDS", 10) # Check frequently
 
 # Detailed Status Trackers
 _last_dream_status: str = "No dreams realized yet."
@@ -532,6 +533,16 @@ async def _background_loop_async():
 
     while _background_service_active:
         current_loop_time = time.time()
+
+        # Refresh runtime-configurable background intervals.
+        globals()['_reminder_check_interval_seconds'] = max(
+            5,
+            int(getattr(runtime_config, "REMINDER_CHECK_INTERVAL_SECONDS", globals().get('_reminder_check_interval_seconds', 10)))
+        )
+        globals()['_dream_interval_seconds'] = max(
+            300,
+            int(getattr(runtime_config, "DREAM_INTERVAL_SECONDS", globals().get('_dream_interval_seconds', 86400)))
+        )
         
         # --- Deep Sleep Check ---
         if is_deep_sleep_active():
@@ -963,10 +974,10 @@ async def _background_loop_async():
         # --- DREAM MODE (Autonomous Deep Simulation - Heavy) ---
         global _last_dream_time, _dream_interval_seconds
         if '_last_dream_time' not in globals(): _last_dream_time = 0.0
-        if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = 86400 # 24 hours (Disabled effectively)
+        if '_dream_interval_seconds' not in globals(): _dream_interval_seconds = getattr(runtime_config, 'DREAM_INTERVAL_SECONDS', 86400)
 
         # Check for explicit DREAM_MODE enable via config or env if needed
-        ENABLE_DREAM_MODE = os.environ.get("ENABLE_DREAM_MODE", "False").lower() == "true"
+        ENABLE_DREAM_MODE = bool(getattr(runtime_config, "ENABLE_DREAM_MODE", False) or os.environ.get("ENABLE_DREAM_MODE", "False").lower() == "true")
 
         if ENABLE_DREAM_MODE and user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
