@@ -189,6 +189,36 @@ def _find_dynamic_proposal(store: dict, proposal_id: str):
     return next((item for item in proposals if str(item.get("proposal_id")) == str(proposal_id)), None)
 
 
+
+def _build_operator_lifecycle_view(proposal: dict, audit_events: list = None) -> dict:
+    proposal = proposal if isinstance(proposal, dict) else {}
+    provenance = proposal.get("provenance") if isinstance(proposal.get("provenance"), dict) else {}
+    review = proposal.get("review") if isinstance(proposal.get("review"), dict) else {}
+    status = str(proposal.get("status") or "").upper()
+    events = audit_events if isinstance(audit_events, list) else []
+
+    return {
+        "why_this_specialist_exists": str(provenance.get("rationale") or ""),
+        "retirement_policy": str(provenance.get("retirement_policy") or ""),
+        "rollback_plan": str(provenance.get("rollback_plan") or ""),
+        "requested_by": str(provenance.get("requested_by") or ""),
+        "review_status": status,
+        "reviewed_by": str(review.get("reviewed_by") or ""),
+        "reviewed_at": str(review.get("reviewed_at") or "") or None,
+        "audit_event_count": len(events),
+        "last_audit_event_type": str(events[-1].get("event_type") or "") if events else None,
+    }
+
+
+def _serialize_dynamic_proposal_for_mission_control(proposal: dict, audit_trail: list = None) -> dict:
+    item = dict(proposal) if isinstance(proposal, dict) else {}
+    proposal_id = str(item.get("proposal_id") or "")
+    events = []
+    if isinstance(audit_trail, list) and proposal_id:
+        events = [ev for ev in audit_trail if isinstance(ev, dict) and str(ev.get("proposal_id") or "") == proposal_id]
+    item["operator_lifecycle"] = _build_operator_lifecycle_view(item, events)
+    return item
+
 def _is_truthy_query_flag(raw_value: str) -> bool:
     return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -672,14 +702,19 @@ def mission_control_list_dynamic_specialist_proposals():
 
     limit = _coerce_positive_int(request.args.get('limit'), default=50, maximum=200)
     sorted_items = sorted(items, key=lambda item: str(item.get('created_at', '')), reverse=True)[:limit]
+    audit_trail = store.get('audit_trail', []) if isinstance(store.get('audit_trail', []), list) else []
+    enriched_items = [
+        _serialize_dynamic_proposal_for_mission_control(item, audit_trail=audit_trail)
+        for item in sorted_items
+    ]
 
     return jsonify({
         "success": True,
         "schema_version": 1,
-        "count": len(sorted_items),
-        "items": sorted_items,
+        "count": len(enriched_items),
+        "items": enriched_items,
         "status_filter": status_filter or None,
-        "audit_trail_count": len(store.get('audit_trail', [])) if isinstance(store.get('audit_trail', []), list) else 0,
+        "audit_trail_count": len(audit_trail),
     })
 
 
@@ -723,7 +758,7 @@ def mission_control_create_dynamic_specialist_proposal():
     return jsonify({
         "success": True,
         "schema_version": 1,
-        "proposal": proposal,
+        "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])),
     }), 202
 
 
@@ -762,7 +797,7 @@ def mission_control_approve_dynamic_specialist_proposal(proposal_id):
     )
     _save_dynamic_specialist_store(store)
 
-    return jsonify({"success": True, "proposal": proposal, "auto_spawned": False})
+    return jsonify({"success": True, "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])), "auto_spawned": False})
 
 
 @api_bp.route('/status/dynamic-specialist-proposals/<proposal_id>/reject', methods=['POST'])
@@ -802,7 +837,7 @@ def mission_control_reject_dynamic_specialist_proposal(proposal_id):
     )
     _save_dynamic_specialist_store(store)
 
-    return jsonify({"success": True, "proposal": proposal, "auto_spawned": False})
+    return jsonify({"success": True, "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])), "auto_spawned": False})
 
 
 
