@@ -1,6 +1,7 @@
 import sys
 import types
 from types import SimpleNamespace
+from datetime import datetime, timezone, timedelta
 
 from flask import Flask
 
@@ -229,6 +230,106 @@ def test_health_audit_endpoint(monkeypatch):
     assert isinstance(payload["health"]["checks"], list)
     assert "healthy" in payload["health"]
     assert "failing_count" in payload["health"]
+
+
+def test_token_dashboard_endpoint_includes_budget_and_category_split(monkeypatch):
+    app = _build_test_app()
+
+    monkeypatch.setattr(
+        approvals.telemetry_tracker,
+        "get_history",
+        lambda limit=500: [
+            {
+                "timestamp": datetime.now(timezone.utc).timestamp(),
+                "model": "gemini-2.5-flash",
+                "task": "web_research",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "total_tokens": 1500,
+            },
+            {
+                "timestamp": datetime.now(timezone.utc).timestamp(),
+                "model": "gemini-2.5-flash",
+                "task": "code_review",
+                "input_tokens": 600,
+                "output_tokens": 200,
+                "total_tokens": 800,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        approvals,
+        "_load_token_budget_settings",
+        lambda: {
+            "default_daily_budget_usd": 2.0,
+            "hard_stop_enabled": False,
+            "category_budgets": {
+                "research": 1.0,
+                "coding": 3.0,
+                "autonomous": 1.0,
+                "general": 1.0,
+            },
+        },
+    )
+
+    with app.test_client() as client:
+        response = client.get('/api/status/token-dashboard?window_hours=24&history_limit=20')
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    dashboard = payload["token_dashboard"]
+    assert dashboard["totals"]["calls"] == 2
+    assert dashboard["by_category"]["research"]["calls"] == 1
+    assert dashboard["by_category"]["coding"]["calls"] == 1
+    assert dashboard["budget"]["default_daily_budget_usd"] == 2.0
+    assert len(dashboard["budget"]["category_status"]) == 4
+
+
+def test_token_budget_update_endpoint_normalizes_values(monkeypatch):
+    app = _build_test_app()
+
+    persisted = {
+        "schema_version": 1,
+        "default_daily_budget_usd": 1.0,
+        "hard_stop_enabled": False,
+        "category_budgets": {
+            "research": 1.0,
+            "coding": 2.0,
+            "autonomous": 1.0,
+            "general": 1.0,
+        },
+        "updated_at": "now",
+    }
+
+    monkeypatch.setattr(approvals, "_load_token_budget_settings", lambda: dict(persisted))
+    captured = {}
+    monkeypatch.setattr(approvals, "_save_token_budget_settings", lambda data: captured.setdefault("settings", data))
+
+    with app.test_client() as client:
+        response = client.post(
+            '/api/status/token-budget',
+            json={
+                "default_daily_budget_usd": -5,
+                "hard_stop_enabled": True,
+                "category_budgets": {
+                    "research": 0.25,
+                    "coding": 4.5,
+                    "invalid": 12,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    settings = payload["settings"]
+    assert settings["default_daily_budget_usd"] == 0.0
+    assert settings["hard_stop_enabled"] is True
+    assert settings["category_budgets"]["research"] == 0.25
+    assert settings["category_budgets"]["coding"] == 4.5
+    assert "invalid" not in settings["category_budgets"]
+    assert captured["settings"]["hard_stop_enabled"] is True
 
 
 def test_reflection_suggestions_endpoint_returns_pending_items(monkeypatch):
@@ -1655,3 +1756,256 @@ def test_health_audit_reports_partial_optional_dependency_availability(monkeypat
     assert checks["chromadb"]["ok"] is True
     assert checks["pyaudio"]["ok"] is False
     assert payload["health"]["failing_count"] >= 2
+
+
+def test_dynamic_specialist_list_includes_operator_lifecycle_view(monkeypatch, tmp_path):
+    app = _build_test_app()
+    monkeypatch.setattr(approvals, "_DYNAMIC_SPECIALIST_STORE_PATH", str(tmp_path / "dynamic_specialist_proposals.json"))
+
+    payload = {
+        "profile": {
+            "label": "Dynamic Reviewer",
+            "worker_profile": "task_reviewer_worker",
+            "scope_type": "session",
+            "capability_profile": "review_only",
+            "retention_policy": "keep_summary_only",
+            "description": "Dynamic specialist profile",
+        },
+        "provenance": {
+            "requested_by": "operator:carol",
+            "rationale": "Need specialist for flaky regression triage",
+            "rollback_plan": "Disable profile and stop assignment",
+            "retirement_policy": "Retire after 14 days idle",
+        },
+    }
+
+    with app.test_client() as client:
+        create_response = client.post('/api/status/dynamic-specialist-proposals', json=payload)
+        assert create_response.status_code == 202
+        proposal_id = create_response.get_json()["proposal"]["proposal_id"]
+
+        approve_response = client.post(
+            f"/api/status/dynamic-specialist-proposals/{proposal_id}/approve",
+            json={"reviewed_by": "reviewer:dan", "review_notes": "approved for controlled rollout"},
+        )
+        assert approve_response.status_code == 200
+
+        list_response = client.get('/api/status/dynamic-specialist-proposals?status=APPROVED')
+
+    assert list_response.status_code == 200
+    body = list_response.get_json()
+    assert body["count"] == 1
+    lifecycle = body["items"][0]["operator_lifecycle"]
+    assert lifecycle["why_this_specialist_exists"] == "Need specialist for flaky regression triage"
+    assert lifecycle["retirement_policy"] == "Retire after 14 days idle"
+    assert lifecycle["rollback_plan"] == "Disable profile and stop assignment"
+    assert lifecycle["review_status"] == "APPROVED"
+    assert lifecycle["reviewed_by"] == "reviewer:dan"
+    assert lifecycle["audit_event_count"] >= 2
+    assert lifecycle["last_audit_event_type"] == "PROPOSAL_APPROVED"
+
+
+def test_slo_dashboard_returns_503_when_orchestrator_missing(monkeypatch):
+    app = _build_test_app()
+    monkeypatch.setattr(app_globals, "orchestrator", None)
+
+    with app.test_client() as client:
+        response = client.get('/api/status/slo-dashboard')
+
+    assert response.status_code == 503
+    payload = response.get_json()
+    assert payload["success"] is False
+
+
+def test_slo_dashboard_reports_measured_and_gap_metrics(monkeypatch):
+    app = _build_test_app()
+
+    active_tasks = [SimpleNamespace(task_id="t1"), SimpleNamespace(task_id="t2"), SimpleNamespace(task_id="t3"), SimpleNamespace(task_id="t4")]
+    fake_task_manager = SimpleNamespace(list_active_tasks=lambda: active_tasks)
+    fake_orchestrator = SimpleNamespace(task_manager=fake_task_manager)
+
+    monkeypatch.setattr(app_globals, "orchestrator", fake_orchestrator)
+    monkeypatch.setattr(app_globals, "chat_manager", SimpleNamespace(
+        list_user_notices=lambda scope, include_read=False, limit=200: (
+            [{"id": "n1"}, {"id": "n2"}, {"id": "n3"}] if not include_read else [{"id": "n1"}, {"id": "n2"}, {"id": "n3"}, {"id": "n4"}]
+        )
+    ))
+
+    topology = [
+        {"task_id": "t1", "state": "FAILED"},
+        {"task_id": "t2", "state": "WAITING_FOR_REVIEW"},
+        {"task_id": "t3", "state": "RUNNING"},
+        {"task_id": "t4", "state": "RUNNING"},
+    ]
+    monkeypatch.setattr(approvals, "get_status_snapshot", lambda active_tasks_count, active_tasks=None: {"delegation_topology": topology})
+    monkeypatch.setattr(approvals, "_is_optional_dependency_available", lambda name: {"playwright": True, "chromadb": False, "pyaudio": False}.get(name, False))
+
+    with app.test_client() as client:
+        response = client.get('/api/status/slo-dashboard')
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["success"] is True
+    slo = body["slo"]
+    assert slo["snapshot"]["active_delegated_tasks"] == 4
+    assert slo["snapshot"]["by_state"]["FAILED"] == 1
+    assert slo["snapshot"]["work_inbox_unread"] == 3
+
+    metrics = {item["name"]: item for item in slo["metrics"]}
+    assert metrics["delegation_failed_active_rate_pct"]["value"] == 25.0
+    assert metrics["delegation_failed_active_rate_pct"]["meeting_target"] is False
+    assert metrics["delegation_review_backlog_rate_pct"]["value"] == 25.0
+    assert metrics["delegation_review_backlog_rate_pct"]["meeting_target"] is True
+    assert metrics["optional_dependency_availability_pct"]["value"] == 33.33
+    assert metrics["optional_dependency_availability_pct"]["meeting_target"] is False
+    assert metrics["delegated_completion_latency_p50_ms"]["data_status"] == "not_instrumented"
+    assert metrics["delegated_completion_latency_p50_ms"]["meeting_target"] is None
+    assert metrics["failed_delegation_recovery_rate_pct"]["data_status"] == "not_instrumented"
+    assert slo["coverage"]["measured_metrics"] == 4
+    assert slo["coverage"]["not_instrumented_metrics"] == 4
+
+
+
+def test_slo_dashboard_uses_archived_tasks_for_latency_and_recovery(monkeypatch):
+    app = _build_test_app()
+
+    class _Status:
+        def __init__(self, name):
+            self.name = name
+
+    class _Task:
+        def __init__(self, created_at, terminal_at, recovered=False, retry_attempts=0, diagnosis_minutes=0):
+            self.status = _Status("COMPLETED_SUCCESSFULLY")
+            self.created_at = created_at
+            self.last_updated_at = terminal_at
+            failed_at = created_at + timedelta(minutes=1)
+            diagnosed_at = failed_at + timedelta(minutes=diagnosis_minutes)
+            self.details = {"lifecycle": {
+                "terminal_at": terminal_at.isoformat(),
+                "recovered_after_failure": recovered,
+                "retry_attempts": retry_attempts,
+                "first_failed_at": failed_at.isoformat(),
+                "diagnosed_at": diagnosed_at.isoformat(),
+            }}
+
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    archived = [
+        _Task(now - timedelta(seconds=30), now - timedelta(seconds=10), recovered=True, retry_attempts=1, diagnosis_minutes=4),
+        _Task(now - timedelta(seconds=20), now - timedelta(seconds=5), recovered=False, retry_attempts=0, diagnosis_minutes=2),
+        _Task(now - timedelta(seconds=10), now, recovered=True, retry_attempts=2, diagnosis_minutes=6),
+    ]
+
+    active_tasks = [SimpleNamespace(task_id="a")]
+    fake_task_manager = SimpleNamespace(
+        list_active_tasks=lambda: active_tasks,
+        list_archived_tasks=lambda limit=500: archived,
+    )
+    monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(task_manager=fake_task_manager))
+    monkeypatch.setattr(app_globals, "chat_manager", SimpleNamespace(list_user_notices=lambda scope, include_read=False, limit=200: []))
+    monkeypatch.setattr(approvals, "get_status_snapshot", lambda active_tasks_count, active_tasks=None: {"delegation_topology": []})
+    monkeypatch.setattr(approvals, "_is_optional_dependency_available", lambda name: True)
+
+    with app.test_client() as client:
+        response = client.get('/api/status/slo-dashboard')
+
+    assert response.status_code == 200
+    payload = response.get_json()["slo"]
+    metrics = {item["name"]: item for item in payload["metrics"]}
+    assert metrics["delegated_completion_latency_p50_ms"]["data_status"] == "measured"
+    assert metrics["delegated_completion_latency_p50_ms"]["value"] == 15000
+    assert metrics["failed_delegation_recovery_rate_pct"]["data_status"] == "measured"
+    assert metrics["failed_delegation_recovery_rate_pct"]["value"] == 66.67
+    assert metrics["manual_retry_rate_pct"]["data_status"] == "measured"
+    assert metrics["manual_retry_rate_pct"]["value"] == 66.67
+    assert metrics["mean_time_to_diagnose_minutes"]["data_status"] == "measured"
+    assert metrics["mean_time_to_diagnose_minutes"]["value"] == 4.0
+
+
+
+def test_slo_trends_returns_503_when_orchestrator_missing(monkeypatch):
+    app = _build_test_app()
+    monkeypatch.setattr(app_globals, "orchestrator", None)
+
+    with app.test_client() as client:
+        response = client.get('/api/status/slo-trends')
+
+    assert response.status_code == 503
+    payload = response.get_json()
+    assert payload["success"] is False
+
+
+def test_slo_trends_reports_primary_and_compare_windows(monkeypatch):
+    app = _build_test_app()
+
+    class _Status:
+        def __init__(self, name):
+            self.name = name
+
+    class _Task:
+        def __init__(self, created_at, terminal_at, retry_attempts=0, recovered=False, diagnosis_minutes=0):
+            self.status = _Status("COMPLETED_SUCCESSFULLY")
+            self.created_at = created_at
+            self.last_updated_at = terminal_at
+            failed_at = created_at + timedelta(minutes=1)
+            diagnosed_at = failed_at + timedelta(minutes=diagnosis_minutes)
+            self.details = {
+                "worker_profile": "coder_worker" if retry_attempts else "critic_worker",
+                "scope_type": "session" if recovered else "user",
+                "source": "chat_delegate" if retry_attempts else "planner",
+                "lifecycle": {
+                    "terminal_at": terminal_at.isoformat(),
+                    "retry_attempts": retry_attempts,
+                    "retry_events": ([{"at": terminal_at.isoformat(), "source": "manual"}] if retry_attempts else []),
+                    "recovered_after_failure": recovered,
+                    "first_failed_at": failed_at.isoformat(),
+                    "diagnosed_at": diagnosed_at.isoformat(),
+                }
+            }
+
+    now = datetime.now(timezone.utc)
+    archived = [
+        _Task(now - timedelta(hours=2, minutes=20), now - timedelta(hours=2), retry_attempts=1, recovered=True, diagnosis_minutes=4),
+        _Task(now - timedelta(hours=1, minutes=30), now - timedelta(hours=1), retry_attempts=0, recovered=False, diagnosis_minutes=6),
+        _Task(now - timedelta(days=3, minutes=40), now - timedelta(days=3), retry_attempts=1, recovered=True, diagnosis_minutes=2),
+    ]
+
+    fake_task_manager = SimpleNamespace(list_archived_tasks=lambda limit=5000: archived)
+    monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(task_manager=fake_task_manager))
+
+    with app.test_client() as client:
+        response = client.get('/api/status/slo-trends?window_hours=24&compare_window_hours=168')
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["success"] is True
+
+    primary = body["windows"]["primary"]
+    compare = body["windows"]["compare"]
+
+    assert primary["window_hours"] == 24
+    assert compare["window_hours"] == 168
+    assert primary["completed_tasks_considered"] == 2
+    assert compare["completed_tasks_considered"] == 3
+
+    p_metrics = primary["metrics"]
+    assert p_metrics["delegated_completion_latency_p50_ms"] == 1800000
+    assert p_metrics["manual_retry_rate_pct"] == 50.0
+    assert p_metrics["manual_retry_source_rate_pct"] == 50.0
+    assert p_metrics["automatic_retry_source_rate_pct"] == 0.0
+    assert p_metrics["failed_delegation_recovery_rate_pct"] == 50.0
+    assert p_metrics["mean_time_to_diagnose_minutes"] == 6.0
+
+    # Trend analysis (primary vs compare)
+    assert body["analysis"]["deltas"]["manual_retry_rate_pct"] == -16.67
+    assert body["analysis"]["breaches"]["manual_retry_rate_pct"]["primary_breached"] is True
+    assert body["analysis"]["breaches"]["manual_retry_rate_pct"]["compare_breached"] is True
+    assert body["analysis"]["breaches"]["manual_retry_rate_pct"]["breach_streak_windows"] == 2
+    assert body["analysis"]["breaches"]["manual_retry_rate_pct"]["severity"] == "critical"
+    assert body["analysis"]["overall_severity"] == "critical"
+
+    # Contributor slices
+    failed_by_worker = body["windows"]["primary"]["contributors"]["failed_tasks"]["by_worker"]
+    retries_by_source = body["windows"]["primary"]["contributors"]["retries"]["by_source"]
+    assert failed_by_worker[0]["key"] in {"coder_worker", "critic_worker"}
+    assert retries_by_source[0]["key"] == "chat_delegate"
