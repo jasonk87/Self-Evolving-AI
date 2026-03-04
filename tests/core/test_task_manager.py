@@ -490,3 +490,27 @@ if __name__ == '__main__': # pragma: no cover
         self.assertEqual(task.details.get("retention_policy"), "drop_task_memory_on_completion_keep_artifacts")
         self.assertEqual(task.details.get("agent_scope_contract_version"), "2026-03-r3-v1")
         self.assertIn("scope_type", task.details.get("agent_scope_contract_coercions", []))
+
+
+
+def test_task_lifecycle_details_capture_events_and_recovery(tmp_path):
+    task_file = tmp_path / "active_tasks.json"
+    tm = TaskManager(filepath=str(task_file))
+
+    task = tm.add_task(description="lifecycle test", task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK, details={
+        "worker_profile": "task_reviewer_worker",
+        "scope_type": "session",
+        "capability_profile": "review_only",
+        "retention_policy": "keep_summary_only",
+    })
+
+    tm.update_task_status(task.task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="temp fail")
+
+    archived = tm.get_task_including_archive(task.task_id)
+    assert archived is not None
+    lifecycle = archived.details.get("lifecycle", {})
+    assert isinstance(lifecycle.get("events"), list)
+    assert len(lifecycle.get("events")) >= 2
+    assert lifecycle.get("first_failed_at") is not None
+    assert lifecycle.get("diagnosed_at") is not None
+    assert lifecycle.get("terminal_at") is not None

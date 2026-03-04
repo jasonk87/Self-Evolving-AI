@@ -1,0 +1,12 @@
+requests
+aiohttp
+aiofiles
+duckduckgo_search
+prompt_toolkit
+flask
+flask-socketio
+python-dotenv
+numpy
+websockets
+pillow
+nest_asyncio

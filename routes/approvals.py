@@ -18,7 +18,7 @@ from ai_assistant.core.agent_scope_contracts import (
     normalize_and_validate_agent_policy,
 )
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import importlib.util
 import os
 import json
@@ -188,6 +188,293 @@ def _find_dynamic_proposal(store: dict, proposal_id: str):
         return None
     return next((item for item in proposals if str(item.get("proposal_id")) == str(proposal_id)), None)
 
+
+
+def _build_operator_lifecycle_view(proposal: dict, audit_events: list = None) -> dict:
+    proposal = proposal if isinstance(proposal, dict) else {}
+    provenance = proposal.get("provenance") if isinstance(proposal.get("provenance"), dict) else {}
+    review = proposal.get("review") if isinstance(proposal.get("review"), dict) else {}
+    status = str(proposal.get("status") or "").upper()
+    events = audit_events if isinstance(audit_events, list) else []
+
+    return {
+        "why_this_specialist_exists": str(provenance.get("rationale") or ""),
+        "retirement_policy": str(provenance.get("retirement_policy") or ""),
+        "rollback_plan": str(provenance.get("rollback_plan") or ""),
+        "requested_by": str(provenance.get("requested_by") or ""),
+        "review_status": status,
+        "reviewed_by": str(review.get("reviewed_by") or ""),
+        "reviewed_at": str(review.get("reviewed_at") or "") or None,
+        "audit_event_count": len(events),
+        "last_audit_event_type": str(events[-1].get("event_type") or "") if events else None,
+    }
+
+
+def _serialize_dynamic_proposal_for_mission_control(proposal: dict, audit_trail: list = None) -> dict:
+    item = dict(proposal) if isinstance(proposal, dict) else {}
+    proposal_id = str(item.get("proposal_id") or "")
+    events = []
+    if isinstance(audit_trail, list) and proposal_id:
+        events = [ev for ev in audit_trail if isinstance(ev, dict) and str(ev.get("proposal_id") or "") == proposal_id]
+    item["operator_lifecycle"] = _build_operator_lifecycle_view(item, events)
+    return item
+
+
+def _safe_ratio_percent(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((float(numerator) / float(denominator)) * 100.0, 2)
+
+
+def _parse_iso_datetime(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+
+def _coerce_window_hours(value, default: int = 24, minimum: int = 1, maximum: int = 24 * 30) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < minimum:
+        return minimum
+    return min(parsed, maximum)
+
+
+def _select_archived_tasks_in_window(archived_tasks: list, now_dt: datetime, window_hours: int) -> list:
+    items = []
+    if not isinstance(archived_tasks, list):
+        return items
+
+    window_start = now_dt - timedelta(hours=window_hours)
+    for task in archived_tasks:
+        details = getattr(task, "details", {}) if isinstance(getattr(task, "details", {}), dict) else {}
+        lifecycle = details.get("lifecycle", {}) if isinstance(details.get("lifecycle", {}), dict) else {}
+        terminal_at = _parse_iso_datetime(lifecycle.get("terminal_at"))
+        if terminal_at is None:
+            terminal_at = getattr(task, "last_updated_at", None)
+        if terminal_at is None:
+            continue
+        if terminal_at >= window_start:
+            items.append(task)
+    return items
+
+
+def _build_archived_slo_window_metrics(archived_tasks: list, window_hours: int, now_dt: datetime) -> dict:
+    tasks = _select_archived_tasks_in_window(archived_tasks, now_dt=now_dt, window_hours=window_hours)
+
+    completion_latency_samples_ms = []
+    completed = []
+    completed_with_retry = 0
+    recovered = 0
+    diagnosis_minutes_samples = []
+
+    for task in tasks:
+        status_name = str(getattr(getattr(task, "status", None), "name", "") or "")
+        details = getattr(task, "details", {}) if isinstance(getattr(task, "details", {}), dict) else {}
+        lifecycle = details.get("lifecycle", {}) if isinstance(details.get("lifecycle", {}), dict) else {}
+
+        first_failed_at = _parse_iso_datetime(lifecycle.get("first_failed_at"))
+        diagnosed_at = _parse_iso_datetime(lifecycle.get("diagnosed_at"))
+        if first_failed_at and diagnosed_at and diagnosed_at >= first_failed_at:
+            diagnosis_minutes_samples.append((diagnosed_at - first_failed_at).total_seconds() / 60.0)
+
+        if status_name != "COMPLETED_SUCCESSFULLY":
+            continue
+
+        completed.append(task)
+        if int(lifecycle.get("retry_attempts", 0) or 0) > 0:
+            completed_with_retry += 1
+        if lifecycle.get("recovered_after_failure"):
+            recovered += 1
+
+        created_at = getattr(task, "created_at", None)
+        terminal_at = _parse_iso_datetime(lifecycle.get("terminal_at")) or getattr(task, "last_updated_at", None)
+        if created_at and terminal_at:
+            duration_ms = int((terminal_at - created_at).total_seconds() * 1000)
+            if duration_ms >= 0:
+                completion_latency_samples_ms.append(duration_ms)
+
+    completion_latency_samples_ms.sort()
+    diagnosis_minutes_samples.sort()
+
+    p50_latency_ms = completion_latency_samples_ms[len(completion_latency_samples_ms) // 2] if completion_latency_samples_ms else None
+    retry_rate_pct = _safe_ratio_percent(completed_with_retry, len(completed)) if completed else None
+    recovery_rate_pct = _safe_ratio_percent(recovered, len(completed)) if completed else None
+    mttd_minutes = round(diagnosis_minutes_samples[len(diagnosis_minutes_samples) // 2], 2) if diagnosis_minutes_samples else None
+
+    return {
+        "window_hours": window_hours,
+        "window_start": (now_dt - timedelta(hours=window_hours)).isoformat(),
+        "window_end": now_dt.isoformat(),
+        "tasks_considered": len(tasks),
+        "completed_tasks_considered": len(completed),
+        "metrics": {
+            "delegated_completion_latency_p50_ms": p50_latency_ms,
+            "manual_retry_rate_pct": retry_rate_pct,
+            "failed_delegation_recovery_rate_pct": recovery_rate_pct,
+            "mean_time_to_diagnose_minutes": mttd_minutes,
+        },
+    }
+
+def _build_slo_metric(name: str, value, target, comparator: str, data_status: str = "measured", unit: str = None):
+    item = {
+        "name": name,
+        "value": value,
+        "target": target,
+        "comparator": comparator,
+        "data_status": data_status,
+    }
+    if unit:
+        item["unit"] = unit
+
+    if data_status != "measured" or value is None:
+        item["meeting_target"] = None
+    else:
+        if comparator == "lte":
+            item["meeting_target"] = bool(value <= target)
+        elif comparator == "gte":
+            item["meeting_target"] = bool(value >= target)
+        else:
+            item["meeting_target"] = None
+    return item
+
+
+def _build_slo_dashboard_payload(topology: list, inbox_summary: dict, archived_tasks: list = None) -> dict:
+    edges = topology if isinstance(topology, list) else []
+    by_state = {}
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        state = str(edge.get("state") or "unknown")
+        by_state[state] = by_state.get(state, 0) + 1
+
+    total_active = sum(by_state.values())
+    failed_active = by_state.get("FAILED", 0)
+    waiting_review = by_state.get("WAITING_FOR_REVIEW", 0)
+    unread_inbox = int((inbox_summary or {}).get("unread", 0) or 0)
+    archived = archived_tasks if isinstance(archived_tasks, list) else []
+    completed_archived = []
+    recovered_archived = 0
+    completed_with_retry = 0
+    diagnosis_minutes_samples = []
+    for task in archived:
+        details = getattr(task, "details", {}) if isinstance(getattr(task, "details", {}), dict) else {}
+        lifecycle = details.get("lifecycle", {}) if isinstance(details.get("lifecycle", {}), dict) else {}
+
+        first_failed_at = _parse_iso_datetime(lifecycle.get("first_failed_at"))
+        diagnosed_at = _parse_iso_datetime(lifecycle.get("diagnosed_at"))
+        if first_failed_at and diagnosed_at and diagnosed_at >= first_failed_at:
+            diagnosis_minutes_samples.append((diagnosed_at - first_failed_at).total_seconds() / 60.0)
+
+        status_name = str(getattr(getattr(task, "status", None), "name", "") or "")
+        if status_name == "COMPLETED_SUCCESSFULLY":
+            completed_archived.append(task)
+            if isinstance(lifecycle, dict) and lifecycle.get("recovered_after_failure"):
+                recovered_archived += 1
+            if int(lifecycle.get("retry_attempts", 0) or 0) > 0:
+                completed_with_retry += 1
+
+    completion_latency_samples_ms = []
+    for task in completed_archived:
+        created_at = getattr(task, "created_at", None)
+        terminal_at = None
+        details = getattr(task, "details", {}) if isinstance(getattr(task, "details", {}), dict) else {}
+        lifecycle = details.get("lifecycle", {}) if isinstance(details.get("lifecycle", {}), dict) else {}
+        terminal_iso = lifecycle.get("terminal_at") if isinstance(lifecycle, dict) else None
+        terminal_at = _parse_iso_datetime(terminal_iso)
+        if terminal_at is None:
+            terminal_at = getattr(task, "last_updated_at", None)
+        if created_at and terminal_at:
+            completion_latency_samples_ms.append(int((terminal_at - created_at).total_seconds() * 1000))
+
+    completion_latency_samples_ms = sorted([x for x in completion_latency_samples_ms if x >= 0])
+    completion_latency_p50_ms = None
+    if completion_latency_samples_ms:
+        completion_latency_p50_ms = completion_latency_samples_ms[len(completion_latency_samples_ms) // 2]
+
+    recovery_rate_pct = None
+    retry_rate_pct = None
+    if completed_archived:
+        recovery_rate_pct = _safe_ratio_percent(recovered_archived, len(completed_archived))
+        retry_rate_pct = _safe_ratio_percent(completed_with_retry, len(completed_archived))
+
+    mttd_minutes = None
+    if diagnosis_minutes_samples:
+        diagnosis_minutes_samples = sorted(diagnosis_minutes_samples)
+        mttd_minutes = round(diagnosis_minutes_samples[len(diagnosis_minutes_samples) // 2], 2)
+
+    optional_checks = {
+        "playwright": _is_optional_dependency_available('playwright'),
+        "chromadb": _is_optional_dependency_available('chromadb'),
+        "pyaudio": _is_optional_dependency_available('pyaudio'),
+    }
+    installed_optional = sum(1 for ok in optional_checks.values() if ok)
+    optional_availability_pct = _safe_ratio_percent(installed_optional, len(optional_checks))
+
+    metrics = [
+        _build_slo_metric(
+            "delegation_failed_active_rate_pct",
+            _safe_ratio_percent(failed_active, total_active),
+            5.0,
+            "lte",
+            unit="percent",
+        ),
+        _build_slo_metric(
+            "delegation_review_backlog_rate_pct",
+            _safe_ratio_percent(waiting_review, total_active),
+            25.0,
+            "lte",
+            unit="percent",
+        ),
+        _build_slo_metric(
+            "work_inbox_unread_count",
+            unread_inbox,
+            20,
+            "lte",
+            unit="count",
+        ),
+        _build_slo_metric(
+            "optional_dependency_availability_pct",
+            optional_availability_pct,
+            66.0,
+            "gte",
+            unit="percent",
+        ),
+        _build_slo_metric("delegated_completion_latency_p50_ms", completion_latency_p50_ms, 15000, "lte", data_status="measured" if completion_latency_p50_ms is not None else "not_instrumented", unit="ms"),
+        _build_slo_metric("manual_retry_rate_pct", retry_rate_pct, 10.0, "lte", data_status="measured" if retry_rate_pct is not None else "not_instrumented", unit="percent"),
+        _build_slo_metric("failed_delegation_recovery_rate_pct", recovery_rate_pct, 90.0, "gte", data_status="measured" if recovery_rate_pct is not None else "not_instrumented", unit="percent"),
+        _build_slo_metric("mean_time_to_diagnose_minutes", mttd_minutes, 30, "lte", data_status="measured" if mttd_minutes is not None else "not_instrumented", unit="minutes"),
+    ]
+
+    measured = [m for m in metrics if m.get("data_status") == "measured"]
+    measured_meeting = [m for m in measured if m.get("meeting_target") is True]
+
+    return {
+        "schema_version": 1,
+        "window": "active_snapshot",
+        "targets_version": "2026-q2-week7-8-v1",
+        "snapshot": {
+            "active_delegated_tasks": total_active,
+            "by_state": by_state,
+            "work_inbox_unread": unread_inbox,
+        },
+        "metrics": metrics,
+        "coverage": {
+            "measured_metrics": len(measured),
+            "not_instrumented_metrics": len([m for m in metrics if m.get("data_status") != "measured"]),
+            "measured_meeting_target": len(measured_meeting),
+        },
+        "notes": [
+            "Completion latency, manual retry rate, failed recovery rate, and MTTD require persisted lifecycle timestamps and retry-event instrumentation.",
+            "Current dashboard exposes measurable active-state SLO proxies plus explicit non-instrumented gaps.",
+        ],
+    }
 
 def _is_truthy_query_flag(raw_value: str) -> bool:
     return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -672,14 +959,19 @@ def mission_control_list_dynamic_specialist_proposals():
 
     limit = _coerce_positive_int(request.args.get('limit'), default=50, maximum=200)
     sorted_items = sorted(items, key=lambda item: str(item.get('created_at', '')), reverse=True)[:limit]
+    audit_trail = store.get('audit_trail', []) if isinstance(store.get('audit_trail', []), list) else []
+    enriched_items = [
+        _serialize_dynamic_proposal_for_mission_control(item, audit_trail=audit_trail)
+        for item in sorted_items
+    ]
 
     return jsonify({
         "success": True,
         "schema_version": 1,
-        "count": len(sorted_items),
-        "items": sorted_items,
+        "count": len(enriched_items),
+        "items": enriched_items,
         "status_filter": status_filter or None,
-        "audit_trail_count": len(store.get('audit_trail', [])) if isinstance(store.get('audit_trail', []), list) else 0,
+        "audit_trail_count": len(audit_trail),
     })
 
 
@@ -723,7 +1015,7 @@ def mission_control_create_dynamic_specialist_proposal():
     return jsonify({
         "success": True,
         "schema_version": 1,
-        "proposal": proposal,
+        "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])),
     }), 202
 
 
@@ -762,7 +1054,7 @@ def mission_control_approve_dynamic_specialist_proposal(proposal_id):
     )
     _save_dynamic_specialist_store(store)
 
-    return jsonify({"success": True, "proposal": proposal, "auto_spawned": False})
+    return jsonify({"success": True, "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])), "auto_spawned": False})
 
 
 @api_bp.route('/status/dynamic-specialist-proposals/<proposal_id>/reject', methods=['POST'])
@@ -802,8 +1094,67 @@ def mission_control_reject_dynamic_specialist_proposal(proposal_id):
     )
     _save_dynamic_specialist_store(store)
 
-    return jsonify({"success": True, "proposal": proposal, "auto_spawned": False})
+    return jsonify({"success": True, "proposal": _serialize_dynamic_proposal_for_mission_control(proposal, audit_trail=store.get("audit_trail", [])), "auto_spawned": False})
 
+
+
+@api_bp.route('/status/slo-dashboard', methods=['GET'])
+def mission_control_slo_dashboard():
+    """Returns Mission Control SLO targets + current measured status and instrumentation gaps."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        active_tasks = app_globals.orchestrator.task_manager.list_active_tasks()
+        snapshot = get_status_snapshot(active_tasks_count=len(active_tasks), active_tasks=active_tasks)
+        topology = snapshot.get('delegation_topology', []) if isinstance(snapshot, dict) else []
+        inbox_summary = _get_work_inbox_summary()
+        archived_tasks_loader = getattr(app_globals.orchestrator.task_manager, "list_archived_tasks", None)
+        archived_tasks = archived_tasks_loader(limit=500) if callable(archived_tasks_loader) else []
+        payload = _build_slo_dashboard_payload(topology=topology, inbox_summary=inbox_summary, archived_tasks=archived_tasks)
+
+        generated_at = datetime.now(timezone.utc)
+        return jsonify({
+            "success": True,
+            "generated_at": generated_at.isoformat(),
+            "generated_at_ms": int(generated_at.timestamp() * 1000),
+            "slo": payload,
+        })
+    except Exception as e:
+        logger.error(f"Error generating SLO dashboard: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+
+@api_bp.route('/status/slo-trends', methods=['GET'])
+def mission_control_slo_trends():
+    """Returns rolling-window SLO metrics derived from archived task lifecycle data."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        tm = app_globals.orchestrator.task_manager
+        archived_loader = getattr(tm, "list_archived_tasks", None)
+        archived_tasks = archived_loader(limit=5000) if callable(archived_loader) else []
+
+        now_dt = datetime.now(timezone.utc)
+        primary_window = _coerce_window_hours(request.args.get('window_hours'), default=24)
+        compare_window = _coerce_window_hours(request.args.get('compare_window_hours'), default=24 * 7)
+
+        primary = _build_archived_slo_window_metrics(archived_tasks, window_hours=primary_window, now_dt=now_dt)
+        compare = _build_archived_slo_window_metrics(archived_tasks, window_hours=compare_window, now_dt=now_dt)
+
+        return jsonify({
+            "success": True,
+            "schema_version": 1,
+            "generated_at": now_dt.isoformat(),
+            "windows": {
+                "primary": primary,
+                "compare": compare,
+            },
+        })
+    except Exception as e:
+        logger.error(f"Error generating SLO trends: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
 
 
 @api_bp.route('/status/health-audit', methods=['GET'])

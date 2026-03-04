@@ -1,21 +1,8 @@
-requests
-aiohttp
-aiofiles
-duckduckgo_search
-prompt_toolkit
-google-api-python-client
-flask-socketio
+# Default install set (safe for most local/dev environments)
+-r requirements-core.txt
+-r requirements-dev.txt
 
-python-dotenv
-numpy
-pytest
-chromadb
-playwright
-pillow
-nest_asyncio
-google-auth-httplib2
-google-auth-oauthlib
-
-websockets
-pyaudio
-mss
+# Optional integrations are intentionally excluded from the default install
+# to avoid native build failures (for example: pyaudio/portaudio).
+# Install explicitly when needed:
+#   pip install -r requirements-optional.txt
