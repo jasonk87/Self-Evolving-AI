@@ -26,8 +26,9 @@ Related docs:
 
 ### Remaining gaps (program-level)
 - Production-quality SLO dashboarding and explicit operational SLO targets.
+- Token budget governance (daily/category budgets, burn-rate controls, and UI policy toggles).
 - Final documentation pass to keep roadmap “current state” synchronized after each phase completion.
-- Broader persistent user-scoped agent lifecycle/productization beyond current proposal-and-contract foundations.
+- Broader persistent user-scoped agent lifecycle/productization beyond current proposal-and-contract foundations, including full-computer assistant workflows (filesystem navigation, desktop automation, and project indexing on operator request).
 
 ---
 
@@ -156,6 +157,7 @@ Success metrics to track:
 - Manual retry rate.
 - Delegated-task completion latency.
 - Failed delegation recovery rate.
+- Daily token burn-rate vs configured budget thresholds.
 
 ---
 
@@ -200,7 +202,7 @@ PR8 release-gate completion evidence should include all of the following in CI o
 ### Milestone D — 🟡 in progress
 - R3 controlled dynamic specialists (review-gated proposal flow complete; continue operationalization).
 - M3 specialist lifecycle management (core flows present; continue polish/ops instrumentation).
-- Production-quality SLO dashboarding (remaining major gap).
+- Production-quality SLO dashboarding (baseline API endpoint + archived-task latency/recovery instrumentation added; continue with retry/MTTD instrumentation and UI visualization).
 
 ---
 
@@ -212,4 +214,3 @@ A roadmap phase is complete only when:
 - Mission Control shows relevant operational signals.
 - Rollback path is explicit.
 - User-facing command/help text is updated.
-
