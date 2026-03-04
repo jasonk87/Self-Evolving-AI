@@ -3,9 +3,17 @@ import datetime
 import pickle
 import logging
 from typing import List, Dict, Optional, Union
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+try:
+    from googleapiclient.discovery import build
+except ImportError:
+    build = None
+
+try:
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+except ImportError:
+    InstalledAppFlow = None
+    Request = None
 from ai_assistant.config import get_data_dir
 
 # Scopes required for the API
@@ -21,6 +29,7 @@ class CalendarManager:
     def __init__(self):
         self.creds = None
         self.service = None
+        self._deps_available = build is not None and InstalledAppFlow is not None and Request is not None
         self.data_dir = get_data_dir()
         self.credentials_path = os.path.join(self.data_dir, 'credentials.json')
         self.token_path = os.path.join(self.data_dir, 'token.json')
@@ -30,6 +39,17 @@ class CalendarManager:
             root_creds = 'credentials.json'
             if os.path.exists(root_creds):
                 self.credentials_path = root_creds
+
+    def _load_cached_credentials(self):
+        """Load cached OAuth credentials from token path, returning None on failure."""
+        try:
+            with open(self.token_path, 'rb') as token:
+                return pickle.load(token)
+        except FileNotFoundError:
+            logger.warning("token.json was reported as present but could not be opened.")
+        except Exception as e:
+            logger.error(f"Error loading token.json: {e}")
+        return None
 
     def authenticate(self) -> bool:
         """
@@ -42,11 +62,7 @@ class CalendarManager:
         # created automatically when the authorization flow completes for the first
         # time.
         if os.path.exists(self.token_path):
-            try:
-                with open(self.token_path, 'rb') as token:
-                    self.creds = pickle.load(token)
-            except Exception as e:
-                logger.error(f"Error loading token.json: {e}")
+            self.creds = self._load_cached_credentials()
 
         # If there are no (valid) credentials available, let the user log in.
         if not self.creds or not self.creds.valid:

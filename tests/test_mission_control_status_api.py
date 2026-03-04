@@ -1655,3 +1655,50 @@ def test_health_audit_reports_partial_optional_dependency_availability(monkeypat
     assert checks["chromadb"]["ok"] is True
     assert checks["pyaudio"]["ok"] is False
     assert payload["health"]["failing_count"] >= 2
+
+
+def test_dynamic_specialist_list_includes_operator_lifecycle_view(monkeypatch, tmp_path):
+    app = _build_test_app()
+    monkeypatch.setattr(approvals, "_DYNAMIC_SPECIALIST_STORE_PATH", str(tmp_path / "dynamic_specialist_proposals.json"))
+
+    payload = {
+        "profile": {
+            "label": "Dynamic Reviewer",
+            "worker_profile": "task_reviewer_worker",
+            "scope_type": "session",
+            "capability_profile": "review_only",
+            "retention_policy": "keep_summary_only",
+            "description": "Dynamic specialist profile",
+        },
+        "provenance": {
+            "requested_by": "operator:carol",
+            "rationale": "Need specialist for flaky regression triage",
+            "rollback_plan": "Disable profile and stop assignment",
+            "retirement_policy": "Retire after 14 days idle",
+        },
+    }
+
+    with app.test_client() as client:
+        create_response = client.post('/api/status/dynamic-specialist-proposals', json=payload)
+        assert create_response.status_code == 202
+        proposal_id = create_response.get_json()["proposal"]["proposal_id"]
+
+        approve_response = client.post(
+            f"/api/status/dynamic-specialist-proposals/{proposal_id}/approve",
+            json={"reviewed_by": "reviewer:dan", "review_notes": "approved for controlled rollout"},
+        )
+        assert approve_response.status_code == 200
+
+        list_response = client.get('/api/status/dynamic-specialist-proposals?status=APPROVED')
+
+    assert list_response.status_code == 200
+    body = list_response.get_json()
+    assert body["count"] == 1
+    lifecycle = body["items"][0]["operator_lifecycle"]
+    assert lifecycle["why_this_specialist_exists"] == "Need specialist for flaky regression triage"
+    assert lifecycle["retirement_policy"] == "Retire after 14 days idle"
+    assert lifecycle["rollback_plan"] == "Disable profile and stop assignment"
+    assert lifecycle["review_status"] == "APPROVED"
+    assert lifecycle["reviewed_by"] == "reviewer:dan"
+    assert lifecycle["audit_event_count"] >= 2
+    assert lifecycle["last_audit_event_type"] == "PROPOSAL_APPROVED"
