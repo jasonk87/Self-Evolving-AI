@@ -419,3 +419,41 @@ if __name__ == '__main__': # pragma: no cover
         self.assertTrue(any("Plan step ID 's_non_existent' not found" in str(call_args) for call_args in mock_print.call_args_list))
         # Plan details should not have changed
         self.assertEqual(updated_task.details["plan_step_statuses"], original_plan_step_statuses)
+
+
+    def test_11_ephemeral_agent_task_details_are_policy_normalized(self):
+        tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
+
+        task = tm.add_task(
+            "Delegated worker task",
+            ActiveTaskType.EPHEMERAL_AGENT_TASK,
+            details={
+                "source": "chat_delegate",
+                "worker_profile": "coder_worker",
+                "scope_type": "USER",
+                "capability_profile": "",
+                "retention_policy": "",
+            },
+        )
+
+        self.assertEqual(task.details.get("scope_type"), "user")
+        self.assertEqual(task.details.get("capability_profile"), "workspace_code_generation")
+        self.assertEqual(task.details.get("retention_policy"), "drop_task_memory_on_completion_keep_artifacts")
+
+    def test_12_ephemeral_agent_task_invalid_scope_defaults_to_session(self):
+        tm = TaskManager(notification_manager=self.mock_notification_manager, filepath=self.active_tasks_filepath)
+
+        task = tm.add_task(
+            "Delegated worker task",
+            ActiveTaskType.EPHEMERAL_AGENT_TASK,
+            details={
+                "source": "chat_delegate",
+                "scope_type": "org",
+                "capability_profile": "custom_profile",
+                "retention_policy": "keep_summary_only",
+            },
+        )
+
+        self.assertEqual(task.details.get("scope_type"), "session")
+        self.assertEqual(task.details.get("capability_profile"), "custom_profile")
+        self.assertEqual(task.details.get("retention_policy"), "keep_summary_only")

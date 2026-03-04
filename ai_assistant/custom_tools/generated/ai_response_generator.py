@@ -1,23 +1,26 @@
-from typing import TYPE_CHECKING, Optional
+import inspect
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ai_assistant.core.action_executor import ActionExecutor
 
+
+async def _call_run_prompt(action_executor: "ActionExecutor", prompt: str):
+    """Call run_prompt supporting both sync and async implementations."""
+    result = action_executor.run_prompt(prompt)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 async def generate_two_responses(action_executor: "ActionExecutor", prompt: str) -> str:
-    """
-    Generates two back-to-back responses from the AI for a given prompt.
+    """Generate two responses separated by a fixed delimiter."""
+    if action_executor is None:
+        raise AttributeError("action_executor is required")
 
-    Args:
-        action_executor (ActionExecutor): The action executor used to interact with the AI.
-        prompt (str): The prompt to send to the AI.
-
-    Returns:
-        str: A string containing two responses from the AI, separated by '---RESPONSE_SEPARATOR---'.
-             Returns an error message if the responses could not be generated.
-    """
     try:
-        response1 = await action_executor.run_prompt(prompt)
-        response2 = await action_executor.run_prompt(prompt)
+        response1 = await _call_run_prompt(action_executor, prompt)
+        response2 = await _call_run_prompt(action_executor, prompt)
 
         if response1 is None or response2 is None:
             return "Error: Could not generate both responses."
