@@ -14,6 +14,7 @@ import tempfile
 import json
 from typing import Dict, Any, Optional, List
 import glob
+import shutil
 from ai_assistant.core.events import emit_system_event
 
 def execute_sandboxed_python_script(script_content: str = None, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None, **kwargs) -> Dict[str, Any]:
@@ -51,8 +52,8 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
 
     emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Preparing sandbox...', 'status': 'RUNNING'})
     if not script_content:
-        return {'status': 'error', 'error_message': 'No script content provided. Please use parameter "script_content" (or "code").', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
-    interpreter = python_executable or sys.executable
+        return {'status': 'error', 'error_message': 'No script content provided.', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
+    interpreter = python_executable or "python"
     if isinstance(input_files, str):
         try:
             input_files = json.loads(input_files)
@@ -69,6 +70,7 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
         return {'status': 'error', 'error_message': f'Invalid output_filenames argument: Expected list, got {type(output_filenames).__name__}', 'return_code': -1, 'stdout': '', 'stderr': '', 'output_files': {}}
     emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Running script in isolation...', 'status': 'RUNNING'})
     with tempfile.TemporaryDirectory() as temp_dir_path:
+        os.makedirs(temp_dir_path, exist_ok=True)
         script_filename = 'main_script.py'
         script_file_path = os.path.join(temp_dir_path, script_filename)
         returned_executed_script_path = script_file_path
@@ -92,15 +94,14 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
         stderr_val = ''
         error_msg_val = None
         try:
-            # Check for Docker Sandboxing possibility
-            use_docker = False
-            try:
-                # Check if docker daemon is running and reachable
-                subprocess.run(["docker", "info"], capture_output=True, check=True)
-                use_docker = True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                use_docker = False
-                emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Docker unavailable. Falling back to local execution.', 'status': 'RUNNING'})
+            # Docker sandboxing is opt-in to keep execution deterministic in tests/dev.
+            use_docker = os.environ.get("USE_DOCKER_SANDBOX", "0") == "1" and shutil.which("docker") is not None
+            if use_docker:
+                try:
+                    subprocess.run(["docker", "info"], capture_output=True, check=True)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    use_docker = False
+                    emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Docker unavailable. Falling back to local execution.', 'status': 'RUNNING'})
 
             if use_docker:
                 emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Executing securely in Docker container...', 'status': 'RUNNING'})
@@ -120,7 +121,7 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
                 ]
                 process_result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=docker_timeout, check=False)
             else:
-                process_result = subprocess.run([interpreter, script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
+                process_result = subprocess.run([interpreter, "-I", "-s", "-S", script_filename], capture_output=True, text=True, timeout=timeout_seconds, cwd=temp_dir_path, check=False)
                 
             emit_system_event('tool_status', {'tool': 'PythonExecutor', 'message': 'Execution finished.', 'status': 'COMPLETED'})
             stdout_val = process_result.stdout

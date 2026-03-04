@@ -42,8 +42,8 @@ class StaticAnalysisFilter:
             if isinstance(node, (ast.If, ast.For, ast.While, ast.ExceptHandler, ast.With)):
                 complexity += 1
 
-        # Comment check
-        has_todo = "TODO" in content or "FIXME" in content or "HACK" in content
+        # Comment check (case-insensitive)
+        has_todo = bool(re.search(r"\b(todo|fixme|hack)\b", content, re.IGNORECASE))
 
         # Deprecated pattern check
         has_deprecated = "os.system" in content or "shell=True" in content
