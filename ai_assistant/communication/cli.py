@@ -429,10 +429,11 @@ async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrato
     try:
         success, response = await orchestrator.process_prompt(prompt)
         status_message_str = format_status("Task completed", True) if success else format_status("Task failed", False)
+        status_message_display = status_message_str.value if hasattr(status_message_str, "value") else str(status_message_str)
 
         await queue.put({
             "type": "status_update",
-            "message": status_message_str,
+            "message": status_message_display,
             "prompt_context": prompt
         })
 
@@ -453,16 +454,17 @@ async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrato
         user_friendly_error_msg = technical_error_msg_for_llm # Fallback
 
         # Attempt to rephrase the error
-        # _orchestrator is the global instance used by the CLI
-        if _orchestrator and _orchestrator.action_executor and \
-           _orchestrator.action_executor.code_service and \
-           _orchestrator.action_executor.code_service.llm_provider:
+        if orchestrator and orchestrator.action_executor and \
+           orchestrator.action_executor.code_service and \
+           orchestrator.action_executor.code_service.llm_provider:
             try:
-                user_friendly_error_msg = await rephrase_error_message_conversationally(
+                rephrased_error = await rephrase_error_message_conversationally(
                     technical_error_message=technical_error_msg_for_llm,
                     original_user_query=prompt, # 'prompt' is the original user input to the command
-                    llm_provider=_orchestrator.action_executor.code_service.llm_provider
+                    llm_provider=orchestrator.action_executor.code_service.llm_provider
                 )
+                if rephrased_error:
+                    user_friendly_error_msg = rephrased_error
             except Exception as e_rephrase: # pragma: no cover
                 # Log that rephrasing failed, user will see technical error
                 # Use print for CLI debug messages if no logger is set up for CLI specifically
@@ -480,9 +482,10 @@ async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrato
 
         # Queue the (potentially rephrased) error message for display
         status_update_msg_display = format_message("ERROR", f"Error processing '{prompt}': {user_friendly_error_msg}", CLIColors.ERROR_MESSAGE)
+        status_update_text = status_update_msg_display.value if hasattr(status_update_msg_display, "value") else str(status_update_msg_display)
         await queue.put({
             "type": "status_update",
-            "message": status_update_msg_display,
+            "message": status_update_text,
             "prompt_context": prompt
         })
         await queue.put({

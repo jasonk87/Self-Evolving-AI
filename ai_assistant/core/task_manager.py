@@ -285,7 +285,13 @@ class TaskManager:
 
 
     def add_task(self, description: str, task_type: ActiveTaskType, related_item_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None, session_id: Optional[str] = None) -> ActiveTask:
-        # Ensure description and task_type are first, as per dataclass definition
+        # Backward compatibility: support positional order (task_type, description)
+        if isinstance(description, ActiveTaskType) and isinstance(task_type, str):
+            description, task_type = task_type, description
+
+        if not isinstance(description, str):
+            description = str(description)
+
         initialized_details = details or {}
 
         if task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION:
@@ -331,6 +337,16 @@ class TaskManager:
 
     def get_task(self, task_id: str) -> Optional[ActiveTask]:
         return self._active_tasks.get(task_id)
+
+
+    def get_task_including_archive(self, task_id: str) -> Optional[ActiveTask]:
+        task = self._active_tasks.get(task_id)
+        if task:
+            return task
+        for archived in reversed(self._completed_tasks_archive):
+            if archived.task_id == task_id:
+                return archived
+        return None
 
     def update_task_status(self,
                            task_id: str,
@@ -445,6 +461,14 @@ class TaskManager:
                         related_item_type="task",
                         details_payload={"task_type": task.task_type.name, "description": task.description}
                     )
+
+                if new_status not in [ActiveTaskStatus.COMPLETED_SUCCESSFULLY, ActiveTaskStatus.USER_CANCELLED]:
+                    try:
+                        from .conversational_alerts import emit_task_failure_alert
+                        emit_task_failure_alert(task)
+                    except Exception as alert_exc:
+                        print(f"TaskManager: Warning - failed to emit conversational failure alert for {task_id}: {alert_exc}")
+
                 self._append_to_wal(task, "archive")
                 self._archive_task(task_id)
         else:

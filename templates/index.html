@@ -288,6 +288,12 @@
                     <span class="title">MISSION CONTROL</span>
                     <div class="actions"><button id="refresh-tasks-btn" class="btn-icon">↻</button></div>
                 </header>
+                <div id="mission-control-status" class="mission-status glass-panel">
+                    <div class="loading">Syncing system health...</div>
+                </div>
+                <div id="mission-control-health" class="mission-status glass-panel">
+                    <div class="loading">Running health audit...</div>
+                </div>
                 <div id="mission-control-board" class="mission-board">
                     <div class="loading">Scanning for active directives...</div>
                 </div>
@@ -312,6 +318,29 @@
                     <span class="title">VISUAL CORTEX</span>
                     <div class="actions"><button id="refresh-cortex-btn" class="btn-icon">↻</button></div>
                 </header>
+                <div id="cortex-activity-summary" class="cortex-activity-summary">
+                    <div class="cortex-summary-card">
+                        <div class="summary-header-row">
+                            <div class="summary-title">Memory Cortex Activity</div>
+                            <div class="summary-controls">
+                                <select id="cortex-hours-filter" class="summary-select">
+                                    <option value="6">Last 6h</option>
+                                    <option value="24" selected>Last 24h</option>
+                                    <option value="168">Last 7d</option>
+                                </select>
+                                <select id="cortex-kind-filter" class="summary-select">
+                                    <option value="facts,insights,episodes" selected>All Types</option>
+                                    <option value="facts">Facts Only</option>
+                                    <option value="insights">Insights Only</option>
+                                    <option value="episodes">Episodes Only</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="cortex-activity-metrics" class="summary-metrics"></div>
+                        <div id="cortex-activity-anomalies" class="summary-anomalies"></div>
+                        <div id="cortex-activity-latest" class="summary-latest"></div>
+                    </div>
+                </div>
                 <div id="cortex-graph"></div>
                 <div id="cortex-details-panel" class="details-panel">
                     <div class="panel-header">

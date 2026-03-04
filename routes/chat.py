@@ -1,13 +1,323 @@
 
 from flask import request, jsonify
+from ai_assistant.core.conversational_alerts import execute_alert_action
 from . import api_bp
 import logging
 import app_globals
 from ai_assistant.core.project_manager import find_project
 from ai_assistant.llm_interface.gemini_client import invoke_split_brain_async
 import json
+import asyncio
+from ai_assistant.custom_tools.reminder_tool import set_reminder, list_reminders, delete_reminder, update_reminder
+from ai_assistant.core.task_manager import ActiveTaskType, ActiveTaskStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _handle_chat_config_command(session_id, message, images=None):
+    stripped_message = (message or '').strip()
+    managed_settings = app_globals.config_manager.get_all_settings()
+
+    if stripped_message.startswith('/show-config'):
+        parts = stripped_message.split(maxsplit=1)
+        if len(parts) == 1:
+            available_keys = ', '.join(sorted(managed_settings.keys()))
+            response = f"Managed settings: {available_keys}. Use /show-config <KEY> to inspect."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": True, "status_code": 200}
+
+        key = parts[1].strip()
+        if key not in managed_settings:
+            response = f"Unknown setting '{key}'. Use /show-config to list available keys."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        value = managed_settings[key]
+        response = f"{key} = {json.dumps(value) if isinstance(value, (dict, list)) else value}"
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', response)
+        return {"response": response, "success": True, "status_code": 200}
+
+    if stripped_message.startswith('/set-config '):
+        parts = stripped_message.split(maxsplit=2)
+        if len(parts) < 3:
+            response = 'Usage: /set-config <SETTING_KEY> <value>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        key = parts[1].strip()
+        raw_value = parts[2].strip()
+        if key not in managed_settings:
+            response = f"Unknown setting '{key}'. Use /show-config to list available keys."
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        try:
+            coerced_value = app_globals.config_manager.coerce_setting_value(key, raw_value)
+        except (TypeError, ValueError) as e:
+            response = f"Failed to parse value for {key}: {e}"
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        updated = app_globals.config_manager.update_setting(key, coerced_value)
+        response = f"Updated {key} to {coerced_value}." if updated else f"Failed to update {key}."
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', response)
+        return {"response": response, "success": bool(updated), "status_code": 200 if updated else 400}
+
+    if stripped_message.startswith('/set-reminder '):
+        payload = stripped_message[len('/set-reminder '):].strip()
+        if '::' not in payload:
+            response = 'Usage: /set-reminder <time> :: <message> (examples: /set-reminder in 5 minutes :: stretch, /set-reminder every 2 hours :: hydrate)'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        time_str, reminder_message = [segment.strip() for segment in payload.split('::', 1)]
+        if not time_str or not reminder_message:
+            response = 'Usage: /set-reminder <time> :: <message>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        result = set_reminder(reminder_message, time_str)
+        success = not str(result).startswith('Error:')
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": success, "status_code": 200 if success else 400}
+
+    if stripped_message.startswith('/list-reminders'):
+        parts = stripped_message.split(maxsplit=1)
+        status = 'pending'
+        if len(parts) == 2 and parts[1].strip().lower() in {'pending', 'fired', 'all'}:
+            status = parts[1].strip().lower()
+        result = list_reminders(status=status)
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": True, "status_code": 200}
+
+    if stripped_message.startswith('/delete-reminder '):
+        parts = stripped_message.split(maxsplit=1)
+        if len(parts) < 2:
+            response = 'Usage: /delete-reminder <reminder_id>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        reminder_id = parts[1].strip()
+        result = delete_reminder(reminder_id)
+        success = 'deleted' in result.lower()
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": success, "status_code": 200 if success else 404}
+
+    if stripped_message.startswith('/update-reminder '):
+        payload = stripped_message[len('/update-reminder '):].strip()
+        segments = [segment.strip() for segment in payload.split('::')]
+
+        if len(segments) < 2 or not segments[0]:
+            response = 'Usage: /update-reminder <reminder_id> :: <new_time_or_-> [:: <new_message_or_->]'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        reminder_id = segments[0]
+        new_time = segments[1] if len(segments) > 1 and segments[1] not in {'', '-'} else None
+        new_message = segments[2] if len(segments) > 2 and segments[2] not in {'', '-'} else None
+
+        if new_time is None and new_message is None:
+            response = 'Provide at least one update value for time or message.'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        result = update_reminder(reminder_id, new_time_str=new_time, new_message=new_message)
+        success = not str(result).startswith('Error:') and 'not found' not in str(result).lower()
+        status_code = 200 if success else (404 if 'not found' in str(result).lower() else 400)
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', result)
+        return {"response": result, "success": success, "status_code": status_code}
+
+    return None
+
+
+def _record_delegated_task(session_id: str, task_id: str, delegated_prompt: str):
+    session = app_globals.chat_manager.get_session(session_id) or {}
+    metadata = dict(session.get('metadata') or {})
+    delegated_tasks = list(metadata.get('delegated_tasks') or [])
+    delegated_tasks.append({
+        'task_id': task_id,
+        'prompt_preview': delegated_prompt[:120],
+        'created_at': app_globals.config_manager.get_time() if app_globals.config_manager else None,
+    })
+    metadata['delegated_tasks'] = delegated_tasks[-20:]
+    app_globals.chat_manager.update_session_metadata(session_id, metadata)
+
+
+def _launch_delegated_code_task(task_id: str, session_id: str, delegated_prompt: str, history_snapshot):
+    if not app_globals.orchestrator or not app_globals.ai_loop:
+        app_globals.task_manager.update_task_status(
+            task_id,
+            ActiveTaskStatus.FAILED_INTERRUPTED,
+            reason='Delegation unavailable: orchestrator loop not ready.',
+        )
+        app_globals.chat_manager.add_message(session_id, 'assistant', f"Delegated task {task_id[:8]} failed to start: orchestrator unavailable.")
+        return
+
+    async def _run_delegated_prompt():
+        try:
+            app_globals.task_manager.update_task_status(
+                task_id,
+                ActiveTaskStatus.GENERATING_CODE,
+                step_desc='Delegated coding agent running',
+            )
+            response_text, response_images = await app_globals.orchestrator.process_prompt(
+                delegated_prompt,
+                conversation_history=history_snapshot,
+                user_session_id=session_id,
+            )
+            app_globals.task_manager.update_task_status(
+                task_id,
+                ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
+                reason='Delegated coding task completed.',
+                out_preview=(response_text or '')[:300],
+            )
+            completion_message = f"Delegated task {task_id[:8]} completed.\n\n{response_text or 'No response generated.'}"
+            app_globals.chat_manager.add_message(session_id, 'assistant', completion_message, images=response_images or None)
+        except Exception as e:
+            app_globals.task_manager.update_task_status(
+                task_id,
+                ActiveTaskStatus.FAILED_UNKNOWN,
+                reason=f'Delegated task failed: {e}',
+            )
+            app_globals.chat_manager.add_message(session_id, 'assistant', f"Delegated task {task_id[:8]} failed: {e}")
+
+    asyncio.run_coroutine_threadsafe(_run_delegated_prompt(), app_globals.ai_loop)
+
+
+
+
+def _resolve_task_from_query(task_query: str):
+    if not app_globals.task_manager:
+        return None
+
+    task_query = (task_query or '').strip()
+    if not task_query:
+        return None
+
+    exact = app_globals.task_manager.get_task_including_archive(task_query)
+    if exact:
+        return exact
+
+    candidates = []
+    try:
+        for task in app_globals.task_manager.list_active_tasks():
+            if task.task_id.startswith(task_query):
+                candidates.append(task)
+        for task in app_globals.task_manager.list_archived_tasks(limit=200):
+            if task.task_id.startswith(task_query):
+                candidates.append(task)
+    except Exception:
+        return None
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+def _handle_delegation_commands(session_id: str, message: str, images=None):
+    stripped = (message or '').strip()
+
+    if stripped.startswith('/delegate-code '):
+        delegated_prompt = stripped[len('/delegate-code '):].strip()
+        if not delegated_prompt:
+            response = 'Usage: /delegate-code <coding task request>'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 400}
+
+        if not app_globals.task_manager:
+            response = 'Delegation unavailable: task manager not initialized.'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": False, "status_code": 503}
+
+        new_task = app_globals.task_manager.add_task(
+            description=f'Delegated coding task: {delegated_prompt[:120]}',
+            task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK,
+            details={
+                'source': 'chat_delegate',
+                'delegated_prompt': delegated_prompt,
+            },
+            session_id=session_id,
+        )
+
+        _record_delegated_task(session_id, new_task.task_id, delegated_prompt)
+
+        session_data = app_globals.chat_manager.get_session(session_id) or {}
+        history_snapshot = list(session_data.get('history', []))
+
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        ack = f"Got it — I delegated that coding task (id {new_task.task_id[:8]}). Ask /work-status {new_task.task_id[:8]} anytime."
+        app_globals.chat_manager.add_message(session_id, 'assistant', ack)
+
+        _launch_delegated_code_task(new_task.task_id, session_id, delegated_prompt, history_snapshot)
+
+        return {"response": ack, "success": True, "status_code": 202}
+
+    if stripped.startswith('/work-status'):
+        parts = stripped.split(maxsplit=1)
+        target_id = parts[1].strip() if len(parts) > 1 else None
+
+        if target_id:
+            task = _resolve_task_from_query(target_id)
+            if not task:
+                response = f'No task found for id {target_id}.'
+                app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+                app_globals.chat_manager.add_message(session_id, 'assistant', response)
+                return {"response": response, "success": False, "status_code": 404}
+
+            response = f"Task {task.task_id[:8]} is {task.status.name}."
+            if task.current_step_description:
+                response += f" Step: {task.current_step_description}."
+            if task.status_reason:
+                response += f" Reason: {task.status_reason}"
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": True, "status_code": 200}
+
+        session_data = app_globals.chat_manager.get_session(session_id) or {}
+        delegated_tasks = ((session_data.get('metadata') or {}).get('delegated_tasks') or [])
+        if not delegated_tasks:
+            response = 'No delegated tasks tracked in this chat yet.'
+            app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+            app_globals.chat_manager.add_message(session_id, 'assistant', response)
+            return {"response": response, "success": True, "status_code": 200}
+
+        latest_entries = []
+        for entry in delegated_tasks[-3:]:
+            task_id = (entry.get('task_id') or '').strip()
+            if not task_id:
+                continue
+            task = _resolve_task_from_query(task_id)
+            status_text = task.status.name if task else 'UNKNOWN'
+            latest_entries.append(f"{task_id[:8]}:{status_text}")
+
+        response = (
+            f"Recent delegated tasks: {', '.join(latest_entries)}. "
+            "Use /work-status <task_id> for details."
+        )
+        app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
+        app_globals.chat_manager.add_message(session_id, 'assistant', response)
+        return {"response": response, "success": True, "status_code": 200}
+
+    return None
+
+
 
 # --- Session Management Endpoints ---
 
@@ -138,9 +448,6 @@ def chat():
     from ai_assistant.core.background_service import report_user_activity
     report_user_activity() # Signal user activity
     
-    if not app_globals.orchestrator:
-        return jsonify({"error": "Orchestrator not initialized"}), 500
-
     data = request.json
     message = data.get('message')
     images = data.get('images') # List of base64 strings
@@ -198,11 +505,56 @@ def chat():
 
     full_message = system_context + "\n" + message if system_context else message
 
+    stripped_message = (message or "").strip()
+    if stripped_message.startswith('/task-action '):
+        parts = stripped_message.split(maxsplit=2)
+        if len(parts) < 3:
+            action_response = "Usage: /task-action <task_id> <retry|summarize|pause>"
+            app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+            app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+            return jsonify({"response": action_response, "session_id": session_id, "success": False, "images": []}), 400
+
+        task_id = parts[1].strip()
+        action = parts[2].strip().lower()
+        result = execute_alert_action(task_id, action)
+        action_response = result.get("message") or result.get("error") or "Action processed."
+
+        app_globals.chat_manager.add_message(session_id, "user", message, images=images)
+        app_globals.chat_manager.add_message(session_id, "assistant", action_response)
+
+        return jsonify({
+            "response": action_response,
+            "session_id": session_id,
+            "success": bool(result.get("success")),
+            "images": []
+        }), (200 if result.get("success") else 400)
+
+    delegation_command_result = _handle_delegation_commands(session_id, message, images=images)
+    if delegation_command_result:
+        return jsonify({
+            "response": delegation_command_result["response"],
+            "session_id": session_id,
+            "success": delegation_command_result["success"],
+            "images": []
+        }), delegation_command_result["status_code"]
+
+    config_command_result = _handle_chat_config_command(session_id, message, images=images)
+    if config_command_result:
+        return jsonify({
+            "response": config_command_result["response"],
+            "session_id": session_id,
+            "success": config_command_result["success"],
+            "images": []
+        }), config_command_result["status_code"]
+
     updated_session = app_globals.chat_manager.add_message(session_id, "user", message, images=images)
     if not updated_session:
          updated_session = session_data 
     
     current_history_list = updated_session.get('history', [])
+
+    if not app_globals.orchestrator:
+        return jsonify({"error": "Orchestrator not initialized", "success": False, "session_id": session_id}), 500
     
     try:
         import asyncio
