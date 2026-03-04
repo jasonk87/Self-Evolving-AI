@@ -17,8 +17,7 @@ async def resume_interrupted_tasks(
     # action_executor: Optional[ActionExecutor] = None # If direct re-execution is attempted
 ):
     """
-    Checks for tasks that were active during the last session and might have been interrupted.
-    Marks them as FAILED_INTERRUPTED. Future enhancements could attempt more sophisticated resumption.
+    Checks for tasks that were active during the last session and marks them interrupted.
 
     Args:
         task_manager: The TaskManager instance with loaded tasks.
@@ -27,20 +26,16 @@ async def resume_interrupted_tasks(
     print("StartupServices: Checking for interrupted tasks...") # Replace with logger.info
     interrupted_tasks_found = 0
 
-    # TaskManager loads tasks in its __init__. We just list them here.
-    # Define statuses that indicate a task was in progress and not yet finished.
     non_terminal_statuses = [
         ActiveTaskStatus.INITIALIZING,
         ActiveTaskStatus.PLANNING,
         ActiveTaskStatus.GENERATING_CODE,
         ActiveTaskStatus.AWAITING_CRITIC_REVIEW,
-        ActiveTaskStatus.CRITIC_REVIEW_APPROVED, # Approved but not yet applied/tested fully
+        ActiveTaskStatus.CRITIC_REVIEW_APPROVED,
         ActiveTaskStatus.POST_MOD_TESTING,
         ActiveTaskStatus.APPLYING_CHANGES
     ]
 
-    # Get all tasks currently considered "active" by the TaskManager
-    # (i.e., loaded from the persisted active_tasks.json)
     active_tasks_on_startup = task_manager.list_active_tasks(status_filter=None)
 
     for task in active_tasks_on_startup:
@@ -49,37 +44,19 @@ async def resume_interrupted_tasks(
             original_status = task.status
             reason = f"Task was in state '{original_status.name}' and agent shutdown occurred."
 
-            # RESUMPTION LOGIC:
-            # Instead of failing, we want to resume.
-            # However, if a task was in a middle of an action (like GENERATING_CODE), that context is lost.
-            # It is safer to revert "in-flight" statuses to a state that triggers re-evaluation, like PLANNING.
-            
-            new_status = original_status
-            if original_status in [
-                ActiveTaskStatus.GENERATING_CODE,
-                ActiveTaskStatus.POST_MOD_TESTING,
-                ActiveTaskStatus.APPLYING_CHANGES,
-                ActiveTaskStatus.CRITIC_REVIEW_APPROVED # Re-apply might be needed
-            ]:
-                new_status = ActiveTaskStatus.PLANNING
-                reason = f"Resuming task. Reverted from volatile state '{original_status.name}' to PLANNING for safe retry."
-            else:
-                 reason = f"Resuming task from state '{original_status.name}'."
+            print(f"StartupServices: Marking Task {task.task_id} ('{task.description[:30]}...') as interrupted. Original status: {original_status.name}")
 
-            print(f"StartupServices: Resuming Task {task.task_id} ('{task.description[:30]}...'). Status: {original_status.name} -> {new_status.name}")
-
-            # Update status but DO NOT archive (status is not terminal)
             task_manager.update_task_status(
                 task.task_id,
-                new_status,
+                ActiveTaskStatus.FAILED_INTERRUPTED,
                 reason=reason,
-                step_desc="Task resumed on agent startup."
+                step_desc="Task marked as interrupted on agent startup."
             )
 
             if notification_manager:
                 notification_manager.add_notification(
-                    NotificationType.GENERAL_INFO, # Use INFO instead of INTERRUPTED/FAILED
-                    f"Resuming interrupted task '{task.description[:50]}...' (ID: {task.task_id}). Status: {new_status.name}",
+                    NotificationType.TASK_INTERRUPTED,
+                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was in state '{original_status.name}' and has been marked as interrupted.",
                     related_item_id=task.task_id,
                     related_item_type="task"
                 )
