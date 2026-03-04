@@ -74,6 +74,32 @@ def get_all_memories():
         logger.error(f"Error fetching all memories: {e}")
         return jsonify({"error": str(e), "success": False}), 500
 
+@api_bp.route('/memory/cortex-activity', methods=['GET'])
+def get_cortex_activity():
+    """Returns a summary of recent memory-cortex activity."""
+    try:
+        lookback_hours = request.args.get('hours', default=24, type=int)
+        lookback_hours = max(1, min(lookback_hours, 24 * 30))
+
+        kinds_raw = request.args.get('kinds', default='facts,insights,episodes', type=str)
+        requested_kinds = [k.strip().lower() for k in kinds_raw.split(',') if k.strip()]
+        allowed_kinds = {'facts', 'insights', 'episodes'}
+        selected_kinds = [k for k in requested_kinds if k in allowed_kinds] or ['facts', 'insights', 'episodes']
+
+        source_filter = request.args.get('source', default=None, type=str)
+        permanence_filter = request.args.get('permanence', default=None, type=str)
+
+        activity = app_globals.memory_manager.get_cortex_activity_summary(
+            lookback_hours=lookback_hours,
+            kinds=selected_kinds,
+            source=source_filter,
+            permanence=permanence_filter,
+        )
+        return jsonify({"activity": activity, "success": True, "schema_version": 2})
+    except Exception as e:
+        logger.error(f"Error fetching cortex activity summary: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
 @api_bp.route('/memory/insights', methods=['GET'])
 def get_insights():
     """Returns a list of all actionable insights."""

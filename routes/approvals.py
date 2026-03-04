@@ -6,9 +6,84 @@ import app_globals
 from ai_assistant.core.approval_manager import approval_manager
 from ai_assistant.learning.learning import ActionableInsight, InsightType
 from ai_assistant.core.task_manager import ActiveTaskStatus
+from ai_assistant.core.status_reporting import get_status_snapshot
+from ai_assistant.core.conversational_alerts import execute_alert_action
+from ai_assistant.core.background_service import get_service_status
 from dataclasses import asdict
+from datetime import datetime, timezone
+import importlib.util
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_NOTICE_SCOPE = "local_default"
+
+
+def _is_truthy_query_flag(raw_value: str) -> bool:
+    return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_optional_dependency_available(module_name: str) -> bool:
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except Exception:
+        return False
+
+
+
+def _get_identity_pointer_summary() -> dict:
+    if not app_globals.chat_manager or not hasattr(app_globals.chat_manager, "get_identity_pointer_summary"):
+        return {"total": 0, "by_platform": {}, "stale": 0, "stale_preview": []}
+
+    try:
+        summary = app_globals.chat_manager.get_identity_pointer_summary() or {}
+        stale_preview = []
+        stale_count = 0
+        if hasattr(app_globals.chat_manager, "list_identity_pointers"):
+            pointers = app_globals.chat_manager.list_identity_pointers(limit=200) or []
+            stale = [item for item in pointers if isinstance(item, dict) and not bool(item.get("session_exists"))]
+            stale_count = len(stale)
+            stale_preview = [
+                {
+                    "identity_key": str(item.get("identity_key", "")),
+                    "session_id": str(item.get("session_id", "")),
+                }
+                for item in stale[:3]
+            ]
+        return {
+            "total": int(summary.get("total", 0)),
+            "by_platform": summary.get("by_platform", {}) if isinstance(summary.get("by_platform", {}), dict) else {},
+            "stale": stale_count,
+            "stale_preview": stale_preview,
+        }
+    except Exception:
+        logger.exception("Failed to compute identity pointer summary")
+        return {"total": 0, "by_platform": {}, "stale": 0, "stale_preview": []}
+
+
+def _get_work_inbox_summary() -> dict:
+    if not app_globals.chat_manager or not hasattr(app_globals.chat_manager, "list_user_notices"):
+        return {"unread": 0, "total": 0, "preview": []}
+
+    try:
+        unread = app_globals.chat_manager.list_user_notices(DEFAULT_NOTICE_SCOPE, include_read=False, limit=200) or []
+        total = app_globals.chat_manager.list_user_notices(DEFAULT_NOTICE_SCOPE, include_read=True, limit=200) or []
+        preview = []
+        for item in unread[:3]:
+            preview.append({
+                "id": item.get("id", ""),
+                "task_id": item.get("task_id", ""),
+                "status": item.get("status", "unknown"),
+                "message": item.get("message", ""),
+                "source_session_id": item.get("source_session_id", ""),
+            })
+        return {
+            "unread": len(unread),
+            "total": len(total),
+            "preview": preview,
+        }
+    except Exception:
+        logger.exception("Failed to compute work inbox summary")
+        return {"unread": 0, "total": 0, "preview": []}
 
 def serialize_approval_data(data):
     if isinstance(data, ActionableInsight):
@@ -18,6 +93,286 @@ def serialize_approval_data(data):
     return data # Fallback
 
 # --- Mission Control Endpoints ---
+
+@api_bp.route('/status/snapshot', methods=['GET'])
+def mission_control_status_snapshot():
+    """Returns a structured Mission Control status snapshot."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        active_tasks = app_globals.orchestrator.task_manager.list_active_tasks()
+        snapshot = get_status_snapshot(active_tasks_count=len(active_tasks), active_tasks=active_tasks)
+        inbox_summary = _get_work_inbox_summary()
+        snapshot["work_inbox_unread"] = inbox_summary.get("unread", 0)
+        snapshot["work_inbox_total"] = inbox_summary.get("total", 0)
+        snapshot["work_inbox_preview"] = inbox_summary.get("preview", [])
+        identity_summary = _get_identity_pointer_summary()
+        snapshot["identity_session_pointers_total"] = identity_summary.get("total", 0)
+        snapshot["identity_session_pointers_by_platform"] = identity_summary.get("by_platform", {})
+        snapshot["identity_session_pointers_stale"] = identity_summary.get("stale", 0)
+        snapshot["identity_session_pointers_stale_preview"] = identity_summary.get("stale_preview", [])
+
+        summary_only = _is_truthy_query_flag(request.args.get('summary_only'))
+        if summary_only:
+            snapshot["delegation_topology"] = []
+            snapshot["work_inbox_preview"] = []
+            snapshot["identity_session_pointers_stale_preview"] = []
+
+        generated_at = datetime.now(timezone.utc)
+        return jsonify({
+            "success": True,
+            "schema_version": 1,
+            "generated_at": generated_at.isoformat(),
+            "generated_at_ms": int(generated_at.timestamp() * 1000),
+            "summary_only": summary_only,
+            "snapshot": snapshot,
+        })
+    except Exception as e:
+        logger.error(f"Error generating status snapshot: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
+
+
+
+
+@api_bp.route('/status/health-audit', methods=['GET'])
+def mission_control_health_audit():
+    """Returns a lightweight operational health audit for Mission Control."""
+    optional_dependencies = {
+        "playwright": _is_optional_dependency_available('playwright'),
+        "chromadb": _is_optional_dependency_available('chromadb'),
+        "pyaudio": _is_optional_dependency_available('pyaudio'),
+    }
+
+    generated_at = datetime.now(timezone.utc)
+
+    checks = [
+        {
+            "key": "orchestrator",
+            "label": "Core Orchestrator",
+            "ok": bool(app_globals.orchestrator),
+            "details": "Initialized" if app_globals.orchestrator else "Not initialized",
+        },
+        {
+            "key": "chat_manager",
+            "label": "Chat Manager",
+            "ok": bool(app_globals.chat_manager),
+            "details": "Available" if app_globals.chat_manager else "Unavailable",
+        },
+        {
+            "key": "playwright",
+            "label": "Vision/Browser Automation",
+            "ok": optional_dependencies["playwright"],
+            "details": "Installed" if optional_dependencies["playwright"] else "Missing optional dependency 'playwright'",
+        },
+        {
+            "key": "chromadb",
+            "label": "Vector Memory (ChromaDB)",
+            "ok": optional_dependencies["chromadb"],
+            "details": "Installed" if optional_dependencies["chromadb"] else "Missing optional dependency 'chromadb'",
+        },
+        {
+            "key": "pyaudio",
+            "label": "Live Mode Audio",
+            "ok": optional_dependencies["pyaudio"],
+            "details": "Installed" if optional_dependencies["pyaudio"] else "Missing optional dependency 'pyaudio'",
+        },
+    ]
+
+    return jsonify({
+        "success": True,
+        "schema_version": 1,
+        "health": {
+            "healthy": all(item["ok"] for item in checks),
+            "checks": checks,
+            "failing_count": sum(1 for item in checks if not item["ok"]),
+            "generated_at": generated_at.isoformat(),
+            "generated_at_ms": int(generated_at.timestamp() * 1000),
+        }
+    })
+
+
+@api_bp.route('/status/background-cadence', methods=['GET'])
+def mission_control_background_cadence():
+    """Returns runtime cadence controls and recent scheduler activity."""
+    settings = app_globals.config_manager.get_all_settings() if app_globals.config_manager else {}
+    service_status = get_service_status()
+
+    cadence = {
+        "dream_mode_enabled": bool(settings.get("ENABLE_DREAM_MODE", False)),
+        "dream_interval_seconds": int(settings.get("DREAM_INTERVAL_SECONDS", 86400)),
+        "reminder_check_interval_seconds": int(settings.get("REMINDER_CHECK_INTERVAL_SECONDS", 10)),
+        "auto_web_pip": bool(settings.get("AUTO_WEB_PIP", True)),
+    }
+
+    recent = {
+        "last_dream_timestamp": service_status.get("last_dream_timestamp", 0),
+        "last_visual_audit_timestamp": service_status.get("last_visual_audit_timestamp", 0),
+        "last_self_healing_timestamp": service_status.get("last_self_healing_timestamp", 0),
+    }
+
+    return jsonify({
+        "success": True,
+        "schema_version": 1,
+        "cadence": cadence,
+        "recent": recent,
+    })
+
+
+
+def _coerce_positive_int(value, default: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < 0:
+        return 0
+    return min(parsed, maximum)
+
+
+
+
+def _sort_delegation_topology(items):
+    sort_by_raw = (request.args.get('sort_by') or 'task_id').strip()
+    order_raw = (request.args.get('order') or 'asc').strip().lower()
+
+    allowed_sort_keys = {
+        'task_id',
+        'worker_profile',
+        'scope_type',
+        'state',
+        'source',
+        'capability_profile',
+        'retention_policy',
+    }
+    sort_by = sort_by_raw if sort_by_raw in allowed_sort_keys else 'task_id'
+    order = order_raw if order_raw in {'asc', 'desc'} else 'asc'
+    reverse = order == 'desc'
+
+    def sort_value(edge):
+        return str((edge or {}).get(sort_by, '')).lower()
+
+    sorted_items = sorted(items or [], key=sort_value, reverse=reverse)
+    return sorted_items, sort_by, order
+
+
+
+def _summarize_topology_breakdowns(items):
+    by_worker = {}
+    by_state = {}
+    by_scope = {}
+    by_source = {}
+
+    for edge in items or []:
+        if not isinstance(edge, dict):
+            continue
+        worker = str(edge.get('worker_profile', 'unknown') or 'unknown')
+        state = str(edge.get('state', 'unknown') or 'unknown')
+        scope = str(edge.get('scope_type', 'unknown') or 'unknown')
+        source = str(edge.get('source', 'unknown') or 'unknown')
+
+        by_worker[worker] = by_worker.get(worker, 0) + 1
+        by_state[state] = by_state.get(state, 0) + 1
+        by_scope[scope] = by_scope.get(scope, 0) + 1
+        by_source[source] = by_source.get(source, 0) + 1
+
+    return {
+        'by_worker': dict(sorted(by_worker.items())),
+        'by_state': dict(sorted(by_state.items())),
+        'by_scope': dict(sorted(by_scope.items())),
+        'by_source': dict(sorted(by_source.items())),
+    }
+
+
+
+def _resolve_breakdown_scope() -> str:
+    scope = (request.args.get('breakdown_scope') or 'page').strip().lower()
+    if scope in {'page', 'filtered'}:
+        return scope
+    return 'page'
+
+def _filter_delegation_topology(topology):
+    worker_profile = (request.args.get('worker_profile') or '').strip()
+    scope_type = (request.args.get('scope_type') or '').strip()
+    source = (request.args.get('source') or '').strip()
+    task_id_prefix = (request.args.get('task_id_prefix') or '').strip()
+
+    state_raw = (request.args.get('state') or '').strip()
+    states = [part.strip() for part in state_raw.split(',') if part.strip()]
+    state_set = set(states)
+
+    filtered = []
+    for edge in topology or []:
+        if not isinstance(edge, dict):
+            continue
+        if worker_profile and str(edge.get('worker_profile', '')) != worker_profile:
+            continue
+        if scope_type and str(edge.get('scope_type', '')) != scope_type:
+            continue
+        if state_set and str(edge.get('state', '')) not in state_set:
+            continue
+        if source and str(edge.get('source', '')) != source:
+            continue
+        task_id_value = str(edge.get('task_id', ''))
+        if task_id_prefix and not task_id_value.startswith(task_id_prefix):
+            continue
+        filtered.append(edge)
+
+    sorted_items, sort_by, order = _sort_delegation_topology(filtered)
+    total = len(sorted_items)
+    limit = _coerce_positive_int(request.args.get('limit'), default=50, maximum=200)
+    offset = _coerce_positive_int(request.args.get('offset'), default=0, maximum=10000)
+    items = sorted_items[offset:offset + limit] if limit else []
+    return {
+        'items': items,
+        'all_filtered_items': sorted_items,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+        'filters': {
+            'worker_profile': worker_profile or None,
+            'scope_type': scope_type or None,
+            'state': states or None,
+            'source': source or None,
+            'task_id_prefix': task_id_prefix or None,
+            'sort_by': sort_by,
+            'order': order,
+        },
+    }
+
+
+@api_bp.route('/status/delegation-topology', methods=['GET'])
+def mission_control_delegation_topology():
+    """Returns filtered delegation topology edges for Mission Control diagnostics."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "System starting up...", "success": False}), 503
+
+    try:
+        active_tasks = app_globals.orchestrator.task_manager.list_active_tasks()
+        snapshot = get_status_snapshot(active_tasks_count=len(active_tasks), active_tasks=active_tasks)
+        topology = snapshot.get('delegation_topology', []) if isinstance(snapshot, dict) else []
+        filtered = _filter_delegation_topology(topology)
+
+        generated_at = datetime.now(timezone.utc)
+        breakdown_scope = _resolve_breakdown_scope()
+        breakdown_source_items = filtered['all_filtered_items'] if breakdown_scope == 'filtered' else filtered['items']
+        breakdowns = _summarize_topology_breakdowns(breakdown_source_items)
+        return jsonify({
+            'success': True,
+            'schema_version': 1,
+            'generated_at': generated_at.isoformat(),
+            'generated_at_ms': int(generated_at.timestamp() * 1000),
+            'total': filtered['total'],
+            'limit': filtered['limit'],
+            'offset': filtered['offset'],
+            'filters': filtered['filters'],
+            'items': filtered['items'],
+            'breakdown_scope': breakdown_scope,
+            'breakdowns': breakdowns,
+        })
+    except Exception as e:
+        logger.error(f"Error generating delegation topology: {e}")
+        return jsonify({"error": str(e), "success": False}), 500
 
 @api_bp.route('/tasks', methods=['GET'])
 def list_active_tasks():
@@ -32,6 +387,18 @@ def list_active_tasks():
     except Exception as e:
         logger.error(f"Error listing active tasks: {e}")
         return jsonify({"error": str(e), "success": False}), 500
+
+
+
+@api_bp.route('/tasks/<task_id>/assistant-action', methods=['POST'])
+def task_assistant_action(task_id):
+    """Executes a conversationally suggested action for a failed task."""
+    data = request.json or {}
+    action = data.get('action', '')
+
+    result = execute_alert_action(task_id, action)
+    status_code = 200 if result.get('success') else 400
+    return jsonify(result), status_code
 
 @api_bp.route('/tasks/<task_id>/stop', methods=['POST'])
 def stop_task(task_id):

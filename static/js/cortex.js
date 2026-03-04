@@ -174,9 +174,66 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderActivitySummary(activity) {
+        const metricsEl = document.getElementById('cortex-activity-metrics');
+        const anomaliesEl = document.getElementById('cortex-activity-anomalies');
+        const latestEl = document.getElementById('cortex-activity-latest');
+        if (!metricsEl || !latestEl || !anomaliesEl || !activity) return;
+
+        const totals = activity.totals || {};
+        const totalRecent = activity.total_recent_changes || 0;
+
+        metricsEl.innerHTML = `
+            <div class="summary-metric">Facts <strong>${totals.facts || 0}</strong></div>
+            <div class="summary-metric">Insights <strong>${totals.insights || 0}</strong></div>
+            <div class="summary-metric">Episodes <strong>${totals.episodes || 0}</strong></div>
+            <div class="summary-metric">Changes <strong>${totalRecent}</strong></div>
+        `;
+
+        const anomalies = Array.isArray(activity.anomalies) ? activity.anomalies : [];
+        if (anomalies.length > 0) {
+            anomaliesEl.innerHTML = anomalies
+                .map(item => `<span class="summary-anomaly">${item.message || 'Memory anomaly detected'}</span>`)
+                .join(' ');
+        } else {
+            anomaliesEl.innerHTML = '';
+        }
+
+        const latest = Array.isArray(activity.latest_changes) ? activity.latest_changes[0] : null;
+        if (!latest) {
+            latestEl.textContent = 'No recent memory changes in this window.';
+            return;
+        }
+
+        const label = latest.label || latest.id || 'Unknown item';
+        latestEl.textContent = `Latest ${latest.kind || 'memory'} ${latest.change_type || 'change'}: ${label}`;
+    }
+
+    async function fetchActivitySummary() {
+        try {
+            const hoursFilter = document.getElementById('cortex-hours-filter');
+            const kindsFilter = document.getElementById('cortex-kind-filter');
+
+            const params = new URLSearchParams({
+                hours: hoursFilter ? hoursFilter.value : '24',
+                kinds: kindsFilter ? kindsFilter.value : 'facts,insights,episodes',
+            });
+
+            const res = await fetch(`/api/memory/cortex-activity?${params.toString()}`);
+            if (!res.ok) throw new Error(`Activity API Error: ${res.status}`);
+            const payload = await res.json();
+            if (payload.success && payload.activity) {
+                renderActivitySummary(payload.activity);
+            }
+        } catch (e) {
+            console.warn('Failed to load cortex activity summary', e);
+        }
+    }
+
     async function fetchData() {
         try {
             console.log("Visual Cortex: Fetching data...");
+            fetchActivitySummary();
             const res = await fetch('/api/memory/all');
             if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
@@ -259,6 +316,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!network) initNetwork();
         else network.fit();
+    }
+
+    const hoursFilter = document.getElementById('cortex-hours-filter');
+    const kindFilter = document.getElementById('cortex-kind-filter');
+    if (hoursFilter) {
+        hoursFilter.addEventListener('change', fetchActivitySummary);
+    }
+    if (kindFilter) {
+        kindFilter.addEventListener('change', fetchActivitySummary);
     }
 
     // Refresh button
