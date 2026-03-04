@@ -200,7 +200,7 @@ PR8 release-gate completion evidence should include all of the following in CI o
 ### Milestone D — 🟡 in progress
 - R3 controlled dynamic specialists (review-gated proposal flow complete; continue operationalization).
 - M3 specialist lifecycle management (core flows present; continue polish/ops instrumentation).
-- Production-quality SLO dashboarding (remaining major gap).
+- Production-quality SLO dashboarding (baseline API endpoint + archived-task latency/recovery instrumentation added; continue with retry/MTTD instrumentation and UI visualization).
 
 ---
 

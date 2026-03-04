@@ -80,3 +80,11 @@ pytest -q tests/test_release_gate_pr8_integration.py -m integration
 pytest -q tests/test_release_gate_pr8_smoke.py -m smoke
 pytest -q tests/test_mission_control_status_api.py -k "reflection_spawn_specialist_endpoint_returns_503_when_task_manager_unavailable or health_audit_reports_partial_optional_dependency_availability"
 ```
+
+
+## 7) Test lane automation status
+
+- Unit lane is intended for every push/PR and should run from `scripts/run_test_lanes.sh unit`.
+- Integration lane should run on schedule and manual dispatch via CI workflows.
+- Smoke lane should run on manual pre-release dispatch.
+- CI config: `.github/workflows/test-lanes.yml`.
