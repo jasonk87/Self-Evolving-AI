@@ -2,14 +2,14 @@
 #ghost-portal {
     position: fixed;
     /* PiP Mode */
-    bottom: 20px;
+    bottom: 92px;
     right: 20px;
     width: 380px;
     max-width: 90vw;
-    background: #000;
+    background: #11161f;
     border: 1px solid var(--accent-cyan);
-    border-radius: 6px;
-    box-shadow: 0 0 20px rgba(0, 229, 255, 0.2), 0 0 50px rgba(0, 0, 0, 0.8);
+    border-radius: 16px;
+    box-shadow: 0 20px 35px rgba(0, 0, 0, 0.45);
     z-index: 9999;
     /* Always on top of chat */
     overflow: hidden;
@@ -23,7 +23,7 @@
 }
 
 .ghost-header {
-    background: rgba(0, 20, 30, 0.9);
+    background: rgba(33, 40, 51, 0.92);
     padding: 8px 12px;
     font-size: 11px;
     font-family: var(--font-code);
@@ -53,7 +53,7 @@
     position: relative;
     width: 100%;
     min-height: 220px;
-    background: #000;
+    background: #11161f;
     overflow: hidden;
 }
 
