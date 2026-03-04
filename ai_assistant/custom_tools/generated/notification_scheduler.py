@@ -14,6 +14,9 @@ def schedule_notification(reminder_message: str, delay_minutes: int) -> str:
     Returns:
         str: A message indicating whether the notification was scheduled successfully or if an error occurred.
     """
+    if not isinstance(delay_minutes, (int, float)):
+        raise TypeError("delay_minutes must be a number")
+
     try:
         delay_seconds = delay_minutes * 60
         future_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)

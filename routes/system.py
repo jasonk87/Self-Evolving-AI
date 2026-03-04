@@ -20,19 +20,42 @@ def get_config():
     """Returns the current system configuration."""
     return jsonify(app_globals.config_manager.get_all_settings())
 
+@api_bp.route('/config/schema', methods=['GET'])
+def get_config_schema():
+    """Returns metadata for editable configuration settings."""
+    return jsonify({
+        "success": True,
+        "schema_version": 1,
+        "settings": app_globals.config_manager.get_settings_schema(),
+    })
+
 @api_bp.route('/config', methods=['POST'])
 def update_config():
     """Updates system configuration."""
-    data = request.json
+    data = request.json or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "errors": ["Payload must be a JSON object."]}), 400
+
     success = True
     errors = []
-    
-    for key, value in data.items():
+    updated = {}
+
+    for key, raw_value in data.items():
+        try:
+            value = app_globals.config_manager.coerce_setting_value(key, raw_value)
+        except Exception as e:
+            success = False
+            errors.append(f"{key}: {e}")
+            continue
+
         if not app_globals.config_manager.update_setting(key, value):
             success = False
             errors.append(f"Failed to update {key}")
-            
-    return jsonify({"success": success, "errors": errors})
+            continue
+
+        updated[key] = value
+
+    return jsonify({"success": success, "errors": errors, "updated": updated}), (200 if success else 400)
 
 @api_bp.route('/run', methods=['POST'])
 def run_script():

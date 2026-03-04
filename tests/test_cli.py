@@ -17,7 +17,7 @@ from ai_assistant.communication import cli # Module to test
 # from ai_assistant.core.reflection import global_reflection_log # Will be mocked via cli.global_reflection_log
 
 
-class TestCliToolGenerationFlow(unittest.TestCase):
+class TestCliToolGenerationFlow(unittest.IsolatedAsyncioTestCase):
 
     @mock.patch('ai_assistant.communication.cli.global_reflection_log.log_execution') # Mock logging
     @mock.patch('ai_assistant.communication.cli._perform_tool_registration') # Mock tool registration
@@ -81,7 +81,7 @@ class TestCliToolGenerationFlow(unittest.TestCase):
 
         # --- Call the function under test ---
         test_description = "a brand new awesome tool"
-        await cli._handle_code_generation_and_registration(test_description)
+        await cli._handle_code_generation_and_registration(test_description, None, None)
 
         # --- Assertions ---
 
@@ -190,7 +190,7 @@ class TestCliCommandProcessing(unittest.IsolatedAsyncioTestCase):
         # First item is status_update with the rephrased error
         status_update_item = await self.mock_cli_results_queue.get()
         self.assertEqual(status_update_item["type"], "status_update")
-        self.assertIn(rephrased_message, status_update_item["message"].lower()) # Message is formatted, check substring
+        self.assertIn(rephrased_message.lower(), status_update_item["message"].lower()) # Message is formatted, check substring
         self.assertIn(f"error processing '{original_prompt}'", status_update_item["message"].lower())
 
 

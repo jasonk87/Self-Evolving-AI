@@ -115,3 +115,75 @@ class ChatSessionManager:
         path = os.path.join(self.storage_dir, f"{session_id}.json")
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
+
+
+    def _get_notices_path(self) -> str:
+        return os.path.join(self.storage_dir, "notices.json")
+
+    def _load_notices(self) -> Dict[str, List[Dict[str, Any]]]:
+        path = self._get_notices_path()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_notices(self, notices: Dict[str, List[Dict[str, Any]]]):
+        path = self._get_notices_path()
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(notices, f, indent=2)
+
+    def add_user_notice(self,
+                        user_scope: str,
+                        message: str,
+                        notice_type: str = "delegated_work",
+                        source_session_id: Optional[str] = None,
+                        task_id: Optional[str] = None,
+                        status: Optional[str] = None,
+                        metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        notices = self._load_notices()
+        scope = user_scope or "local_default"
+        entries = list(notices.get(scope, []))
+        item = {
+            "id": str(uuid.uuid4())[:8],
+            "created_at": time.time(),
+            "read": False,
+            "type": notice_type,
+            "message": message,
+            "source_session_id": source_session_id,
+            "task_id": task_id,
+            "status": status,
+            "metadata": metadata or {},
+        }
+        entries.append(item)
+        notices[scope] = entries[-200:]
+        self._save_notices(notices)
+        return item
+
+    def list_user_notices(self,
+                          user_scope: str,
+                          include_read: bool = False,
+                          limit: int = 20) -> List[Dict[str, Any]]:
+        notices = self._load_notices()
+        scope = user_scope or "local_default"
+        entries = list(notices.get(scope, []))
+        filtered = entries if include_read else [n for n in entries if not n.get("read")]
+        return sorted(filtered, key=lambda n: n.get("created_at", 0), reverse=True)[:limit]
+
+    def mark_user_notices_read(self, user_scope: str, notice_ids: Optional[List[str]] = None) -> int:
+        notices = self._load_notices()
+        scope = user_scope or "local_default"
+        entries = list(notices.get(scope, []))
+        ids = set(notice_ids or [])
+        changed = 0
+        for item in entries:
+            should_mark = (not notice_ids) or (item.get("id") in ids)
+            if should_mark and not item.get("read"):
+                item["read"] = True
+                changed += 1
+        notices[scope] = entries
+        self._save_notices(notices)
+        return changed

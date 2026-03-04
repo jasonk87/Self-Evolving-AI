@@ -6,22 +6,250 @@
 
 const missionControl = {
     board: document.getElementById('mission-control-board'),
+    statusPanel: document.getElementById('mission-control-status'),
+    healthPanel: document.getElementById('mission-control-health'),
+    cadencePanel: document.getElementById('mission-control-cadence'),
     refreshBtn: document.getElementById('refresh-tasks-btn'),
+    statusPollIntervalMs: 8000,
+    staleAfterMs: 20000,
+    statusPollTimer: null,
+    staleCheckTimer: null,
+    lastStatusAtMs: null,
+    snapshotSchemaVersion: null,
 
     init: function () {
         console.log("Mission Control Initialized");
         this.fetchTasks();
+        this.fetchStatusSnapshot();
+        this.fetchHealthAudit();
+        this.fetchBackgroundCadence();
+        this.startStatusPolling();
 
         if (this.refreshBtn) {
-            this.refreshBtn.addEventListener('click', () => this.fetchTasks());
+            this.refreshBtn.addEventListener('click', () => {
+                this.fetchTasks();
+                this.fetchStatusSnapshot();
+                this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
+            });
         }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.stopStatusPolling();
+            } else {
+                this.startStatusPolling();
+                this.fetchStatusSnapshot();
+                this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
+            }
+        });
 
         // Listen for socket events
         if (typeof socket !== 'undefined') {
             socket.on('task_update', (taskData) => {
                 this.handleTaskUpdate(taskData);
+                this.fetchStatusSnapshot();
+                this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
             });
         }
+    },
+
+
+    isMissionControlActive: function () {
+        const view = document.getElementById('view-mission-control');
+        return !!(view && view.classList.contains('active'));
+    },
+
+    startStatusPolling: function () {
+        this.stopStatusPolling();
+
+        this.statusPollTimer = setInterval(() => {
+            if (document.hidden || !this.isMissionControlActive()) return;
+            this.fetchStatusSnapshot();
+            this.fetchHealthAudit();
+            this.fetchBackgroundCadence();
+        }, this.statusPollIntervalMs);
+
+        this.staleCheckTimer = setInterval(() => {
+            this.updateStaleState();
+        }, 1000);
+    },
+
+    stopStatusPolling: function () {
+        if (this.statusPollTimer) {
+            clearInterval(this.statusPollTimer);
+            this.statusPollTimer = null;
+        }
+        if (this.staleCheckTimer) {
+            clearInterval(this.staleCheckTimer);
+            this.staleCheckTimer = null;
+        }
+    },
+
+    updateStaleState: function () {
+        if (!this.statusPanel) return;
+
+        const now = Date.now();
+        const isStale = !this.lastStatusAtMs || (now - this.lastStatusAtMs > this.staleAfterMs);
+        this.statusPanel.classList.toggle('stale', isStale);
+
+        const freshness = this.statusPanel.querySelector('.mission-status-freshness');
+        if (!freshness) return;
+
+        if (!this.lastStatusAtMs) {
+            freshness.textContent = 'Awaiting first snapshot…';
+            return;
+        }
+
+        const secondsAgo = Math.max(0, Math.floor((now - this.lastStatusAtMs) / 1000));
+        freshness.textContent = isStale
+            ? `Stale · last updated ${secondsAgo}s ago`
+            : `Live · updated ${secondsAgo}s ago`;
+    },
+
+
+    fetchHealthAudit: async function () {
+        if (!this.healthPanel) return;
+
+        try {
+            const response = await fetch('/api/status/health-audit');
+            const data = await response.json();
+            if (!data.success) {
+                this.healthPanel.innerHTML = `<div class="error">Health audit unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            const health = data.health || {};
+            const checks = Array.isArray(health.checks) ? health.checks : [];
+            const checkRows = checks.map(item => `
+                <div class="mission-audit-row ${item.ok ? 'ok' : 'fail'}">
+                    <span>${this.escapeHtml(item.label || item.key || 'check')}</span>
+                    <strong>${item.ok ? 'OK' : 'Needs Attention'}</strong>
+                </div>
+                <div class="mission-audit-detail">${this.escapeHtml(item.details || '')}</div>
+            `).join('');
+
+            this.healthPanel.innerHTML = `
+                <div class="mission-status-header-row">
+                    <div class="mission-status-header">Health Audit</div>
+                    <div class="mission-status-freshness ${health.healthy ? 'ok' : 'fail'}">${health.healthy ? 'Healthy' : 'Issues Detected'}</div>
+                </div>
+                <div class="mission-audit-list">
+                    ${checkRows || '<div class="mission-audit-detail">No health checks available.</div>'}
+                </div>
+            `;
+        } catch (e) {
+            console.error('Fetch health audit error:', e);
+            this.healthPanel.innerHTML = `<div class="error">Health audit link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+
+    fetchBackgroundCadence: async function () {
+        if (!this.cadencePanel) return;
+
+        try {
+            const response = await fetch('/api/status/background-cadence');
+            const data = await response.json();
+            if (!data.success) {
+                this.cadencePanel.innerHTML = `<div class="error">Cadence unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            const cadence = data.cadence || {};
+            const recent = data.recent || {};
+            this.cadencePanel.innerHTML = `
+                <div class="mission-status-header-row">
+                    <div class="mission-status-header">Background Cadence</div>
+                    <div class="mission-status-freshness">Runtime Tunable</div>
+                </div>
+                <div class="mission-kv-grid">
+                    <div class="mission-kv-item"><span>Dream Mode</span><strong>${cadence.dream_mode_enabled ? 'On' : 'Off'}</strong></div>
+                    <div class="mission-kv-item"><span>Dream Interval</span><strong>${cadence.dream_interval_seconds || 0}s</strong></div>
+                    <div class="mission-kv-item"><span>Reminder Poll</span><strong>${cadence.reminder_check_interval_seconds || 0}s</strong></div>
+                    <div class="mission-kv-item"><span>Auto Web PiP</span><strong>${cadence.auto_web_pip ? 'On' : 'Off'}</strong></div>
+                </div>
+                <div class="mission-status-meta">
+                    Last Dream: ${this.escapeHtml(this.formatTimestamp(recent.last_dream_timestamp))}
+                    · Last Visual Audit: ${this.escapeHtml(this.formatTimestamp(recent.last_visual_audit_timestamp))}
+                    · Last Self-Healing: ${this.escapeHtml(this.formatTimestamp(recent.last_self_healing_timestamp))}
+                </div>
+            `;
+        } catch (e) {
+            this.cadencePanel.innerHTML = `<div class="error">Cadence link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    fetchStatusSnapshot: async function () {
+        if (!this.statusPanel) return;
+
+        try {
+            const response = await fetch('/api/status/snapshot');
+            const data = await response.json();
+
+            if (data.success) {
+                this.lastStatusAtMs = Number.isFinite(data.generated_at_ms) ? data.generated_at_ms : Date.now();
+                this.snapshotSchemaVersion = data.schema_version ?? null;
+                this.renderStatusSnapshot(data.snapshot, data.generated_at);
+            } else {
+                this.statusPanel.innerHTML = `<div class="error">Status unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                this.updateStaleState();
+            }
+        } catch (e) {
+            console.error("Fetch status snapshot error:", e);
+            this.statusPanel.innerHTML = `<div class="error">Status link failure: ${this.escapeHtml(e.message)}</div>`;
+            this.updateStaleState();
+        }
+    },
+
+    renderStatusSnapshot: function (snapshot, generatedAtIso) {
+        if (!this.statusPanel || !snapshot) return;
+
+        const toolsByType = Object.entries(snapshot.tools_by_type || {})
+            .map(([toolType, count]) => `<span class="mission-kv-pill">${this.escapeHtml(toolType)}: ${count}</span>`)
+            .join('');
+        const delegationByWorker = Object.entries(snapshot.delegation_by_worker || {})
+            .map(([worker, count]) => `<span class="mission-kv-pill">Worker ${this.escapeHtml(worker)}: ${count}</span>`)
+            .join('');
+        const delegationByScope = Object.entries(snapshot.delegation_by_scope || {})
+            .map(([scope, count]) => `<span class="mission-kv-pill">Scope ${this.escapeHtml(scope)}: ${count}</span>`)
+            .join('');
+        const delegationByState = Object.entries(snapshot.delegation_by_state || {})
+            .map(([state, count]) => `<span class="mission-kv-pill">State ${this.escapeHtml(state)}: ${count}</span>`)
+            .join('');
+        const topologyRows = (snapshot.delegation_topology || [])
+            .slice(0, 5)
+            .map(edge => `<div class="mission-audit-row"><span>${this.escapeHtml((edge.task_id || '').toString().substring(0, 8) || 'task')}</span><strong>${this.escapeHtml(edge.worker_profile || 'worker')}</strong><span>${this.escapeHtml(edge.scope_type || 'scope')}</span><span>${this.escapeHtml(edge.state || 'state')}</span></div><div class="mission-audit-detail">Capability: ${this.escapeHtml(edge.capability_profile || 'unknown')} · Retention: ${this.escapeHtml(edge.retention_policy || 'unknown')}</div>`)
+            .join('');
+
+        this.statusPanel.innerHTML = `
+            <div class="mission-status-header-row">
+                <div class="mission-status-header">System Health</div>
+                <div class="mission-status-freshness">Live · updated just now</div>
+            </div>
+            <div class="mission-kv-grid">
+                <div class="mission-kv-item"><span>Tools</span><strong>${snapshot.tools_total}</strong></div>
+                <div class="mission-kv-item"><span>Background Tasks</span><strong>${snapshot.background_tasks}</strong></div>
+                <div class="mission-kv-item"><span>Delegated Tasks</span><strong>${snapshot.delegation_active_tasks || 0}</strong></div>
+                <div class="mission-kv-item"><span>Chat Delegates</span><strong>${snapshot.delegation_chat_delegate_active_tasks || 0}</strong></div>
+                <div class="mission-kv-item"><span>Work Inbox (Unread)</span><strong>${snapshot.work_inbox_unread || 0}</strong></div>
+                <div class="mission-kv-item"><span>Work Inbox (Total)</span><strong>${snapshot.work_inbox_total || 0}</strong></div>
+                <div class="mission-kv-item"><span>Debug Mode</span><strong>${snapshot.debug_mode_enabled ? 'Enabled' : 'Disabled'}</strong></div>
+                <div class="mission-kv-item"><span>Autonomous Learning</span><strong>${snapshot.autonomous_learning_enabled ? 'Enabled' : 'Disabled'}</strong></div>
+            </div>
+            <div class="mission-kv-pills">${toolsByType || '<span class="mission-kv-pill">No tools registered</span>'}</div>
+            <div class="mission-kv-pills">${delegationByWorker || '<span class="mission-kv-pill">Worker mix unavailable</span>'}</div>
+            <div class="mission-kv-pills">${delegationByScope || '<span class="mission-kv-pill">Scope mix unavailable</span>'}</div>
+            <div class="mission-kv-pills">${delegationByState || '<span class="mission-kv-pill">State mix unavailable</span>'}</div>
+            <div class="mission-audit-list">${topologyRows || '<div class="mission-audit-detail">No active delegation edges.</div>'}</div>
+            <div class="mission-status-meta">
+                ${generatedAtIso ? `Generated: ${this.escapeHtml(generatedAtIso)}` : "Generated: n/a"}
+                ${this.snapshotSchemaVersion !== null ? ` · Schema v${this.snapshotSchemaVersion}` : ""}
+            </div>
+        `;
+        this.updateStaleState();
     },
 
     fetchTasks: async function () {
@@ -56,6 +284,14 @@ const missionControl = {
         });
     },
 
+    isFailureStatus: function (status) {
+        return [
+            'FAILED_PRE_REVIEW', 'FAILED_DURING_APPLY', 'FAILED_UNKNOWN',
+            'FAILED_CODE_GENERATION', 'FAILED_INTERRUPTED', 'PROJECT_PLAN_FAILED_STEP',
+            'CRITIC_REVIEW_REJECTED', 'POST_MOD_TEST_FAILED'
+        ].includes(status);
+    },
+
     createTaskCard: function (task) {
         const div = document.createElement('div');
         div.className = `task-card status-${task.status}`;
@@ -78,6 +314,11 @@ const missionControl = {
             planHtml = this.renderHierarchicalPlan(task);
         }
 
+        const isDelegatedTask = task.task_type === 'EPHEMERAL_AGENT_TASK';
+        const delegateMeta = isDelegatedTask
+            ? `<div class="task-current-step">🧠 Worker: ${this.escapeHtml((task.details && task.details.worker_profile) || 'coder_worker')} · Scope: ${this.escapeHtml((task.details && task.details.scope_type) || 'session')} · State: ${this.escapeHtml(task.status || 'UNKNOWN')} · Source: ${this.escapeHtml((task.details && task.details.source) || 'unknown')}</div>`
+            : '';
+
         div.innerHTML = `
             <div class="task-header">
                 <div style="display:flex; align-items:center; gap:10px;">
@@ -88,6 +329,7 @@ const missionControl = {
             </div>
             <div class="task-body">
                 <div class="task-desc">${task.description}</div>
+                ${delegateMeta}
                 ${task.current_step_description ? `<div class="task-current-step">▶ ${task.current_step_description}</div>` : ''}
                 ${task.output_preview ? `<div class="task-preview"><code>${this.escapeHtml(task.output_preview)}</code></div>` : ''}
             </div>
@@ -98,6 +340,7 @@ const missionControl = {
                 </div>
                 <div class="task-controls">
                      <button class="btn-control stop" data-action="stop">⛔ STOP TASK</button>
+                     ${this.isFailureStatus(task.status) ? '<button class="btn-control assistant-action" data-action="retry">♻ RETRY</button><button class="btn-control assistant-action" data-action="summarize">🔎 EXPLAIN</button><button class="btn-control assistant-action" data-action="pause">⏸ PAUSE AUTO</button>' : ''}
                 </div>
                 <div class="task-feedback">
                     <input type="text" placeholder="Inject instructions to agent..." class="feedback-input">
@@ -117,6 +360,10 @@ const missionControl = {
         if (stopBtn) {
             stopBtn.addEventListener('click', () => this.stopTask(task.task_id));
         }
+
+        div.querySelectorAll('.btn-control.assistant-action').forEach(btn => {
+            btn.addEventListener('click', () => this.triggerAssistantAction(task.task_id, btn.dataset.action));
+        });
 
         const sendBtn = div.querySelector('.btn-send-feedback');
         const input = div.querySelector('.feedback-input');
@@ -171,6 +418,34 @@ const missionControl = {
             }
         } catch (e) {
             console.error(e);
+        }
+    },
+
+    triggerAssistantAction: async function (taskId, action) {
+        if (action === 'pause' && !confirm('Pause autonomous retries for this task?')) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/tasks/${taskId}/assistant-action`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                alert(data.message || `Action '${action}' completed.`);
+                this.fetchTasks();
+                this.fetchStatusSnapshot();
+                this.fetchHealthAudit();
+                this.fetchBackgroundCadence();
+            } else {
+                alert(data.error || `Action '${action}' failed.`);
+            }
+        } catch (e) {
+            console.error('Assistant action error:', e);
+            alert(`Assistant action failed: ${e.message}`);
         }
     },
 
@@ -235,6 +510,21 @@ const missionControl = {
             const newCard = this.createTaskCard(taskData);
             this.board.insertBefore(newCard, this.board.firstChild);
         }
+    },
+
+    formatTimestamp: function (timestampSeconds) {
+        const ts = Number(timestampSeconds);
+        if (!Number.isFinite(ts) || ts <= 0) return 'Never';
+
+        const timestampMs = ts * 1000;
+        const diffMs = Date.now() - timestampMs;
+        const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
+
+        if (diffSeconds < 60) return `${diffSeconds}s ago`;
+        if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+        if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+
+        return new Date(timestampMs).toLocaleString();
     },
 
     escapeHtml: function (text) {
