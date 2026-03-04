@@ -54,26 +54,77 @@ class ConfigManager:
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
             "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
-            "GHOST_MODE": config_module.GHOST_MODE
+            "GHOST_MODE": config_module.GHOST_MODE,
+            "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
+            "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
+            "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
+            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE
         }
         self._write_json(data)
 
+    def is_managed_setting(self, key: str) -> bool:
+        """Returns True when key is part of managed runtime settings."""
+        return key in self.get_all_settings()
+
+    def coerce_setting_value(self, key: str, raw_value):
+        """Coerces user/API-provided value using setting schema metadata."""
+        schema = self.get_settings_schema().get(key)
+        if not schema:
+            raise ValueError(f"Unknown setting '{key}'")
+
+        value_type = schema.get("type")
+        value = raw_value
+
+        if value_type == "boolean":
+            if isinstance(raw_value, bool):
+                value = raw_value
+            elif isinstance(raw_value, str):
+                normalized = raw_value.strip().lower()
+                if normalized in {"true", "1", "yes", "on"}:
+                    value = True
+                elif normalized in {"false", "0", "no", "off"}:
+                    value = False
+                else:
+                    raise ValueError("Expected boolean value (true/false)")
+            else:
+                value = bool(raw_value)
+
+        elif value_type == "integer":
+            value = int(raw_value)
+
+        elif value_type == "number":
+            value = float(raw_value)
+
+        elif value_type == "object":
+            if isinstance(raw_value, (dict, list)):
+                value = raw_value
+            elif isinstance(raw_value, str):
+                value = json.loads(raw_value)
+            else:
+                raise ValueError("Expected JSON object/array value")
+
+        elif value_type == "string":
+            value = str(raw_value)
+
+        if "enum" in schema and value not in schema["enum"]:
+            raise ValueError(f"Value must be one of: {', '.join(schema['enum'])}")
+
+        return value
+
     def update_setting(self, key: str, value):
         """Updates a setting in memory and on disk."""
-        if hasattr(config_module, key):
-            # 1. Update In-Memory
-            setattr(config_module, key, value)
-            
-            # 2. Update Disk
-            current_data = self._read_json()
-            current_data[key] = value
-            self._write_json(current_data)
-            
-            logger.info(f"Config updated: {key} -> {value}")
-            return True
-        else:
-            logger.error(f"Attempted to update non-existent config key: {key}")
+        if not self.is_managed_setting(key):
+            logger.error(f"Attempted to update non-managed config key: {key}")
             return False
+
+        setattr(config_module, key, value)
+
+        current_data = self._read_json()
+        current_data[key] = value
+        self._write_json(current_data)
+
+        logger.info(f"Config updated: {key} -> {value}")
+        return True
 
     def get_all_settings(self):
         """Returns a dict of all managed settings."""
@@ -88,7 +139,73 @@ class ConfigManager:
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
             "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
-            "GHOST_MODE": config_module.GHOST_MODE
+            "GHOST_MODE": config_module.GHOST_MODE,
+            "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
+            "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
+            "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
+            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE
+        }
+
+    def get_settings_schema(self):
+        """Returns editable setting metadata for API/assistant-driven configuration."""
+        return {
+            "DEFAULT_EXECUTION_MODE": {
+                "type": "string",
+                "description": "Default execution policy for new tasks.",
+                "enum": ["AUTO", "THINKING_PRO", "FAST_REACT", "DIRECT"],
+            },
+            "ENABLE_THINKING": {
+                "type": "boolean",
+                "description": "Enable internal reasoning traces where supported.",
+            },
+            "DEFAULT_MODEL": {
+                "type": "string",
+                "description": "Default model alias for general operations.",
+            },
+            "TASK_MODELS": {
+                "type": "object",
+                "description": "Per-task model overrides.",
+            },
+            "REASONING_STRATEGIES": {
+                "type": "object",
+                "description": "Per-task reasoning strategy mapping.",
+            },
+            "CONVERSATION_HISTORY_TURNS": {
+                "type": "integer",
+                "description": "How many recent turns to include in chat context.",
+            },
+            "AUTONOMOUS_LEARNING_ENABLED": {
+                "type": "boolean",
+                "description": "Enables background autonomous learning loops.",
+            },
+            "AUTO_APPROVE_DELAY_SECONDS": {
+                "type": "number",
+                "description": "Delay before auto-approval executes (seconds).",
+            },
+            "PARALLEL_THINKING_CONFIG": {
+                "type": "object",
+                "description": "Configuration for parallel reasoning execution.",
+            },
+            "GHOST_MODE": {
+                "type": "boolean",
+                "description": "Use visible browser windows for automation where supported.",
+            },
+            "AUTO_WEB_PIP": {
+                "type": "boolean",
+                "description": "Automatically capture picture-in-picture screenshots during web searches.",
+            },
+            "REMINDER_CHECK_INTERVAL_SECONDS": {
+                "type": "integer",
+                "description": "Polling interval for due reminder checks in background service.",
+            },
+            "DREAM_INTERVAL_SECONDS": {
+                "type": "integer",
+                "description": "Interval between Dreamer simulation runs when enabled and idle.",
+            },
+            "ENABLE_DREAM_MODE": {
+                "type": "boolean",
+                "description": "Enable autonomous Dreamer simulation cycle.",
+            },
         }
 
     def _read_json(self):
