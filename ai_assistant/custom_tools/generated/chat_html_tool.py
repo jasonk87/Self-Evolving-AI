@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Optional
+import inspect
 import json
 
 if TYPE_CHECKING:
@@ -27,9 +28,8 @@ async def chat_dynamic_html(action_executor: "ActionExecutor", idea: str) -> str
         Idea: {idea}
         """
 
-        llm_response = await action_executor.run_code(
-            lang="llm", code=prompt
-        )
+        run_result = action_executor.run_code(lang="llm", code=prompt)
+        llm_response = await run_result if inspect.isawaitable(run_result) else run_result
 
         try:
             code_dict = json.loads(llm_response)
@@ -48,6 +48,8 @@ async def chat_dynamic_html(action_executor: "ActionExecutor", idea: str) -> str
                 js_section = ""
 
             final_html = f"{css_section}\n{html_code}\n{js_section}"
+            if not html_code and not css_section and not js_section:
+                return "\n\n"
 
             # CRITICAL: Wrap in the special block for the frontend to render it dynamically
             return f"```html-dynamic\n{final_html}\n```"

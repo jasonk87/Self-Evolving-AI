@@ -9,7 +9,10 @@ from . import api_bp # Or a separate blueprint? api_bp is fine for /get_live_sta
 from flask import Blueprint
 import logging
 import app_globals
-import ai_live_link
+try:
+    import ai_live_link
+except Exception:
+    ai_live_link = None
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -18,8 +21,11 @@ live_bp = Blueprint('live_bp', __name__)
 @live_bp.route('/toggle_live_mode', methods=['POST'])
 def toggle_live_mode():
     """Toggles 'The Watcher' Live Mode."""
-    data = request.json
+    data = request.json or {}
     active = data.get('active', False)
+
+    if ai_live_link is None:
+        return jsonify({"success": False, "error": "Live mode unavailable: optional dependency missing."}), 503
     
     if active:
         # Define callback to save session to memory
@@ -88,5 +94,8 @@ Use this knowledge to provide context-aware responses. Be lively!
 @live_bp.route('/get_live_status', methods=['GET'])
 def get_live_status():
     """Returns the current status of Live Mode (idle, listening, speaking)."""
+    if ai_live_link is None:
+        return jsonify({"status": "unavailable", "success": False, "error": "Live mode unavailable: optional dependency missing."}), 503
+
     status = ai_live_link.get_status()
     return jsonify({"status": status})

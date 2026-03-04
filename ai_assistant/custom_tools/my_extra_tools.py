@@ -65,7 +65,7 @@ async def search_duckduckgo(*args, **kwargs) -> str:
     # Ghost Mode Visualization
     images = []
     from ai_assistant import config
-    if config.GHOST_MODE:
+    if getattr(config, "AUTO_WEB_PIP", False) or config.GHOST_MODE:
         try:
             from ai_assistant.core.vision_service import VisionService
             import urllib.parse
