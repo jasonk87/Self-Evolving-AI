@@ -327,3 +327,75 @@ def test_chat_work_status_command_for_specific_task(monkeypatch):
     assert payload["success"] is True
     assert "GENERATING_CODE" in payload["response"]
     assert "Writing tests" in payload["response"]
+
+
+def test_chat_work_status_command_accepts_task_id_prefix(monkeypatch):
+    app = _build_test_app()
+
+    _setup_chat_manager(monkeypatch)
+    monkeypatch.setattr(app_globals, "orchestrator", None)
+    monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
+        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        coerce_setting_value=lambda key, raw: raw,
+        update_setting=lambda key, value: True,
+    ))
+
+    active_task = SimpleNamespace(
+        task_id="abcdef123456",
+        status=SimpleNamespace(name="GENERATING_CODE"),
+        current_step_description="Writing implementation",
+        status_reason="In progress",
+    )
+
+    monkeypatch.setattr(app_globals, "task_manager", SimpleNamespace(
+        get_task_including_archive=lambda task_id: None,
+        list_active_tasks=lambda: [active_task],
+        list_archived_tasks=lambda limit=200: [],
+    ))
+
+    with app.test_client() as client:
+        response = client.post('/chat', json={"message": "/work-status abcdef12", "session_id": "s1"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert "GENERATING_CODE" in payload["response"]
+
+
+def test_chat_work_status_lists_recent_task_statuses(monkeypatch):
+    app = _build_test_app()
+
+    _setup_chat_manager(monkeypatch)
+    monkeypatch.setattr(app_globals, "orchestrator", None)
+    monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
+        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        coerce_setting_value=lambda key, raw: raw,
+        update_setting=lambda key, value: True,
+    ))
+
+    task1 = SimpleNamespace(task_id="task11112222", status=SimpleNamespace(name="GENERATING_CODE"), current_step_description=None, status_reason=None)
+    task2 = SimpleNamespace(task_id="task33334444", status=SimpleNamespace(name="COMPLETED_SUCCESSFULLY"), current_step_description=None, status_reason=None)
+
+    # Inject delegated metadata into session via chat manager directly.
+    session = app_globals.chat_manager.get_session("s1")
+    session["metadata"] = {
+        "delegated_tasks": [
+            {"task_id": task1.task_id},
+            {"task_id": task2.task_id},
+        ]
+    }
+
+    monkeypatch.setattr(app_globals, "task_manager", SimpleNamespace(
+        get_task_including_archive=lambda task_id: None,
+        list_active_tasks=lambda: [task1],
+        list_archived_tasks=lambda limit=200: [task2],
+    ))
+
+    with app.test_client() as client:
+        response = client.post('/chat', json={"message": "/work-status", "session_id": "s1"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert "task1111:GENERATING_CODE" in payload["response"]
+    assert "task3333:COMPLETED_SUCCESSFULLY" in payload["response"]

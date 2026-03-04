@@ -200,6 +200,35 @@ def _launch_delegated_code_task(task_id: str, session_id: str, delegated_prompt:
     asyncio.run_coroutine_threadsafe(_run_delegated_prompt(), app_globals.ai_loop)
 
 
+
+
+def _resolve_task_from_query(task_query: str):
+    if not app_globals.task_manager:
+        return None
+
+    task_query = (task_query or '').strip()
+    if not task_query:
+        return None
+
+    exact = app_globals.task_manager.get_task_including_archive(task_query)
+    if exact:
+        return exact
+
+    candidates = []
+    try:
+        for task in app_globals.task_manager.list_active_tasks():
+            if task.task_id.startswith(task_query):
+                candidates.append(task)
+        for task in app_globals.task_manager.list_archived_tasks(limit=200):
+            if task.task_id.startswith(task_query):
+                candidates.append(task)
+    except Exception:
+        return None
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
 def _handle_delegation_commands(session_id: str, message: str, images=None):
     stripped = (message or '').strip()
 
@@ -245,7 +274,7 @@ def _handle_delegation_commands(session_id: str, message: str, images=None):
         target_id = parts[1].strip() if len(parts) > 1 else None
 
         if target_id:
-            task = app_globals.task_manager.get_task_including_archive(target_id) if app_globals.task_manager else None
+            task = _resolve_task_from_query(target_id)
             if not task:
                 response = f'No task found for id {target_id}.'
                 app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
@@ -269,8 +298,19 @@ def _handle_delegation_commands(session_id: str, message: str, images=None):
             app_globals.chat_manager.add_message(session_id, 'assistant', response)
             return {"response": response, "success": True, "status_code": 200}
 
-        latest_ids = [entry.get('task_id', '')[:8] for entry in delegated_tasks[-3:] if entry.get('task_id')]
-        response = f"Recent delegated tasks: {', '.join(latest_ids)}. Use /work-status <task_id> for details."
+        latest_entries = []
+        for entry in delegated_tasks[-3:]:
+            task_id = (entry.get('task_id') or '').strip()
+            if not task_id:
+                continue
+            task = _resolve_task_from_query(task_id)
+            status_text = task.status.name if task else 'UNKNOWN'
+            latest_entries.append(f"{task_id[:8]}:{status_text}")
+
+        response = (
+            f"Recent delegated tasks: {', '.join(latest_entries)}. "
+            "Use /work-status <task_id> for details."
+        )
         app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
         app_globals.chat_manager.add_message(session_id, 'assistant', response)
         return {"response": response, "success": True, "status_code": 200}
