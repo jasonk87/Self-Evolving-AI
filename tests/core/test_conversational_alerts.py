@@ -62,6 +62,48 @@ def test_emit_task_failure_alert_ignores_success_status(monkeypatch):
     assert payload is None
 
 
+
+
+def test_emit_task_failure_alert_ignores_failed_interrupted_status(monkeypatch):
+    task = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
+
+    chat_mgr = SimpleNamespace(
+        add_message=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not add message")),
+        list_sessions=lambda: [],
+        create_session=lambda title: "new-session",
+    )
+
+    monkeypatch.setattr(app_globals, "chat_manager", chat_mgr)
+    monkeypatch.setattr(app_globals, "socketio", SimpleNamespace(emit=lambda *a, **k: None))
+
+    payload = conversational_alerts.emit_task_failure_alert(task)
+    assert payload is None
+
+
+def test_emit_startup_interrupted_tasks_digest_emits_single_summary(monkeypatch):
+    task_a = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
+    task_b = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
+
+    added = {}
+    emitted = {}
+    chat_mgr = SimpleNamespace(
+        add_message=lambda sid, role, content: added.update({"sid": sid, "role": role, "content": content}),
+        list_sessions=lambda: [{"id": "session-xyz"}],
+        create_session=lambda title: "new-session",
+    )
+    socketio = SimpleNamespace(emit=lambda event, payload: emitted.update({"event": event, "payload": payload}))
+
+    monkeypatch.setattr(app_globals, "chat_manager", chat_mgr)
+    monkeypatch.setattr(app_globals, "socketio", socketio)
+
+    payload = conversational_alerts.emit_startup_interrupted_tasks_digest([task_a, task_b])
+
+    assert payload is not None
+    assert payload["type"] == "startup_interrupted_digest"
+    assert payload["count"] == 2
+    assert added["role"] == "assistant"
+    assert "startup recovery digest" in added["content"].lower()
+    assert emitted["event"] == "assistant_alert"
 def test_execute_alert_action_summarize(monkeypatch):
     task = _make_task()
     fake_tm = SimpleNamespace(get_task_including_archive=lambda _tid: task)

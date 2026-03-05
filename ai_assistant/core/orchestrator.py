@@ -107,6 +107,51 @@ class DynamicOrchestrator:
                  except Exception as e:
                      logger.error(f"Failed to trigger session summary: {e}")
 
+    def _build_ui_feedback_task_details(self) -> Dict[str, Any]:
+        """Builds a valid scope-contract payload for ephemeral UI feedback tasks."""
+        return {
+            "scope_type": "session",
+            "capability_profile": "ops_diagnostics",
+            "retention_policy": "keep_summary_only",
+            "worker_profile": "ops_assistant_worker",
+            "source": "ui_feedback",
+        }
+
+    def _build_tool_failure_signature(self, tool_name: str, error: Exception) -> str:
+        """Build a compact signature for repetitive tool failures in a single cycle run."""
+        err_type = type(error).__name__
+        err_msg = str(error or "")[:120]
+        return f"{tool_name}|{err_type}|{err_msg}"
+
+    def _register_tool_failure(
+        self,
+        failure_counts: Dict[str, int],
+        blocked_tools: Dict[str, Dict[str, Any]],
+        tool_name: str,
+        error: Exception,
+        threshold: int = 3,
+    ) -> Dict[str, Any]:
+        """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
+        signature = self._build_tool_failure_signature(tool_name, error)
+        count = failure_counts.get(signature, 0) + 1
+        failure_counts[signature] = count
+
+        activated = False
+        if count >= threshold:
+            activated = True
+            blocked_tools[tool_name] = {
+                "signature": signature,
+                "count": count,
+                "reason": f"Repeated identical failure ({count}x): {signature}",
+            }
+
+        return {
+            "signature": signature,
+            "count": count,
+            "activated": activated,
+            "blocked_reason": blocked_tools.get(tool_name, {}).get("reason"),
+        }
+
     async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
         """
         The Universal Bicameral Cycle: Strategist (Think) -> Operator (Act) -> Loop.
@@ -121,6 +166,8 @@ class DynamicOrchestrator:
         max_steps = MAX_REACT_STEPS
         collected_images = []
         tools_desc = tool_system_instance.get_tools_description()
+        failure_counts: Dict[str, int] = {}
+        blocked_tools: Dict[str, Dict[str, Any]] = {}
 
         # Initial Strategist Prompt
         execution_history = ""
@@ -142,6 +189,7 @@ class DynamicOrchestrator:
                 current_ui_task = self.task_manager.add_task(
                     description=prompt[:100], # Short desc
                     task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK,
+                    details=self._build_ui_feedback_task_details(),
                     session_id=session_id
                 )
                 self.task_manager.update_task_status(
@@ -401,14 +449,18 @@ Instructions:
                             step_desc=f"{tool_name}: {thought[:40]}..."
                         )
 
-                    # Tool Execution Logic (with self-healing)
+                    # Tool Execution Logic (with self-healing + circuit breaker)
                     execution_success = False
                     result_str = ""
                     max_retries = 2
 
-                    for attempt in range(max_retries + 1):
-                        try:
-                            result = await tool_system_instance.execute_tool(
+                    if tool_name in blocked_tools:
+                        blocked_reason = blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
+                        result_str = f"Circuit breaker active for tool '{tool_name}': {blocked_reason}"
+                    else:
+                        for attempt in range(max_retries + 1):
+                            try:
+                                result = await tool_system_instance.execute_tool(
                                 tool_name,
                                 args=tuple(args),
                                 kwargs=kwargs,
@@ -417,36 +469,42 @@ Instructions:
                                 action_executor=self.action_executor
                             )
 
-                            if isinstance(result, dict) and 'images' in result:
-                                new_images = result.get('images', [])
-                                if new_images:
-                                    for img in new_images:
-                                        if img not in collected_images:
-                                            collected_images.append(img)
-                                
-                                # Omit large image strings from the LLM execution history
-                                result_for_llm = dict(result)
-                                result_for_llm['images'] = f"[{len(new_images)} image(s) captured and saved to context]"
-                                result_str = str(result_for_llm)
-                            else:
-                                result_str = str(result)
+                                if isinstance(result, dict) and 'images' in result:
+                                    new_images = result.get('images', [])
+                                    if new_images:
+                                        for img in new_images:
+                                            if img not in collected_images:
+                                                collected_images.append(img)
 
-                            if isinstance(result, dict) and result.get('status') == 'PAUSED':
-                                final_answer = result_str
-                                success = True
-                                print(color_text(f"--> Paused for user: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                                    # Omit large image strings from the LLM execution history
+                                    result_for_llm = dict(result)
+                                    result_for_llm['images'] = f"[{len(new_images)} image(s) captured and saved to context]"
+                                    result_str = str(result_for_llm)
+                                else:
+                                    result_str = str(result)
+
+                                if isinstance(result, dict) and result.get('status') == 'PAUSED':
+                                    final_answer = result_str
+                                    success = True
+                                    print(color_text(f"--> Paused for user: {result.get('question')}", CLIColors.SYSTEM_MESSAGE))
+                                    break
+
+                                execution_success = True
                                 break
+                            except Exception as e:
+                                failure_meta = self._register_tool_failure(failure_counts, blocked_tools, tool_name, e)
+                                if failure_meta.get("activated"):
+                                    result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
+                                    print(color_text(f"⛔ {result_str}", CLIColors.WARNING))
+                                    break
 
-                            execution_success = True
-                            break
-                        except Exception as e:
-                            if attempt < max_retries:
-                                print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
-                                # Optional: auto-repair logic could go here
-                                await asyncio.sleep(1)
-                            else:
-                                result_str = f"Error: {str(e)}"
-                                
+                                if attempt < max_retries:
+                                    print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
+                                    # Optional: auto-repair logic could go here
+                                    await asyncio.sleep(1)
+                                else:
+                                    result_str = f"Error: {str(e)}"
+
                     # Emit Tool Result node for Visual Cortex
                     tool_result_node_id = f"thought_res_{uuid.uuid4().hex[:8]}"
                     EventEmitter.emit("thought_update", {

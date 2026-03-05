@@ -16,13 +16,16 @@ _FAILURE_STATUS_NAMES = {
     "CRITIC_REVIEW_REJECTED",
     "POST_MOD_TEST_FAILED",
     "FAILED_CODE_GENERATION",
-    "FAILED_INTERRUPTED",
     "PROJECT_PLAN_FAILED_STEP",
 }
 
 
 def should_send_failure_alert(status_name: str) -> bool:
-    return status_name in _FAILURE_STATUS_NAMES
+    normalized = str(status_name or "").strip().upper()
+    # Startup-interrupted tasks can be numerous; avoid flooding chat alerts for these.
+    if normalized == "FAILED_INTERRUPTED":
+        return False
+    return normalized in _FAILURE_STATUS_NAMES
 
 
 def _suggested_actions(task: "ActiveTask") -> List[str]:
@@ -131,6 +134,49 @@ def emit_task_failure_alert(task: "ActiveTask") -> Optional[Dict[str, Any]]:
         "message": message,
         "status": task.status.name,
         "suggested_actions": _suggested_actions(task),
+    }
+
+    if app_globals.socketio:
+        app_globals.socketio.emit("assistant_alert", payload)
+
+    return payload
+
+
+def emit_startup_interrupted_tasks_digest(tasks: List["ActiveTask"]) -> Optional[Dict[str, Any]]:
+    """Emit a single startup digest for tasks auto-marked as FAILED_INTERRUPTED."""
+    task_items = [task for task in (tasks or []) if getattr(task, "status", None) == ActiveTaskStatus.FAILED_INTERRUPTED]
+    if not task_items:
+        return None
+
+    sample_count = min(len(task_items), 5)
+    sample_lines = []
+    for task in task_items[:sample_count]:
+        sample_lines.append(f"- {task.task_id}: {task.description[:80]}")
+
+    extra = len(task_items) - sample_count
+    extra_line = f"\n...and {extra} more interrupted tasks." if extra > 0 else ""
+
+    first_task = task_items[0]
+    session_id = _resolve_session_id(first_task)
+    message = (
+        "⚠️ Startup recovery digest\n\n"
+        f"I found {len(task_items)} task(s) interrupted by the last shutdown and marked them as `FAILED_INTERRUPTED`.\n"
+        "This is expected after a restart and not necessarily a new failure.\n\n"
+        "Sample interrupted tasks:\n"
+        f"{"\n".join(sample_lines)}"
+        f"{extra_line}\n\n"
+        "When ready, you can retry selectively with `/task-action <task_id> retry` or ask me to summarize one first."
+    )
+
+    if app_globals.chat_manager:
+        app_globals.chat_manager.add_message(session_id, "assistant", message)
+
+    payload = {
+        "session_id": session_id,
+        "type": "startup_interrupted_digest",
+        "count": len(task_items),
+        "sample_task_ids": [task.task_id for task in task_items[:sample_count]],
+        "message": message,
     }
 
     if app_globals.socketio:

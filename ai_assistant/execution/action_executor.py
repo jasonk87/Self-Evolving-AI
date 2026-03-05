@@ -174,6 +174,48 @@ class ActionExecutor:
             
         return False
 
+    def _run_execution_policy_preflight(self, action_type: str, details: Dict[str, Any]) -> Dict[str, Any]:
+        """Runs the combined execution-policy preflight when applicable."""
+        applicable_actions = {"EXECUTE_EPHEMERAL_AGENT", "EXECUTE_SUGGESTED_TOOL"}
+        if str(action_type or "") not in applicable_actions:
+            return {"checked": False, "allowed": True, "blocked": False, "reasons": []}
+
+        try:
+            from routes import approvals as approvals_routes
+
+            tool_name = str(details.get("tool_name") or "").lower()
+            target_path = str(details.get("target_path") or details.get("path") or "").strip()
+            action_kind = "host_automation" if target_path else "research"
+            token_category = "autonomous" if action_type == "EXECUTE_EPHEMERAL_AGENT" else "general"
+            if "search" in tool_name or "web" in tool_name or "browser" in tool_name:
+                token_category = "research"
+
+            payload = {
+                "action_type": action_kind,
+                "token_category": token_category,
+                "projected_cost_usd": details.get("projected_cost_usd", 0.0),
+                "window_hours": details.get("window_hours", 24),
+                "target_path": target_path,
+                "actor": details.get("actor", "autonomous_executor"),
+                "rationale": details.get("rationale", f"Preflight check for {action_type}"),
+                "requested_at": details.get("requested_at", datetime.now(timezone.utc).isoformat()),
+            }
+
+            evaluation = approvals_routes._evaluate_execution_preflight(payload)
+            if isinstance(evaluation, dict):
+                return {
+                    "checked": True,
+                    "allowed": bool(evaluation.get("allowed", True)),
+                    "blocked": bool(evaluation.get("blocked", False)),
+                    "reasons": list(evaluation.get("reasons", [])),
+                    "evaluation": evaluation,
+                }
+            return {"checked": True, "allowed": True, "blocked": False, "reasons": []}
+        except Exception as e:
+            logger.warning(f"Execution preflight check unavailable; defaulting allow. Error: {e}")
+            return {"checked": False, "allowed": True, "blocked": False, "reasons": []}
+
+
     async def handle_telemetry_update(self, project_name: str, telemetry_data: Dict[str, Any]) -> Optional[str]:
         """
         Analyzes telemetry updates from a running project and decides if a proactive response is needed.
@@ -703,6 +745,22 @@ class ActionExecutor:
             action_task_id = action_task.task_id
 
         print(f"ActionExecutor: Received action '{action_type}' for insight '{source_insight_id}'. Task ID: {action_task_id}. Details: {details}")
+
+        policy_preflight = self._run_execution_policy_preflight(action_type, details)
+        if policy_preflight.get("blocked", False):
+            reason = f"Execution blocked by policy preflight: {', '.join(policy_preflight.get('reasons', [])) or 'blocked'}"
+            self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=reason, step_desc="Policy preflight blocked")
+            logger.warning(f"ActionExecutor: {reason}. action_type={action_type}, source={source_insight_id}")
+            global_reflection_log.log_execution(
+                goal_description=f"Policy preflight for action {action_type} ({source_insight_id})",
+                plan=[{"action_type": action_type, "details": details}],
+                execution_results=[{"policy_preflight": policy_preflight}],
+                overall_success=False,
+                notes=reason,
+                status_override="POLICY_PREFLIGHT_BLOCKED",
+                is_self_modification_attempt=False,
+            )
+            return False
 
         if action_type == "PROPOSE_TOOL_MODIFICATION":
             tool_name = details.get("tool_name")
