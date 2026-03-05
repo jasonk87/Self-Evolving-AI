@@ -58,7 +58,8 @@ class ConfigManager:
             "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
             "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
             "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
-            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE
+            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE,
+            "TASK_PROFILES": config_module.TASK_PROFILES
         }
         self._write_json(data)
 
@@ -143,7 +144,8 @@ class ConfigManager:
             "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
             "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
             "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
-            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE
+            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE,
+            "TASK_PROFILES": config_module.TASK_PROFILES
         }
 
     def get_settings_schema(self):
@@ -205,6 +207,10 @@ class ConfigManager:
             "ENABLE_DREAM_MODE": {
                 "type": "boolean",
                 "description": "Enable autonomous Dreamer simulation cycle.",
+            },
+            "TASK_PROFILES": {
+                "type": "object",
+                "description": "Advanced task-based execution profiles and routing.",
             },
         }
 

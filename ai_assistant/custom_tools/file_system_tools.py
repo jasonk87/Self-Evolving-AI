@@ -157,7 +157,7 @@ async def read_text_from_file_async(full_filepath: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while reading file '{full_filepath}': {e}"
 
-def list_project_files(project_identifier: str, sub_directory: Optional[str]=None) -> Dict[str, Any]:
+def list_project_files(project_identifier: str = None, sub_directory: Optional[str]=None, project_root: Optional[str]=None) -> Dict[str, Any]:
     """
     Lists files and directories within a specified project's root path or a subdirectory thereof.
 
@@ -165,12 +165,17 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
         project_identifier: The ID or name of the project.
         sub_directory: Optional. A subdirectory within the project to list.
                        If None, lists contents of the project's root_path.
+        project_root: Alias for project_identifier.
 
     Returns:
         A dictionary with "status": "success", "path_listed": "absolute_path",
         "files": list_of_files, "directories": list_of_directories.
         Or {"status": "error", "message": "error description"}.
     """
+    if project_identifier is None and project_root is not None:
+        project_identifier = project_root
+    if not project_identifier:
+        return {'status': 'error', 'message': "Project identifier is required."}
     from ai_assistant.core.project_manager import find_project
     project = find_project(project_identifier)
     if not project:
@@ -200,10 +205,10 @@ def list_project_files(project_identifier: str, sub_directory: Optional[str]=Non
     except Exception as e:
         return {'status': 'error', 'message': f"Failed to list project files for '{project_identifier}' at '{path_to_list}': {str(e)}"}
 
-async def list_project_files_async(project_identifier: str, sub_directory: Optional[str]=None) -> Dict[str, Any]:
+async def list_project_files_async(project_identifier: str = None, sub_directory: Optional[str]=None, project_root: Optional[str]=None) -> Dict[str, Any]:
     """Async wrapper for list_project_files running in thread pool."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, functools.partial(list_project_files, project_identifier, sub_directory))
+    return await loop.run_in_executor(None, functools.partial(list_project_files, project_identifier=project_identifier, sub_directory=sub_directory, project_root=project_root))
 
 def get_project_file_content(project_identifier: str, file_path_in_project: str) -> Dict[str, Any]:
     """

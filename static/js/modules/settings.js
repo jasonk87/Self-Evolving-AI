@@ -17,7 +17,7 @@ export function loadConfig() {
 
     if (loading) loading.style.display = 'block';
 
-    fetch('/api/config')
+    fetch('/api/config?t=' + Date.now())
         .then(response => response.json())
         .then(config => {
             renderSettingsForm(config, container);
@@ -56,7 +56,49 @@ function renderSettingsForm(config, container) {
 
         let input;
 
-        if (typeof value === 'boolean') {
+        if (key === 'TASK_PROFILES') {
+            input = document.createElement('div');
+            input.dataset.key = key;
+            input.dataset.type = 'custom-task-profiles';
+            input.id = `setting-${key}`;
+
+            let html = '<div style="display:flex; flex-direction:column; gap:10px;">';
+            for (const [taskName, profile] of Object.entries(value || {})) {
+                html += `
+                    <div class="profile-card" data-task="${taskName}" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin: 0 0 10px 0; color: var(--accent-cyan); text-transform: uppercase;">Task: ${taskName}</h4>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 120px;">
+                                <label style="font-size: 11px; color: var(--text-dim);">Provider</label>
+                                <select class="profile-provider" style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+                                    <option value="gemini" ${profile.provider === 'gemini' ? 'selected' : ''}>Gemini</option>
+                                    <option value="ollama" ${profile.provider === 'ollama' ? 'selected' : ''}>Ollama</option>
+                                    <option value="openai" ${profile.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
+                                    <option value="anthropic" ${profile.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; min-width: 120px;">
+                                <label style="font-size: 11px; color: var(--text-dim);">Model</label>
+                                <input type="text" class="profile-model" value="${profile.model || ''}" style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+                            </div>
+                            <div style="flex: 1; min-width: 120px;">
+                                <label style="font-size: 11px; color: var(--text-dim);">Mode</label>
+                                <select class="profile-mode" style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+                                    <option value="BICAMERAL" ${profile.mode === 'BICAMERAL' ? 'selected' : ''}>Bicameral (Think -> Act)</option>
+                                    <option value="DIRECT" ${profile.mode === 'DIRECT' ? 'selected' : ''}>Direct (Act)</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; min-width: 120px;">
+                                <label style="font-size: 11px; color: var(--text-dim);">Endpoint</label>
+                                <input type="text" class="profile-endpoint" value="${profile.endpoint || ''}" placeholder="http://..." style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            input.innerHTML = html;
+        } else if (typeof value === 'boolean') {
             input = document.createElement('select');
             input.innerHTML = `
                 <option value="true" ${value === true ? 'selected' : ''}>Enabled</option>
@@ -78,8 +120,10 @@ function renderSettingsForm(config, container) {
             input.dataset.type = 'json';
         }
 
-        input.dataset.key = key;
-        input.id = `setting-${key}`;
+        if (key !== 'TASK_PROFILES') {
+            input.dataset.key = key;
+            input.id = `setting-${key}`;
+        }
 
         group.appendChild(input);
         container.appendChild(group);
@@ -114,6 +158,26 @@ export function saveSettings() {
 
         updates[key] = value;
     });
+
+    const taskProfilesContainer = container.querySelector('[data-type="custom-task-profiles"]');
+    if (taskProfilesContainer) {
+        const profiles = {};
+        const cards = taskProfilesContainer.querySelectorAll('.profile-card');
+        cards.forEach(card => {
+            const task = card.dataset.task;
+            const provider = card.querySelector('.profile-provider').value;
+            const model = card.querySelector('.profile-model').value;
+            const mode = card.querySelector('.profile-mode').value;
+            const endpoint = card.querySelector('.profile-endpoint').value;
+            profiles[task] = {
+                provider: provider,
+                model: model,
+                mode: mode,
+                endpoint: endpoint || null
+            };
+        });
+        updates['TASK_PROFILES'] = profiles;
+    }
 
     fetch('/api/config', {
         method: 'POST',

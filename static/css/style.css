@@ -987,8 +987,11 @@ body {
 .assistant-live-feed-image {
     width: 100%;
     display: block;
-    max-height: 280px;
-    object-fit: cover;
+    max-height: 450px;
+    object-fit: contain;
+    /* Proportional scaling */
+    background: #000;
+    /* Letterboxing */
 }
 
 

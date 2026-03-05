@@ -320,3 +320,36 @@ REMINDER_CHECK_INTERVAL_SECONDS = 10
 DREAM_INTERVAL_SECONDS = 86400
 ENABLE_DREAM_MODE = False
 BROWSER_SLOW_MO = 100  # Milliseconds to slow down operations in Ghost Mode
+
+
+# =====================================================================
+# TASK ROUTING & PLUGGABLE LLM ARCHITECTURE
+# =====================================================================
+DEFAULT_LLM_PROVIDER = "gemini"
+
+TASK_PROFILES = {
+    "chat": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
+    },
+    "coding": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
+    },
+    "background_dreamer": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
+    },
+    "local_agent": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
+    }
+}

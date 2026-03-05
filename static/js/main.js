@@ -398,6 +398,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 6. New Chat (Handled via Event Delegation above)
 
+    // Memory Tabs Navigation
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-btn')) {
+            const targetTab = e.target.dataset.tab;
+            if (targetTab) {
+                const parent = e.target.closest('.memory-tabs');
+                if (parent) {
+                    parent.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                }
+                const wrapper = e.target.closest('.sidebar-view');
+                if (wrapper) {
+                    wrapper.querySelectorAll('.memory-tab-content').forEach(content => {
+                        content.classList.remove('active');
+                        content.classList.add('hidden');
+                    });
+                    const activeContent = document.getElementById(targetTab);
+                    if (activeContent) {
+                        activeContent.classList.remove('hidden');
+                        activeContent.classList.add('active');
+                    }
+                }
+            }
+        }
+    });
+
     // Mic
     document.getElementById('mic-btn')?.addEventListener('click', Voice.toggleListening);
 

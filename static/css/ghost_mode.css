@@ -59,12 +59,12 @@
 
 #ghost-feed {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
-    object-fit: cover;
-    opacity: 0.9;
-    filter: sepia(20%) hue-rotate(150deg) saturate(150%) contrast(1.1);
-    /* Cyan/Green Tint */
+    object-fit: contain; /* Prevent stretching */
+    background: #000; /* Fill gaps with black */
+    opacity: 0.95;
+    filter: brightness(1.1) contrast(1.1);
     transition: opacity 0.2s;
 }
 

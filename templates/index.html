@@ -48,6 +48,8 @@
                         </path>
                     </svg>
                 </button>
+                <button class="btn-icon toolbar-item" data-target="view-settings"
+                    title="System Configuration">⚙️</button>
             </div>
         </header>
         <div class="mobile-overlay" id="mobile-overlay"></div>
@@ -106,9 +108,11 @@
                     </span>
                 </div>
 
-                <div class="activity-item" title="Quarantine" data-target="view-sidebar-quarantine" data-label="Quarantine">
+                <div class="activity-item" title="Quarantine" data-target="view-sidebar-quarantine"
+                    data-label="Quarantine">
                     <span class="icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                             <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
                             <line x1="12" y1="15" x2="12" y2="18"></line>
@@ -413,80 +417,89 @@
                             <input type="checkbox" id="setting-ghost-mode">
                             <label for="setting-ghost-mode"></label>
                         </div>
-                    <!-- Settings (System Config) - Merged into Unified View -->
-                    <div class="setting-group" style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-                        <label>Advanced System Configuration</label>
-                        <div id="settings-loading" class="loading">Loading configuration...</div>
-                        <div id="settings-container" class="settings-form-container hidden" style="height: auto; padding: 0;">
-                            <!-- Injected by JS -->
+                        <!-- Settings (System Config) - Merged into Unified View -->
+                        <div class="setting-group"
+                            style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+                            <label>Advanced System Configuration</label>
+                            <div id="settings-loading" class="loading">Loading configuration...</div>
+                            <div id="settings-container" class="settings-form-container hidden"
+                                style="height: auto; padding: 0;">
+                                <!-- Injected by JS -->
+                            </div>
+                            <div class="settings-actions hidden" id="settings-actions-footer"
+                                style="background: transparent; padding: 15px 0 0 0; border: none;">
+                                <button id="save-settings-btn" class="btn-pill-neon" style="border-radius: 8px;">SAVE
+                                    CONFIGURATION</button>
+                                <span id="save-status"></span>
+                            </div>
                         </div>
-                        <div class="settings-actions hidden" id="settings-actions-footer" style="background: transparent; padding: 15px 0 0 0; border: none;">
-                            <button id="save-settings-btn" class="btn-pill-neon" style="border-radius: 8px;">SAVE CONFIGURATION</button>
-                            <span id="save-status"></span>
+                    </div>
+                </div>
+
+                <!-- 4. BOTTOM PANEL (Terminal) -->
+                <section class="bottom-panel collapsed" id="bottom-panel">
+                    <div class="bottom-panel-header">
+                        <div class="bottom-tab active" data-target="terminal-view">
+                            <span>Terminal</span>
                         </div>
+                        <div class="bottom-actions">
+                            <button class="btn-icon" id="clear-terminal" title="Clear Output">🚫</button>
+                            <button class="btn-icon toggle-icon" id="toggle-bottom-panel" title="Toggle Panel">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <polyline points="18 15 12 9 6 15"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="terminal-wrapper" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+                        <!-- Terminal Content -->
+                        <div id="terminal-output" class="terminal-output">
+                            <div class="line system">Terminal Online...</div>
+                        </div>
+                        <div class="terminal-input-wrapper">
+                            <span class="prompt">$</span>
+                            <div class="input-row">
+                                <input type="text" id="terminal-input" placeholder="Command...">
+                                <button id="terminal-send-btn" class="btn-icon" title="Send">➤</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- Modals -->
+            <div id="custom-modal" class="modal-overlay">
+                <div class="modal-content">
+                    <div class="modal-header" id="modal-title">Title</div>
+                    <div class="modal-body" id="modal-message">Message text goes here.</div>
+                    <div class="modal-buttons">
+                        <button class="btn-modal cancel" id="modal-cancel-btn">Cancel</button>
+                        <button class="btn-modal confirm" id="modal-confirm-btn">Confirm</button>
                     </div>
                 </div>
             </div>
 
-        <!-- 4. BOTTOM PANEL (Terminal) -->
-        <section class="bottom-panel collapsed" id="bottom-panel">
-            <div class="bottom-panel-header">
-                <div class="bottom-tab active" data-target="terminal-view">
-                    <span>Terminal</span>
-                </div>
-                <div class="bottom-actions">
-                    <button class="btn-icon" id="clear-terminal" title="Clear Output">🚫</button>
-                    <button class="btn-icon toggle-icon" id="toggle-bottom-panel" title="Toggle Panel">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="18 15 12 9 6 15"></polyline>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+            <!-- Scripts -->
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+            <script
+                src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
+            <script
+                src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
 
-            <div id="terminal-wrapper" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
-                <!-- Terminal Content -->
-                <div id="terminal-output" class="terminal-output">
-                    <div class="line system">Terminal Online...</div>
-                </div>
-                <div class="terminal-input-wrapper">
-                    <span class="prompt">$</span>
-                    <div class="input-row">
-                        <input type="text" id="terminal-input" placeholder="Command...">
-                        <button id="terminal-send-btn" class="btn-icon" title="Send">➤</button>
-                    </div>
-                </div>
-            </div>
-        </section>
+            <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/cortex.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/council.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/approvals.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/quarantine.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/mission_control.js') }}"></script>
 
-    </div>
 
-    <!-- Modals -->
-    <div id="custom-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header" id="modal-title">Title</div>
-            <div class="modal-body" id="modal-message">Message text goes here.</div>
-            <div class="modal-buttons">
-                <button class="btn-modal cancel" id="modal-cancel-btn">Cancel</button>
-                <button class="btn-modal confirm" id="modal-confirm-btn">Confirm</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
-
-    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/cortex.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/council.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/approvals.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/quarantine.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/mission_control.js') }}"></script>
 
 </body>
 
