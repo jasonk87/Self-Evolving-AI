@@ -216,7 +216,7 @@ class DynamicOrchestrator:
                 EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
 
                 # Proactive Self-Healing Trigger
-                if self.learning_agent:
+                if getattr(self, 'learning_agent', None):
                     try:
                         from ai_assistant.core.reflection import ActionableInsight, InsightType
                         insight = ActionableInsight(
