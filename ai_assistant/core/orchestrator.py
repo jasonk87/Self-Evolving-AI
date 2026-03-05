@@ -77,6 +77,32 @@ class DynamicOrchestrator:
         self.blocked_tools: Dict[str, Dict[str, Any]] = {}
         self.failure_counts: Dict[str, int] = {}
 
+        self.quarantine_file = os.path.join(project_root, 'data', 'quarantine_state.json')
+        self._load_quarantine_state()
+
+    def _load_quarantine_state(self):
+        """Loads persistent quarantine state."""
+        try:
+            if os.path.exists(self.quarantine_file):
+                with open(self.quarantine_file, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                    self.blocked_tools = state.get("blocked_tools", {})
+                    self.failure_counts = state.get("failure_counts", {})
+        except Exception as e:
+            logger.error(f"Failed to load quarantine state: {e}")
+
+    def _save_quarantine_state(self):
+        """Saves persistent quarantine state."""
+        try:
+            os.makedirs(os.path.dirname(self.quarantine_file), exist_ok=True)
+            with open(self.quarantine_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "blocked_tools": self.blocked_tools,
+                    "failure_counts": self.failure_counts
+                }, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save quarantine state: {e}")
+
     async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> Tuple[bool, str, Optional[List[str]]]:
         """
         Process a user prompt using the Universal Bicameral Brain architecture.
@@ -126,7 +152,8 @@ class DynamicOrchestrator:
         return f"{tool_name}|{err_type}|{err_msg}"
 
     def get_blocked_tools(self) -> Dict[str, Dict[str, Any]]:
-        """Return the current list of blocked tools."""
+        """Return the current list of blocked tools, respecting cooldowns."""
+        self._check_cooldowns()
         return self.blocked_tools
 
     def unblock_tool(self, tool_name: str) -> bool:
@@ -139,9 +166,26 @@ class DynamicOrchestrator:
             for k in keys_to_delete:
                 del self.failure_counts[k]
 
+            self._save_quarantine_state()
             EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
             return True
         return False
+
+    def _check_cooldowns(self, cooldown_seconds: int = 900):
+        """Check if any quarantined tools have passed their cooldown period (default 15 mins)."""
+        import time
+        now = time.time()
+        expired_tools = []
+        for tool_name, info in self.blocked_tools.items():
+            if now - info.get("timestamp", 0) > cooldown_seconds:
+                expired_tools.append(tool_name)
+
+        for tool_name in expired_tools:
+            del self.blocked_tools[tool_name]
+
+        if expired_tools:
+            self._save_quarantine_state()
+            EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
 
     def _register_tool_failure(
         self,
@@ -159,15 +203,34 @@ class DynamicOrchestrator:
         if count >= threshold:
             activated = True
             if tool_name not in self.blocked_tools:
+                reason_str = f"Repeated identical failure ({count}x): {signature}"
                 self.blocked_tools[tool_name] = {
                     "signature": signature,
                     "count": count,
-                    "reason": f"Repeated identical failure ({count}x): {signature}",
+                    "reason": reason_str,
                     "timestamp": time.time()
                 }
+                self._save_quarantine_state()
                 EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+
+                # Proactive Self-Healing Trigger
+                if self.learning_agent:
+                    try:
+                        from ai_assistant.core.reflection import ActionableInsight, InsightType
+                        insight = ActionableInsight(
+                            type=InsightType.TOOL_BUG_SUSPECTED,
+                            description=f"Tool '{tool_name}' was quarantined automatically by the circuit breaker due to repeated failures. Error signature: {signature}",
+                            source_reflection_entry_ids=[],
+                            related_tool_name=tool_name,
+                            priority=1 # Highest priority
+                        )
+                        self.learning_agent.add_insight(insight)
+                        logger.info(f"Triggered Proactive Self-Healing Insight for quarantined tool: {tool_name}")
+                    except Exception as he:
+                        logger.error(f"Failed to generate self-healing insight for {tool_name}: {he}")
             else:
                  self.blocked_tools[tool_name]["count"] = count
+                 self._save_quarantine_state()
 
         return {
             "signature": signature,
@@ -256,10 +319,18 @@ class DynamicOrchestrator:
                         chat_history_str += f"{role}: {content}\n"
                 
                 # Phase 1: Strategist (Think)
+
+                # Expose Quarantined Tools
+                quarantine_info = ""
+                quarantined_tools = self.get_blocked_tools()
+                if quarantined_tools:
+                    q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
+                    quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
+
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {prompt}
 {persona_guide}
-
+{quarantine_info}
 Context:
 {context}
 
