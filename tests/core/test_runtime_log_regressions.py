@@ -59,17 +59,14 @@ def test_orchestrator_register_tool_failure_activates_circuit_breaker_at_thresho
         action_executor=SimpleNamespace(),
     )
 
-    failure_counts = {}
-    blocked_tools = {}
-
     err = RuntimeError("boom")
-    first = orch._register_tool_failure(failure_counts, blocked_tools, "search_duckduckgo", err, threshold=2)
-    second = orch._register_tool_failure(failure_counts, blocked_tools, "search_duckduckgo", err, threshold=2)
+    first = orch._register_tool_failure("search_duckduckgo", err, threshold=2)
+    second = orch._register_tool_failure("search_duckduckgo", err, threshold=2)
 
     assert first["activated"] is False
     assert second["activated"] is True
-    assert "search_duckduckgo" in blocked_tools
-    assert blocked_tools["search_duckduckgo"]["count"] == 2
+    assert "search_duckduckgo" in orch.blocked_tools
+    assert orch.blocked_tools["search_duckduckgo"]["count"] == 2
 
 
 def test_orchestrator_register_tool_failure_separates_distinct_errors():
@@ -80,11 +77,8 @@ def test_orchestrator_register_tool_failure_separates_distinct_errors():
         action_executor=SimpleNamespace(),
     )
 
-    failure_counts = {}
-    blocked_tools = {}
+    orch._register_tool_failure("search_duckduckgo", RuntimeError("first"), threshold=3)
+    orch._register_tool_failure("search_duckduckgo", ValueError("second"), threshold=3)
 
-    orch._register_tool_failure(failure_counts, blocked_tools, "search_duckduckgo", RuntimeError("first"), threshold=3)
-    orch._register_tool_failure(failure_counts, blocked_tools, "search_duckduckgo", ValueError("second"), threshold=3)
-
-    assert len(failure_counts) == 2
-    assert blocked_tools == {}
+    assert len(orch.failure_counts) == 2
+    assert orch.blocked_tools == {}

@@ -34,11 +34,13 @@ from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
 from ..utils.conversational_helpers import summarize_tool_result_conversationally
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
+from ai_assistant.utils.token_counter import estimate_tokens, truncate_to_token_limit
 
 logger = logging.getLogger(__name__)
 
 # Constants
 MAX_REACT_STEPS = 10
+MAX_STRATEGIST_PROMPT_TOKENS = 120000  # Conservative limit, Gemini handles more but optimizing costs
 
 class DynamicOrchestrator:
     """
@@ -74,6 +76,34 @@ class DynamicOrchestrator:
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
+        self.blocked_tools: Dict[str, Dict[str, Any]] = {}
+        self.failure_counts: Dict[str, int] = {}
+
+        self.quarantine_file = os.path.join(project_root, 'data', 'quarantine_state.json')
+        self._load_quarantine_state()
+
+    def _load_quarantine_state(self):
+        """Loads persistent quarantine state."""
+        try:
+            if os.path.exists(self.quarantine_file):
+                with open(self.quarantine_file, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                    self.blocked_tools = state.get("blocked_tools", {})
+                    self.failure_counts = state.get("failure_counts", {})
+        except Exception as e:
+            logger.error(f"Failed to load quarantine state: {e}")
+
+    def _save_quarantine_state(self):
+        """Saves persistent quarantine state."""
+        try:
+            os.makedirs(os.path.dirname(self.quarantine_file), exist_ok=True)
+            with open(self.quarantine_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "blocked_tools": self.blocked_tools,
+                    "failure_counts": self.failure_counts
+                }, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save quarantine state: {e}")
 
     async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> Tuple[bool, str, Optional[List[str]]]:
         """
@@ -123,33 +153,92 @@ class DynamicOrchestrator:
         err_msg = str(error or "")[:120]
         return f"{tool_name}|{err_type}|{err_msg}"
 
+    def get_blocked_tools(self) -> Dict[str, Dict[str, Any]]:
+        """Return the current list of blocked tools, respecting cooldowns."""
+        self._check_cooldowns()
+        return self.blocked_tools
+
+    def unblock_tool(self, tool_name: str) -> bool:
+        """Manually unblock a quarantined tool."""
+        if tool_name in self.blocked_tools:
+            del self.blocked_tools[tool_name]
+
+            # Optionally clear failure counts associated with this tool
+            keys_to_delete = [k for k in self.failure_counts if k.startswith(f"{tool_name}|")]
+            for k in keys_to_delete:
+                del self.failure_counts[k]
+
+            self._save_quarantine_state()
+            EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+            return True
+        return False
+
+    def _check_cooldowns(self, cooldown_seconds: int = 900):
+        """Check if any quarantined tools have passed their cooldown period (default 15 mins)."""
+        import time
+        now = time.time()
+        expired_tools = []
+        for tool_name, info in self.blocked_tools.items():
+            if now - info.get("timestamp", 0) > cooldown_seconds:
+                expired_tools.append(tool_name)
+
+        for tool_name in expired_tools:
+            del self.blocked_tools[tool_name]
+
+        if expired_tools:
+            self._save_quarantine_state()
+            EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+
     def _register_tool_failure(
         self,
-        failure_counts: Dict[str, int],
-        blocked_tools: Dict[str, Dict[str, Any]],
         tool_name: str,
         error: Exception,
         threshold: int = 3,
     ) -> Dict[str, Any]:
         """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
         signature = self._build_tool_failure_signature(tool_name, error)
-        count = failure_counts.get(signature, 0) + 1
-        failure_counts[signature] = count
+        count = self.failure_counts.get(signature, 0) + 1
+        self.failure_counts[signature] = count
 
+        import time
         activated = False
         if count >= threshold:
             activated = True
-            blocked_tools[tool_name] = {
-                "signature": signature,
-                "count": count,
-                "reason": f"Repeated identical failure ({count}x): {signature}",
-            }
+            if tool_name not in self.blocked_tools:
+                reason_str = f"Repeated identical failure ({count}x): {signature}"
+                self.blocked_tools[tool_name] = {
+                    "signature": signature,
+                    "count": count,
+                    "reason": reason_str,
+                    "timestamp": time.time()
+                }
+                self._save_quarantine_state()
+                EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+
+                # Proactive Self-Healing Trigger
+                if getattr(self, 'learning_agent', None):
+                    try:
+                        from ai_assistant.core.reflection import ActionableInsight, InsightType
+                        insight = ActionableInsight(
+                            type=InsightType.TOOL_BUG_SUSPECTED,
+                            description=f"Tool '{tool_name}' was quarantined automatically by the circuit breaker due to repeated failures. Error signature: {signature}",
+                            source_reflection_entry_ids=[],
+                            related_tool_name=tool_name,
+                            priority=1 # Highest priority
+                        )
+                        self.learning_agent.add_insight(insight)
+                        logger.info(f"Triggered Proactive Self-Healing Insight for quarantined tool: {tool_name}")
+                    except Exception as he:
+                        logger.error(f"Failed to generate self-healing insight for {tool_name}: {he}")
+            else:
+                 self.blocked_tools[tool_name]["count"] = count
+                 self._save_quarantine_state()
 
         return {
             "signature": signature,
             "count": count,
             "activated": activated,
-            "blocked_reason": blocked_tools.get(tool_name, {}).get("reason"),
+            "blocked_reason": self.blocked_tools.get(tool_name, {}).get("reason"),
         }
 
     async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
@@ -166,8 +255,6 @@ class DynamicOrchestrator:
         max_steps = MAX_REACT_STEPS
         collected_images = []
         tools_desc = tool_system_instance.get_tools_description()
-        failure_counts: Dict[str, int] = {}
-        blocked_tools: Dict[str, Dict[str, Any]] = {}
 
         # Initial Strategist Prompt
         execution_history = ""
@@ -225,19 +312,59 @@ class DynamicOrchestrator:
                         progress=min(90, step_i * 10)
                     )
 
-                # Format Chat History - FULL HISTORY (No truncation)
+                # Format Chat History - Truncate if insanely large
                 chat_history_str = ""
                 if history:
                     for msg in history:
                         role = msg.get('role', 'unknown').upper()
                         content = str(msg.get('content', ''))
                         chat_history_str += f"{role}: {content}\n"
+
+                    # Optimizing chat history to prevent context explosion on massive tasks
+                    history_tokens = estimate_tokens(chat_history_str)
+                    if history_tokens > 40000:
+                        chat_history_str = truncate_to_token_limit(chat_history_str, 40000)
+                        logger.warning(f"Chat history truncated. Was ~{history_tokens} tokens.")
                 
                 # Phase 1: Strategist (Think)
+
+                # Expose Quarantined Tools
+                quarantine_info = ""
+                quarantined_tools = self.get_blocked_tools()
+                if quarantined_tools:
+                    q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
+                    quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
+
+                # Construct base prompt and enforce absolute limits
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {prompt}
 {persona_guide}
+{quarantine_info}
+Context:
+{context}
 
+Chat History:
+{chat_history_str}
+
+Execution History:
+{execution_history}
+
+Few-Shot Examples (How to Think):
+"""
+                total_tokens = estimate_tokens(strategist_prompt)
+                if total_tokens > MAX_STRATEGIST_PROMPT_TOKENS:
+                    logger.warning(f"Strategist prompt exceeds {MAX_STRATEGIST_PROMPT_TOKENS} tokens ({total_tokens}). Forcing truncation on history/context to fit limits safely.")
+                    # Force prune history more aggressively
+                    if history:
+                        chat_history_str = truncate_to_token_limit(chat_history_str, 10000)
+                    if execution_history:
+                        execution_history = truncate_to_token_limit(execution_history, 5000)
+
+                    # Reconstruct
+                    strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
+Goal: {prompt}
+{persona_guide}
+{quarantine_info}
 Context:
 {context}
 
@@ -454,8 +581,8 @@ Instructions:
                     result_str = ""
                     max_retries = 2
 
-                    if tool_name in blocked_tools:
-                        blocked_reason = blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
+                    if tool_name in self.blocked_tools:
+                        blocked_reason = self.blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
                         result_str = f"Circuit breaker active for tool '{tool_name}': {blocked_reason}"
                     else:
                         for attempt in range(max_retries + 1):
@@ -492,7 +619,7 @@ Instructions:
                                 execution_success = True
                                 break
                             except Exception as e:
-                                failure_meta = self._register_tool_failure(failure_counts, blocked_tools, tool_name, e)
+                                failure_meta = self._register_tool_failure(tool_name, e)
                                 if failure_meta.get("activated"):
                                     result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
                                     print(color_text(f"⛔ {result_str}", CLIColors.WARNING))
@@ -639,7 +766,7 @@ Instructions:
 
     async def _gather_context(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """
-        Gathers RAG facts and Project context.
+        Gathers RAG facts and Project context, optimizing for tokens.
         """
         context_parts = []
         metadata = {}
@@ -647,10 +774,21 @@ Instructions:
         # 1. RAG
         if self.memory_manager:
             try:
-                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=20)
+                # Dynamically adjust RAG K based on prompt size roughly
+                prompt_tokens = estimate_tokens(prompt)
+                k = 20 if prompt_tokens < 10000 else 10
+
+                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=k)
                 if rag_results:
                     facts = [f"- {res.get('text', '')}" for res in rag_results]
-                    context_parts.append("Learned Facts:\n" + "\n".join(facts))
+
+                    # Truncate total RAG facts if extremely long
+                    rag_text = "Learned Facts:\n" + "\n".join(facts)
+                    if estimate_tokens(rag_text) > 8000:
+                         rag_text = truncate_to_token_limit(rag_text, 8000)
+                         metadata['rag_truncated'] = True
+
+                    context_parts.append(rag_text)
                     metadata['rag_count'] = len(rag_results)
             except Exception as e:
                 logger.error(f"RAG failed: {e}")

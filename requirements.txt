@@ -6,3 +6,4 @@
 # to avoid native build failures (for example: pyaudio/portaudio).
 # Install explicitly when needed:
 #   pip install -r requirements-optional.txt
+tiktoken
