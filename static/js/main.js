@@ -509,28 +509,57 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Build Breakdown List
                     const listContainer = document.getElementById('telemetry-breakdown-list');
                     if (listContainer) {
-                        if (!history || history.length === 0) {
+                        const breakdownData = usage.breakdown;
+                        if (!breakdownData || Object.keys(breakdownData).length === 0) {
                             listContainer.innerHTML = '<div style="text-align: center; color: var(--text-dim);">No recent activity.</div>';
                         } else {
-                            // Group by task
-                            const breakdown = {};
-                            history.forEach(entry => {
-                                const task = entry.task || 'unknown';
-                                if (!breakdown[task]) {
-                                    breakdown[task] = { calls: 0, tokens: 0 };
+                            let html = '';
+
+                            // Define order of categories
+                            const categories = ['Foreground', 'Background', 'AgentOps', 'Uncategorized'];
+
+                            categories.forEach(category => {
+                                const categoryTasks = breakdownData[category];
+                                if (categoryTasks && Object.keys(categoryTasks).length > 0) {
+                                    // Calculate category total
+                                    let categoryTotalTokens = 0;
+                                    for (const tokens of Object.values(categoryTasks)) {
+                                        categoryTotalTokens += tokens;
+                                    }
+
+                                    html += `
+                                    <div style="margin-top: 15px; margin-bottom: 5px;">
+                                        <h5 style="color: var(--text-primary); margin: 0; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between;">
+                                            <span>${category}</span>
+                                            <span style="color: var(--neon-blue); font-size: 12px; align-self: center;">${categoryTotalTokens.toLocaleString()} tk</span>
+                                        </h5>
+                                    </div>`;
+
+                                    // Sort tasks within category by tokens
+                                    const sortedTasks = Object.entries(categoryTasks).sort((a,b) => b[1] - a[1]);
+
+                                    for (const [task, tokens] of sortedTasks) {
+                                        // Calculate calls for this task from history
+                                        let calls = 0;
+                                        if (history) {
+                                            history.forEach(entry => {
+                                                if (entry.task === task) calls++;
+                                            });
+                                        }
+
+                                        html += `
+                                        <div style="display: flex; justify-content: space-between; padding: 6px 0 6px 15px; border-bottom: 1px solid rgba(255,255,255,0.02);">
+                                            <span style="color: var(--text-dim); text-transform: capitalize; font-size: 13px;">${task.replace(/_/g, ' ')}</span>
+                                            <span style="color: var(--text-dim); font-size: 13px;">${tokens.toLocaleString()} tk <span style="opacity: 0.5">(${calls} calls)</span></span>
+                                        </div>`;
+                                    }
                                 }
-                                breakdown[task].calls += 1;
-                                breakdown[task].tokens += entry.total_tokens;
                             });
 
-                            let html = '';
-                            for (const [task, stats] of Object.entries(breakdown).sort((a,b) => b[1].tokens - a[1].tokens)) {
-                                html += `
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="color: var(--text-light); text-transform: capitalize;">${task.replace(/_/g, ' ')}</span>
-                                    <span style="color: var(--text-dim);"><span style="color: var(--neon-blue);">${stats.tokens.toLocaleString()}</span> tk (${stats.calls} calls)</span>
-                                </div>`;
+                            if (html === '') {
+                                html = '<div style="text-align: center; color: var(--text-dim);">No recent activity.</div>';
                             }
+
                             listContainer.innerHTML = html;
                         }
                     }
