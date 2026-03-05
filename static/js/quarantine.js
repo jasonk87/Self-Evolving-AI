@@ -59,6 +59,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="target-name">Tool: <code>${toolName}</code></div>
                     <div class="target-name" style="margin-top: 5px;">Failures: <strong>${info.count}</strong></div>
                     <p class="approval-desc" style="margin-top: 10px; word-break: break-all;">${info.reason || 'Repeated failures'}</p>
+                    <div class="quarantine-context" style="margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px;">Task Context</div>
+                        <div style="font-size: 12px; font-family: monospace; color: var(--text-light); word-break: break-word;">${info.task_context || 'Unknown'}</div>
+                        <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">Last Arguments</div>
+                        <div style="font-size: 12px; font-family: monospace; color: var(--text-light); word-break: break-word; max-height: 100px; overflow-y: auto;">
+                            ${info.last_args ? JSON.stringify(info.last_args, null, 2).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : 'None'}
+                        </div>
+                    </div>
                 </div>
                 <div class="approval-actions">
                     <button class="btn-approve" data-tool="${toolName}" style="width: 100%; border-color: #10b981; color: #10b981;">Unblock</button>

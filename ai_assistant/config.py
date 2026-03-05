@@ -10,6 +10,9 @@ LLM_PROVIDER = "gemini"
 
 DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
 
+# System Operations
+CIRCUIT_BREAKER_THRESHOLD = 3
+
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 
