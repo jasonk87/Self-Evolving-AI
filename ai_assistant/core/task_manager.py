@@ -44,6 +44,31 @@ class ActiveTaskType(Enum):
     EPHEMERAL_AGENT_TASK = auto() # For running short-lived ephemeral agents
 
 
+
+
+FAILED_TASK_STATUSES = {
+    ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
+    ActiveTaskStatus.POST_MOD_TEST_FAILED,
+    ActiveTaskStatus.FAILED_PRE_REVIEW,
+    ActiveTaskStatus.FAILED_DURING_APPLY,
+    ActiveTaskStatus.FAILED_UNKNOWN,
+    ActiveTaskStatus.FAILED_INTERRUPTED,
+    ActiveTaskStatus.FAILED_CODE_GENERATION,
+    ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP,
+}
+
+TERMINAL_TASK_STATUSES = {
+    ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
+    ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
+    ActiveTaskStatus.POST_MOD_TEST_FAILED,
+    ActiveTaskStatus.FAILED_PRE_REVIEW,
+    ActiveTaskStatus.FAILED_DURING_APPLY,
+    ActiveTaskStatus.FAILED_UNKNOWN,
+    ActiveTaskStatus.USER_CANCELLED,
+    ActiveTaskStatus.FAILED_INTERRUPTED,
+    ActiveTaskStatus.FAILED_CODE_GENERATION,
+    ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP,
+}
 @dataclass
 class ActiveTask:
     """
@@ -100,12 +125,16 @@ class ActiveTask:
                       progress: Optional[int] = None,
                       is_error_increment: bool = False,
                       out_preview: Optional[str] = None,
-                      resume_data: Optional[Dict[str, Any]] = None):
+                      resume_data: Optional[Dict[str, Any]] = None,
+                      retry_source: Optional[str] = None):
 
+        previous_status = self.status
         self.status = new_status
 
-        if reason is not None: self.status_reason = reason
-        elif new_status != self.status: self.status_reason = None
+        if reason is not None:
+            self.status_reason = reason
+        elif previous_status != new_status:
+            self.status_reason = None
 
         if step_desc is not None: self.current_step_description = step_desc
 
@@ -116,6 +145,42 @@ class ActiveTask:
 
         if is_error_increment:
             self.error_count += 1
+
+        lifecycle = self.details.setdefault("lifecycle", {}) if isinstance(self.details, dict) else {}
+        events = lifecycle.setdefault("events", []) if isinstance(lifecycle, dict) else []
+        if isinstance(events, list):
+            events.append({
+                "status": new_status.name,
+                "at": datetime.now(timezone.utc).isoformat(),
+                "reason": self.status_reason,
+            })
+            if len(events) > 200:
+                del events[:-200]
+
+        if previous_status != new_status and new_status in FAILED_TASK_STATUSES:
+            lifecycle.setdefault("first_failed_at", datetime.now(timezone.utc).isoformat())
+            if self.status_reason:
+                lifecycle.setdefault("diagnosed_at", datetime.now(timezone.utc).isoformat())
+
+        if previous_status in FAILED_TASK_STATUSES and new_status not in FAILED_TASK_STATUSES:
+            lifecycle["retry_attempts"] = int(lifecycle.get("retry_attempts", 0) or 0) + 1
+            lifecycle["last_retry_at"] = datetime.now(timezone.utc).isoformat()
+            source = str(retry_source or "automatic").strip().lower()
+            if source not in {"manual", "automatic"}:
+                source = "automatic"
+            lifecycle["last_retry_source"] = source
+            retry_events = lifecycle.setdefault("retry_events", []) if isinstance(lifecycle, dict) else []
+            if isinstance(retry_events, list):
+                retry_events.append({"at": lifecycle.get("last_retry_at"), "source": source})
+                if len(retry_events) > 200:
+                    del retry_events[:-200]
+
+        if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY and lifecycle.get("first_failed_at"):
+            lifecycle["recovered_after_failure"] = True
+            lifecycle.setdefault("recovered_at", datetime.now(timezone.utc).isoformat())
+
+        if new_status in TERMINAL_TASK_STATUSES:
+            lifecycle.setdefault("terminal_at", datetime.now(timezone.utc).isoformat())
 
         self.last_updated_at = datetime.now(timezone.utc)
 
@@ -302,9 +367,20 @@ class TaskManager:
             description = str(description)
 
         initialized_details = details or {}
+        if isinstance(initialized_details, dict):
+            lifecycle = initialized_details.setdefault("lifecycle", {})
+            lifecycle.setdefault("events", [{"status": ActiveTaskStatus.INITIALIZING.name, "at": datetime.now(timezone.utc).isoformat(), "reason": None}])
 
         if task_type == ActiveTaskType.EPHEMERAL_AGENT_TASK:
+            lifecycle_seed = initialized_details.get("lifecycle") if isinstance(initialized_details, dict) else None
             initialized_details = self._normalize_ephemeral_agent_details(initialized_details)
+            if isinstance(initialized_details, dict):
+                if isinstance(lifecycle_seed, dict):
+                    initialized_details["lifecycle"] = lifecycle_seed
+                else:
+                    initialized_details.setdefault("lifecycle", {
+                        "events": [{"status": ActiveTaskStatus.INITIALIZING.name, "at": datetime.now(timezone.utc).isoformat(), "reason": None}]
+                    })
 
         if task_type == ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION:
             if not all(k in initialized_details for k in ['project_plan', 'user_goal']):
@@ -369,7 +445,8 @@ class TaskManager:
                            progress: Optional[int] = None,
                            is_error_increment: bool = False,
                            out_preview: Optional[str] = None,
-                           resume_data: Optional[Dict[str, Any]] = None
+                           resume_data: Optional[Dict[str, Any]] = None,
+                           retry_source: Optional[str] = None
                            ) -> Optional[ActiveTask]:
         task = self.get_task(task_id)
         if task:
@@ -422,7 +499,7 @@ class TaskManager:
                         else:
                             step_desc = "All plan steps processed."
 
-            task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data)
+            task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data, retry_source)
             self._save_active_tasks()
             
             # Emit event for UI

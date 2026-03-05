@@ -107,6 +107,16 @@ class DynamicOrchestrator:
                  except Exception as e:
                      logger.error(f"Failed to trigger session summary: {e}")
 
+    def _build_ui_feedback_task_details(self) -> Dict[str, Any]:
+        """Builds a valid scope-contract payload for ephemeral UI feedback tasks."""
+        return {
+            "scope_type": "session",
+            "capability_profile": "ops_diagnostics",
+            "retention_policy": "keep_summary_only",
+            "worker_profile": "ops_assistant_worker",
+            "source": "ui_feedback",
+        }
+
     async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
         """
         The Universal Bicameral Cycle: Strategist (Think) -> Operator (Act) -> Loop.
@@ -142,6 +152,7 @@ class DynamicOrchestrator:
                 current_ui_task = self.task_manager.add_task(
                     description=prompt[:100], # Short desc
                     task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK,
+                    details=self._build_ui_feedback_task_details(),
                     session_id=session_id
                 )
                 self.task_manager.update_task_status(

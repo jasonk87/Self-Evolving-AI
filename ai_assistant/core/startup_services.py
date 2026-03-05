@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from .task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from .notification_manager import NotificationManager, NotificationType
+from .conversational_alerts import emit_startup_interrupted_tasks_digest
 
 # Placeholder for ActionExecutor if needed in more advanced resumption
 # from ..execution.action_executor import ActionExecutor
@@ -65,6 +66,10 @@ async def resume_interrupted_tasks(
         print("StartupServices: No potentially interrupted tasks found.") # Replace with logger.info
     else:
         print(f"StartupServices: Processed {interrupted_tasks_found} potentially interrupted task(s).") # Replace with logger.info
+        try:
+            emit_startup_interrupted_tasks_digest(active_tasks_on_startup)
+        except Exception as digest_exc:
+            logger.warning(f"StartupServices: failed to emit startup interrupted digest: {digest_exc}")
 
 
 if __name__ == '__main__': # pragma: no cover

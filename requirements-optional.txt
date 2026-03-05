@@ -1,0 +1,4 @@
+# Optional runtime integrations (install only what you need)
+chromadb
+pyaudio
+mss
