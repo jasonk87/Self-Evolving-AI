@@ -12,8 +12,18 @@ from ai_assistant.core.project_manager import find_project
 from ai_assistant.core.background_service import report_user_activity
 from ai_assistant.core.shutdown_manager import shutdown_manager
 from ai_assistant.voice.tts import generate_speech
+from ai_assistant.core.telemetry import telemetry_tracker
 
 logger = logging.getLogger(__name__)
+
+@api_bp.route('/system/telemetry', methods=['GET'])
+def get_telemetry_status():
+    """Returns the current token usage telemetry."""
+    return jsonify({
+        "success": True,
+        "usage": telemetry_tracker.get_usage(),
+        "history": telemetry_tracker.get_history(limit=50) # Return recent history for breakdown
+    })
 
 @api_bp.route('/config', methods=['GET'])
 def get_config():

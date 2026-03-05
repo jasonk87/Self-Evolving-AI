@@ -482,39 +482,90 @@ document.addEventListener('DOMContentLoaded', () => {
     Layout.openMainView('view-chat', 'Chat');
 
     // --- Telemetry Polling ---
-    function updateTokenTelemetry() {
-        fetch('/api/telemetry/tokens')
+    const telemetryBtn = document.getElementById('telemetry-hud-btn');
+    const telemetryText = document.getElementById('telemetry-hud-text');
+    const telemetryModal = document.getElementById('telemetry-modal');
+    const closeTelemetryBtn = document.getElementById('close-telemetry-btn');
+    const refreshTelemetryBtn = document.getElementById('refresh-telemetry-btn');
+
+    function fetchAndShowTelemetry() {
+        fetch('/api/system/telemetry')
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
                     const usage = data.usage;
-                    // Create or update badge in header toolbar
-                    let badge = document.getElementById('token-usage-badge');
-                    if (!badge) {
-                        const toolbar = document.querySelector('.header-toolbar');
-                        if (toolbar) {
-                            badge = document.createElement('div');
-                            badge.id = 'token-usage-badge';
-                            badge.className = 'toolbar-item';
-                            badge.style.fontSize = '12px';
-                            badge.style.padding = '0 10px';
-                            badge.style.display = 'flex';
-                            badge.style.alignItems = 'center';
-                            badge.style.color = 'var(--text-secondary)';
-                            badge.style.borderLeft = '1px solid var(--border-color)';
-                            toolbar.insertBefore(badge, toolbar.firstChild);
-                        }
+                    const history = data.history;
+
+                    // Update HUD Button
+                    if (telemetryText) {
+                        telemetryText.textContent = `Tokens: ${usage.total_tokens.toLocaleString()}`;
                     }
-                    if (badge) {
-                        badge.textContent = `⚡ $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
-                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens}`;
+
+                    // Update Modal Stats
+                    document.getElementById('telemetry-total-tokens').textContent = usage.total_tokens.toLocaleString();
+                    document.getElementById('telemetry-total-calls').textContent = usage.total_calls.toLocaleString();
+                    document.getElementById('telemetry-est-cost').textContent = `$${usage.estimated_cost.toFixed(4)}`;
+
+                    // Build Breakdown List
+                    const listContainer = document.getElementById('telemetry-breakdown-list');
+                    if (listContainer) {
+                        if (!history || history.length === 0) {
+                            listContainer.innerHTML = '<div style="text-align: center; color: var(--text-dim);">No recent activity.</div>';
+                        } else {
+                            // Group by task
+                            const breakdown = {};
+                            history.forEach(entry => {
+                                const task = entry.task || 'unknown';
+                                if (!breakdown[task]) {
+                                    breakdown[task] = { calls: 0, tokens: 0 };
+                                }
+                                breakdown[task].calls += 1;
+                                breakdown[task].tokens += entry.total_tokens;
+                            });
+
+                            let html = '';
+                            for (const [task, stats] of Object.entries(breakdown).sort((a,b) => b[1].tokens - a[1].tokens)) {
+                                html += `
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="color: var(--text-light); text-transform: capitalize;">${task.replace(/_/g, ' ')}</span>
+                                    <span style="color: var(--text-dim);"><span style="color: var(--neon-blue);">${stats.tokens.toLocaleString()}</span> tk (${stats.calls} calls)</span>
+                                </div>`;
+                            }
+                            listContainer.innerHTML = html;
+                        }
                     }
                 }
             })
             .catch(err => console.error("Telemetry error:", err));
     }
 
-    // Update every 10 seconds
-    setInterval(updateTokenTelemetry, 10000);
-    updateTokenTelemetry(); // Initial call
+    if (telemetryBtn) {
+        telemetryBtn.addEventListener('click', () => {
+            fetchAndShowTelemetry();
+            telemetryModal.classList.add('active');
+        });
+    }
+
+    if (closeTelemetryBtn) {
+        closeTelemetryBtn.addEventListener('click', () => {
+            telemetryModal.classList.remove('active');
+        });
+    }
+
+    if (refreshTelemetryBtn) {
+        refreshTelemetryBtn.addEventListener('click', fetchAndShowTelemetry);
+    }
+
+    // Close modal on click outside
+    if (telemetryModal) {
+        telemetryModal.addEventListener('click', (e) => {
+            if (e.target === telemetryModal) {
+                telemetryModal.classList.remove('active');
+            }
+        });
+    }
+
+    // Update button text periodically
+    setInterval(fetchAndShowTelemetry, 30000);
+    fetchAndShowTelemetry(); // Initial call
 });

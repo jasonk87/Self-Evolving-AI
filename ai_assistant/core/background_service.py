@@ -262,6 +262,11 @@ def get_background_activity_report() -> str:
     status_str = "ACTIVE (Pausing heavy tasks)" if is_active else "IDLE (Heavy tasks enabled)"
     report.append(f"- User Activity: Last detected {fmt_time(last_act)}. Status: {status_str}")
 
+    # Add token usage
+    from ai_assistant.core.telemetry import telemetry_tracker
+    usage = telemetry_tracker.get_usage()
+    report.append(f"- Telemetry: {usage['total_tokens']:,} tokens estimated used (${usage['estimated_cost']:.4f})")
+
     return "\n".join(report)
 
 async def run_autonomous_goal_processor():
