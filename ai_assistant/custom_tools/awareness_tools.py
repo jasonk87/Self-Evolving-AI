@@ -110,7 +110,14 @@ def get_system_status_summary(task_manager: Optional[TaskManager]=None, notifica
     return '\n'.join(summary_lines)
 GET_SYSTEM_STATUS_SUMMARY_SCHEMA = {'name': 'get_system_status_summary', 'description': 'Provides a summary of current system activity, including active/archived tasks and recent unread notifications.', 'parameters': [{'name': 'active_limit', 'type': 'int', 'description': 'Optional. Max active tasks to detail (default 5).'}, {'name': 'archived_limit', 'type': 'int', 'description': 'Optional. Max archived tasks to detail (default 3).'}, {'name': 'unread_notifications_limit', 'type': 'int', 'description': 'Optional. Max unread notifications to detail (default 3).'}], 'returns': {'type': 'str', 'description': 'A multi-line string summarizing system status and notifications.'}}
 
-def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_manager: Optional[TaskManager]=None, notification_manager: Optional[NotificationManager]=None) -> str:
+def get_self_awareness_info_and_converse(
+    context: Optional[str] = None,
+    *,
+    query: Optional[str] = None,
+    task_manager: Optional[TaskManager] = None,
+    notification_manager: Optional[NotificationManager] = None,
+    **kwargs,
+) -> str:
     """
     Retrieves a concise summary of the AI's current state, including active tasks,
     notifications, and general system health, formatted for a conversational response.
@@ -123,6 +130,14 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     import json
     from ai_assistant.config import get_data_dir
     import os
+    normalized_context = context
+    if normalized_context is None and query is not None:
+        normalized_context = str(query)
+    if isinstance(normalized_context, (dict, list, tuple)):
+        normalized_context = json.dumps(normalized_context, ensure_ascii=False)
+    elif normalized_context is not None:
+        normalized_context = str(normalized_context)
+
     status_summary = get_system_status_summary(task_manager=task_manager, notification_manager=notification_manager, active_limit=3, archived_limit=5, unread_notifications_limit=3)
     facts = load_learned_facts()
     facts_summary = '\nLearned Facts:\n'
@@ -157,8 +172,8 @@ def get_self_awareness_info_and_converse(context: Optional[str]=None, *, task_ma
     except Exception as e:
         tool_list_str += f'  Error reading tool registry: {e}'
     response = 'Self-Awareness Report:\n'
-    if context:
-        response += f'(Context: {context})\n'
+    if normalized_context:
+        response += f'(Context: {normalized_context})\n'
     response += f'{status_summary}\n{facts_summary}\n{tool_list_str}\n\n(End of report.)'
     return response
 GET_SELF_AWARENESS_INFO_AND_CONVERSE_SCHEMA = {'name': 'get_self_awareness_info_and_converse', 'description': "Retrieves internal state and system status to enable the AI to answer questions about 'how it is doing' or what it is working on.", 'parameters': [{'name': 'context', 'type': 'str', 'description': 'Optional. A brief explanation of why self-awareness is being checked or what specific information is being sought.'}], 'returns': {'type': 'str', 'description': 'A detailed text report of internal status.'}}

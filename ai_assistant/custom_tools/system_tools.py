@@ -28,9 +28,8 @@ def list_available_tools(category: str=None) -> str:
         str: A formatted list of tools and their descriptions.
     """
     try:
-        from ai_assistant.tools.tool_system import ToolSystem
-        tool_system = ToolSystem()
-        tools = tool_system.list_tools_with_sources()
+        from ai_assistant.tools.tool_system import tool_system_instance
+        tools = tool_system_instance.list_tools_with_sources()
     except ModuleNotFoundError as e:
         return f'Error loading tools: Module not found: {e}'
     except Exception as e:

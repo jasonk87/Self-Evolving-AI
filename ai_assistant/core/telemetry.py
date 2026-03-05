@@ -1,8 +1,6 @@
 # ai_assistant/core/telemetry.py
 import time
-import json
 import logging
-import asyncio
 from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -59,6 +57,16 @@ class TokenUsageTracker:
             "total_tokens": cls._total_input_tokens + cls._total_output_tokens,
             "estimated_cost": cls._estimate_cost()
         }
+
+    @classmethod
+    def get_history(cls, limit: int = 200) -> List[Dict[str, Any]]:
+        """Returns recent token telemetry history, newest-first."""
+        try:
+            limit_value = int(limit)
+        except (TypeError, ValueError):
+            limit_value = 200
+        limit_value = max(1, min(limit_value, 2000))
+        return list(reversed(cls._history[-limit_value:]))
 
     @classmethod
     def _estimate_cost(cls) -> float:

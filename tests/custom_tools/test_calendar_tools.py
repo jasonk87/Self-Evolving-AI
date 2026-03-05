@@ -12,7 +12,8 @@ class TestCalendarManager(unittest.TestCase):
     @patch('ai_assistant.integrations.google_calendar.InstalledAppFlow')
     @patch('ai_assistant.integrations.google_calendar.os.path.exists')
     @patch('ai_assistant.integrations.google_calendar.pickle.load')
-    def test_list_upcoming_events(self, mock_pickle_load, mock_exists, mock_flow, mock_build):
+    @patch('builtins.open')
+    def test_list_upcoming_events(self, mock_open, mock_pickle_load, mock_exists, mock_flow, mock_build):
         # Mock auth to succeed
         mock_exists.return_value = True # token exists
         mock_creds = MagicMock()
@@ -38,7 +39,8 @@ class TestCalendarManager(unittest.TestCase):
     @patch('ai_assistant.integrations.google_calendar.build')
     @patch('ai_assistant.integrations.google_calendar.os.path.exists')
     @patch('ai_assistant.integrations.google_calendar.pickle.load')
-    def test_create_event(self, mock_pickle_load, mock_exists, mock_build):
+    @patch('builtins.open')
+    def test_create_event(self, mock_open, mock_pickle_load, mock_exists, mock_build):
         mock_exists.return_value = True
         mock_creds = MagicMock()
         mock_creds.valid = True
@@ -68,7 +70,8 @@ class TestCalendarManager(unittest.TestCase):
     @patch('ai_assistant.integrations.google_calendar.build')
     @patch('ai_assistant.integrations.google_calendar.os.path.exists')
     @patch('ai_assistant.integrations.google_calendar.pickle.load')
-    def test_get_day_agenda(self, mock_pickle_load, mock_exists, mock_build):
+    @patch('builtins.open')
+    def test_get_day_agenda(self, mock_open, mock_pickle_load, mock_exists, mock_build):
         mock_exists.return_value = True
         mock_creds = MagicMock()
         mock_creds.valid = True
