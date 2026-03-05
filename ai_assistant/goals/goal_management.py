@@ -63,12 +63,21 @@ def load_persisted_goals() -> bool:
     return True # Consider it successful in terms of attempting a load.
 
 def _initialize_goals_db():
-    """Loads goals from the default file when the module is first initialized."""
+    """Loads goals from the default file when the module is first initialized, and reverts in_progress goals to pending."""
     global _goals_db
     print(f"GoalManagement: Initializing goals database from '{DEFAULT_GOALS_FILE}'...")
     _goals_db = load_goals_from_file(DEFAULT_GOALS_FILE)
     if _goals_db:
         print(f"GoalManagement: Successfully loaded {len(_goals_db)} goals on startup.")
+        reverted_count = 0
+        for goal_id, goal in _goals_db.items():
+            if goal.get("status") == "in_progress":
+                goal["status"] = "pending"
+                reverted_count += 1
+        
+        if reverted_count > 0:
+            print(f"GoalManagement: Reverted {reverted_count} 'in_progress' goals back to 'pending' for resumption.")
+            save_current_goals() # Save the reverted states back to disk
     else:
         print("GoalManagement: No goals loaded on startup or file not found/empty. Starting with an empty database.")
 

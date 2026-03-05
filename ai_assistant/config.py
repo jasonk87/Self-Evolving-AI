@@ -331,7 +331,7 @@ TASK_PROFILES = {
     "chat": {
         "provider": "gemini",
         "model": "gemini-2.0-flash",
-        "mode": "DIRECT",
+        "mode": "BICAMERAL",
         "endpoint": None
     },
     "coding": {
@@ -343,13 +343,13 @@ TASK_PROFILES = {
     "background_dreamer": {
         "provider": "gemini",
         "model": "gemini-2.0-flash",
-        "mode": "DIRECT",
+        "mode": "BICAMERAL",
         "endpoint": None
     },
     "local_agent": {
-        "provider": "ollama",
-        "model": "llama3.1",
-        "mode": "DIRECT",
-        "endpoint": "http://127.0.0.1:11434"
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
     }
 }

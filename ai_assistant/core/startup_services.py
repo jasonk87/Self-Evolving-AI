@@ -43,21 +43,50 @@ async def resume_interrupted_tasks(
         if task.status in non_terminal_statuses:
             interrupted_tasks_found += 1
             original_status = task.status
-            reason = f"Task was in state '{original_status.name}' and agent shutdown occurred."
 
-            print(f"StartupServices: Marking Task {task.task_id} ('{task.description[:30]}...') as interrupted. Original status: {original_status.name}")
+            if original_status == ActiveTaskStatus.PLANNING:
+                reason = f"Resuming task from state '{original_status.name}'."
+                new_status = ActiveTaskStatus.PLANNING
+            else:
+                reason = f"Resuming task. Reverted from volatile state '{original_status.name}' to PLANNING for safe retry."
+                new_status = ActiveTaskStatus.PLANNING
+
+            print(f"StartupServices: Recovering Task {task.task_id} ('{task.description[:30]}...'). Reverting to {new_status.name}. Original status: {original_status.name}")
 
             task_manager.update_task_status(
                 task.task_id,
-                ActiveTaskStatus.FAILED_INTERRUPTED,
+                new_status,
                 reason=reason,
-                step_desc="Task marked as interrupted on agent startup."
+                step_desc="Task resumed on agent startup."
             )
+
+            if task.session_id and not str(task.session_id).startswith("autonomous_goal_"):
+                try:
+                    import os
+                    from ai_assistant.core.chat_manager import ChatSessionManager
+                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
+                    cm = ChatSessionManager(chat_storage)
+                    
+                    session_data = cm.get_session(task.session_id)
+                    if session_data:
+                        already_injected = False
+                        session_history = session_data.get("history", [])
+                        for msg in session_history:
+                            if msg.get("role") == "system" and "System restarted" in msg.get("content", ""):
+                                already_injected = True
+                                break
+                                
+                        if not already_injected:
+                            sys_msg = f"[System restarted] The system was restarted while executing the following task: '{task.description}'. The task state has been reverted to PLANNING for safe resumption. Please review progress or prompt the agent to continue if desired."
+                            cm.add_message(task.session_id, "system", sys_msg)
+                except Exception as e:
+                    logger.error(f"StartupServices: Failed to inject resume message for session {task.session_id}: {e}")
 
             if notification_manager:
                 notification_manager.add_notification(
-                    NotificationType.TASK_INTERRUPTED,
-                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was in state '{original_status.name}' and has been marked as interrupted.",
+                    NotificationType.GENERAL_INFO, # Changed from TASK_INTERRUPTED to GENERAL_INFO
+                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was recovered from state '{original_status.name}'. Status: {new_status.name}.",
                     related_item_id=task.task_id,
                     related_item_type="task"
                 )

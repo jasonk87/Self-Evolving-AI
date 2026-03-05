@@ -23,12 +23,11 @@ async def google_custom_search(query: str, num_results: int = 5) -> Dict[str, An
             from ai_assistant.core.vision_service import VisionService
             vision = VisionService()
             encoded_query = urllib.parse.quote(query)
-            search_url = f"https://www.google.com/search?q={encoded_query}"
+            # Use Bing for visual effect to avoid Google/DDG Captcha blocking headless browsers
+            search_url = f"https://www.bing.com/search?q={encoded_query}"
             
             print(f"Ghost Mode: Visualizing search for '{query}'...")
-            b64_screenshot = await vision.capture_page_screenshot(search_url)
-            if b64_screenshot:
-                images.append(b64_screenshot)
+            await vision.capture_page_screenshot(search_url)
         except Exception as e:
             print(f"Ghost Mode Visualization Error: {e}")
 

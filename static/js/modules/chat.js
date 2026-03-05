@@ -6,6 +6,29 @@ import { cyrb53, notifyIfHidden } from './utils.js';
 
 let currentSessionId = null;
 let lastResponseHash = "";
+let ghostPortalTimeout = null;
+
+// Handle live browser snapshots for Ghost Mode PIP
+socket.on('browser_snapshot', (data) => {
+    const portal = document.getElementById('ghost-portal');
+    const feed = document.getElementById('ghost-feed');
+    const status = document.querySelector('.ghost-status');
+
+    if (portal && feed && status) {
+        portal.classList.remove('hidden');
+        feed.src = `data:image/jpeg;base64,${data.image}`;
+
+        if (data.status) {
+            status.textContent = data.status;
+        }
+
+        // Auto-hide the portal after inactivity
+        clearTimeout(ghostPortalTimeout);
+        ghostPortalTimeout = setTimeout(() => {
+            portal.classList.add('hidden');
+        }, 30000); // Increased from 15s to 30s as requested
+    }
+});
 
 function extractTaskActionCommands(text) {
     const commandPattern = /\/task-action\s+([^\s`]+)\s+(retry|summarize|pause)/gi;

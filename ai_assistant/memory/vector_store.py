@@ -37,7 +37,13 @@ class VectorStore:
              self._init_chroma()
         except Exception as e:
              logger.error(f"First attempt to initialize ChromaDB failed: {e}")
-             if "database is malformed" in str(e).lower() or "disk I/O error" in str(e).lower():
+             error_str = str(e).lower()
+             error_type_str = str(type(e)).lower()
+             is_corrupted = any(indicator in error_str for indicator in [
+                 "database is malformed", "disk i/o error", "range start index"
+             ]) or any(indicator in error_type_str for indicator in ["pyo3", "panic"])
+             
+             if is_corrupted:
                  self._handle_corruption()
                  # Retry once
                  try:
