@@ -34,11 +34,13 @@ from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
 from ..utils.conversational_helpers import summarize_tool_result_conversationally
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
+from ai_assistant.utils.token_counter import estimate_tokens, truncate_to_token_limit
 
 logger = logging.getLogger(__name__)
 
 # Constants
 MAX_REACT_STEPS = 10
+MAX_STRATEGIST_PROMPT_TOKENS = 120000  # Conservative limit, Gemini handles more but optimizing costs
 
 class DynamicOrchestrator:
     """
@@ -310,13 +312,19 @@ class DynamicOrchestrator:
                         progress=min(90, step_i * 10)
                     )
 
-                # Format Chat History - FULL HISTORY (No truncation)
+                # Format Chat History - Truncate if insanely large
                 chat_history_str = ""
                 if history:
                     for msg in history:
                         role = msg.get('role', 'unknown').upper()
                         content = str(msg.get('content', ''))
                         chat_history_str += f"{role}: {content}\n"
+
+                    # Optimizing chat history to prevent context explosion on massive tasks
+                    history_tokens = estimate_tokens(chat_history_str)
+                    if history_tokens > 40000:
+                        chat_history_str = truncate_to_token_limit(chat_history_str, 40000)
+                        logger.warning(f"Chat history truncated. Was ~{history_tokens} tokens.")
                 
                 # Phase 1: Strategist (Think)
 
@@ -327,7 +335,33 @@ class DynamicOrchestrator:
                     q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
                     quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
 
+                # Construct base prompt and enforce absolute limits
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
+Goal: {prompt}
+{persona_guide}
+{quarantine_info}
+Context:
+{context}
+
+Chat History:
+{chat_history_str}
+
+Execution History:
+{execution_history}
+
+Few-Shot Examples (How to Think):
+"""
+                total_tokens = estimate_tokens(strategist_prompt)
+                if total_tokens > MAX_STRATEGIST_PROMPT_TOKENS:
+                    logger.warning(f"Strategist prompt exceeds {MAX_STRATEGIST_PROMPT_TOKENS} tokens ({total_tokens}). Forcing truncation on history/context to fit limits safely.")
+                    # Force prune history more aggressively
+                    if history:
+                        chat_history_str = truncate_to_token_limit(chat_history_str, 10000)
+                    if execution_history:
+                        execution_history = truncate_to_token_limit(execution_history, 5000)
+
+                    # Reconstruct
+                    strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {prompt}
 {persona_guide}
 {quarantine_info}
@@ -732,7 +766,7 @@ Instructions:
 
     async def _gather_context(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """
-        Gathers RAG facts and Project context.
+        Gathers RAG facts and Project context, optimizing for tokens.
         """
         context_parts = []
         metadata = {}
@@ -740,10 +774,21 @@ Instructions:
         # 1. RAG
         if self.memory_manager:
             try:
-                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=20)
+                # Dynamically adjust RAG K based on prompt size roughly
+                prompt_tokens = estimate_tokens(prompt)
+                k = 20 if prompt_tokens < 10000 else 10
+
+                rag_results = await self.memory_manager.retrieve_relevant_context(prompt, k=k)
                 if rag_results:
                     facts = [f"- {res.get('text', '')}" for res in rag_results]
-                    context_parts.append("Learned Facts:\n" + "\n".join(facts))
+
+                    # Truncate total RAG facts if extremely long
+                    rag_text = "Learned Facts:\n" + "\n".join(facts)
+                    if estimate_tokens(rag_text) > 8000:
+                         rag_text = truncate_to_token_limit(rag_text, 8000)
+                         metadata['rag_truncated'] = True
+
+                    context_parts.append(rag_text)
                     metadata['rag_count'] = len(rag_results)
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
