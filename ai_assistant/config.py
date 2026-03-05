@@ -353,3 +353,7 @@ TASK_PROFILES = {
         "endpoint": None
     }
 }
+
+# --- Quarantine System Configuration ---
+# Number of identical failures required before a tool is quarantined
+QUARANTINE_FAILURE_THRESHOLD = int(os.environ.get("QUARANTINE_FAILURE_THRESHOLD", 3))

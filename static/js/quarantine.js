@@ -50,6 +50,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'approval-card glass-panel-light'; // Reuse approval card styling
 
+            let contextHtml = '';
+            if (info.context_data) {
+                const ctx = info.context_data;
+                if (ctx.goal) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Goal: <em>${ctx.goal}</em></div>`;
+                if (ctx.args && ctx.args.length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Args: <code>${JSON.stringify(ctx.args)}</code></div>`;
+                if (ctx.kwargs && Object.keys(ctx.kwargs).length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Kwargs: <code>${JSON.stringify(ctx.kwargs)}</code></div>`;
+            }
+
             card.innerHTML = `
                 <div class="approval-header">
                     <span class="approval-type type-quarantine" style="color: #ef4444; border-color: #ef4444;">QUARANTINED</span>
@@ -59,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="target-name">Tool: <code>${toolName}</code></div>
                     <div class="target-name" style="margin-top: 5px;">Failures: <strong>${info.count}</strong></div>
                     <p class="approval-desc" style="margin-top: 10px; word-break: break-all;">${info.reason || 'Repeated failures'}</p>
+                    ${contextHtml ? `<div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px;"><strong>Failure Context:</strong>${contextHtml}</div>` : ''}
                 </div>
                 <div class="approval-actions">
                     <button class="btn-approve" data-tool="${toolName}" style="width: 100%; border-color: #10b981; color: #10b981;">Unblock</button>
