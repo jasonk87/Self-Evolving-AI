@@ -65,7 +65,8 @@ This project is a next-generation AI agent designed not just to execute tasks, b
 ## 📦 Requirements
 
 *   Python 3.12+
-*   `requests`, `aiohttp`, `numpy`, `pytest`, `flask`, `flask-socketio`, `eventlet`, `google-generativeai` (or Ollama).
+*   Core + dev dependencies via `requirements.txt` (safe default install).
+*   Optional integrations via `requirements-optional.txt` (e.g., `pyaudio`, `mss`, `chromadb`).
 *   **Ollama** (for local embeddings and optional LLM support).
 
 ## 🏃‍♂️ Getting Started
@@ -73,6 +74,8 @@ This project is a next-generation AI agent designed not just to execute tasks, b
 1.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
+    # Optional integrations (audio/screen capture/vector DB)
+    # pip install -r requirements-optional.txt
     ```
 2.  **Start the AI Cockpit:**
     ```bash

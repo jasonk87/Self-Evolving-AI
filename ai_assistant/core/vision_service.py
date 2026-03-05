@@ -5,12 +5,29 @@ import logging
 import asyncio
 import json
 from typing import Optional, Dict, Any, List
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright as _async_playwright
+except ImportError:
+    _async_playwright = None
+
+# Backward-compatible module symbol for tests/patching.
+async_playwright = _async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 import ai_assistant.config as config
 from ai_assistant.core.events import emit_system_event
 
 logger = logging.getLogger(__name__)
+
+
+def _get_async_playwright():
+    """Return playwright async entrypoint or raise a clear optional-dependency error."""
+    if async_playwright is None:
+        raise RuntimeError(
+            "Playwright is not installed. Install dependencies with `pip install -r requirements-dev.txt` "
+            "and run `playwright install` if browser binaries are needed."
+        )
+    return async_playwright
+
 
 class VisionService:
     """
@@ -58,7 +75,7 @@ class VisionService:
         playwright = None
         browser = None
         try:
-            playwright = await async_playwright().start()
+            playwright = await _get_async_playwright()().start()
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop
@@ -114,7 +131,7 @@ class VisionService:
         playwright = None
         browser = None
         try:
-            playwright = await async_playwright().start()
+            playwright = await _get_async_playwright()().start()
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop
@@ -158,7 +175,7 @@ class VisionService:
         playwright = None
         browser = None
         try:
-            playwright = await async_playwright().start()
+            playwright = await _get_async_playwright()().start()
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop

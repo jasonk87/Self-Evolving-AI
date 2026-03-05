@@ -117,5 +117,14 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
         # add_notification should NOT be called
         self.mock_notification_manager.add_notification.assert_not_called()
 
+    async def test_resume_interrupted_tasks_emits_single_digest_when_interrupted_found(self):
+        task_initializing = ActiveTask(task_id="ti1", task_type=ActiveTaskType.MISC_CODE_GENERATION, description="Startup task", status=ActiveTaskStatus.INITIALIZING)
+        self.mock_task_manager.list_active_tasks.return_value = [task_initializing]
+
+        with unittest.mock.patch('ai_assistant.core.startup_services.emit_startup_interrupted_tasks_digest') as mock_digest:
+            await resume_interrupted_tasks(self.mock_task_manager, self.mock_notification_manager)
+
+        mock_digest.assert_called_once()
+
 if __name__ == '__main__': # pragma: no cover
     unittest.main()

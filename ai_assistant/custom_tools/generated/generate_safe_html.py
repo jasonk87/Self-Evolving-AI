@@ -1,8 +1,15 @@
 import re
 from typing import Optional
 
-import bleach
-from bleach.css_sanitizer import CSSSanitizer
+try:
+    import bleach
+except ImportError:
+    bleach = None
+
+try:
+    from bleach.css_sanitizer import CSSSanitizer
+except ImportError:
+    CSSSanitizer = None
 
 
 _ALLOWED_TAGS = [
@@ -21,7 +28,7 @@ _ALLOWED_ATTRS = {
 
 _ALLOWED_PROTOCOLS = ["http", "https", "mailto", "data"]
 
-_CSS_SANITIZER = CSSSanitizer()
+_CSS_SANITIZER = CSSSanitizer() if CSSSanitizer else None
 
 _SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
 
@@ -38,6 +45,9 @@ def generate_safe_html(input_string: Optional[str]) -> Optional[str]:
 
     try:
         without_scripts = _SCRIPT_BLOCK_RE.sub("", input_string)
+        if bleach is None:
+            return without_scripts
+
         safe_html = bleach.clean(
             without_scripts,
             tags=_ALLOWED_TAGS,
