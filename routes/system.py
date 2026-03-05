@@ -197,6 +197,33 @@ def api_speak():
     else:
         return jsonify({"error": "TTS generation failed"}), 500
 
+@api_bp.route('/system/quarantine', methods=['GET'])
+def get_quarantine_status():
+    """Returns the current list of blocked tools."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "Orchestrator not initialized", "success": False}), 500
+
+    blocked_tools = app_globals.orchestrator.get_blocked_tools()
+    return jsonify({"success": True, "blocked_tools": blocked_tools})
+
+@api_bp.route('/system/quarantine/unblock', methods=['POST'])
+def unblock_quarantined_tool():
+    """Manually unblocks a specific quarantined tool."""
+    if not app_globals.orchestrator:
+        return jsonify({"error": "Orchestrator not initialized", "success": False}), 500
+
+    data = request.json or {}
+    tool_name = data.get('tool_name')
+
+    if not tool_name:
+        return jsonify({"error": "tool_name is required", "success": False}), 400
+
+    success = app_globals.orchestrator.unblock_tool(tool_name)
+    if success:
+        return jsonify({"success": True, "message": f"Tool '{tool_name}' unblocked."})
+    else:
+        return jsonify({"success": False, "error": f"Tool '{tool_name}' not found in quarantine."}), 404
+
 @api_bp.route('/system/shutdown', methods=['POST'])
 def system_shutdown():
     """Shuts down the server gracefully."""

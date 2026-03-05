@@ -74,6 +74,8 @@ class DynamicOrchestrator:
         self.context: Dict[str, Any] = {}
         self.current_goal: Optional[str] = None
         self.current_plan: Optional[List[Dict[str, Any]]] = None
+        self.blocked_tools: Dict[str, Dict[str, Any]] = {}
+        self.failure_counts: Dict[str, int] = {}
 
     async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> Tuple[bool, str, Optional[List[str]]]:
         """
@@ -123,33 +125,55 @@ class DynamicOrchestrator:
         err_msg = str(error or "")[:120]
         return f"{tool_name}|{err_type}|{err_msg}"
 
+    def get_blocked_tools(self) -> Dict[str, Dict[str, Any]]:
+        """Return the current list of blocked tools."""
+        return self.blocked_tools
+
+    def unblock_tool(self, tool_name: str) -> bool:
+        """Manually unblock a quarantined tool."""
+        if tool_name in self.blocked_tools:
+            del self.blocked_tools[tool_name]
+
+            # Optionally clear failure counts associated with this tool
+            keys_to_delete = [k for k in self.failure_counts if k.startswith(f"{tool_name}|")]
+            for k in keys_to_delete:
+                del self.failure_counts[k]
+
+            EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+            return True
+        return False
+
     def _register_tool_failure(
         self,
-        failure_counts: Dict[str, int],
-        blocked_tools: Dict[str, Dict[str, Any]],
         tool_name: str,
         error: Exception,
         threshold: int = 3,
     ) -> Dict[str, Any]:
         """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
         signature = self._build_tool_failure_signature(tool_name, error)
-        count = failure_counts.get(signature, 0) + 1
-        failure_counts[signature] = count
+        count = self.failure_counts.get(signature, 0) + 1
+        self.failure_counts[signature] = count
 
+        import time
         activated = False
         if count >= threshold:
             activated = True
-            blocked_tools[tool_name] = {
-                "signature": signature,
-                "count": count,
-                "reason": f"Repeated identical failure ({count}x): {signature}",
-            }
+            if tool_name not in self.blocked_tools:
+                self.blocked_tools[tool_name] = {
+                    "signature": signature,
+                    "count": count,
+                    "reason": f"Repeated identical failure ({count}x): {signature}",
+                    "timestamp": time.time()
+                }
+                EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+            else:
+                 self.blocked_tools[tool_name]["count"] = count
 
         return {
             "signature": signature,
             "count": count,
             "activated": activated,
-            "blocked_reason": blocked_tools.get(tool_name, {}).get("reason"),
+            "blocked_reason": self.blocked_tools.get(tool_name, {}).get("reason"),
         }
 
     async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
@@ -166,8 +190,6 @@ class DynamicOrchestrator:
         max_steps = MAX_REACT_STEPS
         collected_images = []
         tools_desc = tool_system_instance.get_tools_description()
-        failure_counts: Dict[str, int] = {}
-        blocked_tools: Dict[str, Dict[str, Any]] = {}
 
         # Initial Strategist Prompt
         execution_history = ""
@@ -454,8 +476,8 @@ Instructions:
                     result_str = ""
                     max_retries = 2
 
-                    if tool_name in blocked_tools:
-                        blocked_reason = blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
+                    if tool_name in self.blocked_tools:
+                        blocked_reason = self.blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
                         result_str = f"Circuit breaker active for tool '{tool_name}': {blocked_reason}"
                     else:
                         for attempt in range(max_retries + 1):
@@ -492,7 +514,7 @@ Instructions:
                                 execution_success = True
                                 break
                             except Exception as e:
-                                failure_meta = self._register_tool_failure(failure_counts, blocked_tools, tool_name, e)
+                                failure_meta = self._register_tool_failure(tool_name, e)
                                 if failure_meta.get("activated"):
                                     result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
                                     print(color_text(f"⛔ {result_str}", CLIColors.WARNING))
