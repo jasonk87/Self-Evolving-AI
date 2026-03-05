@@ -10,9 +10,6 @@ LLM_PROVIDER = "gemini"
 
 DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
 
-# System Operations
-CIRCUIT_BREAKER_THRESHOLD = 3
-
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 
@@ -323,3 +320,36 @@ REMINDER_CHECK_INTERVAL_SECONDS = 10
 DREAM_INTERVAL_SECONDS = 86400
 ENABLE_DREAM_MODE = False
 BROWSER_SLOW_MO = 100  # Milliseconds to slow down operations in Ghost Mode
+
+
+# =====================================================================
+# TASK ROUTING & PLUGGABLE LLM ARCHITECTURE
+# =====================================================================
+DEFAULT_LLM_PROVIDER = "gemini"
+
+TASK_PROFILES = {
+    "chat": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "DIRECT",
+        "endpoint": None
+    },
+    "coding": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "BICAMERAL",
+        "endpoint": None
+    },
+    "background_dreamer": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "mode": "DIRECT",
+        "endpoint": None
+    },
+    "local_agent": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "mode": "DIRECT",
+        "endpoint": "http://127.0.0.1:11434"
+    }
+}

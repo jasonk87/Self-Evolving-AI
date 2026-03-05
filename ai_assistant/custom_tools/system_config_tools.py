@@ -45,10 +45,7 @@ def update_system_config(key: str, value: Any) -> str:
         "DEFAULT_EXECUTION_MODE",
         "AUTONOMOUS_LEARNING_ENABLED",
         "AUTO_APPROVE_DELAY_SECONDS",
-        "VERBOSE_LLM_LOGGING",
-        "ENABLE_DREAM_MODE",
-        "DREAM_INTERVAL_SECONDS",
-        "CIRCUIT_BREAKER_THRESHOLD"
+        "VERBOSE_LLM_LOGGING"
     }
 
     if key not in ALLOWED_KEYS:

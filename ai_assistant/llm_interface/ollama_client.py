@@ -373,12 +373,10 @@ async def invoke_ollama_model_async(
     temperature: float = 0.7,
     max_tokens: int = 1500,
     api_endpoint_override: Optional[str] = None,
-    task_name: Optional[str] = None,
-    task: str = "code_synthesis"
+    task_name: Optional[str] = None
 ) -> Optional[str]:
-    task_override = task_name or task
     return await retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)(
-        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_override
+        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_name
     )
 
 class OllamaProvider:
@@ -436,15 +434,12 @@ class OllamaProvider:
         model_name: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1500,
-        task_name: Optional[str] = None,
-        task: str = "code_synthesis"
+        task_name: Optional[str] = None
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         enable_thinking = ENABLE_THINKING and effective_model_name in THINKING_SUPPORTED_MODELS
         use_chat_api = enable_thinking
         api_to_use = self.chat_endpoint if use_chat_api else self.generate_endpoint
-
-        task_override = task_name or task
 
         return await invoke_ollama_model_async_internal(
             prompt=prompt,
@@ -452,7 +447,7 @@ class OllamaProvider:
             temperature=temperature,
             max_tokens=max_tokens,
             api_endpoint_override=api_to_use,
-            task_name=task_override
+            task_name=task_name
         )
 
     def invoke_ollama_model(

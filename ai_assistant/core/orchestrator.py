@@ -193,19 +193,16 @@ class DynamicOrchestrator:
         self,
         tool_name: str,
         error: Exception,
-        threshold: Optional[int] = None,
-        tool_args: Optional[Dict[str, Any]] = None,
-        task_context: Optional[str] = None
+        threshold: int = 3,
     ) -> Dict[str, Any]:
         """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
-        actual_threshold = threshold if threshold is not None else getattr(config, 'CIRCUIT_BREAKER_THRESHOLD', 3)
         signature = self._build_tool_failure_signature(tool_name, error)
         count = self.failure_counts.get(signature, 0) + 1
         self.failure_counts[signature] = count
 
         import time
         activated = False
-        if count >= actual_threshold:
+        if count >= threshold:
             activated = True
             if tool_name not in self.blocked_tools:
                 reason_str = f"Repeated identical failure ({count}x): {signature}"
@@ -213,9 +210,7 @@ class DynamicOrchestrator:
                     "signature": signature,
                     "count": count,
                     "reason": reason_str,
-                    "timestamp": time.time(),
-                    "last_args": tool_args or {},
-                    "task_context": task_context or "Unknown"
+                    "timestamp": time.time()
                 }
                 self._save_quarantine_state()
                 EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
@@ -624,12 +619,7 @@ Instructions:
                                 execution_success = True
                                 break
                             except Exception as e:
-                                failure_meta = self._register_tool_failure(
-                                    tool_name,
-                                    e,
-                                    tool_args=tool_args,
-                                    task_context=goal_id or active_task_id or "Universal Cycle"
-                                )
+                                failure_meta = self._register_tool_failure(tool_name, e)
                                 if failure_meta.get("activated"):
                                     result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
                                     print(color_text(f"⛔ {result_str}", CLIColors.WARNING))

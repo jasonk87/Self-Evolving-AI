@@ -482,119 +482,39 @@ document.addEventListener('DOMContentLoaded', () => {
     Layout.openMainView('view-chat', 'Chat');
 
     // --- Telemetry Polling ---
-    const telemetryBtn = document.getElementById('telemetry-hud-btn');
-    const telemetryText = document.getElementById('telemetry-hud-text');
-    const telemetryModal = document.getElementById('telemetry-modal');
-    const closeTelemetryBtn = document.getElementById('close-telemetry-btn');
-    const refreshTelemetryBtn = document.getElementById('refresh-telemetry-btn');
-
-    function fetchAndShowTelemetry() {
-        fetch('/api/system/telemetry')
+    function updateTokenTelemetry() {
+        fetch('/api/telemetry/tokens')
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
                     const usage = data.usage;
-                    const history = data.history;
-
-                    // Update HUD Button
-                    if (telemetryText) {
-                        telemetryText.textContent = `Tokens: ${usage.total_tokens.toLocaleString()}`;
-                    }
-
-                    // Update Modal Stats
-                    document.getElementById('telemetry-total-tokens').textContent = usage.total_tokens.toLocaleString();
-                    document.getElementById('telemetry-total-calls').textContent = usage.total_calls.toLocaleString();
-                    document.getElementById('telemetry-est-cost').textContent = `$${usage.estimated_cost.toFixed(4)}`;
-
-                    // Build Breakdown List
-                    const listContainer = document.getElementById('telemetry-breakdown-list');
-                    if (listContainer) {
-                        const breakdownData = usage.breakdown;
-                        if (!breakdownData || Object.keys(breakdownData).length === 0) {
-                            listContainer.innerHTML = '<div style="text-align: center; color: var(--text-dim);">No recent activity.</div>';
-                        } else {
-                            let html = '';
-
-                            // Define order of categories
-                            const categories = ['Foreground', 'Background', 'AgentOps', 'Uncategorized'];
-
-                            categories.forEach(category => {
-                                const categoryTasks = breakdownData[category];
-                                if (categoryTasks && Object.keys(categoryTasks).length > 0) {
-                                    // Calculate category total
-                                    let categoryTotalTokens = 0;
-                                    for (const tokens of Object.values(categoryTasks)) {
-                                        categoryTotalTokens += tokens;
-                                    }
-
-                                    html += `
-                                    <div style="margin-top: 15px; margin-bottom: 5px;">
-                                        <h5 style="color: var(--text-primary); margin: 0; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between;">
-                                            <span>${category}</span>
-                                            <span style="color: var(--neon-blue); font-size: 12px; align-self: center;">${categoryTotalTokens.toLocaleString()} tk</span>
-                                        </h5>
-                                    </div>`;
-
-                                    // Sort tasks within category by tokens
-                                    const sortedTasks = Object.entries(categoryTasks).sort((a,b) => b[1] - a[1]);
-
-                                    for (const [task, tokens] of sortedTasks) {
-                                        // Calculate calls for this task from history
-                                        let calls = 0;
-                                        if (history) {
-                                            history.forEach(entry => {
-                                                if (entry.task === task) calls++;
-                                            });
-                                        }
-
-                                        html += `
-                                        <div style="display: flex; justify-content: space-between; padding: 6px 0 6px 15px; border-bottom: 1px solid rgba(255,255,255,0.02);">
-                                            <span style="color: var(--text-dim); text-transform: capitalize; font-size: 13px;">${task.replace(/_/g, ' ')}</span>
-                                            <span style="color: var(--text-dim); font-size: 13px;">${tokens.toLocaleString()} tk <span style="opacity: 0.5">(${calls} calls)</span></span>
-                                        </div>`;
-                                    }
-                                }
-                            });
-
-                            if (html === '') {
-                                html = '<div style="text-align: center; color: var(--text-dim);">No recent activity.</div>';
-                            }
-
-                            listContainer.innerHTML = html;
+                    // Create or update badge in header toolbar
+                    let badge = document.getElementById('token-usage-badge');
+                    if (!badge) {
+                        const toolbar = document.querySelector('.header-toolbar');
+                        if (toolbar) {
+                            badge = document.createElement('div');
+                            badge.id = 'token-usage-badge';
+                            badge.className = 'toolbar-item';
+                            badge.style.fontSize = '12px';
+                            badge.style.padding = '0 10px';
+                            badge.style.display = 'flex';
+                            badge.style.alignItems = 'center';
+                            badge.style.color = 'var(--text-secondary)';
+                            badge.style.borderLeft = '1px solid var(--border-color)';
+                            toolbar.insertBefore(badge, toolbar.firstChild);
                         }
+                    }
+                    if (badge) {
+                        badge.textContent = `⚡ $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
+                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens}`;
                     }
                 }
             })
             .catch(err => console.error("Telemetry error:", err));
     }
 
-    if (telemetryBtn) {
-        telemetryBtn.addEventListener('click', () => {
-            fetchAndShowTelemetry();
-            telemetryModal.classList.add('active');
-        });
-    }
-
-    if (closeTelemetryBtn) {
-        closeTelemetryBtn.addEventListener('click', () => {
-            telemetryModal.classList.remove('active');
-        });
-    }
-
-    if (refreshTelemetryBtn) {
-        refreshTelemetryBtn.addEventListener('click', fetchAndShowTelemetry);
-    }
-
-    // Close modal on click outside
-    if (telemetryModal) {
-        telemetryModal.addEventListener('click', (e) => {
-            if (e.target === telemetryModal) {
-                telemetryModal.classList.remove('active');
-            }
-        });
-    }
-
-    // Update button text periodically
-    setInterval(fetchAndShowTelemetry, 30000);
-    fetchAndShowTelemetry(); // Initial call
+    // Update every 10 seconds
+    setInterval(updateTokenTelemetry, 10000);
+    updateTokenTelemetry(); // Initial call
 });
