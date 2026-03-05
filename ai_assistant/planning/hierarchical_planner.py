@@ -414,28 +414,36 @@ class HierarchicalPlanner:
         print(f"[HP] Generated {len(outline_items)} high-level outline items.")
 
         outline_idx_counter = 0 # Use 0-based for internal consistency, adjust for display if needed
-        for outline_item in outline_items:
+        import asyncio
+
+        # 2. Concurrently Generate Detailed Tasks for all Outline Items
+        detailed_tasks_futures = [
+            self.generate_detailed_tasks_for_outline_item(item, user_goal, project_context)
+            for item in outline_items
+        ]
+        all_detailed_tasks = await asyncio.gather(*detailed_tasks_futures)
+
+        for outline_item, detailed_tasks in zip(outline_items, all_detailed_tasks):
             outline_idx_counter += 1 # 1-based for step_id
             print(f"[HP] Processing outline item {outline_idx_counter}: '{outline_item}'")
 
-            # 2. Generate Detailed Tasks for each Outline Item
-            detailed_tasks = await self.generate_detailed_tasks_for_outline_item(
-                outline_item, user_goal, project_context
-            )
             if not detailed_tasks:
                 print(f"[HP] No detailed tasks generated for outline item '{outline_item}'. Skipping.")
                 continue
             print(f"[HP] Generated {len(detailed_tasks)} detailed tasks for '{outline_item}'.")
 
+            # 3. Concurrently Elaborate each Detailed Task into a Project Plan Step
+            elaborated_step_futures = [
+                self.generate_project_plan_step_for_task(desc, user_goal, project_context)
+                for desc in detailed_tasks
+            ]
+
+            elaborated_steps = await asyncio.gather(*elaborated_step_futures)
+
             detailed_task_idx_counter = 0
-            for detailed_task_description in detailed_tasks:
+            for detailed_task_description, elaborated_step_dict in zip(detailed_tasks, elaborated_steps):
                 detailed_task_idx_counter += 1 # 1-based for sub-step_id
                 print(f"[HP]   Elaborating detailed task {outline_idx_counter}.{detailed_task_idx_counter}: '{detailed_task_description}'")
-
-                # 3. Elaborate each Detailed Task into a Project Plan Step
-                elaborated_step_dict = await self.generate_project_plan_step_for_task(
-                    detailed_task_description, user_goal, project_context
-                )
 
                 if elaborated_step_dict is None:
                     print(f"[HP]   Failed to elaborate step for detailed task: '{detailed_task_description}'. Skipping this task.")
