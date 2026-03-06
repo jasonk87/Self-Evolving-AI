@@ -185,6 +185,47 @@
                 </div>
             </div>
 
+            <!-- Token & Budget Center Modal -->
+            <div id="token-modal" class="modal-overlay">
+                <div class="modal-content" style="max-width: 600px; width: 90%;">
+                    <div class="modal-header">
+                        <h3>TOKEN & BUDGET CENTER</h3>
+                        <button class="btn-icon" id="token-modal-close" style="margin-left:auto;">×</button>
+                    </div>
+                    <div class="modal-body" style="padding: 20px;">
+                        <div class="token-summary" style="margin-bottom: 20px;">
+                            <div class="stat-card">
+                                <span class="stat-label">Total Spent Today</span>
+                                <div class="stat-value" id="token-total-spent">$0.00</div>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Daily Budget</span>
+                                <div class="stat-value" id="token-daily-budget">Loading...</div>
+                            </div>
+                        </div>
+
+                        <div class="token-breakdown" style="margin-bottom: 20px;">
+                            <h4 style="margin-bottom: 10px; color: var(--text-secondary);">Expenditure Breakdown</h4>
+                            <div id="token-bars-container">
+                                <div class="loading">Loading breakdown...</div>
+                            </div>
+                        </div>
+
+                        <div class="budget-controls" style="border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <h4 style="margin-bottom: 10px; color: var(--text-secondary);">Budget Settings</h4>
+                            <div class="setting-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <label for="budget-input">Daily Budget Limit ($)</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="number" id="budget-input" step="0.5" min="0" style="width: 100px; padding: 5px; border-radius: 4px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--border-color);">
+                                    <button id="save-budget-btn" class="btn-pill-neon" style="padding: 5px 15px;">Save</button>
+                                </div>
+                            </div>
+                            <div id="budget-save-status" style="margin-top: 5px; font-size: 0.9em; text-align: right; color: var(--success-color);"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Approvals View -->
             <div id="view-sidebar-approvals" class="sidebar-view hidden">
                 <div class="panel-header">
@@ -313,8 +354,37 @@
                     <span class="title">MISSION CONTROL</span>
                     <div class="actions"><button id="refresh-tasks-btn" class="btn-icon">↻</button></div>
                 </header>
+                <div id="mission-control-kill-switches" class="mission-status glass-panel" style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px;">Background Fleet Operations</h3>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <div class="setting-group" style="display: flex; align-items: center; gap: 10px;">
+                            <label>Dreamer</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="switch-allow-dreamer">
+                                <label for="switch-allow-dreamer"></label>
+                            </div>
+                        </div>
+                        <div class="setting-group" style="display: flex; align-items: center; gap: 10px;">
+                            <label>Memory Learner</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="switch-allow-memory">
+                                <label for="switch-allow-memory"></label>
+                            </div>
+                        </div>
+                        <div class="setting-group" style="display: flex; align-items: center; gap: 10px;">
+                            <label>Auto-Fixing</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="switch-allow-autofix">
+                                <label for="switch-allow-autofix"></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div id="mission-control-status" class="mission-status glass-panel">
                     <div class="loading">Syncing system health...</div>
+                </div>
+                <div id="mission-control-slo" class="mission-status glass-panel">
+                    <div class="loading">Loading SLO Metrics...</div>
                 </div>
                 <div id="mission-control-health" class="mission-status glass-panel">
                     <div class="loading">Running health audit...</div>
@@ -498,6 +568,10 @@
             <script src="{{ url_for('static', filename='js/approvals.js') }}"></script>
             <script src="{{ url_for('static', filename='js/quarantine.js') }}"></script>
             <script src="{{ url_for('static', filename='js/mission_control.js') }}"></script>
+            <script type="module">
+                import { initTokenModal } from "{{ url_for('static', filename='js/token_modal.js') }}";
+                document.addEventListener('DOMContentLoaded', initTokenModal);
+            </script>
 
 
 

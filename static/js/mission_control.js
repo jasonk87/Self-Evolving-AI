@@ -25,6 +25,7 @@ const missionControl = {
         this.fetchHealthAudit();
         this.fetchBackgroundCadence();
         this.fetchReflectionSuggestions();
+        this.fetchSLOMetrics();
         this.startStatusPolling();
 
         if (this.refreshBtn) {
@@ -34,8 +35,12 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             });
         }
+
+        // Initialize background kill switches
+        this.initBackgroundSwitches();
 
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -46,6 +51,7 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             }
         });
 
@@ -57,10 +63,41 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             });
         }
     },
 
+
+    initBackgroundSwitches: async function() {
+        const d_switch = document.getElementById('switch-allow-dreamer');
+        const m_switch = document.getElementById('switch-allow-memory');
+        const a_switch = document.getElementById('switch-allow-autofix');
+
+        if (!d_switch || !m_switch || !a_switch) return;
+
+        try {
+            const res = await fetch('/api/system/config');
+            const config = await res.json();
+
+            d_switch.checked = config.ALLOW_DREAMER !== false;
+            m_switch.checked = config.ALLOW_MEMORY_LEARNING !== false;
+            a_switch.checked = config.ALLOW_AUTO_FIXING !== false;
+
+        } catch(e) { console.error("Could not init switches", e); }
+
+        const toggleConfig = async (key, val) => {
+            const fd = new FormData();
+            fd.append(key, val);
+            try {
+                await fetch('/api/system/config', { method: 'POST', body: fd });
+            } catch(e) { console.error("Toggle config error", e); }
+        };
+
+        d_switch.addEventListener('change', () => toggleConfig('ALLOW_DREAMER', d_switch.checked));
+        m_switch.addEventListener('change', () => toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked));
+        a_switch.addEventListener('change', () => toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked));
+    },
 
     isMissionControlActive: function () {
         const view = document.getElementById('view-mission-control');
@@ -76,6 +113,7 @@ const missionControl = {
             this.fetchHealthAudit();
             this.fetchBackgroundCadence();
             this.fetchReflectionSuggestions();
+            this.fetchSLOMetrics();
         }, this.statusPollIntervalMs);
 
         this.staleCheckTimer = setInterval(() => {
@@ -185,6 +223,32 @@ const missionControl = {
             `;
         } catch (e) {
             this.cadencePanel.innerHTML = `<div class="error">Cadence link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    fetchSLOMetrics: async function () {
+        const sloPanel = document.getElementById('mission-control-slo');
+        if (!sloPanel) return;
+
+        try {
+            const response = await fetch('/api/telemetry');
+            const data = await response.json();
+            if (data && data.slo) {
+                const slo = data.slo;
+                sloPanel.innerHTML = `
+                    <div class="mission-section">
+                        <h4 class="mission-heading">Production SLO Dashboard</h4>
+                        <div class="mission-kv-group">
+                            <span class="mission-kv-pill">MTTD (Mean Time To Diagnose): ${slo.mttd_seconds}s</span>
+                            <span class="mission-kv-pill">Manual Retries: ${slo.manual_retries}</span>
+                            <span class="mission-kv-pill">Avg Delegation Latency: ${slo.avg_delegated_latency_seconds}s</span>
+                            <span class="mission-kv-pill">Total Diagnostics Run: ${slo.total_diagnostics_run}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (e) {
+            console.error("Fetch SLO error:", e);
         }
     },
 

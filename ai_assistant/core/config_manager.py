@@ -61,7 +61,10 @@ class ConfigManager:
             "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE,
             "TASK_PROFILES": config_module.TASK_PROFILES,
             "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
-            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000)
+            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000),
+            "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
+            "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
+            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
         }
         self._write_json(data)
 
@@ -150,7 +153,10 @@ class ConfigManager:
             "ENABLE_DREAM_MODE": getattr(config_module, 'ENABLE_DREAM_MODE', False),
             "TASK_PROFILES": getattr(config_module, 'TASK_PROFILES', {}),
             "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
-            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000)
+            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000),
+            "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
+            "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
+            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
         }
 
     def get_settings_schema(self):
@@ -225,6 +231,18 @@ class ConfigManager:
                 "type": "integer",
                 "description": "Maximum token spend allowed per background autonomous cycle.",
             },
+            "ALLOW_DREAMER": {
+                "type": "boolean",
+                "description": "Allow background Dreamer processes to run.",
+            },
+            "ALLOW_MEMORY_LEARNING": {
+                "type": "boolean",
+                "description": "Allow background memory insight learning to run.",
+            },
+            "ALLOW_AUTO_FIXING": {
+                "type": "boolean",
+                "description": "Allow background autonomous file fixing to run.",
+            }
         }
 
     def _read_json(self):

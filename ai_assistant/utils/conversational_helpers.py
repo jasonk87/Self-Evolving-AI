@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 try:
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
-    from ai_assistant.config import get_model_for_task
+    from ai_assistant.config import get_model_for_task, DEFAULT_MODEL
 except ImportError: # pragma: no cover
     print("Warning: Could not import OllamaProvider or get_model_for_task from standard paths. Using placeholder for direct script execution if applicable.")
     OllamaProvider = type('OllamaProvider', (object,), {})
@@ -224,14 +224,14 @@ async def rephrase_error_message_conversationally(
     )
 
     try:
-        target_model = model_name
-        if not target_model:
-            target_model = get_model_for_task("error_rephrasing")
-        if not target_model:
-            target_model = get_model_for_task("conversational_response")
-        if not target_model:
-            target_model = "mistral"
-            logger.warning(f"No specific model for 'error_rephrasing' or 'conversational_response'. Using hardcoded default: {target_model}")
+        target_model = (
+            model_name or
+            get_model_for_task("error_rephrasing") or
+            get_model_for_task("conversational_response") or
+            DEFAULT_MODEL
+        )
+        if target_model == DEFAULT_MODEL:
+            logger.warning(f"No specific model for 'error_rephrasing' or 'conversational_response'. Using system DEFAULT_MODEL: {target_model}")
 
         logger.info(f"Rephrasing error with model {target_model}. Original error: {technical_error_message[:100]}...")
 
@@ -246,11 +246,13 @@ async def rephrase_error_message_conversationally(
             return llm_response.strip()
         else:
             logger.warning(f"LLM returned empty response for error rephrasing. Technical error: {technical_error_message}")
-            return f"I encountered an issue processing your request for '{query_for_prompt}'. The technical details are: {technical_error_message}"
+            truncated_error = technical_error_message[:500] + "..." if len(technical_error_message) > 500 else technical_error_message
+            return f"I encountered an issue processing your request for '{query_for_prompt}'. The technical details are: {truncated_error}"
 
     except Exception as e: # pragma: no cover
         logger.error(f"Error during LLM call for error rephrasing: {e}. Technical error: {technical_error_message}", exc_info=True)
-        return f"I ran into a problem with your request for '{query_for_prompt}'. The specific technical error was: {technical_error_message}"
+        truncated_error = technical_error_message[:500] + "..." if len(technical_error_message) > 500 else technical_error_message
+        return f"I ran into a problem with your request for '{query_for_prompt}'. The specific technical error was: {truncated_error}"
 
 
 if __name__ == '__main__': # pragma: no cover
@@ -353,17 +355,18 @@ if __name__ == '__main__': # pragma: no cover
         async def mock_raise_exception(*args, **kwargs):
             raise Exception("Network connection to LLM failed")
         
-        mock_llm_provider_instance.invoke_ollama_model_async = mock_raise_exception
-        
-        error3 = "Database timeout"
-        query3 = "Fetch all user records"
-        rephrased3 = await rephrase_error_message_conversationally(error3, query3, mock_llm_provider_instance)
-        logger.info(f"Original Error 3: {error3}\nRephrased 3 (LLM exception): {rephrased3}\n")
-        assert error3 in rephrased3
-        assert query3 in rephrased3
+        try:
+            mock_llm_provider_instance.invoke_ollama_model_async = mock_raise_exception
 
-        # Restore
-        mock_llm_provider_instance.invoke_ollama_model_async = original_method
+            error3 = "Database timeout"
+            query3 = "Fetch all user records"
+            rephrased3 = await rephrase_error_message_conversationally(error3, query3, mock_llm_provider_instance)
+            logger.info(f"Original Error 3: {error3}\nRephrased 3 (LLM exception): {rephrased3}\n")
+            assert error3 in rephrased3
+            assert query3 in rephrased3
+        finally:
+            # Restore
+            mock_llm_provider_instance.invoke_ollama_model_async = original_method
 
 
     async def main_tests():

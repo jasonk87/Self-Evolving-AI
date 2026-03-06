@@ -47,6 +47,36 @@ class TokenUsageTracker:
 
         logger.debug(f"Telemetry: Tracked call ({est_input} in, {est_output} out) for task '{task}'")
 
+    # SLO Metrics
+    _total_diagnose_time = 0.0
+    _diagnose_count = 0
+    _manual_retry_count = 0
+    _delegated_task_times = []
+
+    @classmethod
+    def record_slo_metric(cls, metric_name: str, value: float):
+        if metric_name == "mttd":
+            cls._total_diagnose_time += value
+            cls._diagnose_count += 1
+        elif metric_name == "manual_retry":
+            cls._manual_retry_count += 1
+        elif metric_name == "delegated_task_latency":
+            cls._delegated_task_times.append(value)
+            if len(cls._delegated_task_times) > 100:
+                cls._delegated_task_times.pop(0)
+
+    @classmethod
+    def get_slo_metrics(cls) -> Dict[str, Any]:
+        mttd = cls._total_diagnose_time / cls._diagnose_count if cls._diagnose_count > 0 else 0
+        avg_latency = sum(cls._delegated_task_times) / len(cls._delegated_task_times) if cls._delegated_task_times else 0
+
+        return {
+            "mttd_seconds": round(mttd, 2),
+            "manual_retries": cls._manual_retry_count,
+            "avg_delegated_latency_seconds": round(avg_latency, 2),
+            "total_diagnostics_run": cls._diagnose_count
+        }
+
     @classmethod
     def get_usage(cls) -> Dict[str, Any]:
         """Returns current usage statistics."""
@@ -55,7 +85,8 @@ class TokenUsageTracker:
             "total_input_tokens": cls._total_input_tokens,
             "total_output_tokens": cls._total_output_tokens,
             "total_tokens": cls._total_input_tokens + cls._total_output_tokens,
-            "estimated_cost": cls._estimate_cost()
+            "estimated_cost": cls._estimate_cost(),
+            "slo": cls.get_slo_metrics()
         }
 
     @classmethod
