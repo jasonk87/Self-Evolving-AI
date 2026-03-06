@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 try:
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
-    from ai_assistant.config import get_model_for_task
+    from ai_assistant.config import get_model_for_task, DEFAULT_MODEL
 except ImportError: # pragma: no cover
     print("Warning: Could not import OllamaProvider or get_model_for_task from standard paths. Using placeholder for direct script execution if applicable.")
     OllamaProvider = type('OllamaProvider', (object,), {})
@@ -228,10 +228,10 @@ async def rephrase_error_message_conversationally(
             model_name or
             get_model_for_task("error_rephrasing") or
             get_model_for_task("conversational_response") or
-            "mistral"
+            DEFAULT_MODEL
         )
-        if target_model == "mistral":
-            logger.warning(f"No specific model for 'error_rephrasing' or 'conversational_response'. Using hardcoded default: {target_model}")
+        if target_model == DEFAULT_MODEL:
+            logger.warning(f"No specific model for 'error_rephrasing' or 'conversational_response'. Using system DEFAULT_MODEL: {target_model}")
 
         logger.info(f"Rephrasing error with model {target_model}. Original error: {technical_error_message[:100]}...")
 

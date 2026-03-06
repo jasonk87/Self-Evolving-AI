@@ -250,10 +250,14 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
         self.assertEqual(self.captured_model_name, "conversational_model")
 
-        # Third call, "error_rephrasing" & "conversational_response" not found, should use hardcoded "mistral"
+        # Third call, "error_rephrasing" & "conversational_response" not found, should use fallback DEFAULT_MODEL
         self.mock_get_model_for_task.side_effect = [None, None] # Reset side_effect
+
+        # We need to import DEFAULT_MODEL here to accurately check against the current config instead of a hardcoded string
+        from ai_assistant.config import DEFAULT_MODEL
+
         await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
-        self.assertEqual(self.captured_model_name, "mistral") # Default hardcoded in the function
+        self.assertEqual(self.captured_model_name, DEFAULT_MODEL) # Default global fallback in the function
 
 
 if __name__ == '__main__': # pragma: no cover
