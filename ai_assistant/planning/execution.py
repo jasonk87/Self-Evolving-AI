@@ -174,7 +174,9 @@ class ExecutionAgent:
             for i, step in enumerate(current_plan):
                 # If 'depends_on' is absent, we assume it depends on the previous step implicitly (sequential)
                 deps = step.get("depends_on")
-                if deps is None or len(deps) > 0 or ("args" in step and "$step" in str(step["args"])):
+                has_implicit_deps = ("args" in step and "$step" in str(step["args"])) or ("kwargs" in step and "$step" in str(step["kwargs"]))
+
+                if deps is None or len(deps) > 0 or has_implicit_deps:
                     # Must be sequential or dependent
                     if current_group:
                         step_groups.append(current_group)
@@ -187,6 +189,7 @@ class ExecutionAgent:
             if current_group:
                 step_groups.append(current_group)
 
+            step_failed = False
             for group in step_groups:
                 if len(group) == 1:
                     # Execute sequentially
@@ -224,10 +227,16 @@ class ExecutionAgent:
                     group_failed = False
                     for (step_idx, step_data), r in zip(group, results):
                         if isinstance(r, Exception):
-                            # Should not happen as exceptions are caught inside execute_single_step
+                            # Usually means failure to resolve kwargs before asyncio gather inside the task setup
                             plan_results.append(r)
                             plan_step_notes.append("Concurrent execution error.")
-                            group_failed = True
+                            if not group_failed:
+                                step_failed = True
+                                current_step_error_details = {'error_type': type(r).__name__, 'error_message': str(r), 'traceback_snippet': None}
+                                tool_name = step_data.get("tool_name")
+                                step_attempt_note = "Concurrent execution error."
+                                i = step_idx
+                                group_failed = True
                         else:
                             res, note, err_det, failed, paused = r
                             plan_results.append(res)
@@ -263,7 +272,7 @@ class ExecutionAgent:
                     # Log this specific plan attempt's failure before trying to re-plan
                     reflection_entry_obj_fail = global_reflection_log.log_execution(
                         goal_description=goal_description,
-                        plan=current_plan, # Log the plan that just failed
+                        plan=current_plan[:len(plan_results)], # Log the plan segment that just failed up to results size
                         execution_results=plan_results,
                         overall_success=False, # This specific plan attempt failed
                         notes=f"Plan attempt {replan_attempts + 1} failed at step {i+1} ({tool_name}). {step_attempt_note}",
