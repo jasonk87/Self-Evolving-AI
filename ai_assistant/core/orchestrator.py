@@ -193,9 +193,12 @@ class DynamicOrchestrator:
         self,
         tool_name: str,
         error: Exception,
-        threshold: int = 3,
+        threshold: Optional[int] = None,
+        context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
+        if threshold is None:
+            threshold = config.QUARANTINE_FAILURE_THRESHOLD
         signature = self._build_tool_failure_signature(tool_name, error)
         count = self.failure_counts.get(signature, 0) + 1
         self.failure_counts[signature] = count
@@ -210,7 +213,8 @@ class DynamicOrchestrator:
                     "signature": signature,
                     "count": count,
                     "reason": reason_str,
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "context_data": context_data or {}
                 }
                 self._save_quarantine_state()
                 EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
@@ -619,7 +623,13 @@ Instructions:
                                 execution_success = True
                                 break
                             except Exception as e:
-                                failure_meta = self._register_tool_failure(tool_name, e)
+                                context_data = {
+                                    "goal": prompt,
+                                    "args": args,
+                                    "kwargs": kwargs,
+                                    "execution_history_excerpt": execution_history[-1000:] if execution_history else ""
+                                }
+                                failure_meta = self._register_tool_failure(tool_name, e, context_data=context_data)
                                 if failure_meta.get("activated"):
                                     result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
                                     print(color_text(f"⛔ {result_str}", CLIColors.WARNING))

@@ -97,8 +97,11 @@ Then, construct a JSON object for the 'details' field, specific to that type.
 Respond ONLY with a single JSON object representing the step, structured as follows:
 {{
   "type": "<chosen_type>",
+  "depends_on": [],
   "details": {{ ... type-specific_fields ... }}
 }}
+
+Important: The "depends_on" field is an optional list of string keywords or filenames that this task implicitly depends on from previous tasks. Leave it empty `[]` if this task can be run completely independently or in parallel with others. For example, if it requires `app.py` to be generated first, add `["app.py"]`.
 
 Do NOT include any other text, explanations, or markdown formatting.
 Ensure the output is a valid JSON object.
@@ -106,6 +109,7 @@ Ensure the output is a valid JSON object.
 Example for detailed_task 'Define data structure for snake (list of coordinates)':
 {{
   "type": "python_script",
+  "depends_on": [],
   "details": {{
     "script_content_prompt": "Write Python code to define a class or data structure representing the snake. The snake should be represented as a list of (x, y) coordinate tuples. Include initialization for a starting position and length.",
     "input_files": [],
@@ -454,7 +458,8 @@ class HierarchicalPlanner:
                     "description": detailed_task_description, # Use the detailed task as the description
                     "type": elaborated_step_dict["type"],
                     "details": elaborated_step_dict["details"],
-                    "outline_group": outline_item # Link back to the high-level outline item
+                    "outline_group": outline_item, # Link back to the high-level outline item
+                    "depends_on": elaborated_step_dict.get("depends_on", [])
                 }
                 full_plan.append(project_plan_step)
                 print(f"[HP]   Successfully elaborated step {project_plan_step['step_id']} of type '{project_plan_step['type']}'.")
