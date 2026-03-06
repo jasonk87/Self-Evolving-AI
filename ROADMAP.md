@@ -28,6 +28,18 @@ This document outlines planned enhancements, optimizations, and future capabilit
 ~~In `hierarchical_planner.py`, a `depends_on` field is currently generated for tasks, advising the LLM to output filenames like `["app.py"]`.~~
 * ~~**The Fix:** Instruct the LLM in `LLM_HP_STEP_ELABORATION_PROMPT_TEMPLATE` to use the actual `step_id` (e.g., `["1.1", "1.2"]`) for the `depends_on` field. Once the planner returns the JSON, use a library like `networkx` or a simple topological sort to execute tasks completely concurrently via `asyncio.gather` for tasks that share no dependencies, massively speeding up the time it takes the AI to scaffold a project.~~
 
+## 7. ~~Lock Down Desktop Scope Guardrails~~ (Completed)
+~~Implemented provenance metadata tracking in `ActionExecutor` and enforced strict Workspace isolation by passing allowlisted workspace roots down through tools like `file_system_tools.py`, verifying that changes don't escape designated environments.~~
+
+## 8. ~~Spin Up Persistent, User-Scoped Agents~~ (Completed)
+~~Updated `agent_manager.py` to support persistent agents vs ephemeral, bypassing cleanup logic if the scope is `user` and saving explicit scope state via `metadata.json`.~~
+
+## 9. ~~Operationalize Dynamic Specialists (Phase R3)~~ (Completed)
+~~Added `create_dynamic_specialist` to dynamically write python components representing distinct skills into `ai_assistant/custom_tools/`. Gated creation by mandating parameters for retirement policies and rollback instructions, which log heavily to an auditing file.~~
+
+## 10. ~~Wire Up Production SLO Dashboarding~~ (Completed)
+~~Instrumented SLO tracking into `telemetry.py` focusing on metrics like MTTD, manual retries, and task latencies. Wired this data directly into a visual frontend component embedded in Mission Control.~~
+
 ---
 
-*(Previously completed items (Quarantine State, Token Governance, Desktop Scope Guardrails, Visual Audits, etc.) have been removed from this roadmap as they are successfully implemented and deployed in the main branch).*
+*(Previously completed items (Quarantine State, Token Governance, Visual Audits, etc.) have been removed from this roadmap as they are successfully implemented and deployed in the main branch).*

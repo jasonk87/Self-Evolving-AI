@@ -78,9 +78,32 @@ def _enforce_sandbox_policy(filepath: str) -> Optional[str]:
     # The application root (Self-Evolving-Agent)
     app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-    # Append os.sep to ensure we only match the actual directory, not a prefix string (e.g. app_root_malicious)
-    if not abs_target.startswith(app_root + os.sep) and abs_target != app_root:
+    # Explicit allowlisted workspace roots (Data directories, Agent temp dirs, Generated projects)
+    # We restrict scope not just to the root, but to specific sub-directories inside the root where generated logic belongs.
+    from ai_assistant.config import get_data_dir
+    data_dir = get_data_dir()
+    projects_dir = os.path.abspath(os.path.join(app_root, "ai_assistant", "ai_generated_projects"))
+
+    allowlisted_roots = [
+        os.path.abspath(data_dir),
+        projects_dir,
+        os.path.abspath(os.path.join(app_root, "ai_assistant", "custom_tools")), # For dynamic tools
+        os.path.abspath(os.path.join(app_root, "workspaces"))
+    ]
+
+    is_allowed = False
+    for root in allowlisted_roots:
+        if abs_target.startswith(root + os.sep) or abs_target == root:
+            is_allowed = True
+            break
+
+    # As a fallback safety if it didn't match the specific scopes, but matched the app_root it's still rejected
+    # Unless it's explicitly a core config file the system might need to read (but not write, though writes will be blocked by specific allowlist)
+    if not is_allowed and (not abs_target.startswith(app_root + os.sep) and abs_target != app_root):
          return f"Policy Violation: Access blocked. The path '{filepath}' is outside the authorized sandbox ({app_root})."
+    elif not is_allowed:
+         return f"Policy Violation: Access blocked. The path '{filepath}' is within the application directory but not inside an explicitly allowlisted workspace (e.g. data or generated projects)."
+
     return None
 
 def write_text_to_file(full_filepath: str, content: str) -> str:

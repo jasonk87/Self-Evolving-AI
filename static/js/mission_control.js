@@ -25,6 +25,7 @@ const missionControl = {
         this.fetchHealthAudit();
         this.fetchBackgroundCadence();
         this.fetchReflectionSuggestions();
+        this.fetchSLOMetrics();
         this.startStatusPolling();
 
         if (this.refreshBtn) {
@@ -34,6 +35,7 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             });
         }
 
@@ -49,6 +51,7 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             }
         });
 
@@ -60,6 +63,7 @@ const missionControl = {
                 this.fetchHealthAudit();
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
+                this.fetchSLOMetrics();
             });
         }
     },
@@ -109,6 +113,7 @@ const missionControl = {
             this.fetchHealthAudit();
             this.fetchBackgroundCadence();
             this.fetchReflectionSuggestions();
+            this.fetchSLOMetrics();
         }, this.statusPollIntervalMs);
 
         this.staleCheckTimer = setInterval(() => {
@@ -218,6 +223,32 @@ const missionControl = {
             `;
         } catch (e) {
             this.cadencePanel.innerHTML = `<div class="error">Cadence link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    fetchSLOMetrics: async function () {
+        const sloPanel = document.getElementById('mission-control-slo');
+        if (!sloPanel) return;
+
+        try {
+            const response = await fetch('/api/telemetry');
+            const data = await response.json();
+            if (data && data.slo) {
+                const slo = data.slo;
+                sloPanel.innerHTML = `
+                    <div class="mission-section">
+                        <h4 class="mission-heading">Production SLO Dashboard</h4>
+                        <div class="mission-kv-group">
+                            <span class="mission-kv-pill">MTTD (Mean Time To Diagnose): ${slo.mttd_seconds}s</span>
+                            <span class="mission-kv-pill">Manual Retries: ${slo.manual_retries}</span>
+                            <span class="mission-kv-pill">Avg Delegation Latency: ${slo.avg_delegated_latency_seconds}s</span>
+                            <span class="mission-kv-pill">Total Diagnostics Run: ${slo.total_diagnostics_run}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (e) {
+            console.error("Fetch SLO error:", e);
         }
     },
 
