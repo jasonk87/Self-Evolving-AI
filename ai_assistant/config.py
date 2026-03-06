@@ -148,6 +148,14 @@ AUTONOMOUS_LEARNING_ENABLED = True # MODIFIED FOR SCENARIO 5
 DAILY_TOKEN_BUDGET = 2_000_000
 # Limit for background autonomous burn rate (e.g., dream mode, architect) per cycle to prevent runaway usage.
 AUTONOMOUS_BURN_RATE_LIMIT = 50_000
+# Categorized budgets (USD limits per category)
+CATEGORY_BUDGETS: Dict[str, float] = {
+    "research": 1.0,
+    "dreaming": 0.5,
+    "coding": 2.0,
+    "chat": 2.0,
+    "other": 1.0
+}
 
 # Background Kill Switches
 ALLOW_DREAMER = True

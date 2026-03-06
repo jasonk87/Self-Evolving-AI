@@ -62,6 +62,7 @@ class ConfigManager:
             "TASK_PROFILES": config_module.TASK_PROFILES,
             "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
             "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000),
+            "CATEGORY_BUDGETS": getattr(config_module, 'CATEGORY_BUDGETS', {}),
             "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
             "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
             "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
@@ -154,6 +155,7 @@ class ConfigManager:
             "TASK_PROFILES": getattr(config_module, 'TASK_PROFILES', {}),
             "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
             "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000),
+            "CATEGORY_BUDGETS": getattr(config_module, 'CATEGORY_BUDGETS', {}),
             "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
             "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
             "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
@@ -230,6 +232,10 @@ class ConfigManager:
             "AUTONOMOUS_BURN_RATE_LIMIT": {
                 "type": "integer",
                 "description": "Maximum token spend allowed per background autonomous cycle.",
+            },
+            "CATEGORY_BUDGETS": {
+                "type": "object",
+                "description": "Per-category budgets for tokens.",
             },
             "ALLOW_DREAMER": {
                 "type": "boolean",

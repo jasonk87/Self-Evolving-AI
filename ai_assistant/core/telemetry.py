@@ -106,5 +106,51 @@ class TokenUsageTracker:
         output_cost = (cls._total_output_tokens / 1_000_000) * 0.30
         return round(input_cost + output_cost, 6)
 
+    @classmethod
+    def get_category_costs(cls) -> Dict[str, float]:
+        """Calculates estimated cost grouped by task category prefixes."""
+        costs = {}
+        for entry in cls._history:
+            task = entry.get("task", "unknown")
+            # Determine prefix, e.g. "ollama_async_cot_research" -> "research"
+            parts = task.split('_')
+            prefix = parts[-1] if parts else task
+
+            # For generic tasks, let's look at the first part, or some heuristics
+            if "research" in task: category = "research"
+            elif "dream" in task: category = "dreaming"
+            elif "chat" in task: category = "chat"
+            elif "coding" in task or "code" in task: category = "coding"
+            else: category = "other"
+
+            est_input = entry.get("input_tokens", 0)
+            est_output = entry.get("output_tokens", 0)
+            cost = ((est_input / 1_000_000) * 0.075) + ((est_output / 1_000_000) * 0.30)
+
+            costs[category] = costs.get(category, 0.0) + cost
+
+        return {k: round(v, 6) for k, v in costs.items()}
+
+    @classmethod
+    def check_hard_limit_exceeded(cls, daily_limit: int) -> bool:
+        """Checks if the daily limit is exceeded."""
+        return (cls._total_input_tokens + cls._total_output_tokens) > daily_limit
+
+    @classmethod
+    def check_category_limit_exceeded(cls, task: str, category_limits: Dict[str, float]) -> bool:
+        """Checks if the specific category limit in USD is exceeded."""
+        costs = cls.get_category_costs()
+
+        if "research" in task: category = "research"
+        elif "dream" in task: category = "dreaming"
+        elif "chat" in task: category = "chat"
+        elif "coding" in task or "code" in task: category = "coding"
+        else: category = "other"
+
+        limit = category_limits.get(category)
+        if limit is not None and costs.get(category, 0.0) > limit:
+            return True
+        return False
+
 # Global Instance
 telemetry_tracker = TokenUsageTracker()
