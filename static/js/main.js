@@ -529,12 +529,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             badge.style.alignItems = 'center';
                             badge.style.color = 'var(--text-secondary)';
                             badge.style.borderLeft = '1px solid var(--border-color)';
+                            badge.style.cursor = 'pointer';
+                            badge.addEventListener('click', () => {
+                                // Trigger token modal
+                                if (window.openTokenModal) {
+                                    window.openTokenModal();
+                                }
+                            });
                             toolbar.insertBefore(badge, toolbar.firstChild);
                         }
                     }
                     if (badge) {
                         badge.textContent = `⚡ $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
-                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens}`;
+                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens} (Click for Breakdown)`;
                     }
                 }
             })

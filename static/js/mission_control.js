@@ -37,6 +37,9 @@ const missionControl = {
             });
         }
 
+        // Initialize background kill switches
+        this.initBackgroundSwitches();
+
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.stopStatusPolling();
@@ -61,6 +64,36 @@ const missionControl = {
         }
     },
 
+
+    initBackgroundSwitches: async function() {
+        const d_switch = document.getElementById('switch-allow-dreamer');
+        const m_switch = document.getElementById('switch-allow-memory');
+        const a_switch = document.getElementById('switch-allow-autofix');
+
+        if (!d_switch || !m_switch || !a_switch) return;
+
+        try {
+            const res = await fetch('/api/system/config');
+            const config = await res.json();
+
+            d_switch.checked = config.ALLOW_DREAMER !== false;
+            m_switch.checked = config.ALLOW_MEMORY_LEARNING !== false;
+            a_switch.checked = config.ALLOW_AUTO_FIXING !== false;
+
+        } catch(e) { console.error("Could not init switches", e); }
+
+        const toggleConfig = async (key, val) => {
+            const fd = new FormData();
+            fd.append(key, val);
+            try {
+                await fetch('/api/system/config', { method: 'POST', body: fd });
+            } catch(e) { console.error("Toggle config error", e); }
+        };
+
+        d_switch.addEventListener('change', () => toggleConfig('ALLOW_DREAMER', d_switch.checked));
+        m_switch.addEventListener('change', () => toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked));
+        a_switch.addEventListener('change', () => toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked));
+    },
 
     isMissionControlActive: function () {
         const view = document.getElementById('view-mission-control');

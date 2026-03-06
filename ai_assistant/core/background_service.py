@@ -796,8 +796,10 @@ async def _background_loop_async():
         # The following tasks are "Heavy" and should pause if the user is active.
         user_is_idle = not is_user_active()
 
+        from ai_assistant.config import ALLOW_DREAMER, ALLOW_MEMORY_LEARNING, ALLOW_AUTO_FIXING
+
         # --- Visual Audit Task (Heavy) ---
-        if user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
+        if ALLOW_AUTO_FIXING and user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
             logger.info("BackgroundService: Running Visual Audit...")
             try:
                 if os.path.isdir(BASE_PROJECTS_DIR):
@@ -879,7 +881,7 @@ async def _background_loop_async():
             next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
 
         # --- Memory Maintenance Task (Idle Gated) ---
-        if user_is_idle and current_loop_time >= _last_memory_maintenance_time + _memory_maintenance_interval_seconds:
+        if ALLOW_MEMORY_LEARNING and user_is_idle and current_loop_time >= _last_memory_maintenance_time + _memory_maintenance_interval_seconds:
              try:
                 logger.info("BackgroundService: User is idle. Running Memory Maintenance Cycle...")
                 await memory_maintenance_service.run_maintenance_cycle()
@@ -1008,7 +1010,7 @@ async def _background_loop_async():
         # Check for explicit DREAM_MODE enable via config or env if needed
         ENABLE_DREAM_MODE = bool(getattr(runtime_config, "ENABLE_DREAM_MODE", False) or os.environ.get("ENABLE_DREAM_MODE", "False").lower() == "true")
 
-        if ENABLE_DREAM_MODE and user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
+        if ALLOW_DREAMER and ENABLE_DREAM_MODE and user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
             try:
                 # Lazy init Dreamer

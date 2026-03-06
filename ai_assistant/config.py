@@ -149,6 +149,11 @@ DAILY_TOKEN_BUDGET = 2_000_000
 # Limit for background autonomous burn rate (e.g., dream mode, architect) per cycle to prevent runaway usage.
 AUTONOMOUS_BURN_RATE_LIMIT = 50_000
 
+# Background Kill Switches
+ALLOW_DREAMER = True
+ALLOW_MEMORY_LEARNING = True
+ALLOW_AUTO_FIXING = True
+
 # --- Auto-Approval Configuration ---
 # Wait time (in seconds) before the AI auto-executes pending requests for Self-Evolving activities.
 # Default: 600 (10 minutes) - gives the user a short window, then the AI reviews and decides.
