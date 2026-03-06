@@ -166,6 +166,9 @@ class ExecutionAgent:
             step_failed = False
             global_pause_flag = False
             critical_error_idx = -1
+            current_step_error_details = {}
+            tool_name = ""
+            step_attempt_note = ""
 
             async def _run_dag_node(idx: int, step_data: Dict[str, Any]):
                 nonlocal step_failed, global_pause_flag, current_step_error_details, tool_name, step_attempt_note, critical_error_idx
