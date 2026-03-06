@@ -192,8 +192,86 @@ SCHEMA = {
             },
             "required": ["task_description"]
         }
+    },
+    "list_active_agents": {
+        "description": "Scans the temp_agents directory to return a list of currently active sub-agents and their metadata.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    "wake_agent": {
+        "description": "Wakes an existing persistent agent and assigns it a new task to handle autonomously.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The ID of the existing persistent agent."},
+                "new_task": {"type": "string", "description": "The new task description for the agent to execute."}
+            },
+            "required": ["agent_id", "new_task"]
+        }
     }
 }
+
+def list_active_agents() -> str:
+    """
+    Scans the temp_agents directory to find and list all active agent workspaces.
+    Returns their metadata configuration to help Weebo know its "Swarm Roster".
+    """
+    base_path = agent_manager.base_path
+    if not os.path.exists(base_path):
+        return "No active agents found. The temp_agents directory does not exist."
+
+    agents = []
+    try:
+        import json
+        for entry in os.listdir(base_path):
+            agent_path = os.path.join(base_path, entry)
+            if os.path.isdir(agent_path):
+                meta_file = os.path.join(agent_path, "metadata.json")
+                if os.path.exists(meta_file):
+                    try:
+                        with open(meta_file, 'r') as f:
+                            meta = json.load(f)
+                            agents.append(f"- ID: {entry} | Scope: {meta.get('scope_type', 'unknown')} | Purpose: {meta.get('purpose', 'unknown')}")
+                    except json.JSONDecodeError:
+                        agents.append(f"- ID: {entry} | Error reading metadata.")
+                else:
+                    # Legacy or missing metadata
+                    agents.append(f"- ID: {entry} | No metadata available.")
+
+        if not agents:
+            return "No active agents found in the roster."
+
+        return "Currently Active Agents:\n" + "\n".join(agents)
+    except Exception as e:
+        return f"Failed to list active agents: {e}"
+
+def wake_agent(agent_id: str, new_task: str) -> str:
+    """
+    Wakes up an existing persistent agent by creating a background goal routed directly to it.
+    """
+    workspace_path = agent_manager.get_workspace_path(agent_id)
+    if not os.path.exists(workspace_path):
+        return f"Error: Agent '{agent_id}' does not exist or has been terminated."
+
+    from ai_assistant.goals.goal_management import create_goal
+    import time
+
+    metadata = {
+        "type": "background_agent",
+        "routed_agent_id": agent_id,
+        "created_at": time.time()
+    }
+
+    goal_id = create_goal(
+        title=f"Routed Task for {agent_id}: {new_task[:30]}...",
+        description=new_task,
+        priority="high",
+        metadata=metadata
+    )
+
+    return f"Successfully woke agent '{agent_id}' and assigned the task. Goal ID: {goal_id}. It will run in the background."
 
 def spawn_background_agent(task_description: str, session_id: str = None) -> str:
     """

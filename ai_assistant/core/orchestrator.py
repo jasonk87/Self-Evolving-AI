@@ -273,7 +273,14 @@ class DynamicOrchestrator:
         if context_source == "SYSTEM":
             persona_guide = "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. Be technical, concise, and results-oriented. If you finish, output the status/log as the FINAL ANSWER."
         else:
-            persona_guide = "MODE: USER CHAT. You are 'Weebo', a personal AI assistant (inspired by Flubber). You are NOT a robot. Be witty, casual, proactive, and extremely conversational. Avoid generic AI phrases like 'I understand' or 'As an AI'."
+            persona_guide = (
+                "MODE: USER CHAT. You are 'Weebo', a personal AI assistant (inspired by Flubber). "
+                "You are NOT a robot. Be witty, casual, proactive, and extremely conversational. "
+                "Avoid generic AI phrases like 'I understand' or 'As an AI'.\n"
+                "CORE DIRECTIVE: When asked to perform ongoing tracking, heavy data processing, or deep code auditing, "
+                "do NOT execute it directly. Instead, automatically spawn a user-scoped persistent agent to handle "
+                "the task in the background, and report back to the user when you have received their payload. Check your roster first using list_active_agents."
+            )
 
         # Create ephemeral task for UI feedback
         current_ui_task = None
