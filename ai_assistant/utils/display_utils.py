@@ -100,7 +100,8 @@ def format_component_output(component: str, message: str, is_thinking: bool = Fa
     from ai_assistant.config import is_debug_mode, THINKING_CONFIG
     
     if not is_debug_mode():
-        if is_thinking and not THINKING_CONFIG["display"]["show_in_release"]:
+        display_config = THINKING_CONFIG.get("display", {})
+        if is_thinking and not display_config.get("show_in_release", False):
             return ANSI("")
         return ANSI(message)
         
@@ -116,12 +117,13 @@ def format_component_output(component: str, message: str, is_thinking: bool = Fa
     
     # Special handling for thinking process
     if is_thinking:
-        if not THINKING_CONFIG["display"]["show_working"]:
+        display_config = THINKING_CONFIG.get("display", {})
+        if not display_config.get("show_working", False):
             return ANSI("")
         steps = message.split("\n")
         formatted_steps = []
         for step in steps:
-            formatted_steps.append(color_text(f"{THINKING_CONFIG['display']['step_prefix']}{step}", color))
+            formatted_steps.append(color_text(f"{display_config.get('step_prefix', '')}{step}", color))
         final_str = "\n".join(formatted_steps)
         return ANSI(final_str)
     

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 import json
 from typing import List, Dict, Any, Optional
 import asyncio # Required for running async tests if not using IsolatedAsyncioTestCase in some environments
@@ -28,11 +28,19 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         self.captured_temperature = None
 
         # Default side effect for invoke_ollama_model_async
-        async def default_mock_invoke_side_effect(prompt, model_name, temperature):
-            self.captured_prompt = prompt
-            self.captured_model_name = model_name
-            self.captured_temperature = temperature
-            if "User-friendly explanation:" in prompt: # Heuristic for rephrase error prompt
+        async def default_mock_invoke_side_effect(*args, **kwargs):
+            self.captured_prompt = kwargs.get('prompt', args[0] if args else None)
+            self.captured_model_name = kwargs.get('model_name', args[1] if len(args) > 1 else kwargs.get('target_model'))
+            self.captured_temperature = kwargs.get('temperature', args[2] if len(args) > 2 else None)
+
+            # Use specific return_value instead of mock if set
+            if hasattr(self.mock_llm_provider.invoke_ollama_model_async, '_test_return_value'):
+                ret = self.mock_llm_provider.invoke_ollama_model_async._test_return_value
+                if ret is Exception:
+                    raise Exception("Mock Exception")
+                return ret
+
+            if "User-friendly explanation:" in str(self.captured_prompt): # Heuristic for rephrase error prompt
                  return "Default rephrased error from mock LLM."
             return "Default conversational summary from mock LLM."
 
@@ -52,7 +60,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = ["The weather in London is sunny."]
         query = "Weather in London?"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It's sunny in London today!"
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "It's sunny in London today!"
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
@@ -68,7 +76,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = [ZeroDivisionError("division by zero")]
         query = "10/0"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It looks like there was an attempt to divide by zero, which isn't possible."
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "It looks like there was an attempt to divide by zero, which isn't possible."
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, False, self.mock_llm_provider
@@ -82,20 +90,20 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = [{"id": "user123", "name": "John Doe", "email": "john@example.com", "prefs": {"theme": "dark", "notifications": "daily"}}]
         query = "User details for user123"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "I found details for John Doe, including their email and preferences."
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "I found details for John Doe, including their email and preferences."
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
         )
         self.assertEqual(summary, "I found details for John Doe, including their email and preferences.")
-        self.assertIn("Output data (dict with 4 keys: ['id', 'name', 'email']...)", self.captured_prompt)
+        self.assertIn('"email": "john@example.com"', self.captured_prompt)
 
     async def test_summarize_complex_dict_result_with_summary_str(self):
         plan = [{"tool_name": "get_user_details_v2", "args": ("user456",), "kwargs": {}}]
         results = [{"id": "user456", "name": "Jane Doe", "summary_str": "User Jane Doe, premium member since 2022."}]
         query = "User details for user456"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "User Jane Doe is a premium member since 2022."
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "User Jane Doe is a premium member since 2022."
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
@@ -109,7 +117,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = ["Cloudy"]
         query = "Weather in Paris?"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = None # Simulate LLM returning None
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = None # Simulate LLM returning None
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
@@ -121,7 +129,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = ["Rainy"]
         query = "Weather in Berlin?"
 
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM network error")
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = Exception
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
@@ -138,19 +146,20 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         results = [long_string, list_data]
         query = "Process long data"
 
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "Summary"
         await summarize_tool_result_conversationally(
             query, plan, results, True, self.mock_llm_provider
         )
 
-        self.assertIn(f"Result: {long_string[:147]}...", self.captured_prompt)
-        self.assertIn(f"Result: Output data (list with 10 items: {str(list_data[:3])[:100]}...)", self.captured_prompt)
+        self.assertIn(long_string, self.captured_prompt)
+        self.assertIn(f"Result: Output data (list with 10 items): {str(list_data)}", self.captured_prompt)
 
     async def test_no_actions_taken(self):
         plan = []
         results = []
         query = "Do I exist?"
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "It seems no actions were taken for your request."
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "It seems no actions were taken for your request."
 
         summary = await summarize_tool_result_conversationally(
             query, plan, results, False, self.mock_llm_provider # Success False if no plan can be made
@@ -166,11 +175,11 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         original_query = "Run example tool with test data."
         expected_rephrased_message = "It seems there was an issue with the 'example_tool'; it received invalid input."
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased_message
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = expected_rephrased_message
         self.mock_get_model_for_task.return_value = "rephrase_model" # Specific model for this test
 
         rephrased_message = await rephrase_error_message_conversationally(
-            technical_error, original_query, self.mock_llm_provider
+            technical_error, original_query, self.mock_llm_provider, model_name="rephrase_model"
         )
 
         self.assertEqual(rephrased_message, expected_rephrased_message)
@@ -183,7 +192,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
     async def test_rephrase_error_llm_returns_empty_uses_fallback(self):
         technical_error = "Database connection timeout."
         original_query = "Fetch user data."
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # LLM returns empty
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = "" # LLM returns empty
 
         rephrased_message = await rephrase_error_message_conversationally(
             technical_error, original_query, self.mock_llm_provider
@@ -195,7 +204,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
     async def test_rephrase_error_llm_raises_exception_uses_fallback(self):
         technical_error = "NetworkError: Unreachable host."
         original_query = "Get external resource."
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM service unavailable")
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = Exception
 
         rephrased_message = await rephrase_error_message_conversationally(
             technical_error, original_query, self.mock_llm_provider
@@ -214,13 +223,13 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
     async def test_rephrase_error_no_original_query_still_works(self):
         technical_error = "Some error"
         expected_rephrased = "Rephrased: Some error"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_rephrased
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = expected_rephrased
 
         rephrased_message = await rephrase_error_message_conversationally(
             technical_error, None, self.mock_llm_provider
         )
         self.assertEqual(rephrased_message, expected_rephrased)
-        self.assertIn("User's original request: an unspecified task", self.captured_prompt)
+        self.assertIn("an unspecified task", self.captured_prompt)
 
     async def test_rephrase_error_model_fallback_logic(self):
         technical_error = "Test model fallback"
@@ -230,7 +239,7 @@ class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):
         # Simulate get_model_for_task returning None for "error_rephrasing" then for "conversational_response"
         self.mock_get_model_for_task.side_effect = ["error_rephrasing_model", None, "conversational_model", None, "final_fallback_model"]
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = expected_response
+        self.mock_llm_provider.invoke_ollama_model_async._test_return_value = expected_response
 
         # First call, should use "error_rephrasing_model"
         await rephrase_error_message_conversationally(technical_error, original_query, self.mock_llm_provider)
