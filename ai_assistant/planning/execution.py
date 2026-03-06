@@ -74,229 +74,150 @@ class ExecutionAgent:
             plan_failed_critically = False
             should_continue_with_replan = False
 
-            async def execute_single_step(step_idx: int, step_data: Dict[str, Any]) -> Tuple[Any, str, Dict[str, Any], bool, bool]:
-                """Executes a single step. Returns (result, note, error_details, is_failed, is_paused)"""
-                tool_name = step_data.get("tool_name")
-                args = step_data.get("args", ())
-                kwargs = step_data.get("kwargs", {})
+            for i, step in enumerate(current_plan):
 
-                step_result = None
-                step_attempt_note = ""
-                current_step_error_details = {}
-                step_failed = False
-                step_paused = False
+                tool_name = step.get("tool_name")
+                args = step.get("args", ())
+                kwargs = step.get("kwargs", {})
+
+                step_result: Any = None
+                current_step_error_details: Dict[str, Any] = {}
+                step_attempt_note: str = ""
 
                 if not tool_name:
-                    err_msg = f"Step {step_idx+1} is missing 'tool_name'. Skipping."
+                    err_msg = f"Step {i+1} is missing 'tool_name'. Skipping."
                     print(f"ExecutionAgent: {err_msg}")
                     step_result = RuntimeError(err_msg)
                     current_step_error_details = {'error_type': type(step_result).__name__, 'error_message': err_msg, 'traceback_snippet': None}
                     step_attempt_note = "Skipped due to missing tool name."
-                    step_failed = True
-                    return step_result, step_attempt_note, current_step_error_details, step_failed, step_paused
+                else:
+                    if not isinstance(args, tuple): args = tuple(args) if isinstance(args, list) else (args,)
+                    if not isinstance(kwargs, dict): kwargs = {}
 
-                if not isinstance(args, tuple): args = tuple(args) if isinstance(args, list) else (args,)
-                if not isinstance(kwargs, dict): kwargs = {}
+                    processed_args = []
+                    for arg_val in args:
+                         processed_args.append(self._resolve_value_with_substitution(arg_val, plan_results, i+1, "arg"))
+                    final_args_for_tool = tuple(processed_args)
 
-                # Attempt to resolve arguments synchronously based on current plan_results state
-                # Note: If running concurrently, we assume steps don't depend on each other's immediate output
-                processed_args = []
-                for arg_val in args:
-                    processed_args.append(self._resolve_value_with_substitution(arg_val, plan_results, step_idx+1, "arg"))
-                final_args_for_tool = tuple(processed_args)
+                    processed_kwargs = {}
+                    for kw_key, kw_val in kwargs.items():
+                        processed_kwargs[kw_key] = self._resolve_value_with_substitution(kw_val, plan_results, i+1, f"kwarg '{kw_key}'")
+                    final_kwargs_for_tool = processed_kwargs
 
-                processed_kwargs = {}
-                for kw_key, kw_val in kwargs.items():
-                    processed_kwargs[kw_key] = self._resolve_value_with_substitution(kw_val, plan_results, step_idx+1, f"kwarg '{kw_key}'")
-                final_kwargs_for_tool = processed_kwargs
+                    # VALIDATION CHECK: Fail fast if "TODO_infer_arg_value" is present
+                    # This triggers the re-planning loop by raising an exception that is caught below.
+                    if any("TODO_infer_arg_value" in str(arg) for arg in final_args_for_tool) or \
+                       any("TODO_infer_arg_value" in str(val) for val in final_kwargs_for_tool.values()):
+                        reason = "Planner failed to infer argument value (placeholder 'TODO_infer_arg_value' found)."
+                        print(f"ExecutionAgent: {reason} Raising error to trigger re-planning.")
+                        raise RuntimeError(f"{reason} Execution halted to trigger re-planning.")
 
-                if any("TODO_infer_arg_value" in str(arg) for arg in final_args_for_tool) or \
-                   any("TODO_infer_arg_value" in str(val) for val in final_kwargs_for_tool.values()):
-                    reason = "Planner failed to infer argument value (placeholder 'TODO_infer_arg_value' found)."
-                    print(f"ExecutionAgent: {reason} Raising error to trigger re-planning.")
-                    step_failed = True
-                    step_result = RuntimeError(f"{reason} Execution halted to trigger re-planning.")
-                    current_step_error_details = {'error_type': 'RuntimeError', 'error_message': reason, 'traceback_snippet': None}
-                    return step_result, step_attempt_note, current_step_error_details, step_failed, step_paused
 
-                for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
-                    try:
-                        print(f"ExecutionAgent: Executing step {step_idx+1}/{len(current_plan)} - Tool: {tool_name} (Args: {final_args_for_tool}, Kwargs: {final_kwargs_for_tool}), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")
-                        step_result = await tool_system.execute_tool(
-                            tool_name,
-                            args=final_args_for_tool,
-                            kwargs=final_kwargs_for_tool,
-                            task_manager=task_manager,
-                            notification_manager=notification_manager,
-                            action_executor=action_executor
-                        )
-                        current_step_error_details = {}
-                        if attempt > 0:
-                            step_attempt_note = f"Succeeded on retry (attempt {attempt+1})."
-                        print(f"ExecutionAgent: Step {step_idx+1} completed. Result: {str(step_result)[:200] + '...' if len(str(step_result)) > 200 else step_result}")
-                        break
-                    except Exception as e:
-                        step_result = e
-                        tb_snippet = traceback.format_exc(limit=3)
-                        current_step_error_details = {'error_type': type(e).__name__, 'error_message': str(e), 'traceback_snippet': tb_snippet}
 
-                        if attempt < self.MAX_RETRIES_PER_STEP:
-                            print(f"ExecutionAgent: Tool '{tool_name}' failed (Attempt {attempt+1}). Error: {str(e)}. Retrying...")
-                        else:
-                            step_attempt_note = f"Failed after {self.MAX_RETRIES_PER_STEP + 1} attempt(s). Last error: {str(e)}"
-                            print(f"ExecutionAgent: Tool '{tool_name}' also failed on last retry (Attempt {attempt+1}). Error: {str(e)}")
+                    for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
+                        try:
+                            print(f"ExecutionAgent: Executing step {i+1}/{len(current_plan)} - Tool: {tool_name} (Args: {final_args_for_tool}, Kwargs: {final_kwargs_for_tool}), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")
+                            step_result = await tool_system.execute_tool(
+                                tool_name,
+                                args=final_args_for_tool,
+                                kwargs=final_kwargs_for_tool,
+                                task_manager=task_manager,
+                                notification_manager=notification_manager, # Pass notification_manager
+                                action_executor=action_executor # Pass action_executor
+                            )
+                            current_step_error_details = {}
+                            if attempt > 0:
+                                step_attempt_note = f"Succeeded on retry (attempt {attempt+1})."
+                            print(f"ExecutionAgent: Step {i+1} completed. Result: {str(step_result)[:200] + '...' if len(str(step_result)) > 200 else step_result}")
+                            break
+                        except Exception as e:
+                            step_result = e
+                            tb_snippet = traceback.format_exc(limit=3)
+                            current_step_error_details = {'error_type': type(e).__name__, 'error_message': str(e), 'traceback_snippet': tb_snippet}
 
+                            if attempt < self.MAX_RETRIES_PER_STEP:
+                                print(f"ExecutionAgent: Tool '{tool_name}' failed (Attempt {attempt+1}). Error: {str(e)}. Retrying...")
+                            else:
+                                step_attempt_note = f"Failed after {self.MAX_RETRIES_PER_STEP + 1} attempt(s). Last error: {str(e)}"
+                                print(f"ExecutionAgent: Tool '{tool_name}' also failed on last retry (Attempt {attempt+1}). Error: {str(e)}")
+
+                plan_results.append(step_result)
+                plan_step_notes.append(step_attempt_note)
+                # plan_step_errors_details.append(current_step_error_details) # For detailed step-by-step logging if needed
+
+                # Check for failure: either an exception or a dictionary indicating failure
+                step_failed = False
                 if isinstance(step_result, Exception):
                     step_failed = True
                 elif isinstance(step_result, dict):
+                    # Check for "PAUSED" status first
                     if step_result.get("status") == "PAUSED":
-                        step_paused = True
-                    elif step_result.get("ran_successfully") is False or step_result.get("error") is not None:
+                        print(f"ExecutionAgent: PAUSED signal received from tool '{tool_name}'. Stopping execution of subsequent steps.")
+                        # Log the pause
+                        global_reflection_log.log_execution(
+                            goal_description=goal_description,
+                            plan=current_plan[:i+1], # Log up to current step
+                            execution_results=plan_results,
+                            overall_success=True, # Considered success as it was an intentional pause
+                            notes=f"Plan execution paused at step {i+1} ({tool_name}). Reason: {step_result.get('message', 'No reason provided')}",
+                            status_override="PAUSED"
+                        )
+                        return current_plan[:i+1], plan_results # Return partial plan and results
+
+                    # Check for common failure indicators in dictionary results
+                    if step_result.get("ran_successfully") is False or step_result.get("error") is not None:
                         step_failed = True
+                        # Populate current_step_error_details if it's a dict-reported error and not already set by an exception
                         if not current_step_error_details:
                             current_step_error_details = {'error_type': 'ToolReportedError', 'error_message': step_result.get("error", str(step_result.get("stderr","Unknown tool error"))), 'traceback_snippet': None}
 
-                return step_result, step_attempt_note, current_step_error_details, step_failed, step_paused
+                if step_failed:
+                    if first_critical_error_details["error_type"] is None: # Capture first critical error of this plan attempt
+                        first_critical_error_details = current_step_error_details
 
-            # Analyze plan dependencies to group concurrent steps safely
-            def _has_dependency(step_data: Dict[str, Any]) -> bool:
-                """Checks if a step depends on previous step outputs using $stepX syntax."""
-                args = step_data.get("args", ())
-                kwargs = step_data.get("kwargs", {})
-                arg_str = str(args) + str(kwargs)
-                return "$step" in arg_str
+                    # Log this specific plan attempt's failure before trying to re-plan
+                    reflection_entry_obj_fail = global_reflection_log.log_execution(
+                        goal_description=goal_description,
+                        plan=current_plan, # Log the plan that just failed
+                        execution_results=plan_results,
+                        overall_success=False, # This specific plan attempt failed
+                        notes=f"Plan attempt {replan_attempts + 1} failed at step {i+1} ({tool_name}). {step_attempt_note}",
+                        first_error_type=first_critical_error_details["error_type"],
+                        first_error_message=first_critical_error_details["error_message"],
+                        first_traceback_snippet=first_critical_error_details["traceback_snippet"]
+                    )
+                    if learning_agent:
+                        await learning_agent.process_reflection_entry(reflection_entry_obj_fail)
+                    plan_failed_critically = True # Mark that this plan attempt had a critical failure
 
-            step_groups = []
-            current_group = []
+                    if replan_attempts < self.MAX_REPLAN_ATTEMPTS:
+                        print(f"ExecutionAgent: Critical failure in plan attempt {replan_attempts + 1}. Attempting to analyze failure and re-plan...")
+                        tool_registry = tool_system.list_tools()
+                        failure_analysis = analyze_last_failure(tool_registry, ollama_model_name=ollama_model_name)
 
-            for i, step in enumerate(current_plan):
-                if _has_dependency(step):
-                    if current_group:
-                        step_groups.append(current_group)
-                        current_group = []
-                    step_groups.append([(i, step)]) # Dependent step must run alone
-                else:
-                    current_group.append((i, step))
-
-            if current_group:
-                step_groups.append(current_group)
-
-            for group in step_groups:
-                if len(group) == 1:
-                    # Execute sequentially
-                    step_idx, step_data = group[0]
-                    res, note, err_det, failed, paused = await execute_single_step(step_idx, step_data)
-                    plan_results.append(res)
-                    plan_step_notes.append(note)
-
-                    if paused:
-                        print(f"ExecutionAgent: PAUSED signal received from tool '{step_data.get('tool_name')}'. Stopping execution.")
-                        global_reflection_log.log_execution(
-                            goal_description=goal_description,
-                            plan=current_plan[:len(plan_results)],
-                            execution_results=plan_results,
-                            overall_success=True,
-                            notes=f"Plan execution paused at step {step_idx+1}. Reason: {res.get('message', 'No reason')}",
-                            status_override="PAUSED"
-                        )
-                        return current_plan[:len(plan_results)], plan_results
-
-                    if failed:
-                        step_failed = True
-                        current_step_error_details = err_det
-                        tool_name = step_data.get("tool_name")
-                        step_attempt_note = note
-                        i = step_idx
-                        break # Break outer loop on failure
-
-                else:
-                    # Execute concurrently
-                    print(f"ExecutionAgent: Executing {len(group)} independent steps concurrently: {[g[0]+1 for g in group]}")
-                    coroutines = [execute_single_step(idx, data) for idx, data in group]
-                    results = await asyncio.gather(*coroutines, return_exceptions=True)
-
-                    group_failed = False
-                    for (step_idx, step_data), r in zip(group, results):
-                        if isinstance(r, Exception):
-                            # Should not happen as exceptions are caught inside execute_single_step
-                            plan_results.append(r)
-                            plan_step_notes.append("Concurrent execution error.")
-                            group_failed = True
+                        if failure_analysis and failure_analysis.strip():
+                            print(f"ExecutionAgent: Failure analysis obtained:\n{failure_analysis}")
+                            new_plan = await planner_agent.replan_after_failure(
+                                original_goal=goal_description,
+                                failure_analysis=failure_analysis,
+                                available_tools=tool_registry,
+                                ollama_model_name=ollama_model_name
+                            )
+                            if new_plan:
+                                print(f"ExecutionAgent: Successfully re-planned. New plan has {len(new_plan)} steps. Resetting and retrying.")
+                                current_plan = new_plan
+                                replan_attempts += 1
+                                should_continue_with_replan = True
+                                break
+                            else:
+                                print("ExecutionAgent: Re-planning attempt failed to produce a new plan. Proceeding with original failure.")
+                                # Fall through to normal failure handling outside the step loop as plan_failed_critically is True
                         else:
-                            res, note, err_det, failed, paused = r
-                            plan_results.append(res)
-                            plan_step_notes.append(note)
-
-                            if paused:
-                                print(f"ExecutionAgent: PAUSED signal received concurrently. Stopping execution.")
-                                global_reflection_log.log_execution(
-                                    goal_description=goal_description,
-                                    plan=current_plan[:len(plan_results)],
-                                    execution_results=plan_results,
-                                    overall_success=True,
-                                    notes=f"Plan execution paused at step {step_idx+1}. Reason: {res.get('message', 'No reason')}",
-                                    status_override="PAUSED"
-                                )
-                                return current_plan[:len(plan_results)], plan_results
-
-                            if failed and not group_failed: # Capture first failure for logging
-                                step_failed = True
-                                current_step_error_details = err_det
-                                tool_name = step_data.get("tool_name")
-                                step_attempt_note = note
-                                i = step_idx
-                                group_failed = True
-
-                    if group_failed:
-                        break # Break outer loop on any concurrent failure
-
-            if step_failed:
-                if first_critical_error_details["error_type"] is None: # Capture first critical error of this plan attempt
-                    first_critical_error_details = current_step_error_details
-
-                # Log this specific plan attempt's failure before trying to re-plan
-                reflection_entry_obj_fail = global_reflection_log.log_execution(
-                    goal_description=goal_description,
-                    plan=current_plan, # Log the plan that just failed
-                    execution_results=plan_results,
-                    overall_success=False, # This specific plan attempt failed
-                    notes=f"Plan attempt {replan_attempts + 1} failed at step {i+1} ({tool_name}). {step_attempt_note}",
-                    first_error_type=first_critical_error_details["error_type"],
-                    first_error_message=first_critical_error_details["error_message"],
-                    first_traceback_snippet=first_critical_error_details["traceback_snippet"]
-                )
-                if learning_agent:
-                    await learning_agent.process_reflection_entry(reflection_entry_obj_fail)
-                plan_failed_critically = True # Mark that this plan attempt had a critical failure
-
-                if replan_attempts < self.MAX_REPLAN_ATTEMPTS:
-                    print(f"ExecutionAgent: Critical failure in plan attempt {replan_attempts + 1}. Attempting to analyze failure and re-plan...")
-                    tool_registry = tool_system.list_tools()
-                    failure_analysis = analyze_last_failure(tool_registry, ollama_model_name=ollama_model_name)
-
-                    if failure_analysis and failure_analysis.strip():
-                        print(f"ExecutionAgent: Failure analysis obtained:\n{failure_analysis}")
-                        new_plan = await planner_agent.replan_after_failure(
-                            original_goal=goal_description,
-                            failure_analysis=failure_analysis,
-                            available_tools=tool_registry,
-                            ollama_model_name=ollama_model_name
-                        )
-                        if new_plan:
-                            print(f"ExecutionAgent: Successfully re-planned. New plan has {len(new_plan)} steps. Resetting and retrying.")
-                            current_plan = new_plan
-                            replan_attempts += 1
-                            should_continue_with_replan = True
-                            break
-                        else:
-                            print("ExecutionAgent: Re-planning attempt failed to produce a new plan. Proceeding with original failure.")
-                            # Fall through to normal failure handling outside the step loop as plan_failed_critically is True
+                            print("ExecutionAgent: Failure analysis did not yield significant results. Proceeding with original failure.")
+                            # Fall through
                     else:
-                        print("ExecutionAgent: Failure analysis did not yield significant results. Proceeding with original failure.")
+                        print(f"ExecutionAgent: Maximum re-plan attempts ({self.MAX_REPLAN_ATTEMPTS}) reached. Plan execution failed.")
                         # Fall through
-                else:
-                    print(f"ExecutionAgent: Maximum re-plan attempts ({self.MAX_REPLAN_ATTEMPTS}) reached. Plan execution failed.")
-                    # Fall through
                     
                     break # Break from step loop (current plan execution stops due to critical error)
 
