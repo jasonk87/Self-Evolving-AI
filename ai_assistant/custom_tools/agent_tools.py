@@ -39,11 +39,16 @@ def run_agent_code(agent_id: str, filename: str, code: str, cmd_args: List[str]=
     Returns:
         dict: Contains 'stdout', 'stderr', and 'return_code'.
     """
-    workspace_path = agent_manager.get_workspace_path(agent_id)
+    workspace_path = os.path.abspath(agent_manager.get_workspace_path(agent_id))
     if not os.path.exists(workspace_path):
         return {'error': f'Workspace for agent {agent_id} does not exist.'}
-    file_path = os.path.join(workspace_path, filename)
+
+    file_path = os.path.abspath(os.path.join(workspace_path, filename))
+    if not file_path.startswith(workspace_path + os.sep) and file_path != workspace_path:
+        return {'error': f'Policy Violation: Agent attempted to write outside its designated workspace ({filename})'}
+
     try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(code)
     except IOError as e:

@@ -69,6 +69,20 @@ def create_project_directory(project_name: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while creating project directory '{full_path}': {e}"
 
+def _enforce_sandbox_policy(filepath: str) -> Optional[str]:
+    """
+    Ensures that file operations remain within the allowed repository workspace.
+    Returns None if allowed, or an error string if blocked.
+    """
+    abs_target = os.path.abspath(filepath)
+    # The application root (Self-Evolving-Agent)
+    app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+    # Append os.sep to ensure we only match the actual directory, not a prefix string (e.g. app_root_malicious)
+    if not abs_target.startswith(app_root + os.sep) and abs_target != app_root:
+         return f"Policy Violation: Access blocked. The path '{filepath}' is outside the authorized sandbox ({app_root})."
+    return None
+
 def write_text_to_file(full_filepath: str, content: str) -> str:
     """
     Writes the given text content to the specified file.
@@ -85,6 +99,11 @@ def write_text_to_file(full_filepath: str, content: str) -> str:
         return 'Error: Filepath must be a non-empty string.'
     if not isinstance(content, str):
         return 'Error: Content must be a string.'
+
+    sandbox_err = _enforce_sandbox_policy(full_filepath)
+    if sandbox_err:
+        return sandbox_err
+
     try:
         dir_path = os.path.dirname(full_filepath)
         if dir_path:
@@ -103,6 +122,11 @@ async def write_text_to_file_async(full_filepath: str, content: str) -> str:
         return 'Error: Filepath must be a non-empty string.'
     if not isinstance(content, str):
         return 'Error: Content must be a string.'
+
+    sandbox_err = _enforce_sandbox_policy(full_filepath)
+    if sandbox_err:
+        return sandbox_err
+
     try:
         dir_path = os.path.dirname(full_filepath)
         if dir_path:
@@ -127,6 +151,11 @@ def read_text_from_file(full_filepath: str) -> str:
     """
     if not full_filepath or not isinstance(full_filepath, str):
         return 'Error: Filepath must be a non-empty string.'
+
+    sandbox_err = _enforce_sandbox_policy(full_filepath)
+    if sandbox_err:
+        return sandbox_err
+
     if not os.path.exists(full_filepath):
         return f"Error: File '{full_filepath}' not found."
     if not os.path.isfile(full_filepath):
@@ -144,6 +173,11 @@ async def read_text_from_file_async(full_filepath: str) -> str:
     """Async version of read_text_from_file using aiofiles."""
     if not full_filepath or not isinstance(full_filepath, str):
         return 'Error: Filepath must be a non-empty string.'
+
+    sandbox_err = _enforce_sandbox_policy(full_filepath)
+    if sandbox_err:
+        return sandbox_err
+
     if not os.path.exists(full_filepath):
         return f"Error: File '{full_filepath}' not found."
     if not os.path.isfile(full_filepath):

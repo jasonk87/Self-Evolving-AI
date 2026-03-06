@@ -622,6 +622,24 @@ async def _background_loop_async():
             _last_agenda_briefing_date = current_date_str
             write_text_to_file(os.path.join(get_data_dir(), "last_agenda_briefing.txt"), current_date_str)
         
+        # Check global daily token budget from telemetry
+        try:
+            from ai_assistant.core.telemetry import telemetry_tracker
+            from ai_assistant.core.config_manager import ConfigManager
+
+            usage = telemetry_tracker.get_usage()
+            # Fetch from ConfigManager to ensure we get dynamic updates from the UI
+            cm = ConfigManager()
+            all_settings = cm.get_all_settings()
+            daily_limit = all_settings.get("DAILY_TOKEN_BUDGET", 2000000)
+
+            if usage.get("total_tokens", 0) > daily_limit:
+                logger.warning(f"BackgroundService: Daily Token Budget ({daily_limit}) exceeded! Pausing all autonomous loops.")
+                await asyncio.sleep(60)
+                continue
+        except Exception as e:
+            logger.error(f"BackgroundService: Failed to check token budget: {e}")
+
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
             current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S')
