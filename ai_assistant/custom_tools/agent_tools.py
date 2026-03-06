@@ -1,12 +1,8 @@
-from typing import List, Dict
+import os
+import sys
+import subprocess
 import time
-import os
-import subprocess
-import sys
-from typing import Dict
-import os
-import subprocess
-import sys
+import json
 from typing import List, Dict, Any, Optional
 from ai_assistant.core.agent_manager import AgentManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
@@ -107,7 +103,7 @@ def create_dynamic_specialist(name: str, description: str, logic_code: str, reti
          return "Error: Dynamic specialists MUST include an explicit retirement_policy and rollback_instructions."
 
     from ai_assistant.config import get_data_dir
-    import os
+
     app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     tool_dir = os.path.join(app_root, "ai_assistant", "custom_tools")
 
@@ -224,7 +220,6 @@ def list_active_agents() -> str:
 
     agents = []
     try:
-        import json
         for entry in os.listdir(base_path):
             agent_path = os.path.join(base_path, entry)
             if os.path.isdir(agent_path):
@@ -256,7 +251,6 @@ def wake_agent(agent_id: str, new_task: str) -> str:
         return f"Error: Agent '{agent_id}' does not exist or has been terminated."
 
     from ai_assistant.goals.goal_management import create_goal
-    import time
 
     metadata = {
         "type": "background_agent",
