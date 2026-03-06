@@ -102,7 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
             sidebarViews.forEach(v => {
                 if (v.id !== viewId) {
                     v.classList.remove('fade-active');
-                    setTimeout(() => v.classList.add('hidden'), 300); // Wait for fade out
+                    // Reduced timeout slightly to feel snappier
+                    setTimeout(() => v.classList.add('hidden'), 250);
                 }
             });
 
