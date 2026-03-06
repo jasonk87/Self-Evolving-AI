@@ -101,7 +101,7 @@ Respond ONLY with a single JSON object representing the step, structured as foll
   "details": {{ ... type-specific_fields ... }}
 }}
 
-Important: The "depends_on" field is an optional list of string keywords or filenames that this task implicitly depends on from previous tasks. Leave it empty `[]` if this task can be run completely independently or in parallel with others. For example, if it requires `app.py` to be generated first, add `["app.py"]`.
+Important: The "depends_on" field is an optional list of strictly formatted string step_ids (e.g., ["1.1", "2.1"]) that this task depends on. Leave it empty `[]` if this task can be run completely independently. This is used to build a Directed Acyclic Graph (DAG) for concurrent execution.
 
 Do NOT include any other text, explanations, or markdown formatting.
 Ensure the output is a valid JSON object.
@@ -147,24 +147,30 @@ class HierarchicalPlanner:
             llm_provider: An instance of an LLM provider (e.g., OllamaProvider).
         """
         self.llm_provider = llm_provider
+        self.memory_manager = None # Will be injected by Orchestrator
 
-    def _retrieve_relevant_facts(self, query: str) -> str:
+    async def _retrieve_relevant_facts(self, query: str) -> str:
         """
-        Retrieves relevant learned facts based on simple keyword matching.
+        Retrieves relevant learned facts using true RAG Semantic Search.
         Returns a formatted string of facts.
         """
         try:
+            if self.memory_manager and hasattr(self.memory_manager, 'rag_system'):
+                # Use real semantic search
+                results = await self.memory_manager.rag_system.retrieve_context(query, k=10)
+                if not results:
+                    return ""
+
+                formatted_facts = "Relevant Learned Facts (Context):\n"
+                for res in results:
+                    formatted_facts += f"- {res.get('text', '')}\n"
+                return formatted_facts
+
+            # Fallback to naive logic if RAG isn't wired up
             all_facts = load_learned_facts()
             if not all_facts:
                 return ""
 
-            # Simple keyword matching: if any word from the query (except stop words)
-            # is in the fact text, consider it relevant.
-            # Or simpler: just return all facts if the list is small (e.g. < 20).
-            # For now, let's return all facts but truncated if too many, to ensure context.
-            # In a real system, vector search would be better.
-
-            # Normalize query words
             query_words = set(re.findall(r'\w+', query.lower()))
             stop_words = {"a", "an", "the", "in", "on", "for", "with", "to", "of", "and", "is", "are"}
             query_keywords = query_words - stop_words
@@ -173,10 +179,9 @@ class HierarchicalPlanner:
             for fact in all_facts:
                 fact_text = fact.get("text", "") if isinstance(fact, dict) else str(fact)
                 fact_words = set(re.findall(r'\w+', fact_text.lower()))
-                # If overlap or if fact is about 'preference' or 'configuration'
                 if query_keywords & fact_words or "prefer" in fact_text.lower() or "always" in fact_text.lower():
                     relevant_facts.append(fact_text)
-                elif len(all_facts) < 10: # If few facts, include all just in case
+                elif len(all_facts) < 10:
                     if fact_text not in relevant_facts:
                         relevant_facts.append(fact_text)
 
@@ -184,12 +189,12 @@ class HierarchicalPlanner:
                 return ""
 
             formatted_facts = "Relevant Learned Facts (Context):\n"
-            for fact in relevant_facts[:10]: # Limit to top 10 relevant
+            for fact in relevant_facts[:10]:
                 formatted_facts += f"- {fact}\n"
             return formatted_facts
 
         except Exception as e:
-            print(f"HierarchicalPlanner: Error retrieving facts: {e}")
+            print(f"HierarchicalPlanner: Error retrieving facts via RAG: {e}")
             return ""
 
     async def generate_high_level_outline(self, user_goal: str, project_context: Optional[str] = None) -> List[str]:
@@ -208,7 +213,7 @@ class HierarchicalPlanner:
         if not user_goal:
             return []
 
-        learned_facts_section = self._retrieve_relevant_facts(user_goal)
+        learned_facts_section = await self._retrieve_relevant_facts(user_goal)
 
         prompt = LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE.format(
             user_goal=user_goal,
@@ -282,7 +287,7 @@ class HierarchicalPlanner:
         if project_context: # pragma: no cover
             project_context_section = f"\nExisting project context to consider:\n{project_context}"
 
-        learned_facts_section = self._retrieve_relevant_facts(f"{user_goal} {outline_item}")
+        learned_facts_section = await self._retrieve_relevant_facts(f"{user_goal} {outline_item}")
 
         prompt = LLM_HP_DETAILED_TASK_BREAKDOWN_PROMPT_TEMPLATE.format(
             user_goal=user_goal,
@@ -347,7 +352,7 @@ class HierarchicalPlanner:
         if project_context: # pragma: no cover
             project_context_section = f"\nExisting project context to consider:\n{project_context}"
 
-        learned_facts_section = self._retrieve_relevant_facts(f"{user_goal} {detailed_task}")
+        learned_facts_section = await self._retrieve_relevant_facts(f"{user_goal} {detailed_task}")
 
         prompt = LLM_HP_STEP_ELABORATION_PROMPT_TEMPLATE.format(
             user_goal=user_goal,

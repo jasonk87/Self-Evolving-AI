@@ -16,7 +16,7 @@
     --font-code: 'JetBrains Mono', 'Fira Code', monospace;
     --easing: cubic-bezier(0.34, 1.56, 0.64, 1);
     /* Bouncy, premium apple-like easing */
-    --easing-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+    --easing-smooth: cubic-bezier(0.25, 1, 0.5, 1);
     /* Smooth slide easing */
 }
 
@@ -88,29 +88,53 @@ body {
 .activity-item {
     width: 44px;
     height: 44px;
-    margin-bottom: 10px;
-    border-radius: 10px;
+    margin-bottom: 12px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     color: var(--text-secondary);
-    transition: all 0.3s var(--easing);
-    border-left: 3px solid transparent;
+    transition: background 0.3s var(--easing), color 0.3s var(--easing), transform 0.3s var(--easing), box-shadow 0.3s var(--easing);
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.activity-item::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    border-radius: inherit;
+    z-index: 0;
 }
 
 .activity-item:hover {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
-    transform: scale(1.05);
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.activity-item:hover::before {
+    opacity: 1;
 }
 
 .activity-item.active {
-    background: rgba(6, 182, 212, 0.15);
+    background: rgba(6, 182, 212, 0.12);
     color: var(--accent-cyan);
-    border-left-color: var(--accent-cyan);
-    box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
-    transform: scale(1.05);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    box-shadow: 0 4px 15px rgba(6, 182, 212, 0.25), inset 0 0 10px rgba(6, 182, 212, 0.1);
+    transform: translateY(-2px);
+}
+
+.activity-item .icon {
+    position: relative;
+    z-index: 1;
 }
 
 .activity-item .icon {
@@ -133,35 +157,34 @@ body {
     filter: drop-shadow(0 0 5px rgba(0, 240, 255, 0.5));
 }
 
-/* Sidebar Tooltips (CSS Only) */
-.activity-item {
-    position: relative;
-}
-
+/* Sidebar Tooltips (CSS Only) - Enhanced */
 .activity-item::after {
     content: attr(data-label);
     position: absolute;
     left: 100%;
     top: 50%;
-    transform: translateY(-50%);
-    background: rgba(13, 17, 23, 0.95);
+    transform: translate(-10px, -50%) scale(0.95);
+    background: rgba(18, 22, 29, 0.98);
     color: var(--text-primary);
-    padding: 5px 10px;
-    border-radius: 4px;
+    padding: 6px 12px;
+    border-radius: 6px;
     font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
     white-space: nowrap;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s, left 0.2s;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    margin-left: 10px;
+    transition: opacity 0.25s var(--easing-smooth), transform 0.25s var(--easing-smooth);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-left: 12px;
     z-index: 1000;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
 }
 
 .activity-item:hover::after {
     opacity: 1;
-    left: 90%;
+    transform: translate(0, -50%) scale(1);
 }
 
 
@@ -169,20 +192,21 @@ body {
 .sidebar-panel {
     grid-area: sidebar;
     width: 320px;
-    background: var(--glass-bg);
+    background: linear-gradient(180deg, rgba(14, 16, 22, 0.6) 0%, rgba(10, 12, 18, 0.8) 100%);
     border-right: var(--glass-border);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
     display: flex;
     flex-direction: column;
-    transition: width 0.4s var(--easing-smooth), transform 0.4s var(--easing-smooth);
+    transition: width 0.35s var(--easing-smooth), opacity 0.3s var(--easing-smooth), transform 0.35s var(--easing-smooth);
     flex-shrink: 0;
     overflow: hidden;
+    box-shadow: inset -10px 0 20px -10px rgba(0,0,0,0.3);
 }
 
 .sidebar-panel.collapsed {
     width: 0;
-    border-right: none;
+    border-right-color: transparent;
     opacity: 0;
 }
 
@@ -195,7 +219,8 @@ body {
     height: 100%;
     min-width: 320px;
     opacity: 0;
-    transition: opacity 0.3s var(--easing-smooth);
+    transform: translateX(-10px);
+    transition: opacity 0.3s var(--easing-smooth), transform 0.3s var(--easing-smooth);
 }
 
 .sidebar-view:not(.hidden) {
@@ -204,23 +229,25 @@ body {
 
 .sidebar-view.fade-active {
     opacity: 1;
+    transform: translateX(0);
 }
 
 .panel-header {
-    height: 50px;
-    padding: 0 15px;
-    border-bottom: var(--glass-border);
+    height: 56px;
+    padding: 0 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.15);
 }
 
 .panel-header h3 {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
     color: var(--text-secondary);
+    text-transform: uppercase;
 }
 
 .btn-icon {
@@ -679,25 +706,28 @@ body {
 }
 
 .tree-item {
-    padding: 6px 10px;
-    border-radius: 4px;
+    padding: 8px 12px;
+    border-radius: 6px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     color: var(--text-secondary);
-    transition: color 0.2s;
+    transition: all 0.2s ease;
+    margin-bottom: 2px;
+    font-size: 13px;
 }
 
 .tree-item:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
+    transform: translateX(2px);
 }
 
 .tree-item.active {
-    background: rgba(0, 240, 255, 0.15);
+    background: rgba(6, 182, 212, 0.1);
     color: var(--accent-cyan);
-    border-left: 2px solid var(--accent-cyan);
+    box-shadow: inset 3px 0 0 var(--accent-cyan);
 }
 
 .tree-item.project-root {
@@ -1290,21 +1320,27 @@ body {
 
 /* --- Custom Scrollbar --- */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: rgba(13, 17, 23, 0.5);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    transition: background 0.3s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .modal-overlay {

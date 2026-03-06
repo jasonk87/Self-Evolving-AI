@@ -143,6 +143,12 @@ FACT_CURATION_INTERVAL_SECONDS = 21600  # 6 hours
 # Enable or disable the AI's ability to autonomously learn facts from conversation.
 AUTONOMOUS_LEARNING_ENABLED = True # MODIFIED FOR SCENARIO 5
 
+# --- Token Governance ---
+# Maximum total tokens (input + output) allowed per 24 hours.
+DAILY_TOKEN_BUDGET = 2_000_000
+# Limit for background autonomous burn rate (e.g., dream mode, architect) per cycle to prevent runaway usage.
+AUTONOMOUS_BURN_RATE_LIMIT = 50_000
+
 # --- Auto-Approval Configuration ---
 # Wait time (in seconds) before the AI auto-executes pending requests for Self-Evolving activities.
 # Default: 600 (10 minutes) - gives the user a short window, then the AI reviews and decides.

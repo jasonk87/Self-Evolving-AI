@@ -531,6 +531,20 @@ async def _background_loop_async():
     # Initialize Memory Maintenance Service
     memory_maintenance_service = MemoryMaintenanceService()
 
+    # Pre-fetch modules to avoid repeated instantiation/imports inside the tight loop
+    from ai_assistant.core.config_manager import ConfigManager
+    cm = ConfigManager()
+
+    # Try getting telemetry_tracker just once, log warning and set flag if it fails
+    has_telemetry_tracker = False
+    telemetry_tracker_ref = None
+    try:
+        from ai_assistant.core.telemetry import telemetry_tracker
+        telemetry_tracker_ref = telemetry_tracker
+        has_telemetry_tracker = True
+    except ImportError:
+        logger.warning("BackgroundService: ai_assistant.core.telemetry not found. Token budget checks disabled.")
+
     while _background_service_active:
         current_loop_time = time.time()
 
@@ -622,6 +636,21 @@ async def _background_loop_async():
             _last_agenda_briefing_date = current_date_str
             write_text_to_file(os.path.join(get_data_dir(), "last_agenda_briefing.txt"), current_date_str)
         
+        # Check global daily token budget from telemetry
+        if has_telemetry_tracker and telemetry_tracker_ref:
+            try:
+                usage = telemetry_tracker_ref.get_usage()
+                # Fetch from pre-instantiated ConfigManager to ensure dynamic updates without loop instantiations
+                all_settings = cm.get_all_settings()
+                daily_limit = all_settings.get("DAILY_TOKEN_BUDGET", 2000000)
+
+                if usage.get("total_tokens", 0) > daily_limit:
+                    logger.warning(f"BackgroundService: Daily Token Budget ({daily_limit}) exceeded! Pausing all autonomous loops.")
+                    await asyncio.sleep(60)
+                    continue
+            except Exception as e:
+                logger.error(f"BackgroundService: Failed to check token budget: {e}")
+
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
             current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S')

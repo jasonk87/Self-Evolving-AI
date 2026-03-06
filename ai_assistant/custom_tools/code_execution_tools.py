@@ -244,6 +244,15 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
     if not command or not command.strip():
         return {'status': 'error', 'error_message': 'Command cannot be empty.', 'return_code': -1, 'stdout': '', 'stderr': ''}
         
+    # Enforce Sandbox for CWD
+    app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if cwd:
+        abs_cwd = os.path.abspath(cwd)
+        if not abs_cwd.startswith(app_root + os.sep) and abs_cwd != app_root:
+            return {'status': 'error', 'error_message': f'Policy Violation: Working directory {cwd} is outside the allowed sandbox.', 'return_code': -1, 'stdout': '', 'stderr': ''}
+    else:
+        cwd = app_root
+
     try:
         emit_system_event('tool_status', {'tool': 'TerminalExecution', 'message': f'Running: {command[:50]}...', 'status': 'RUNNING'})
         process_result = subprocess.run(

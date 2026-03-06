@@ -59,7 +59,9 @@ class ConfigManager:
             "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
             "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
             "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE,
-            "TASK_PROFILES": config_module.TASK_PROFILES
+            "TASK_PROFILES": config_module.TASK_PROFILES,
+            "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
+            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000)
         }
         self._write_json(data)
 
@@ -129,23 +131,26 @@ class ConfigManager:
 
     def get_all_settings(self):
         """Returns a dict of all managed settings."""
-        # Refresh from module to ensure sync
+        # Check module state but also incorporate dynamic values that might be added to module
+        # without explicitly declaring a property beforehand
         return {
-            "DEFAULT_EXECUTION_MODE": config_module.DEFAULT_EXECUTION_MODE,
-            "ENABLE_THINKING": config_module.ENABLE_THINKING,
-            "DEFAULT_MODEL": config_module.DEFAULT_MODEL,
-            "TASK_MODELS": config_module.TASK_MODELS,
-            "REASONING_STRATEGIES": config_module.REASONING_STRATEGIES,
-            "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
-            "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
-            "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
-            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
-            "GHOST_MODE": config_module.GHOST_MODE,
-            "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
-            "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
-            "DREAM_INTERVAL_SECONDS": config_module.DREAM_INTERVAL_SECONDS,
-            "ENABLE_DREAM_MODE": config_module.ENABLE_DREAM_MODE,
-            "TASK_PROFILES": config_module.TASK_PROFILES
+            "DEFAULT_EXECUTION_MODE": getattr(config_module, 'DEFAULT_EXECUTION_MODE', "AUTO"),
+            "ENABLE_THINKING": getattr(config_module, 'ENABLE_THINKING', True),
+            "DEFAULT_MODEL": getattr(config_module, 'DEFAULT_MODEL', "gemini-2.0-flash"),
+            "TASK_MODELS": getattr(config_module, 'TASK_MODELS', {}),
+            "REASONING_STRATEGIES": getattr(config_module, 'REASONING_STRATEGIES', {}),
+            "CONVERSATION_HISTORY_TURNS": getattr(config_module, 'CONVERSATION_HISTORY_TURNS', 5),
+            "AUTONOMOUS_LEARNING_ENABLED": getattr(config_module, 'AUTONOMOUS_LEARNING_ENABLED', True),
+            "AUTO_APPROVE_DELAY_SECONDS": getattr(config_module, 'AUTO_APPROVE_DELAY_SECONDS', 600),
+            "PARALLEL_THINKING_CONFIG": getattr(config_module, 'PARALLEL_THINKING_CONFIG', {}),
+            "GHOST_MODE": getattr(config_module, 'GHOST_MODE', False),
+            "AUTO_WEB_PIP": getattr(config_module, 'AUTO_WEB_PIP', True),
+            "REMINDER_CHECK_INTERVAL_SECONDS": getattr(config_module, 'REMINDER_CHECK_INTERVAL_SECONDS', 10),
+            "DREAM_INTERVAL_SECONDS": getattr(config_module, 'DREAM_INTERVAL_SECONDS', 86400),
+            "ENABLE_DREAM_MODE": getattr(config_module, 'ENABLE_DREAM_MODE', False),
+            "TASK_PROFILES": getattr(config_module, 'TASK_PROFILES', {}),
+            "DAILY_TOKEN_BUDGET": getattr(config_module, 'DAILY_TOKEN_BUDGET', 2000000),
+            "AUTONOMOUS_BURN_RATE_LIMIT": getattr(config_module, 'AUTONOMOUS_BURN_RATE_LIMIT', 50000)
         }
 
     def get_settings_schema(self):
@@ -211,6 +216,14 @@ class ConfigManager:
             "TASK_PROFILES": {
                 "type": "object",
                 "description": "Advanced task-based execution profiles and routing.",
+            },
+            "DAILY_TOKEN_BUDGET": {
+                "type": "integer",
+                "description": "Maximum total tokens allowed globally per day.",
+            },
+            "AUTONOMOUS_BURN_RATE_LIMIT": {
+                "type": "integer",
+                "description": "Maximum token spend allowed per background autonomous cycle.",
             },
         }
 
