@@ -157,113 +157,88 @@ class ExecutionAgent:
 
                 return step_result, step_attempt_note, current_step_error_details, step_failed, step_paused
 
-            # Analyze explicitly declared dependencies
-            def _get_dependencies(step_data: Dict[str, Any]) -> List[str]:
-                """Extracts explicit dependencies."""
-                deps = step_data.get("depends_on", [])
-                if isinstance(deps, str):
-                    deps = [deps]
-                return [str(d) for d in deps] if isinstance(deps, list) else []
-
-            # Determine parallel execution groupings
-            # Since dependencies might be implicit outside of 'depends_on', we default to sequential unless explicitly stated empty
-            # However, for backwards compatibility where depends_on doesn't exist, we must run sequentially.
-            step_groups = []
-            current_group = []
-
-            for i, step in enumerate(current_plan):
-                # If 'depends_on' is absent, we assume it depends on the previous step implicitly (sequential)
-                deps = step.get("depends_on")
-                has_implicit_deps = ("args" in step and "$step" in str(step["args"])) or ("kwargs" in step and "$step" in str(step["kwargs"]))
-
-                if deps is None or len(deps) > 0 or has_implicit_deps:
-                    # Must be sequential or dependent
-                    if current_group:
-                        step_groups.append(current_group)
-                        current_group = []
-                    step_groups.append([(i, step)])
-                else:
-                    # depends_on is explicitly [], meaning it can run in parallel with current group
-                    current_group.append((i, step))
-
-            if current_group:
-                step_groups.append(current_group)
+            # Build Directed Acyclic Graph (DAG) for execution
+            # Initialize results array to correct size
+            plan_results = [None] * len(current_plan)
+            plan_step_notes = [""] * len(current_plan)
+            step_events = {i: asyncio.Event() for i in range(len(current_plan))}
 
             step_failed = False
-            for group in step_groups:
-                if len(group) == 1:
-                    # Execute sequentially
-                    step_idx, step_data = group[0]
-                    res, note, err_det, failed, paused = await execute_single_step(step_idx, step_data)
-                    plan_results.append(res)
-                    plan_step_notes.append(note)
+            global_pause_flag = False
+            critical_error_idx = -1
 
-                    if paused:
-                        print(f"ExecutionAgent: PAUSED signal received from tool '{step_data.get('tool_name')}'. Stopping execution.")
-                        global_reflection_log.log_execution(
-                            goal_description=goal_description,
-                            plan=current_plan[:len(plan_results)],
-                            execution_results=plan_results,
-                            overall_success=True,
-                            notes=f"Plan execution paused at step {step_idx+1}. Reason: {res.get('message', 'No reason')}",
-                            status_override="PAUSED"
-                        )
-                        return current_plan[:len(plan_results)], plan_results
+            async def _run_dag_node(idx: int, step_data: Dict[str, Any]):
+                nonlocal step_failed, global_pause_flag, current_step_error_details, tool_name, step_attempt_note, critical_error_idx
 
-                    if failed:
+                # Wait for dependencies
+                deps = step_data.get("depends_on")
+                has_implicit_deps = ("args" in step_data and "$step" in str(step_data["args"])) or ("kwargs" in step_data and "$step" in str(step_data["kwargs"]))
+
+                dependencies_to_wait_for = []
+
+                if deps is None or has_implicit_deps:
+                    # Implicit sequential dependency: wait for the immediately preceding step
+                    if idx > 0:
+                        dependencies_to_wait_for.append(idx - 1)
+                elif isinstance(deps, list) and len(deps) > 0:
+                    # Explicit dependencies by step_id
+                    for dep_id in deps:
+                        # Find the index of the step with this step_id
+                        for j, p_step in enumerate(current_plan):
+                            if p_step.get("step_id") == dep_id:
+                                dependencies_to_wait_for.append(j)
+                                break
+
+                # Await dependencies
+                for dep_idx in dependencies_to_wait_for:
+                    await step_events[dep_idx].wait()
+
+                # If any previous step failed globally or paused, abort execution of this node
+                if step_failed or global_pause_flag:
+                    step_events[idx].set()
+                    return
+
+                res, note, err_det, failed, paused = await execute_single_step(idx, step_data)
+
+                plan_results[idx] = res
+                plan_step_notes[idx] = note
+
+                if paused:
+                    global_pause_flag = True
+                    print(f"ExecutionAgent: PAUSED signal received from tool '{step_data.get('tool_name')}'. Stopping execution.")
+                elif failed:
+                    # Only capture the FIRST failure that breaks the DAG
+                    if not step_failed:
                         step_failed = True
                         current_step_error_details = err_det
                         tool_name = step_data.get("tool_name")
                         step_attempt_note = note
-                        i = step_idx
-                        break # Break outer loop on failure
+                        critical_error_idx = idx
 
-                else:
-                    # Execute concurrently
-                    print(f"ExecutionAgent: Executing {len(group)} explicitly independent steps concurrently: {[g[0]+1 for g in group]}")
-                    coroutines = [execute_single_step(idx, data) for idx, data in group]
-                    results = await asyncio.gather(*coroutines, return_exceptions=True)
+                # Mark this node as complete so dependents can proceed
+                step_events[idx].set()
 
-                    group_failed = False
-                    for (step_idx, step_data), r in zip(group, results):
-                        if isinstance(r, Exception):
-                            # Usually means failure to resolve kwargs before asyncio gather inside the task setup
-                            plan_results.append(r)
-                            plan_step_notes.append("Concurrent execution error.")
-                            if not group_failed:
-                                step_failed = True
-                                current_step_error_details = {'error_type': type(r).__name__, 'error_message': str(r), 'traceback_snippet': None}
-                                tool_name = step_data.get("tool_name")
-                                step_attempt_note = "Concurrent execution error."
-                                i = step_idx
-                                group_failed = True
-                        else:
-                            res, note, err_det, failed, paused = r
-                            plan_results.append(res)
-                            plan_step_notes.append(note)
+            # Launch all nodes concurrently
+            tasks = [_run_dag_node(i, step) for i, step in enumerate(current_plan)]
+            await asyncio.gather(*tasks)
 
-                            if paused:
-                                print(f"ExecutionAgent: PAUSED signal received concurrently. Stopping execution.")
-                                global_reflection_log.log_execution(
-                                    goal_description=goal_description,
-                                    plan=current_plan[:len(plan_results)],
-                                    execution_results=plan_results,
-                                    overall_success=True,
-                                    notes=f"Plan execution paused at step {step_idx+1}. Reason: {res.get('message', 'No reason')}",
-                                    status_override="PAUSED"
-                                )
-                                return current_plan[:len(plan_results)], plan_results
+            # Reconstruct list shapes up to the failure point for logging parity
+            if step_failed or global_pause_flag:
+                stop_idx = critical_error_idx if step_failed else len(current_plan)
+                plan_results = [r for r in plan_results if r is not None]
+                plan_step_notes = [n for n in plan_step_notes if n]
+                i = critical_error_idx
 
-                            if failed and not group_failed: # Capture first failure for logging
-                                step_failed = True
-                                current_step_error_details = err_det
-                                tool_name = step_data.get("tool_name")
-                                step_attempt_note = note
-                                i = step_idx
-                                group_failed = True
-
-                    if group_failed:
-                        break # Break outer loop on any concurrent failure
+            if global_pause_flag:
+                 global_reflection_log.log_execution(
+                     goal_description=goal_description,
+                     plan=current_plan[:len(plan_results)],
+                     execution_results=plan_results,
+                     overall_success=True,
+                     notes=f"Plan execution paused.",
+                     status_override="PAUSED"
+                 )
+                 return current_plan[:len(plan_results)], plan_results
 
             if step_failed:
                 if first_critical_error_details["error_type"] is None: # Capture first critical error of this plan attempt

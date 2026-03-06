@@ -26,64 +26,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-LLM_FACT_VALUE_ASSESSMENT_PROMPT_TEMPLATE = """
-You are an AI assistant's knowledge curator. Your task is to assess if a given fact is valuable to learn and store for future reference by a large language model AI assistant.
+LLM_FACT_ASSESSMENT_AND_CATEGORIZATION_PROMPT_TEMPLATE = """
+You are an AI assistant's knowledge curator and categorizer. Your task is to assess if a given fact is valuable to learn, and if so, categorize it.
 A valuable fact is typically:
 1. Non-trivial: Not common sense or easily inferable.
 2. Useful: Likely to aid in future tasks, reasoning, or conversations.
-3. Factual: Represents a piece of information rather than an opinion or instruction (unless it's a user preference).
-4. Concise: Stated clearly and briefly.
-5. Novel: Not something the AI would already implicitly know or that is too generic.
+3. Factual: Represents a piece of information rather than an opinion or instruction.
+4. Novel: Not something the AI would already implicitly know.
 
-Fact to assess: "{fact_to_assess}"
+If valuable, choose from these categories:
+- "user_preference", "user_personal_info", "domain_knowledge", "technical_term", "system_config", "project_context", "general_knowledge", "correction" (or suggest a custom short category).
 
-Based on these criteria, is this fact valuable for the AI assistant to learn and remember?
-Respond with a single JSON object containing two keys:
+Fact to assess: "{fact_text}"
+
+Respond with a single JSON object containing three keys:
 - "is_valuable": boolean (true if valuable, false otherwise)
-- "reason": string (a brief explanation for your decision, especially if not valuable)
+- "reason": string (a brief explanation for your decision)
+- "category": string (the category, or "none" if not valuable)
 
 Example for a valuable fact:
 Fact: "The user's preferred programming language is Python."
-Response: {{"is_valuable": true, "reason": "Stores a specific user preference that can tailor future interactions."}}
+Response: {{"is_valuable": true, "reason": "Stores a specific user preference.", "category": "user_preference"}}
 
 Example for a non-valuable fact (trivial):
 Fact: "The sky is blue."
-Response: {{"is_valuable": false, "reason": "This is common knowledge and too trivial to store."}}
-
-Example for a non-valuable fact (instruction, not a fact):
-Fact: "Think step by step."
-Response: {{"is_valuable": false, "reason": "This is a general instruction or meta-advice, not a piece of knowledge to store as a fact."}}
-
-JSON Response:
-"""
-
-LLM_FACT_CATEGORY_PROMPT_TEMPLATE = """
-You are an AI assistant's knowledge categorizer. Your task is to assign a relevant category to the given factual statement.
-Choose from the following predefined categories or suggest 'general' if none seem to fit well:
-- "user_preference": Specific preferences of the user (e.g., favorite color, preferred tools, communication style).
-- "user_personal_info": Personal details about the user (e.g., name, location if volunteered and relevant for interaction).
-- "domain_knowledge": Facts related to a specific domain the user is working in (e.g., "In Python, lists are mutable.").
-- "technical_term": Definitions or explanations of technical terms.
-- "system_config": Information about the AI assistant's own configuration or status if it's a fact to remember.
-- "project_context": Facts specific to a user's ongoing project that the AI is assisting with.
-- "general_knowledge": Common knowledge facts that are useful but don't fit other categories.
-- "correction": A fact that corrects a previous misunderstanding by the AI.
-
-Fact to categorize: "{fact_text}"
-
-Based on the fact, which category is most appropriate?
-Respond with a single JSON object containing one key:
-- "category": string (one of the predefined categories, or "general")
-
-Example:
-Fact: "The user prefers Python for scripting."
-Response: {{"category": "user_preference"}}
-
-Fact: "The capital of France is Paris."
-Response: {{"category": "general_knowledge"}}
-
-Fact: "The current project 'WebAppX' uses FastAPI."
-Response: {{"category": "project_context"}}
+Response: {{"is_valuable": false, "reason": "This is common knowledge.", "category": "none"}}
 
 JSON Response:
 """
@@ -379,25 +346,63 @@ class ActionExecutor:
                 )
                 return False, "Aborted no-op modification.", "NO_OP"
 
-            # Execute Debate
-            is_approved, reasoning = await coordinator.execute_council_debate(
-                proposed_code=code_to_apply,
-                proposal_description=original_description,
-                original_code=original_code_content,
-                module_path=module_path,
-                llm_provider=self.code_service.llm_provider
-            )
+            # Iterative Council Debate Loop
+            MAX_COUNCIL_RETRIES = 2
+            attempt = 0
+            is_approved = False
+            reasoning = ""
+            current_proposed_code = code_to_apply
+
+            while attempt <= MAX_COUNCIL_RETRIES:
+                is_approved, reasoning = await coordinator.execute_council_debate(
+                    proposed_code=current_proposed_code,
+                    proposal_description=original_description,
+                    original_code=original_code_content,
+                    module_path=module_path,
+                    llm_provider=self.code_service.llm_provider
+                )
+
+                if is_approved:
+                    logger.info(f"The Council APPROVED the modification for {function_name}. Reasoning: {reasoning}")
+                    code_to_apply = current_proposed_code # Use the finalized code
+                    break
+                else:
+                    logger.warning(f"The Council REJECTED the modification for {function_name} on attempt {attempt+1}. Reasoning: {reasoning}")
+                    if attempt < MAX_COUNCIL_RETRIES:
+                        logger.info(f"Iterative Refinement: Asking CodeService to fix based on Council's critique...")
+                        if self.task_manager and action_task_id:
+                            self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc=f"Refining code based on Council feedback (Attempt {attempt+1})")
+
+                        fix_instruction = f"The previous modification attempt was REJECTED by the Council for the following reason:\n{reasoning}\n\nPlease provide a new, corrected implementation of the function that strictly addresses these criticisms."
+
+                        fix_result = await self.code_service.modify_code(
+                            context="COUNCIL_REFINEMENT",
+                            modification_instruction=fix_instruction,
+                            existing_code=None,
+                            module_path=module_path,
+                            function_name=function_name
+                        )
+
+                        if fix_result.get("status") == "SUCCESS_CODE_GENERATED":
+                            current_proposed_code = fix_result.get("modified_code_string")
+                            attempt += 1
+                            continue
+                        else:
+                            logger.error(f"Failed to generate refined code during Council debate: {fix_result.get('error')}")
+                            break
+                    else:
+                        logger.warning(f"Max Council retries reached. Abandoning modification.")
+                        break
 
             if not is_approved:
-                logger.warning(f"The Council REJECTED the modification for {function_name}. Reasoning: {reasoning}")
                 if self.task_manager and action_task_id:
-                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=f"Council Rejected: {reasoning}", step_desc="Council Debate")
+                    self._update_task_if_manager(action_task_id, ActiveTaskStatus.CRITIC_REVIEW_REJECTED, reason=f"Council Rejected after {attempt} retries: {reasoning}", step_desc="Council Debate Failed")
 
                 # Log rejection
                 global_reflection_log.log_execution(
                     goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
                     plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": function_name, "module_path": module_path}}],
-                    execution_results=[f"Council Rejection: {reasoning}"], overall_success=False,
+                    execution_results=[f"Council Rejection after {attempt} retries: {reasoning}"], overall_success=False,
                     notes=f"The Council blocked this change.",
                     is_self_modification_attempt=True, source_suggestion_id=source_insight_id
                 )
@@ -405,8 +410,6 @@ class ActionExecutor:
                 # LEARN FROM REJECTION (User Request: "AI should do the same thing")
                 try:
                     fact_text = f"The Council rejected modification to tool '{function_name}' because: {reasoning}"
-                    # We don't have direct access to LearningAgent/MemoryManager here easily in all paths, 
-                    # but we can try to use the persistent memory functions directly.
                     from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts
                     current_facts = load_learned_facts()
                     # dedup
@@ -426,8 +429,6 @@ class ActionExecutor:
                      logger.error(f"ActionExecutor: Failed to learn from Council rejection: {e_learn}")
 
                 return False, f"Council Rejection: {reasoning}", "COUNCIL_REJECTED"
-
-            logger.info(f"The Council APPROVED the modification for {function_name}. Reasoning: {reasoning}")
 
         except ImportError:
             logger.warning("CriticalReviewCoordinator not found. Skipping Council Debate.")
@@ -605,24 +606,24 @@ class ActionExecutor:
             )
             return False, f"Exception: {e_main_apply}", "EXCEPTION"
 
-    async def _is_fact_valuable(self, fact_to_assess: str) -> Tuple[bool, str]:
+    async def _assess_and_categorize_fact(self, fact_text: str) -> Tuple[bool, str, str]:
         """
-        Assesses if a given fact is valuable to learn using an LLM.
+        Assesses if a given fact is valuable and categorizes it in a single LLM call.
+        Returns: (is_valuable, reason, category)
         """
-        prompt = LLM_FACT_VALUE_ASSESSMENT_PROMPT_TEMPLATE.format(fact_to_assess=fact_to_assess)
+        prompt = LLM_FACT_ASSESSMENT_AND_CATEGORIZATION_PROMPT_TEMPLATE.format(fact_text=fact_text)
 
         if not self.code_service or not self.code_service.llm_provider:
-            logger.error("LLM Provider for CodeService not available in ActionExecutor for fact assessment.")
-            return False, "LLM provider not available for assessment."
+            logger.error("LLM Provider for CodeService not available for fact assessment.")
+            return False, "LLM provider not available.", "none"
 
         try:
-            model_name = "gemini-2.0-flash-exp" # Default fallback
+            model_name = "gemini-2.0-flash-exp"
             if hasattr(self.code_service.llm_provider, 'model'):
                 model_name = self.code_service.llm_provider.model
             elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
                 model_name = self.code_service.llm_provider.DEFAULT_MODEL
             elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
-                 # It might be the module itself if not instantiated
                  model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
 
             llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
@@ -632,8 +633,7 @@ class ActionExecutor:
             )
 
             if not llm_response_str or not llm_response_str.strip():
-                logger.warning("Fact assessment LLM returned empty response.")
-                return False, "LLM returned empty response during assessment."
+                return False, "LLM returned empty response.", "none"
 
             cleaned_response_str = llm_response_str.strip()
             if cleaned_response_str.startswith("```json"):
@@ -641,72 +641,24 @@ class ActionExecutor:
                 if cleaned_response_str.endswith("```"):
                     cleaned_response_str = cleaned_response_str[:-len("```")].strip()
 
-            assessment_data = json.loads(cleaned_response_str)
+            data = json.loads(cleaned_response_str)
 
-            is_valuable = assessment_data.get("is_valuable", False)
-            reason = assessment_data.get("reason", "No reason provided by LLM.")
+            is_valuable = data.get("is_valuable", False)
+            reason = data.get("reason", "No reason provided by LLM.")
+            category = data.get("category", "general").lower().strip()
 
             if not isinstance(is_valuable, bool):
-                logger.warning(f"Fact assessment 'is_valuable' is not a boolean: {is_valuable}. Defaulting to False.")
                 is_valuable = False
                 reason += " (Assessment format error: is_valuable was not boolean)"
 
-            return is_valuable, reason
+            return is_valuable, reason, category
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse fact assessment JSON: {e}. Response: {llm_response_str[:200]}")
-            return False, f"JSON parsing error during assessment: {e}"
+            logger.error(f"Failed to parse fact assessment JSON: {e}.")
+            return False, f"JSON parsing error: {e}", "none"
         except Exception as e:
-            logger.error(f"Unexpected error during fact value assessment: {e}", exc_info=True)
-            return False, f"Unexpected error during assessment: {e}"
-
-    async def _get_fact_category_with_llm(self, fact_text: str) -> str:
-        """
-        Determines the category for a given fact using an LLM.
-        """
-        prompt = LLM_FACT_CATEGORY_PROMPT_TEMPLATE.format(fact_text=fact_text)
-        default_category = "general"
-
-        if not self.code_service or not self.code_service.llm_provider: # pragma: no cover
-            logger.error("LLM Provider for CodeService not available for fact categorization.")
-            return default_category
-
-        try:
-            model_name = "gemini-2.0-flash-exp" # Default fallback
-            if hasattr(self.code_service.llm_provider, 'model'):
-                model_name = self.code_service.llm_provider.model
-            elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
-                model_name = self.code_service.llm_provider.DEFAULT_MODEL
-            elif hasattr(self.code_service.llm_provider, 'OllamaProvider'):
-                 # It might be the module itself if not instantiated
-                 model_name = self.code_service.llm_provider.OllamaProvider.DEFAULT_MODEL
-            llm_response_str = await self.code_service.llm_provider.invoke_ollama_model_async(
-                prompt,
-                model_name=model_name,
-                temperature=0.2
-            )
-
-            if not llm_response_str or not llm_response_str.strip(): # pragma: no cover
-                logger.warning("Fact categorization LLM returned empty response. Defaulting to 'general'.")
-                return default_category
-
-            cleaned_response_str = llm_response_str.strip()
-            if cleaned_response_str.startswith("```json"): # pragma: no cover
-                cleaned_response_str = cleaned_response_str[len("```json"):].strip()
-                if cleaned_response_str.endswith("```"):
-                    cleaned_response_str = cleaned_response_str[:-len("```")].strip()
-
-            category_data = json.loads(cleaned_response_str)
-            category = category_data.get("category", default_category).lower().strip()
-
-            return category if category else default_category
-
-        except json.JSONDecodeError as e: # pragma: no cover
-            logger.error(f"Failed to parse fact category JSON: {e}. Response: {llm_response_str[:200]}. Defaulting to 'general'.")
-            return default_category
-        except Exception as e: # pragma: no cover
-            logger.error(f"Unexpected error during fact category assessment: {e}. Defaulting to 'general'.", exc_info=True)
-            return default_category
+            logger.error(f"Unexpected error during fact assessment: {e}", exc_info=True)
+            return False, f"Unexpected error: {e}", "none"
 
     async def execute_action(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
         action_type = proposed_action.get("action_type")
@@ -955,8 +907,8 @@ class ActionExecutor:
                     )
                     return True
 
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Assessing fact value")
-                is_valuable, assessment_reason = await self._is_fact_valuable(normalized_fact_to_learn)
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Assessing and categorizing fact")
+                is_valuable, assessment_reason, determined_category = await self._assess_and_categorize_fact(normalized_fact_to_learn)
                 if not is_valuable:
                     log_message = f"Fact '{normalized_fact_to_learn}' assessed as NOT VALUABLE. Reason: {assessment_reason}."
                     if source_insight_id: mark_suggestion_implemented(source_insight_id, f"Fact assessed as not valuable: {log_message}", notification_manager=self.notification_manager)
@@ -968,9 +920,6 @@ class ActionExecutor:
                         related_item_type="suggestion_leading_to_fact_assessment"
                     )
                     return True
-
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Categorizing fact")
-                determined_category = await self._get_fact_category_with_llm(normalized_fact_to_learn)
 
                 new_fact_entry = {
                     "fact_id": f"fact_{uuid.uuid4().hex[:8]}", "text": normalized_fact_to_learn,

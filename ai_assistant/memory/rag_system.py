@@ -71,15 +71,20 @@ class RAGSystem:
         """
         Syncs existing facts from MemoryManager to the VectorStore if needed.
         """
-        # With Chroma, we can just upsert everything; it handles duplicates by ID.
+        import asyncio
         if all_facts:
             logger.info(f"Syncing {len(all_facts)} facts to RAG system (upsert)...")
 
-            # To be efficient, we might want to batch this, but for now simple loop or bulk add
-            # Note: We need embeddings for all of them. This might be slow if we do it one by one.
-            # But get_embeddings_async is likely single-item.
+            async def _process_batch(batch):
+                tasks = [self.ingest_fact(fact.get("text"), metadata=fact) for fact in batch if fact.get("text")]
+                if tasks:
+                    await asyncio.gather(*tasks)
 
-            for fact in all_facts:
-                text = fact.get("text")
-                if text:
-                    await self.ingest_fact(text, metadata=fact)
+            # Process in batches of 15 to avoid overloading the LLM
+            batch_size = 15
+            for i in range(0, len(all_facts), batch_size):
+                batch = all_facts[i:i + batch_size]
+                await _process_batch(batch)
+                if i + batch_size < len(all_facts):
+                    # Slight delay between batches to respect rate limits if needed
+                    await asyncio.sleep(0.5)

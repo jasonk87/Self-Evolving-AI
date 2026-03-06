@@ -194,6 +194,31 @@ async def perform_architectural_audit(effort_level: str = "normal") -> Optional[
     # Select one file
     target_file = random.choice(candidate_files)
 
+    import time
+    from ai_assistant.config import get_data_dir
+    heatmap_file = os.path.join(get_data_dir(), "architect_heatmap.json")
+
+    # Load heatmap
+    heatmap = {}
+    if os.path.exists(heatmap_file):
+        try:
+            with open(heatmap_file, "r", encoding="utf-8") as f:
+                heatmap = json.load(f)
+        except json.JSONDecodeError:
+            pass
+
+    # Weight files based on heatmap (older audits have higher weight)
+    now = time.time()
+    file_weights = []
+    for f in candidate_files:
+        last_audited = heatmap.get(f, 0)
+        # Weight = days since last audit + 1 (base weight)
+        days_since = (now - last_audited) / 86400
+        file_weights.append(max(1.0, days_since))
+
+    # Select one file using heat map weights
+    target_file = random.choices(candidate_files, weights=file_weights, k=1)[0]
+
     # Read file content
     try:
         with open(target_file, "r", encoding="utf-8") as f:
@@ -207,6 +232,10 @@ async def perform_architectural_audit(effort_level: str = "normal") -> Optional[
 
     if not analysis["accept"]:
         logger.info(f"EvolutionaryArchitect: File {target_file} rejected: {analysis['reason']}")
+        # Update heatmap to note we checked it, so we don't spam simple files
+        heatmap[target_file] = now
+        with open(heatmap_file, "w", encoding="utf-8") as f:
+            json.dump(heatmap, f)
         return None
 
     logger.info(f"EvolutionaryArchitect: File {target_file} ACCEPTED for audit. Reason: {analysis['reason']}")
@@ -214,6 +243,10 @@ async def perform_architectural_audit(effort_level: str = "normal") -> Optional[
     # 3. Phase 2: The Evolutionary Lenses
     proposal = await generate_evolution_proposal(target_file, content, analysis)
 
+    # Update heatmap on success
+    heatmap[target_file] = now
+    with open(heatmap_file, "w", encoding="utf-8") as f:
+        json.dump(heatmap, f)
 
     return proposal
 

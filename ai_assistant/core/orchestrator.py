@@ -68,9 +68,12 @@ class DynamicOrchestrator:
         self.memory_manager = memory_manager
         self.episodic_manager = EpisodicMemoryManager()
 
-        # Inject memory manager into planner if not already set
+        # Inject memory manager into planners if not already set
         if self.planner and self.memory_manager and hasattr(self.planner, 'memory_manager') and self.planner.memory_manager is None:
             self.planner.memory_manager = self.memory_manager
+
+        if self.hierarchical_planner and self.memory_manager:
+            self.hierarchical_planner.memory_manager = self.memory_manager
 
         self.router = TaskRouter()
         self.context: Dict[str, Any] = {}
