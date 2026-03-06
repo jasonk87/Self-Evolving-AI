@@ -796,7 +796,9 @@ async def _background_loop_async():
         # The following tasks are "Heavy" and should pause if the user is active.
         user_is_idle = not is_user_active()
 
-        from ai_assistant.config import ALLOW_DREAMER, ALLOW_MEMORY_LEARNING, ALLOW_AUTO_FIXING
+        ALLOW_DREAMER = getattr(runtime_config, "ALLOW_DREAMER", True)
+        ALLOW_MEMORY_LEARNING = getattr(runtime_config, "ALLOW_MEMORY_LEARNING", True)
+        ALLOW_AUTO_FIXING = getattr(runtime_config, "ALLOW_AUTO_FIXING", True)
 
         # --- Visual Audit Task (Heavy) ---
         if ALLOW_AUTO_FIXING and user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
