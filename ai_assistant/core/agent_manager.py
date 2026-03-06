@@ -2,6 +2,9 @@ import os
 import shutil
 import uuid
 import logging
+import hashlib
+import json
+import time
 from typing import Optional
 
 try:
@@ -33,7 +36,6 @@ class AgentManager:
         """
         if not agent_id:
             if scope_type == "user":
-                import hashlib
                 # Create a determinist ID for user scoped agents based on purpose/name
                 hasher = hashlib.md5(purpose.encode('utf-8')).hexdigest()
                 agent_id = f"persistent_{hasher[:12]}"
@@ -45,12 +47,11 @@ class AgentManager:
         try:
             os.makedirs(workspace_path, exist_ok=True)
             # Create a metadata file to track purpose and scope
-            import json
             metadata = {
                 "purpose": purpose,
                 "scope_type": scope_type,
                 "agent_id": agent_id,
-                "created_at": __import__("time").time()
+                "created_at": time.time()
             }
             with open(os.path.join(workspace_path, "metadata.json"), "w") as f:
                 json.dump(metadata, f)
@@ -80,7 +81,6 @@ class AgentManager:
             meta_path = os.path.join(workspace_path, "metadata.json")
             if os.path.exists(meta_path):
                 try:
-                    import json
                     with open(meta_path, 'r') as f:
                         meta = json.load(f)
                         if meta.get("scope_type") == "user":
