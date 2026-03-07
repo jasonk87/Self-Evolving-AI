@@ -18,11 +18,14 @@ from ai_assistant.config import (
     LLM_PROVIDER,
     VERBOSE_LLM_LOGGING,
     REASONING_STRATEGIES,
-    PARALLEL_THINKING_CONFIG
+    PARALLEL_THINKING_CONFIG,
+    DAILY_TOKEN_BUDGET,
+    CATEGORY_BUDGETS
 )
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
 from ai_assistant.core.telemetry import telemetry_tracker
+from ai_assistant.llm_interface.exceptions import BudgetExceededError
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
@@ -73,6 +76,13 @@ def process_llm_response(response_data: Dict) -> Optional[Tuple[str, Optional[st
         
     return (content, thinking)
 
+def _check_budget(task: str = "unknown"):
+    """Throws BudgetExceededError if hard limits are crossed."""
+    if telemetry_tracker.check_hard_limit_exceeded(DAILY_TOKEN_BUDGET):
+        raise BudgetExceededError("Daily Token Budget Exceeded.")
+    if telemetry_tracker.check_category_limit_exceeded(task, CATEGORY_BUDGETS):
+        raise BudgetExceededError(f"Category budget for task '{task}' exceeded.")
+
 @retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)
 def invoke_ollama_model(
     prompt: str,
@@ -81,6 +91,7 @@ def invoke_ollama_model(
     max_tokens: int = 1500,
     task_name: Optional[str] = None
 ) -> Optional[str]:
+    _check_budget(task_name or "unknown")
 
     if LLM_PROVIDER == "gemini":
         # Note: Synchronous parallel thinking is not currently supported.
@@ -217,6 +228,7 @@ async def invoke_ollama_model_async_internal(
     api_endpoint_override: Optional[str] = None,
     task_name: Optional[str] = None
 ) -> Optional[str]:
+    _check_budget(task_name or "unknown")
 
     # Check Reasoning Strategy
     reasoning_mode = "STANDARD"
@@ -234,7 +246,8 @@ async def invoke_ollama_model_async_internal(
                 max_tokens=max_tokens,
                 num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3),
                 merge_model=PARALLEL_THINKING_CONFIG.get("merge_model"),
-                temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2)
+                temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2),
+                task_name=task_name or "unknown"
             )
         elif reasoning_mode == "RAW":
             return await gemini_client.invoke_gemini_model_async(
@@ -242,11 +255,12 @@ async def invoke_ollama_model_async_internal(
                 model_name=model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                strategy="RAW"
+                strategy="RAW",
+                task_name=task_name or "unknown"
             )
         else:
             # Default to SPLIT_BRAIN (UNIVERSAL_BICAMERAL)
-            return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens)
+            return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens, task_name=task_name or "unknown")
 
     enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
     enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking

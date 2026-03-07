@@ -23,6 +23,7 @@ from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
+from ai_assistant.llm_interface.exceptions import BudgetExceededError
 
 # Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
@@ -128,6 +129,18 @@ class DynamicOrchestrator:
             # 3. Execute Universal Cycle
             return await self._execute_universal_cycle(prompt_with_context, full_context_str, conversation_history, session_id, context_source)
 
+        except BudgetExceededError as e:
+            logger.warning(f"Budget exceeded: {e}")
+            badge = '<span class="ai-metric ai-status-bad">Daily Budget Exceeded</span>' if "Daily" in str(e) else '<span class="ai-metric ai-status-warning">Category Budget Exceeded</span>'
+            html = f"""```html-dynamic
+            <div class="ai-card">
+              <h3>System Alert</h3>
+              <p>{badge} {str(e)}</p>
+              <p>LLM execution has been halted to prevent further charges.</p>
+            </div>
+            ```"""
+            # We bypass the LLM for rephrasing here because the LLM is blocked!
+            return False, f"I cannot complete your request because the system budget has been reached.\n{html}", None
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
             return False, f"An unexpected error occurred: {str(e)}", None
