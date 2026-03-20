@@ -222,7 +222,7 @@ And the following available tools (tool_name: description):
 Generate a plan to achieve this goal. The plan *MUST* be a JSON list of step dictionaries.
 Each step dictionary *MUST* contain the following keys:
 - "tool_name": string (must be one of the available tools listed above)
-- "args": list of strings (positional arguments for the tool). If a mandatory argument value cannot be inferred from the goal, you *MUST* plan to use `request_user_clarification` to ask the user for the missing information before calling the tool. Do NOT use placeholders.
+- "args": list of strings (positional arguments for the tool). If a mandatory argument value cannot be inferred directly from the goal, you *MUST* add prior exploratory steps to your plan (e.g., `search_codebase`, `read_text_from_file`, `recall_facts`, or `search_duckduckgo`) to autonomously discover the required information. Do NOT use placeholders and do NOT ask the user unless absolutely critical. You are an autonomous AI.
 - "kwargs": dictionary (key-value pairs of strings for keyword arguments, e.g., {{"key": "value"}}). If no keyword arguments, use an empty dictionary {{}}.
 
 **Handling Capability Inquiries (Meta-Questions)**
@@ -467,7 +467,7 @@ Your Previous Incorrect Response:
 Error Description: {error_description}
 
 Please try again. Generate a plan as a JSON list of step dictionaries.
-Each step *MUST* be a dictionary with "tool_name" (string from available tools), "args" (list of strings, use `request_user_clarification` tool first if values are missing), and "kwargs" (dictionary of string:string, use {{}} if none).
+Each step *MUST* be a dictionary with "tool_name" (string from available tools), "args" (list of strings, use exploratory tools first if values are missing), and "kwargs" (dictionary of string:string, use {{}} if none).
 Respond ONLY with the corrected JSON plan. The entire response must be a single, valid JSON list.
 JSON Plan:
 """
@@ -622,7 +622,7 @@ Available Tools (tool_name: description):
 Based on the original goal and the failure analysis, generate a new plan to achieve the goal.
 The plan *MUST* be a JSON list of step dictionaries.
 Each step dictionary *MUST* contain "tool_name" (string), "args" (list of strings), and "kwargs" (dictionary of string:string).
-If a mandatory argument value cannot be inferred, you *MUST* plan to use the `request_user_clarification` tool to ask the user. Do not use placeholders.
+If a mandatory argument value cannot be inferred, you *MUST* add exploratory steps (like reading files, searching memory, or web search) to find the information autonomously. Do not use placeholders.
 If you use 'search_duckduckgo', you *MUST* add a subsequent step 'process_search_results_for_answer' with "[[step_X_output]]" as an argument.
 
 Consider the failure analysis carefully. Try to use different tools or different arguments if the previous attempt failed due to tool misuse.

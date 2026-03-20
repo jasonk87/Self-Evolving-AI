@@ -553,7 +553,6 @@ def func1():
 def func2(x: int):
     print(f'x is {x}')
 
-
 if __name__ == '__main__':
     func1()"""
         self.assertEqual(result_code.strip(), expected_code.strip())
@@ -581,16 +580,11 @@ if __name__ == '__main__':
 class MyCalc:
     """A calculator."""
 
-    # Defined attributes (from outline):
-    # pi: float # Value of PI
-
     def __init__(self, val: float):
         self.val = val
 
     def add(self, x: float) -> float:
-        return self.val + x
-
-'''
+        return self.val + x'''
         self.assertEqual(result_code.strip(), expected_code.strip())
 
 
