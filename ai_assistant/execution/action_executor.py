@@ -16,6 +16,7 @@ import json # Added for parsing LLM response in _is_fact_valuable
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
+from ai_assistant.core.task_manager import ActiveTaskStatus
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
 from ..core.notification_manager import NotificationManager, NotificationType # Added
 from ai_assistant.custom_tools.agent_tools import spawn_ephemeral_agent, run_agent_code, submit_agent_report
@@ -489,11 +490,64 @@ class ActionExecutor:
                     print(f"ActionExecutor: Warning - 'original_reflection_entry_id' not found in details for insight {source_insight_id}. Post-modification testing will be skipped.")
                     test_run_notes = "Post-modification test skipped: original_reflection_entry_id not provided."
                 else:
-                    test_passed_status, test_run_notes = await self._run_post_modification_test(
-                        source_insight_id=source_insight_id,
-                        original_reflection_entry_id=original_reflection_id_for_test,
-                        modified_tool_name=tool_name
-                    )
+                    MAX_TEST_RETRIES = 2
+                    test_attempt = 0
+                    current_code = code_to_apply
+                    while test_attempt <= MAX_TEST_RETRIES:
+                        test_passed_status, test_run_notes = await self._run_post_modification_test(
+                            source_insight_id=source_insight_id,
+                            original_reflection_entry_id=original_reflection_id_for_test,
+                            modified_tool_name=tool_name
+                        )
+
+                        if test_passed_status is True or test_passed_status is None:
+                            break
+
+                        logger.warning(f"ActionExecutor: Test failed for {tool_name} on attempt {test_attempt+1}. Notes: {test_run_notes}")
+                        if test_attempt < MAX_TEST_RETRIES and not staging_mode:
+                            logger.info(f"Iterative Auto-Healing: Asking CodeService to fix test failures...")
+                            if self.task_manager and action_task_id:
+                                self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc=f"Fixing test failures (Attempt {test_attempt+1})")
+
+                            fix_instruction = f"The previous modification was applied but failed the test suite.\nTest Output/Errors:\n{test_run_notes}\n\nPlease provide a new, corrected implementation of the function that passes these tests."
+
+                            fix_result = await self.code_service.modify_code(
+                                context="TEST_FAILURE_REFINEMENT",
+                                modification_instruction=fix_instruction,
+                                existing_code=current_code,
+                                module_path=module_path,
+                                function_name=function_name
+                            )
+
+                            if fix_result.get("status") == "SUCCESS_CODE_GENERATED":
+                                current_code = fix_result.get("modified_code_string")
+
+                                # Apply the newly generated code
+                                if modification_strategy == "surgical_replace_node":
+                                    apply_res = await self_modification.surgical_edit_function(
+                                        module_path=module_path, function_name=function_name,
+                                        target_node_pattern=target_node_pattern, replacement_code=current_code,
+                                        project_root_path=project_root, change_description=f"Auto-healing fix attempt {test_attempt+1}",
+                                        task_manager=self.task_manager, parent_task_id=action_task_id
+                                    )
+                                else:
+                                    apply_res = await self_modification.edit_function_source_code(
+                                        module_path=module_path, function_name=function_name,
+                                        new_code_string=current_code, project_root_path=project_root,
+                                        change_description=f"Auto-healing fix attempt {test_attempt+1}",
+                                        task_manager=self.task_manager, parent_task_id=action_task_id
+                                    )
+                                if "success" not in apply_res.lower():
+                                    logger.error(f"Failed to apply auto-healed code: {apply_res}")
+                                    break
+                                test_attempt += 1
+                                continue
+                            else:
+                                logger.error(f"Failed to generate auto-healed code: {fix_result.get('error')}")
+                                break
+                        else:
+                            logger.warning(f"ActionExecutor: Max test retries reached for {tool_name}.")
+                            break
 
                 if test_passed_status is False or staging_mode:
                     revert_reason = "failed post-modification test" if test_passed_status is False else "staging mode (verification only)"
