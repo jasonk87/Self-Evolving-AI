@@ -109,15 +109,6 @@ class ExecutionAgent:
                     processed_kwargs[kw_key] = self._resolve_value_with_substitution(kw_val, plan_results, step_idx+1, f"kwarg '{kw_key}'")
                 final_kwargs_for_tool = processed_kwargs
 
-                if any("TODO_infer_arg_value" in str(arg) for arg in final_args_for_tool) or \
-                   any("TODO_infer_arg_value" in str(val) for val in final_kwargs_for_tool.values()):
-                    reason = "Planner failed to infer argument value (placeholder 'TODO_infer_arg_value' found)."
-                    print(f"ExecutionAgent: {reason} Raising error to trigger re-planning.")
-                    step_failed = True
-                    step_result = RuntimeError(f"{reason} Execution halted to trigger re-planning.")
-                    current_step_error_details = {'error_type': 'RuntimeError', 'error_message': reason, 'traceback_snippet': None}
-                    return step_result, step_attempt_note, current_step_error_details, step_failed, step_paused
-
                 for attempt in range(self.MAX_RETRIES_PER_STEP + 1):
                     try:
                         print(f"ExecutionAgent: Executing step {step_idx+1}/{len(current_plan)} - Tool: {tool_name} (Args: {final_args_for_tool}, Kwargs: {final_kwargs_for_tool}), Attempt: {attempt+1}/{self.MAX_RETRIES_PER_STEP + 1}")

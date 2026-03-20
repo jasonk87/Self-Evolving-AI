@@ -1200,7 +1200,7 @@ class CodeService:
                 else: # pragma: no cover
                     signature = component_def.get("signature", "()")
                     desc = component_def.get("description", "No description.")
-                    placeholder_body = component_def.get("body_placeholder", "pass # TODO: Implement")
+                    placeholder_body = component_def.get("body_placeholder", "raise NotImplementedError(\"TODO: Implement\")")
                     code_parts.append(f"# Function '{component_name}' was planned but not generated.")
                     code_parts.append(f"def {component_name}{signature}:")
                     func_docstring_lines = [
@@ -1214,7 +1214,7 @@ class CodeService:
                             func_docstring_lines.append(f"    {line.strip()}")
                     func_docstring_lines.append("    \"\"\"")
                     code_parts.extend(func_docstring_lines)
-                    code_parts.append(f"    pass")
+                    code_parts.append(f"    raise NotImplementedError(\"TODO: Implement\")")
                 code_parts.append("\n\n")
 
             elif component_type == "class":
@@ -1257,7 +1257,7 @@ class CodeService:
                     else: # pragma: no cover
                         signature = method_def.get("signature", "(self)")
                         desc = method_def.get("description", "No description.")
-                        placeholder_body = method_def.get("body_placeholder", "pass # TODO: Implement")
+                        placeholder_body = method_def.get("body_placeholder", "raise NotImplementedError(\"TODO: Implement\")")
                         code_parts.append(f"    # Method '{method_name}' was planned but not generated.")
                         code_parts.append(f"    def {method_name}{signature}:")
                         docstring_lines = [
@@ -1271,7 +1271,7 @@ class CodeService:
                                 docstring_lines.append(f"        {line.strip()}")
                         docstring_lines.append("        \"\"\"")
                         code_parts.extend(docstring_lines)
-                        code_parts.append(f"        pass")
+                        code_parts.append(f"        raise NotImplementedError(\"TODO: Implement\")")
                     code_parts.append("")
 
                 if code_parts and code_parts[-1] == "":
