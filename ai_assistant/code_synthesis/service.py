@@ -351,7 +351,7 @@ Original Code:
             from ai_assistant.core.reviewer import ReviewerAgent
 
             # Use 'council_skeptic' or default model for reviewing
-            reviewer = ReviewerAgent(model_name="council_skeptic") # Assuming configured model
+            reviewer = ReviewerAgent() # Assuming configured model
 
             review_result = await reviewer.evaluate_auto_approval_request(
                 request_type="code_modification",
@@ -404,14 +404,14 @@ Original Code:
                     if not passed_lint_2:
                          return CodeTaskResult(
                              request_id=request.request_id,
-                             status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                                 status=CodeTaskStatus.FAILURE_LLM_GENERATION,
                              error_message=f"Semantic fix introduced linting errors: {CodeLinter.format_errors(lint_errors_2)}",
                              metadata=response_metadata
                          )
                 else:
                      return CodeTaskResult(
                          request_id=request.request_id,
-                         status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                             status=CodeTaskStatus.FAILURE_LLM_GENERATION,
                          error_message=f"Reviewer rejected code: {review_feedback}",
                          metadata=response_metadata
                      )
@@ -424,7 +424,7 @@ Original Code:
             # Fail safe is better for strictness.
             return CodeTaskResult(
                  request_id=request.request_id,
-                 status=CodeTaskStatus.FAILURE_CODE_GENERATION,
+                     status=CodeTaskStatus.FAILURE_LLM_GENERATION,
                  error_message=f"Error during mandatory code review: {e}",
                  metadata=response_metadata
              )
