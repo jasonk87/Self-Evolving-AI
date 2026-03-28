@@ -35,6 +35,7 @@ from ai_assistant.execution.action_executor import ActionExecutor
 from ai_assistant.planning.execution import ExecutionAgent
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.core.orchestrator import DynamicOrchestrator
+from ai_assistant.core.controller import SystemController
 from ai_assistant.core.background_service import start_background_services_on_loop, set_orchestrator
 from ai_assistant.core.shutdown_manager import shutdown_manager, register_signal_handlers
 
@@ -176,7 +177,9 @@ async def init_orchestrator():
         hierarchical_planner=hierarchical_planner,
         memory_manager=app_globals.memory_manager
     )
-    logger.info("Orchestrator initialized successfully.")
+
+    app_globals.controller = SystemController(app_globals.orchestrator)
+    logger.info("SystemController initialized successfully.")
 
     # Connect orchestrator to background service
     set_orchestrator(app_globals.orchestrator)

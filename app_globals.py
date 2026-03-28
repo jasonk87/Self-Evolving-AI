@@ -9,6 +9,7 @@ from flask_socketio import SocketIO
 
 # Global Instances
 orchestrator = None
+controller = None
 memory_manager = None
 chat_manager = None
 config_manager = None

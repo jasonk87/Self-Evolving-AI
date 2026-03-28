@@ -919,21 +919,39 @@ def chat():
     
     current_history_list = updated_session.get('history', [])
 
-    if not app_globals.orchestrator:
-        return jsonify({"error": "Orchestrator not initialized", "success": False, "session_id": session_id}), 500
+    if not app_globals.controller:
+        return jsonify({"error": "SystemController not initialized", "success": False, "session_id": session_id}), 500
     
     try:
         import asyncio
         future = asyncio.run_coroutine_threadsafe(
-            app_globals.orchestrator.process_prompt(
-                full_message,
+            app_globals.controller.handle_user_request(
+                prompt=full_message,
                 conversation_history=current_history_list,
                 session_id=session_id,
-                images=images
+                images=images,
+                context_source="USER"
             ),
             app_globals.ai_loop
         )
-        success, response, collected_images = future.result()
+
+        execution_state = future.result()
+
+        # Unpack from the new unified execution state
+        success = execution_state.current_status == "completed"
+
+        # Find the final answer in the tool results (which includes the orchestrator response for now)
+        response = ""
+        collected_images = []
+        if execution_state.tool_results and len(execution_state.tool_results) > 0:
+             last_result = execution_state.tool_results[-1]
+             if last_result.get("action_name") == "orchestrator_final_answer":
+                 response = last_result.get("result", "")
+                 collected_images = last_result.get("collected_images", [])
+
+        if not success and not response:
+             # Include execution state errors in the response string if it failed without a final message
+             response = "Task encountered errors:\n" + "\n".join(execution_state.errors)
 
         if response:
              updated_session = app_globals.chat_manager.add_message(session_id, "assistant", response, images=collected_images)
@@ -942,8 +960,9 @@ def chat():
             "response": response,
             "session_id": session_id,
             "success": success,
-            "images": collected_images
+            "images": collected_images,
+            "system_status": execution_state.current_status
         })
     except Exception as e:
-        logger.error(f"Error processing prompt: {e}")
+        logger.error(f"Error processing prompt via Controller: {e}", exc_info=True)
         return jsonify({"error": str(e), "success": False}), 500
