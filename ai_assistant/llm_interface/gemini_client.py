@@ -194,13 +194,16 @@ def _invoke_raw_gemini_sync(
         logger.error(f"Error invoking Gemini model (sync): {e}")
         raise GeminiError(f"Error invoking Gemini model (sync): {e}")
 
+from pydantic import BaseModel
+
 async def _invoke_raw_gemini_async(
     prompt: str,
     model_name: str = "gemini-2.0-flash-exp",
     temperature: float = 0.7,
     max_tokens: int = 8192,
     images: Optional[List[str]] = None,
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    response_schema: Optional[type[BaseModel]] = None
 ) -> str:
     """
     Asynchronously invokes the Google Gemini model (Raw call, no split brain).
@@ -226,12 +229,54 @@ async def _invoke_raw_gemini_async(
                 }
             })
 
+    generation_config = {
+        "temperature": temperature,
+        "maxOutputTokens": max_tokens
+    }
+
+    if response_schema:
+        # Generate the raw JSON schema
+        schema_dict = response_schema.model_json_schema()
+
+        # Recursively sanitize Pydantic schema to match Gemini REST API requirements
+        def sanitize_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+            cleaned = {}
+
+            # Handle Pydantic V2 'anyOf' for Optional fields
+            if "anyOf" in schema:
+                for sub_schema in schema["anyOf"]:
+                    if sub_schema.get("type") != "null":
+                        cleaned.update(sanitize_schema(sub_schema))
+                cleaned["nullable"] = True
+                return cleaned
+
+            for key, value in schema.items():
+                # Remove keys not supported by Gemini API Schema Object
+                if key in ["title", "default", "examples", "$defs", "$ref", "additionalProperties"]:
+                    continue
+
+                if key == "type" and isinstance(value, str):
+                    # Gemini requires uppercase enum types
+                    cleaned[key] = value.upper()
+                elif isinstance(value, dict):
+                    cleaned[key] = sanitize_schema(value)
+                elif isinstance(value, list):
+                    cleaned[key] = [sanitize_schema(v) if isinstance(v, dict) else v for v in value]
+                else:
+                    cleaned[key] = value
+
+            # Gemini Schema strongly types arrays differently
+            if cleaned.get("type") == "ARRAY" and "items" not in cleaned:
+                cleaned["items"] = {"type": "STRING"} # Fallback item type
+
+            return cleaned
+
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseSchema"] = sanitize_schema(schema_dict)
+
     payload = {
         "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens
-        }
+        "generationConfig": generation_config
     }
 
     if ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS:
@@ -456,7 +501,8 @@ async def invoke_gemini_model_async(
     max_tokens: int = 8192,
     images: Optional[List[str]] = None,
     strategy: str = "SPLIT_BRAIN",
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    response_schema: Optional[type[BaseModel]] = None
 ) -> str:
     """
     Asynchronously invokes Gemini using specified strategy.
@@ -465,8 +511,11 @@ async def invoke_gemini_model_async(
       - RAW: Direct call (1 call).
     """
     if strategy == "RAW":
-        return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name)
+        return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name, response_schema=response_schema)
 
+    # Note: Split Brain currently doesn't formally support schemas in the thinking phase,
+    # so we only pass the schema to the execution phase if implementing it there.
+    # We will enforce the schema only if using RAW directly.
     response, _ = await invoke_split_brain_async(
         prompt, model_name, temperature, max_tokens, images, task_name=task_name
     )

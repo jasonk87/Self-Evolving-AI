@@ -25,6 +25,7 @@ from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
 from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.actions import OperatorResponse
 
 # Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
@@ -534,17 +535,30 @@ Instructions:
                 # We append execution history to operator too so it knows what happened
                 operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction (JSON):"
 
-                # Use RAW strategy. The Operator prompt asks for JSON. Hidden thoughts are handled by <think> removal in client if present.
+                # Use RAW strategy. The Operator prompt asks for JSON.
                 operator_response = await invoke_gemini_model_async(
                     prompt=operator_prompt,
                     model_name=config.DEFAULT_MODEL,
-                    strategy="RAW"
+                    strategy="RAW",
+                    response_schema=OperatorResponse
                 )
 
                 # Operator thoughts are inside the JSON "thought" field usually.
 
                 # Phase 3: Loop Logic
-                parsed_response = self._parse_tool_call(operator_response) # Reuse parser, effectively parsing JSON
+                parsed_response = None
+                try:
+                    # Clean up markdown code blocks if the LLM still wrapped the JSON
+                    clean_resp = operator_response.strip()
+                    if clean_resp.startswith("```json"):
+                        clean_resp = clean_resp[7:]
+                    if clean_resp.endswith("```"):
+                        clean_resp = clean_resp[:-3]
+                    clean_resp = clean_resp.strip()
+
+                    parsed_response = json.loads(clean_resp)
+                except Exception as e:
+                    parsed_response = self._parse_tool_call(operator_response) # Fallback to fuzzy parser
 
                 # Normalize the new schema to the old internal variables
                 tool_call = None

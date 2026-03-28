@@ -27,3 +27,12 @@ class ApplyArchitectProposalAction(BaseModel):
     target_file: str = Field(..., description="The absolute path of the file to modify.")
     proposal_summary: str = Field(..., description="A high-level summary of the architectural changes.")
     proposal_plan: str = Field(..., description="Detailed instructions on how to modify the file.")
+
+class OperatorResponse(BaseModel):
+    """
+    The strictly typed response schema required from the Operator agent during the execution cycle.
+    """
+    thought: str = Field(..., description="Brief reasoning for this action.")
+    type: str = Field(..., description="Must be exactly 'tool_call' or 'final_answer'.")
+    name: Optional[str] = Field(None, description="The name of the tool, if type is 'tool_call'.")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the tool, or {'message': '...'} if final_answer.")
