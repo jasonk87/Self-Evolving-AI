@@ -11,3 +11,4 @@ websockets
 pillow
 nest_asyncio
 tiktoken
+pydantic
