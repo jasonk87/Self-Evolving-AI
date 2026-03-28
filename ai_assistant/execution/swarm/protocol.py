@@ -1,7 +1,7 @@
 import abc
 from enum import Enum
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field, model_validator
 
 from .blackboard import Blackboard, BlackboardEvent
 
@@ -12,24 +12,23 @@ class AgentRole(Enum):
     REVIEWER = "reviewer"
 
 
-@dataclass
-class SwarmContract:
+class SwarmContract(BaseModel):
     """
     Defines the exact requirements and deliverables for a sub-swarm task.
-    Created by the Orchestrator/ActionExecutor.
+    Created by the Orchestrator/ActionExecutor and validated strictly.
     """
-    task_id: str
-    description: str
-    interfaces: List[Dict[str, Any]] = field(default_factory=list) # [{'name': 'AuthService', 'methods': ['login(user)']}]
-    deliverables: List[str] = field(default_factory=list) # ['auth_service.py', 'test_auth_service.py']
-    constraints: Dict[str, str] = field(default_factory=dict)
+    task_id: str = Field(..., description="Unique identifier for the sub-swarm task.")
+    description: str = Field(..., min_length=5, description="Detailed description of the work to be done.")
+    interfaces: List[Dict[str, Any]] = Field(default_factory=list, description="Expected public interfaces or functions.")
+    deliverables: List[str] = Field(..., min_length=1, description="List of file paths the swarm is expected to create or modify.")
+    constraints: Dict[str, str] = Field(default_factory=dict, description="Key-value pairs of technical constraints.")
 
-    def validate(self):
-        """Ensure the contract is well-formed before starting."""
-        if not self.task_id or not self.description:
-            raise ValueError("SwarmContract requires task_id and description.")
+    @model_validator(mode='after')
+    def validate_contract_logic(self):
+        """Ensure the contract is logically sound."""
         if not self.deliverables:
             raise ValueError("SwarmContract must specify at least one deliverable file.")
+        return self
 
 
 class BaseSwarmAgent(abc.ABC):

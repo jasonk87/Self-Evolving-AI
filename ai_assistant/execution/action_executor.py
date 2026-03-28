@@ -948,16 +948,20 @@ class ActionExecutor:
 
             from ai_assistant.execution.swarm.protocol import SwarmContract
             from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+            from pydantic import ValidationError
 
             try:
-                # 1. Parse Contract
-                swarm_contract = SwarmContract(
-                    task_id=contract_data.get("task_id", f"complex_{uuid.uuid4().hex[:8]}"),
-                    description=contract_data.get("description", "A complex multi-agent task."),
-                    interfaces=contract_data.get("interfaces", []),
-                    deliverables=contract_data.get("deliverables", []),
-                    constraints=contract_data.get("constraints", {})
-                )
+                # 1. Parse Contract with Pydantic Proactive Validation
+                try:
+                    swarm_contract = SwarmContract(
+                        task_id=contract_data.get("task_id", f"complex_{uuid.uuid4().hex[:8]}"),
+                        description=contract_data.get("description", "A complex multi-agent task."),
+                        interfaces=contract_data.get("interfaces", []),
+                        deliverables=contract_data.get("deliverables", []),
+                        constraints=contract_data.get("constraints", {})
+                    )
+                except ValidationError as ve:
+                    raise Exception(f"Malformed SwarmContract payload: {ve}")
 
                 # 2. Init Coordinator
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.PLANNING, step_desc="Initializing Multi-Agent Swarm")
