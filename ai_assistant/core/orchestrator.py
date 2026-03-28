@@ -628,14 +628,20 @@ Instructions:
                     else:
                         for attempt in range(max_retries + 1):
                             try:
-                                result = await tool_system_instance.execute_tool(
-                                tool_name,
-                                args=tuple(args),
-                                kwargs=kwargs,
-                                task_manager=self.task_manager,
-                                notification_manager=self.notification_manager,
-                                action_executor=self.action_executor
-                            )
+                                # `execute_tool` now returns a validated dictionary based on BaseActionResponse
+                                tool_response = await tool_system_instance.execute_tool(
+                                    tool_name,
+                                    args=tuple(args),
+                                    kwargs=kwargs,
+                                    task_manager=self.task_manager,
+                                    notification_manager=self.notification_manager,
+                                    action_executor=self.action_executor
+                                )
+
+                                result = tool_response.get("result")
+
+                                if not tool_response.get("success"):
+                                    raise Exception(tool_response.get("error_message") or str(result))
 
                                 if isinstance(result, dict) and 'images' in result:
                                     new_images = result.get('images', [])

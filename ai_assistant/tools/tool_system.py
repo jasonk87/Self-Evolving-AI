@@ -6,8 +6,10 @@ import json
 import inspect
 import asyncio
 from typing import Callable, Dict, Any, Optional, Tuple, List, TYPE_CHECKING
+from pydantic import ValidationError
 from ai_assistant.config import is_debug_mode, get_data_dir
 from ai_assistant.core.self_modification import get_function_source_code
+from ai_assistant.core.models.base_tool import BaseActionRequest, BaseActionResponse
 if TYPE_CHECKING:
     from ..core.task_manager import TaskManager
     from ..core.notification_manager import NotificationManager
@@ -292,15 +294,46 @@ class ToolSystem:
                 if is_debug_mode():
                     print(f"ToolSystem: Injecting ActionExecutor into tool '{name}'.")
         try:
+            # Proactive Validation: Ensure the request conforms to BaseActionRequest schema for consistency,
+            # even though we map args/kwargs locally to python functions.
+            try:
+                # We wrap the incoming parameters in the strict Pydantic model for validation
+                # The actual tool functions might not accept a BaseActionRequest object, so we just use it for gating
+                _ = BaseActionRequest(action_name=name, parameters=final_kwargs)
+            except ValidationError as ve:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Tool payload validation failed for '{name}': {ve}")
+                raise ToolExecutionError(f"Strict Gating failed for tool '{name}' payload: {ve}")
+
             if is_debug_mode():
                 print(f"ToolSystem: Executing tool '{name}' with args={args}, final_kwargs={final_kwargs}")
             if inspect.iscoroutinefunction(func_to_execute):
                 result = await func_to_execute(*args, **final_kwargs)
             else:
                 result = await asyncio.to_thread(func_to_execute, *args, **final_kwargs)
+
             if is_debug_mode():
                 print(f"ToolSystem: Tool '{name}' executed successfully. Result (first 200 chars): {str(result)[:200]}")
-            return result
+
+            # Enforce BaseActionResponse structure where possible or adapt legacy tools.
+            # Realistically, legacy tools return strings or raw dicts. We coerce them into BaseActionResponse format internally.
+            if isinstance(result, BaseActionResponse):
+                return result.model_dump()
+            elif isinstance(result, dict) and "success" in result:
+                 # It's already sort of standard, validate it and return
+                 try:
+                     valid_resp = BaseActionResponse(**result)
+                     return valid_resp.model_dump()
+                 except ValidationError:
+                     # Allow fallback for legacy dictionaries, but wrap them for safety
+                     pass
+
+            # Default coercion for legacy returns
+            return BaseActionResponse(success=True, result=result).model_dump()
+
+        except ToolExecutionError:
+            raise
         except Exception as e:
             print(f"ToolSystem: Error during execution of tool '{name}': {type(e).__name__} - {e}")
             raise ToolExecutionError(f"Error during execution of tool '{name}': {e}") from e

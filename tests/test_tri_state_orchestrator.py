@@ -65,7 +65,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         ]
 
         mock_tool_system.get_tools_description.return_value = "Tool 1"
-        mock_tool_system.execute_tool = AsyncMock(return_value="Tool Result")
+        mock_tool_system.execute_tool = AsyncMock(return_value={"success": True, "result": "Tool Result"})
 
         # Execute
         from ai_assistant.core.models.state import ExecutionState
@@ -98,7 +98,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         ]
 
         mock_tool_system.get_tools_description.return_value = "Complex Tools"
-        mock_tool_system.execute_tool = AsyncMock(return_value="Complex Result")
+        mock_tool_system.execute_tool = AsyncMock(return_value={"success": True, "result": "Complex Result"})
 
         # Execute
         from ai_assistant.core.models.state import ExecutionState
