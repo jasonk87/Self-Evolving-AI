@@ -769,24 +769,22 @@ class ActionExecutor:
             return False
 
         if action_type == "PROPOSE_TOOL_MODIFICATION":
-            tool_name = details.get("tool_name")
-            suggested_code = details.get("suggested_code_change")
-            module_path = details.get("module_path")
-            function_name = details.get("function_name")
-            original_description = details.get("suggested_change_description", "No specific description provided.")
+            from ai_assistant.core.models.actions import ProposeToolModificationAction
+            from pydantic import ValidationError
 
-            if not module_path or not function_name:
-                log_message_details = f"Missing module_path or function_name for tool '{tool_name}'. Cannot attempt modification."
+            try:
+                action_model = ProposeToolModificationAction(**details)
+            except ValidationError as ve:
+                log_message_details = f"Validation Error for PROPOSE_TOOL_MODIFICATION: {ve}"
                 print(f"ActionExecutor: {log_message_details}")
-                global_reflection_log.log_execution(
-                    goal_description=f"Self-modification attempt for insight {source_insight_id}",
-                    plan=[{"action_type": action_type, "details": details}], execution_results=[f"Failure: {log_message_details}"],
-                    overall_success=False, notes=log_notes_prefix + log_message_details,
-                    status_override="SELF_MODIFICATION_FAILED_PRECONDITIONS",
-                    post_modification_test_passed=None, post_modification_test_details={"notes": "Test not run due to precondition failure."}
-                )
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Precondition check failed")
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Payload validation failed")
                 return False
+
+            tool_name = action_model.tool_name
+            suggested_code = action_model.suggested_code_change
+            module_path = action_model.module_path
+            function_name = action_model.function_name
+            original_description = action_model.suggested_change_description
 
             # --- CORE SYSTEM PROTECTION GATE ---
             # Check if this modification targets a core system file.
@@ -1003,11 +1001,17 @@ class ActionExecutor:
                 return False
 
         elif action_type == "ADD_LEARNED_FACT":
-            fact_to_learn = details.get("fact_to_learn")
-            if not fact_to_learn:
-                log_msg = "Missing 'fact_to_learn' in details. Cannot add fact."
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Missing fact text")
+            from ai_assistant.core.models.actions import AddLearnedFactAction
+            from pydantic import ValidationError
+
+            try:
+                action_model = AddLearnedFactAction(**details)
+            except ValidationError as ve:
+                log_msg = f"Validation Error for ADD_LEARNED_FACT: {ve}"
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Payload validation failed")
                 return False
+
+            fact_to_learn = action_model.fact_to_learn
 
             try:
                 current_facts = load_learned_facts()
@@ -1068,16 +1072,33 @@ class ActionExecutor:
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during fact processing")
                 return False
         elif action_type == "EXECUTE_EPHEMERAL_AGENT":
+            from ai_assistant.core.models.actions import ExecuteEphemeralAgentAction
+            from pydantic import ValidationError
+
+            try:
+                # We just use this to validate the mandatory task_description, passing the raw dict into _execute
+                action_model = ExecuteEphemeralAgentAction(**details)
+            except ValidationError as ve:
+                log_msg = f"Validation Error for EXECUTE_EPHEMERAL_AGENT: {ve}"
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Payload validation failed")
+                return False
+
             return await self._execute_ephemeral_agent_task(details, action_task_id)
 
         elif action_type == "EXECUTE_SUGGESTED_TOOL":
-            tool_name = details.get("tool_name")
-            tool_args = details.get("args", {})
-            
-            if not tool_name:
-                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing tool name.", step_desc="Tool name check")
+            from ai_assistant.core.models.actions import ExecuteSuggestedToolAction
+            from pydantic import ValidationError
+
+            try:
+                action_model = ExecuteSuggestedToolAction(**details)
+            except ValidationError as ve:
+                log_msg = f"Validation Error for EXECUTE_SUGGESTED_TOOL: {ve}"
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Payload validation failed")
                 return False
                 
+            tool_name = action_model.tool_name
+            tool_args = action_model.args
+
             from ai_assistant.custom_tools.code_execution_tools import install_python_package
             
             # Security/Safety check: strictly limit which tools can be auto-executed this way
@@ -1135,11 +1156,21 @@ class ActionExecutor:
                 return False
 
         elif action_type == "APPLY_ARCHITECT_PROPOSAL":
-            target_file = details.get("target_file")
-            proposal_summary = details.get("proposal_summary")
-            proposal_plan = details.get("proposal_plan")
+            from ai_assistant.core.models.actions import ApplyArchitectProposalAction
+            from pydantic import ValidationError
 
-            if not target_file or not os.path.exists(target_file):
+            try:
+                action_model = ApplyArchitectProposalAction(**details)
+            except ValidationError as ve:
+                log_msg = f"Validation Error for APPLY_ARCHITECT_PROPOSAL: {ve}"
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="Payload validation failed")
+                return False
+
+            target_file = action_model.target_file
+            proposal_summary = action_model.proposal_summary
+            proposal_plan = action_model.proposal_plan
+
+            if not os.path.exists(target_file):
                 log_msg = f"Target file not found for architect proposal: {target_file}"
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_msg, step_desc="File check failed")
                 return False
