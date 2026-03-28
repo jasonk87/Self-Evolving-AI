@@ -55,32 +55,14 @@ class SystemController:
             logger.info(f"SystemController: Routing request for session {session_id}")
 
             # 2. Delegate to the Orchestrator
-            # Temporarily, we wrap the existing orchestrator method. In the future,
-            # the orchestrator will natively accept and mutate this ExecutionState object.
-            success, response_message, collected_images = await self.orchestrator.process_prompt(
-                prompt=prompt,
+            # The orchestrator accepts and directly mutates the ExecutionState object.
+            state = await self.orchestrator.process_prompt(
+                state=state,
                 conversation_history=conversation_history,
                 session_id=session_id,
                 images=images,
                 context_source=context_source
             )
-
-            # 3. Update the State based on the outcome
-            if success:
-                state.current_status = "completed"
-            else:
-                state.current_status = "failed"
-                state.errors.append("Orchestrator reported failure.")
-
-            # Since the orchestrator currently returns a string, we store it in tool_results
-            # as a synthetic final output for now. When the orchestrator is refactored,
-            # it will populate state.tool_results directly.
-            state.tool_results.append({
-                "action_name": "orchestrator_final_answer",
-                "success": success,
-                "result": response_message,
-                "collected_images": collected_images
-            })
 
         except Exception as e:
             logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)

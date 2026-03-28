@@ -274,26 +274,56 @@ def _launch_delegated_code_task(task_id: str, session_id: str, delegated_prompt:
                 ActiveTaskStatus.GENERATING_CODE,
                 step_desc='Delegated coding agent running',
             )
-            response_text, response_images = await app_globals.orchestrator.process_prompt(
-                delegated_prompt,
+
+            # Route delegated tasks through the new controller and state pipeline
+            execution_state = await app_globals.controller.handle_user_request(
+                prompt=delegated_prompt,
                 conversation_history=history_snapshot,
-                user_session_id=session_id,
+                session_id=session_id,
+                context_source="SYSTEM"
             )
-            app_globals.task_manager.update_task_status(
-                task_id,
-                ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
-                reason='Delegated coding task completed.',
-                out_preview=(response_text or '')[:300],
-            )
-            completion_message = f"Delegated task {task_id[:8]} completed.\n\n{response_text or 'No response generated.'}"
-            app_globals.chat_manager.add_message(session_id, 'assistant', completion_message, images=response_images or None)
-            _append_user_work_notice(
-                message=f"Delegated task {task_id[:8]} completed.",
-                source_session_id=session_id,
-                task_id=task_id,
-                status='completed',
-                user_scope=user_scope,
-            )
+
+            response_text = ""
+            response_images = []
+
+            # Find the final answer from the orchestrator
+            if execution_state.tool_results and len(execution_state.tool_results) > 0:
+                 last_result = execution_state.tool_results[-1]
+                 if last_result.get("action_name") == "orchestrator_final_answer":
+                     response_text = last_result.get("result", "")
+                     response_images = last_result.get("collected_images", [])
+
+            if execution_state.current_status == "completed":
+                app_globals.task_manager.update_task_status(
+                    task_id,
+                    ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
+                    reason='Delegated coding task completed.',
+                    out_preview=(response_text or '')[:300],
+                )
+                completion_message = f"Delegated task {task_id[:8]} completed.\n\n{response_text or 'No response generated.'}"
+                app_globals.chat_manager.add_message(session_id, 'assistant', completion_message, images=response_images or None)
+                _append_user_work_notice(
+                    message=f"Delegated task {task_id[:8]} completed.",
+                    source_session_id=session_id,
+                    task_id=task_id,
+                    status='completed',
+                    user_scope=user_scope,
+                )
+            else:
+                error_details = "\n".join(execution_state.errors)
+                app_globals.task_manager.update_task_status(
+                    task_id,
+                    ActiveTaskStatus.FAILED_UNKNOWN,
+                    reason=f'Delegated task failed. Status: {execution_state.current_status}',
+                )
+                app_globals.chat_manager.add_message(session_id, 'assistant', f"Delegated task {task_id[:8]} failed: {error_details}")
+                _append_user_work_notice(
+                    message=f"Delegated task {task_id[:8]} failed.",
+                    source_session_id=session_id,
+                    task_id=task_id,
+                    status='failed',
+                    user_scope=user_scope,
+                )
         except Exception as e:
             app_globals.task_manager.update_task_status(
                 task_id,

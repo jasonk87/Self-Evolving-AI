@@ -6,7 +6,18 @@ from ai_assistant.core.models.state import ExecutionState
 @pytest.fixture
 def mock_orchestrator():
     orchestrator = MagicMock()
-    orchestrator.process_prompt = AsyncMock(return_value=(True, "Success message", ["img1"]))
+
+    async def mock_process(state, **kwargs):
+        state.current_status = "completed"
+        state.tool_results.append({
+            "action_name": "orchestrator_final_answer",
+            "success": True,
+            "result": "Success message",
+            "collected_images": ["img1"]
+        })
+        return state
+
+    orchestrator.process_prompt = AsyncMock(side_effect=mock_process)
     return orchestrator
 
 @pytest.mark.asyncio
@@ -27,13 +38,23 @@ async def test_controller_handles_successful_request(mock_orchestrator):
 
 @pytest.mark.asyncio
 async def test_controller_handles_failed_request(mock_orchestrator):
-    mock_orchestrator.process_prompt = AsyncMock(return_value=(False, "Failed message", []))
+    async def mock_process_fail(state, **kwargs):
+        state.current_status = "failed"
+        state.errors.append("Maximum cycles reached.")
+        state.tool_results.append({
+            "action_name": "orchestrator_final_answer",
+            "success": False,
+            "result": "Maximum cycles reached."
+        })
+        return state
+
+    mock_orchestrator.process_prompt = AsyncMock(side_effect=mock_process_fail)
     controller = SystemController(orchestrator=mock_orchestrator)
 
     state = await controller.handle_user_request(prompt="Fail prompt")
 
     assert state.current_status == "failed"
-    assert "Orchestrator reported failure." in state.errors
+    assert "Maximum cycles reached." in state.errors
     assert state.tool_results[0]["success"] is False
 
 @pytest.mark.asyncio

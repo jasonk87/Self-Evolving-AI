@@ -35,9 +35,14 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_invoke_gemini.side_effect = ["FINAL ANSWER: Direct response.", '```json\n{"type": "final_answer", "params": {"message": "Direct response."}}\n```']
 
         # Execute
-        success, response, collected_images = await self.orchestrator.process_prompt("Hello")
+        from ai_assistant.core.models.state import ExecutionState
+        state = ExecutionState(original_user_prompt="Hello", context_limits={"max_tokens": 100000})
+        state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
+        success = state.current_status == "completed"
+        response = state.tool_results[-1].get("result") if state.tool_results else ""
+
         self.assertTrue(success)
         self.assertEqual(response, "Direct response.")
 
@@ -63,9 +68,14 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.execute_tool = AsyncMock(return_value="Tool Result")
 
         # Execute
-        success, response, collected_images = await self.orchestrator.process_prompt("Do something")
+        from ai_assistant.core.models.state import ExecutionState
+        state = ExecutionState(original_user_prompt="Do something", context_limits={"max_tokens": 100000})
+        state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
+        success = state.current_status == "completed"
+        response = state.tool_results[-1].get("result") if state.tool_results else ""
+
         self.assertTrue(success)
         self.assertEqual(response, "Done.")
         self.assertEqual(mock_invoke_gemini.call_count, 4)
@@ -91,9 +101,14 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.execute_tool = AsyncMock(return_value="Complex Result")
 
         # Execute
-        success, response, collected_images = await self.orchestrator.process_prompt("Solve complex problem")
+        from ai_assistant.core.models.state import ExecutionState
+        state = ExecutionState(original_user_prompt="Solve complex problem", context_limits={"max_tokens": 100000})
+        state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
+        success = state.current_status == "completed"
+        response = state.tool_results[-1].get("result") if state.tool_results else ""
+
         self.assertTrue(success)
         self.assertEqual(response, "Solved complex problem.")
         self.assertEqual(mock_invoke_gemini.call_count, 4)
@@ -111,9 +126,14 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.get_tools_description.return_value = "Tools"
 
         # Execute
-        success, response, collected_images = await self.orchestrator.process_prompt("Something")
+        from ai_assistant.core.models.state import ExecutionState
+        state = ExecutionState(original_user_prompt="Something", context_limits={"max_tokens": 100000})
+        state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
+        success = state.current_status == "completed"
+        response = state.tool_results[-1].get("result") if state.tool_results else ""
+
         self.assertTrue(success)
         self.assertEqual(response, "Fallback success.")
         # It should have called invoke_gemini_model_async (Fast React uses this)
