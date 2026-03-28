@@ -146,6 +146,16 @@ def _parse_and_validate_function_update(code_string: str, function_name: str) ->
     if not new_function_node:
         return None, [], "Error: new_code_string does not contain a valid function definition."
     
+    # Catch LLM laziness (e.g., `# ... existing code ...`, `pass` inside an otherwise empty body)
+    if len(new_function_node.body) == 1 and isinstance(new_function_node.body[0], ast.Pass):
+        return None, [], "Error: new_code_string contains a lazy 'pass' statement. You MUST provide the full, complete logic for the function."
+
+    if len(new_function_node.body) == 1 and isinstance(new_function_node.body[0], ast.Expr):
+        val = new_function_node.body[0].value
+        if isinstance(val, ast.Constant) and isinstance(val.value, str):
+            if "..." in val.value or "existing" in val.value.lower() or "rest of" in val.value.lower():
+                return None, [], f"Error: new_code_string contains a lazy placeholder string: '{val.value}'. You MUST provide the full, complete logic for the function, not a comment or placeholder."
+
     if new_function_node.name != function_name:
          # Just a warning context, but we return the node. Caller handles logging if needed.
          pass

@@ -163,8 +163,9 @@ def modify_file_lines(
 class ProposeFunctionModificationSchema(BaseModel):
     module_path: str = Field(..., description="The dotted module path (e.g., 'ai_assistant.custom_tools.my_tool').")
     function_name: str = Field(..., description="The name of the function to modify.")
-    new_code_string: str = Field(..., description="The complete, new source code for the function.")
+    new_code_string: str = Field(..., description="The complete, new source code for the function. DO NOT USE LAZY PLACEHOLDERS LIKE '# ... existing code ...'.")
     change_description: str = Field(..., description="Explanation of the change for the reviewer.")
+    unit_test_code: str = Field(..., description="MANDATORY: Write an asserting `pytest` function to prove this modification works.")
 
 SCHEMA_PROPOSE_FUNCTION_MODIFICATION = {
     "name": "propose_function_modification",
@@ -172,20 +173,25 @@ SCHEMA_PROPOSE_FUNCTION_MODIFICATION = {
     "parameters": ProposeFunctionModificationSchema.model_json_schema()
 }
 
-async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str) -> Dict[str, Any]:
+async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str, unit_test_code: str) -> Dict[str, Any]:
     """
     Wrapper for edit_function_source_code to be exposed as a tool.
+    Requires an associated unit test string.
     """
     # Assuming project root is current working directory for now
     project_root = os.getcwd()
 
     try:
+        # Since edit_function_source_code doesn't natively accept unit_test_code yet,
+        # we append the unit test to the change description so the Executor/Council sees it.
+        enhanced_description = f"{change_description}\n\n[MANDATORY UNIT TEST]\n{unit_test_code}"
+
         result_msg = await edit_function_source_code(
             module_path=module_path,
             function_name=function_name,
             new_code_string=new_code_string,
             project_root_path=project_root,
-            change_description=change_description
+            change_description=enhanced_description
         )
 
         status = "success" if "success" in result_msg.lower() else "error"

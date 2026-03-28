@@ -168,7 +168,19 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
                     if stderr_val:
                         stderr_val += '\n'
                     stderr_val += f"Warning: Requested output file '{out_fname}' not found in execution directory."
-        return {'status': status, 'return_code': return_code, 'stdout': stdout_val.strip(), 'stderr': stderr_val.strip(), 'output_files': collected_output_files, 'error_message': error_msg_val.strip() if error_msg_val else None, 'executed_script_path': returned_executed_script_path}
+        error_message = error_msg_val.strip() if error_msg_val else None
+
+        # Attempt to detect and handle Dependency Paralysis proactively
+        if status == 'error' and error_message and 'ModuleNotFoundError' in error_message:
+            import re
+            match = re.search(r"No module named '([^']+)'", error_message)
+            if match:
+                missing_module = match.group(1)
+                suggestion_msg = f" \n\n[DEPENDENCY PARALYSIS DETECTED]: The script failed because it requires the external package '{missing_module}'. You must use the `install_python_package` tool to install '{missing_module}' before retrying this script."
+                error_message += suggestion_msg
+                if stderr_val: stderr_val += suggestion_msg
+
+        return {'status': status, 'return_code': return_code, 'stdout': stdout_val.strip(), 'stderr': stderr_val.strip(), 'output_files': collected_output_files, 'error_message': error_message, 'executed_script_path': returned_executed_script_path}
 
 def execute_safe_terminal_command(command: str) -> Dict[str, Any]:
     """

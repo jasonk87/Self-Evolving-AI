@@ -3,10 +3,11 @@ from pydantic import BaseModel, Field
 
 class ProposeToolModificationAction(BaseModel):
     tool_name: str = Field(..., description="Name of the tool being modified.")
-    suggested_code_change: str = Field(..., description="The suggested python code for the modification.")
+    suggested_code_change: str = Field(..., description="The suggested python code for the modification. DO NOT USE LAZY PLACEHOLDERS LIKE '# ... existing code ...'. Provide the complete, valid logic.")
     module_path: str = Field(..., description="The path to the python module containing the tool.")
     function_name: str = Field(..., description="The exact function name to modify.")
     suggested_change_description: str = Field("No specific description provided.", description="Description of the change.")
+    unit_test_code: str = Field(..., description="MANDATORY: Write an asserting `pytest` function to prove this modification works. The test must import the modified module and assert expected outcomes. If the test fails, the modification is rolled back.")
 
 class ExecuteComplexProjectTaskAction(BaseModel):
     contract: Dict[str, Any] = Field(..., description="The SwarmContract dictionary payload to initialize a sub-swarm.")
