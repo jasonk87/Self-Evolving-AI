@@ -1,0 +1,74 @@
+[
+    {
+        "goal_description": "Test self-mod logging in ReflectionLog",
+        "plan": [
+            {
+                "tool_name": "self_mod_tool"
+            }
+        ],
+        "execution_results": [
+            {
+                "outcome": "details from apply_code_modification"
+            }
+        ],
+        "status": "SUCCESS",
+        "entry_id": "f151c18e-e4cd-4670-9117-5b6199164d35",
+        "notes": "Logging a self-modification attempt.(Note: overall_success was False but all plan steps completed without error representations).",
+        "timestamp": "2026-03-28T21:20:52.575428+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": true,
+        "source_suggestion_id": "SUG004",
+        "modification_type": "MODIFY_TOOL_CODE",
+        "modification_details": {
+            "module": "core.py",
+            "change": "refactor"
+        },
+        "post_modification_test_passed": false,
+        "post_modification_test_details": {
+            "passed": false,
+            "notes": "Unit test failed post-mod"
+        },
+        "commit_info": {
+            "message": "Attempted refactor, tests failed",
+            "status": false
+        }
+    },
+    {
+        "goal_description": "Test self-mod logging in ReflectionLog",
+        "plan": [
+            {
+                "tool_name": "self_mod_tool"
+            }
+        ],
+        "execution_results": [
+            {
+                "outcome": "details from apply_code_modification"
+            }
+        ],
+        "status": "SUCCESS",
+        "entry_id": "5bac4091-774f-4c8c-8b11-ac62fac6896a",
+        "notes": "Logging a self-modification attempt.(Note: overall_success was False but all plan steps completed without error representations).",
+        "timestamp": "2026-03-28T21:42:14.171152+00:00",
+        "error_type": null,
+        "error_message": null,
+        "traceback_snippet": null,
+        "is_self_modification_attempt": true,
+        "source_suggestion_id": "SUG004",
+        "modification_type": "MODIFY_TOOL_CODE",
+        "modification_details": {
+            "module": "core.py",
+            "change": "refactor"
+        },
+        "post_modification_test_passed": false,
+        "post_modification_test_details": {
+            "passed": false,
+            "notes": "Unit test failed post-mod"
+        },
+        "commit_info": {
+            "message": "Attempted refactor, tests failed",
+            "status": false
+        }
+    }
+]
