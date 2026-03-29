@@ -17,6 +17,11 @@ class ExecutionState(BaseModel):
         description="The original instruction or request provided by the user.",
     )
 
+    working_prompt: str | None = Field(
+        default=None,
+        description="The effective prompt, which may be enriched with vision context or other system text.",
+    )
+
     current_status: str = Field(
         default="initialized",
         description="Current system status or stage. Examples: 'planning', 'coding', 'tool_execution', 'completed', 'failed'.",

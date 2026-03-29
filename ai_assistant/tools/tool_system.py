@@ -302,12 +302,26 @@ class ToolSystem:
                 if is_debug_mode():
                     print(f"ToolSystem: Injecting ActionExecutor into tool '{name}'.")
         try:
+            # Create a unified parameters dictionary representing what will actually be passed to the function
+            unified_params = final_kwargs.copy()
+            if sig:
+                try:
+                    # Bind args and kwargs to the signature to resolve positional arguments
+                    # We use partial so we don't need to supply arguments that will be injected later if missing
+                    # Actually, bind_partial resolves what's given, letting us see the mapping
+                    bound_args = sig.bind_partial(*args, **final_kwargs)
+                    bound_args.apply_defaults()
+                    unified_params = dict(bound_args.arguments)
+                except Exception as e:
+                    # If binding fails, we fall back to kwargs, but log a warning. The function execution will likely fail anyway.
+                    if is_debug_mode():
+                        print(f"ToolSystem: Warning - Could not bind signature for validation in tool '{name}': {e}")
+
             # Proactive Validation: Ensure the request conforms to BaseActionRequest schema for consistency,
             # even though we map args/kwargs locally to python functions.
             try:
-                # We wrap the incoming parameters in the strict Pydantic model for validation
-                # The actual tool functions might not accept a BaseActionRequest object, so we just use it for gating
-                _ = BaseActionRequest(action_name=name, parameters=final_kwargs)
+                # We wrap the unified parameters in the strict Pydantic model for validation
+                _ = BaseActionRequest(action_name=name, parameters=unified_params)
             except ValidationError as ve:
                 import logging
                 logger = logging.getLogger(__name__)
@@ -318,13 +332,8 @@ class ToolSystem:
             pydantic_model = tool_info.get('pydantic_model')
             if pydantic_model:
                 try:
-                    # Validate the raw kwargs against the required schema
-                    # Note: We do not pass the instantiated model to the function to maintain backwards compatibility
-                    # with functions that expect raw kwargs. We just use it as a validation gate.
-                    validated_kwargs_model = pydantic_model(**final_kwargs)
-
-                    # If we need to, we can optionally use the validated kwargs instead
-                    # final_kwargs = validated_kwargs_model.model_dump()
+                    # Validate the unified parameters against the required schema
+                    validated_kwargs_model = pydantic_model(**unified_params)
                 except ValidationError as ve:
                     import logging
                     logger = logging.getLogger(__name__)

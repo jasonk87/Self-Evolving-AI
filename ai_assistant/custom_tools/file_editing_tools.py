@@ -184,7 +184,9 @@ async def propose_function_modification(module_path: str, function_name: str, ne
     try:
         # Since edit_function_source_code doesn't natively accept unit_test_code yet,
         # we append the unit test to the change description so the Executor/Council sees it.
-        enhanced_description = f"{change_description}\n\n[MANDATORY UNIT TEST]\n{unit_test_code}"
+        enhanced_description = change_description
+        if unit_test_code:
+            enhanced_description += f"\n\n[MANDATORY UNIT TEST]\n{unit_test_code}"
 
         result_msg = await edit_function_source_code(
             module_path=module_path,

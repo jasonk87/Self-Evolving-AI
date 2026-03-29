@@ -337,8 +337,8 @@ class DynamicOrchestrator:
             })
             last_node_id = root_node_id
 
-            # Replace the plain original user prompt with the one enriched with visual context
-            state.original_user_prompt = prompt
+            # Set the effective prompt which may be enriched with vision context
+            state.working_prompt = prompt
 
             # We loop through cycles
             for step_i in range(max_steps):
