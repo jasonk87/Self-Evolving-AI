@@ -62,13 +62,8 @@ def register_socket_events(socketio):
             execution_state = future.result()
             success = execution_state.current_status == "completed"
 
-            response = ""
-            collected_images = []
-            if execution_state.tool_results and len(execution_state.tool_results) > 0:
-                last_result = execution_state.tool_results[-1]
-                if last_result.get("action_name") == "orchestrator_final_answer":
-                    response = last_result.get("result", "")
-                    collected_images = last_result.get("collected_images", [])
+            response = execution_state.final_answer or ""
+            collected_images = execution_state.final_images or []
 
             if not success and not response:
                 response = "Task encountered errors:\n" + "\n".join(execution_state.errors)

@@ -36,3 +36,13 @@ class ExecutionState(BaseModel):
         default_factory=dict,
         description="Tracks current context or memory limits (e.g., max tokens, available memory) to guide agent outputs.",
     )
+
+    final_answer: str | None = Field(
+        default=None,
+        description="The final natural language response produced by the agent to be delivered to the user.",
+    )
+
+    final_images: List[str] = Field(
+        default_factory=list,
+        description="A list of file paths to images collected during execution to be returned to the user.",
+    )

@@ -145,16 +145,13 @@ class DynamicOrchestrator:
             # We bypass the LLM for rephrasing here because the LLM is blocked!
             state.current_status = "failed"
             state.errors.append("Budget Exceeded")
-            state.tool_results.append({
-                "action_name": "orchestrator_final_answer",
-                "success": False,
-                "result": f"I cannot complete your request because the system budget has been reached.\n{html}"
-            })
+            state.final_answer = f"I cannot complete your request because the system budget has been reached.\n{html}"
             return state
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
             state.current_status = "failed"
             state.errors.append(f"An unexpected error occurred: {str(e)}")
+            state.final_answer = "An internal error occurred."
             return state
 
         finally:
@@ -339,6 +336,9 @@ class DynamicOrchestrator:
                 "cycle": 0
             })
             last_node_id = root_node_id
+
+            # Replace the plain original user prompt with the one enriched with visual context
+            state.original_user_prompt = prompt
 
             # We loop through cycles
             for step_i in range(max_steps):
@@ -770,12 +770,8 @@ Instructions:
                 tools_used=tools_used_names
             ))
 
-            state.tool_results.append({
-                "action_name": "orchestrator_final_answer",
-                "success": success,
-                "result": final_answer,
-                "collected_images": collected_images
-            })
+            state.final_answer = final_answer
+            state.final_images = collected_images
 
             if success:
                 state.current_status = "completed"

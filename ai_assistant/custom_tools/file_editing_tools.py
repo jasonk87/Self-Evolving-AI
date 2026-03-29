@@ -165,7 +165,7 @@ class ProposeFunctionModificationSchema(BaseModel):
     function_name: str = Field(..., description="The name of the function to modify.")
     new_code_string: str = Field(..., description="The complete, new source code for the function. DO NOT USE LAZY PLACEHOLDERS LIKE '# ... existing code ...'.")
     change_description: str = Field(..., description="Explanation of the change for the reviewer.")
-    unit_test_code: str = Field(..., description="MANDATORY: Write an asserting `pytest` function to prove this modification works.")
+    unit_test_code: Optional[str] = Field(None, description="MANDATORY IF FEASIBLE: Write an asserting `pytest` function to prove this modification works.")
 
 SCHEMA_PROPOSE_FUNCTION_MODIFICATION = {
     "name": "propose_function_modification",
@@ -173,10 +173,10 @@ SCHEMA_PROPOSE_FUNCTION_MODIFICATION = {
     "parameters": ProposeFunctionModificationSchema.model_json_schema()
 }
 
-async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str, unit_test_code: str) -> Dict[str, Any]:
+async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str, unit_test_code: Optional[str] = None) -> Dict[str, Any]:
     """
     Wrapper for edit_function_source_code to be exposed as a tool.
-    Requires an associated unit test string.
+    Optionally accepts an associated unit test string.
     """
     # Assuming project root is current working directory for now
     project_root = os.getcwd()

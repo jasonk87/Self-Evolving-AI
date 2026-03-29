@@ -283,15 +283,8 @@ def _launch_delegated_code_task(task_id: str, session_id: str, delegated_prompt:
                 context_source="SYSTEM"
             )
 
-            response_text = ""
-            response_images = []
-
-            # Find the final answer from the orchestrator
-            if execution_state.tool_results and len(execution_state.tool_results) > 0:
-                 last_result = execution_state.tool_results[-1]
-                 if last_result.get("action_name") == "orchestrator_final_answer":
-                     response_text = last_result.get("result", "")
-                     response_images = last_result.get("collected_images", [])
+            response_text = execution_state.final_answer or ""
+            response_images = execution_state.final_images or []
 
             if execution_state.current_status == "completed":
                 app_globals.task_manager.update_task_status(
@@ -970,14 +963,8 @@ def chat():
         # Unpack from the new unified execution state
         success = execution_state.current_status == "completed"
 
-        # Find the final answer in the tool results (which includes the orchestrator response for now)
-        response = ""
-        collected_images = []
-        if execution_state.tool_results and len(execution_state.tool_results) > 0:
-             last_result = execution_state.tool_results[-1]
-             if last_result.get("action_name") == "orchestrator_final_answer":
-                 response = last_result.get("result", "")
-                 collected_images = last_result.get("collected_images", [])
+        response = execution_state.final_answer or ""
+        collected_images = execution_state.final_images or []
 
         if not success and not response:
              # Include execution state errors in the response string if it failed without a final message

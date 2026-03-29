@@ -41,7 +41,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         # Verify
         success = state.current_status == "completed"
-        response = state.tool_results[-1].get("result") if state.tool_results else ""
+        response = state.final_answer or ""
 
         self.assertTrue(success)
         self.assertEqual(response, "Direct response.")
@@ -74,7 +74,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         # Verify
         success = state.current_status == "completed"
-        response = state.tool_results[-1].get("result") if state.tool_results else ""
+        response = state.final_answer or ""
 
         self.assertTrue(success)
         self.assertEqual(response, "Done.")
@@ -107,7 +107,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         # Verify
         success = state.current_status == "completed"
-        response = state.tool_results[-1].get("result") if state.tool_results else ""
+        response = state.final_answer or ""
 
         self.assertTrue(success)
         self.assertEqual(response, "Solved complex problem.")
@@ -132,7 +132,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         # Verify
         success = state.current_status == "completed"
-        response = state.tool_results[-1].get("result") if state.tool_results else ""
+        response = state.final_answer or ""
 
         self.assertTrue(success)
         self.assertEqual(response, "Fallback success.")

@@ -330,11 +330,7 @@ async def run_autonomous_goal_processor():
                             )
                             
                             success = state.current_status == "completed"
-                            result_text = ""
-                            if state.tool_results and len(state.tool_results) > 0:
-                                last_result = state.tool_results[-1]
-                                if last_result.get("action_name") == "orchestrator_final_answer":
-                                    result_text = last_result.get("result", "")
+                            result_text = state.final_answer or ""
 
                             if not success and not result_text:
                                 result_text = "Task encountered errors:\n" + "\n".join(state.errors)

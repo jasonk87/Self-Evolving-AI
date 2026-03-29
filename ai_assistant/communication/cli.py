@@ -432,11 +432,7 @@ async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrato
         state = await orchestrator.process_prompt(state=state)
 
         success = state.current_status == "completed"
-        response = ""
-        if state.tool_results and len(state.tool_results) > 0:
-            last_result = state.tool_results[-1]
-            if last_result.get("action_name") == "orchestrator_final_answer":
-                response = last_result.get("result", "")
+        response = state.final_answer or ""
 
         if not success and not response:
             response = "Task encountered errors:\n" + "\n".join(state.errors)

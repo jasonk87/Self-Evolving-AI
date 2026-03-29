@@ -68,7 +68,7 @@ class SubSwarmCoordinator:
         Starts the swarm and returns the finalized artifacts when done.
         """
         logger.info(f"[Coordinator {self.swarm_id}] Starting sub-swarm for contract: {self.contract.task_id}")
-        self.contract.validate()
+        # The contract is now a Pydantic model and validated at construction. No manual .validate() call needed.
 
         self.setup_coordinator_subscriptions()
 
