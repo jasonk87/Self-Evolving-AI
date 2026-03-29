@@ -334,6 +334,15 @@ class ToolSystem:
                 try:
                     # Validate the unified parameters against the required schema
                     validated_kwargs_model = pydantic_model(**unified_params)
+                    # Canonicalize the data: Replace final_kwargs with the dumped model
+                    # ensuring execution uses cleaned/normalized data instead of original kwargs
+                    # We merge any injected dependencies (like action_executor) back in since they aren't in the model
+                    dumped_model = validated_kwargs_model.model_dump()
+                    for k, v in final_kwargs.items():
+                        if k not in dumped_model and k in ['action_executor', 'task_manager', 'notification_manager']:
+                            dumped_model[k] = v
+                    final_kwargs = dumped_model
+                    args = () # Since we use fully bound kwargs from the model now
                 except ValidationError as ve:
                     import logging
                     logger = logging.getLogger(__name__)

@@ -51,7 +51,7 @@ def register_socket_events(socketio):
             session_id = app_globals.chat_manager.create_session("Terminal Session")
 
         try:
-            from ai_assistant.core.models.state import ExecutionState
+            from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
             state = ExecutionState(original_user_prompt=message, context_limits={"max_tokens": 100000})
 
             future = asyncio.run_coroutine_threadsafe(
@@ -60,7 +60,7 @@ def register_socket_events(socketio):
             )
 
             execution_state = future.result()
-            success = execution_state.current_status == "completed"
+            success = execution_state.current_status == ExecutionStatus.COMPLETED
 
             response = execution_state.final_answer or ""
             collected_images = execution_state.final_images or []

@@ -24,7 +24,7 @@ from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
-from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.state import ExecutionState, ToolExecutionRecord, ExecutionStatus
 from ai_assistant.core.models.actions import OperatorResponse
 
 # Legacy imports to keep signature compatible
@@ -143,13 +143,13 @@ class DynamicOrchestrator:
             </div>
             ```"""
             # We bypass the LLM for rephrasing here because the LLM is blocked!
-            state.current_status = "failed"
+            state.current_status = ExecutionStatus.FAILED
             state.errors.append("Budget Exceeded")
             state.final_answer = f"I cannot complete your request because the system budget has been reached.\n{html}"
             return state
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            state.current_status = "failed"
+            state.current_status = ExecutionStatus.FAILED
             state.errors.append(f"An unexpected error occurred: {str(e)}")
             state.final_answer = "An internal error occurred."
             return state
@@ -375,7 +375,7 @@ class DynamicOrchestrator:
                     q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
                     quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
 
-                state.current_status = "planning"
+                state.current_status = ExecutionStatus.PLANNING
                 # Construct base prompt and enforce absolute limits
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {state.original_user_prompt}
@@ -474,7 +474,7 @@ Output strictly your reasoning and the plan for the Operator.
                     )
 
                 # Phase 2: Operator (Act)
-                state.current_status = "tool_execution"
+                state.current_status = ExecutionStatus.TOOL_EXECUTION
                 print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
 
                 operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
@@ -678,11 +678,12 @@ Instructions:
                                     break
 
                                 execution_success = True
-                                state.tool_results.append({
-                                    "action_name": tool_name,
-                                    "success": True,
-                                    "result": result_str
-                                })
+                                state.tool_results.append(ToolExecutionRecord(
+                                    action_name=tool_name or "unknown",
+                                    input_summary=kwargs,
+                                    success=True,
+                                    result_summary=result_str
+                                ))
                                 break
                             except Exception as e:
                                 context_data = {
@@ -706,11 +707,12 @@ Instructions:
                                 else:
                                     result_str = f"Error: {str(e)}"
                                     state.errors.append(result_str)
-                                    state.tool_results.append({
-                                        "action_name": tool_name,
-                                        "success": False,
-                                        "error_message": result_str
-                                    })
+                                    state.tool_results.append(ToolExecutionRecord(
+                                        action_name=tool_name or "unknown",
+                                        input_summary=kwargs,
+                                        success=False,
+                                        error_message=result_str
+                                    ))
 
                     # Emit Tool Result node for Visual Cortex
                     tool_result_node_id = f"thought_res_{uuid.uuid4().hex[:8]}"
@@ -774,9 +776,9 @@ Instructions:
             state.final_images = collected_images
 
             if success:
-                state.current_status = "completed"
+                state.current_status = ExecutionStatus.COMPLETED
             else:
-                state.current_status = "failed"
+                state.current_status = ExecutionStatus.FAILED
 
         finally:
             # Clean up ephemeral task

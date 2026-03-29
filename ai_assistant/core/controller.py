@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any, Optional, Tuple, List
 import asyncio
 
-from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class SystemController:
             context_limits={"max_tokens": getattr(self.orchestrator, 'MAX_STRATEGIST_PROMPT_TOKENS', 120000)}
         )
 
-        state.current_status = "planning"
+        state.current_status = ExecutionStatus.PLANNING
 
         try:
             logger.info(f"SystemController: Routing request for session {session_id}")
@@ -66,7 +66,7 @@ class SystemController:
 
         except Exception as e:
             logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)
-            state.current_status = "failed"
+            state.current_status = ExecutionStatus.FAILED
             state.errors.append(f"Critical System Error: {str(e)}")
 
         return state

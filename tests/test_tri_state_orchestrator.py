@@ -35,12 +35,12 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_invoke_gemini.side_effect = ["FINAL ANSWER: Direct response.", '```json\n{"type": "final_answer", "params": {"message": "Direct response."}}\n```']
 
         # Execute
-        from ai_assistant.core.models.state import ExecutionState
+        from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
         state = ExecutionState(original_user_prompt="Hello", context_limits={"max_tokens": 100000})
         state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
-        success = state.current_status == "completed"
+        success = state.current_status == ExecutionStatus.COMPLETED
         response = state.final_answer or ""
 
         self.assertTrue(success)
@@ -68,12 +68,12 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.execute_tool = AsyncMock(return_value={"success": True, "result": "Tool Result"})
 
         # Execute
-        from ai_assistant.core.models.state import ExecutionState
+        from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
         state = ExecutionState(original_user_prompt="Do something", context_limits={"max_tokens": 100000})
         state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
-        success = state.current_status == "completed"
+        success = state.current_status == ExecutionStatus.COMPLETED
         response = state.final_answer or ""
 
         self.assertTrue(success)
@@ -101,12 +101,12 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.execute_tool = AsyncMock(return_value={"success": True, "result": "Complex Result"})
 
         # Execute
-        from ai_assistant.core.models.state import ExecutionState
+        from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
         state = ExecutionState(original_user_prompt="Solve complex problem", context_limits={"max_tokens": 100000})
         state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
-        success = state.current_status == "completed"
+        success = state.current_status == ExecutionStatus.COMPLETED
         response = state.final_answer or ""
 
         self.assertTrue(success)
@@ -126,12 +126,12 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         mock_tool_system.get_tools_description.return_value = "Tools"
 
         # Execute
-        from ai_assistant.core.models.state import ExecutionState
+        from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
         state = ExecutionState(original_user_prompt="Something", context_limits={"max_tokens": 100000})
         state = await self.orchestrator.process_prompt(state=state)
 
         # Verify
-        success = state.current_status == "completed"
+        success = state.current_status == ExecutionStatus.COMPLETED
         response = state.final_answer or ""
 
         self.assertTrue(success)

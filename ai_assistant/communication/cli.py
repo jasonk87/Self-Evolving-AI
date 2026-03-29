@@ -427,11 +427,11 @@ def _perform_tool_registration(module_path: str, function_name: str, tool_name: 
 async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrator, queue: asyncio.Queue):
     """Wraps orchestrator processing, handles learning, and puts results on a queue."""
     try:
-        from ai_assistant.core.models.state import ExecutionState
+        from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
         state = ExecutionState(original_user_prompt=prompt, context_limits={"max_tokens": 100000})
         state = await orchestrator.process_prompt(state=state)
 
-        success = state.current_status == "completed"
+        success = state.current_status == ExecutionStatus.COMPLETED
         response = state.final_answer or ""
 
         if not success and not response:

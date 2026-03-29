@@ -1,13 +1,13 @@
 import pytest
 from pydantic import ValidationError
-from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
 from ai_assistant.core.models.base_tool import BaseActionRequest, BaseActionResponse
 
 
 def test_execution_state_valid():
     state = ExecutionState(original_user_prompt="Hello world")
     assert state.original_user_prompt == "Hello world"
-    assert state.current_status == "initialized"
+    assert state.current_status == ExecutionStatus.INITIALIZED
     assert state.errors == []
     assert state.tool_results == []
     assert state.context_limits == {}

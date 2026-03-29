@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 import asyncio
 from ai_assistant.core.controller import SystemController
-from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.state import ExecutionState, ExecutionStatus
 
 class TestSystemController(unittest.IsolatedAsyncioTestCase):
     async def test_process_request_success(self):
@@ -27,12 +27,12 @@ class TestSystemController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result_state.errors[0], "Simulation error")
 
     def _mutate_success(self, state: ExecutionState) -> ExecutionState:
-        state.current_status = "completed"
+        state.current_status = ExecutionStatus.COMPLETED
         state.final_answer = "4"
         return state
 
     def _mutate_failure(self, state: ExecutionState) -> ExecutionState:
-        state.current_status = "failed"
+        state.current_status = ExecutionStatus.FAILED
         state.errors.append("Simulation error")
         return state
 
