@@ -1,5 +1,7 @@
 import os
 import platform
+import base64
+from io import BytesIO
 import subprocess
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -78,4 +80,59 @@ tool_system_instance.register_tool(
     function_name_in_module="read_clipboard",
     func_callable=read_clipboard,
     pydantic_model=AnalyzeClipboardSchema
+)
+
+class CaptureDesktopSchema(BaseModel):
+    pass # No parameters needed
+
+def capture_desktop_screenshot() -> Dict[str, Any]:
+    """
+    Captures a screenshot of the user's entire primary desktop monitor.
+    Use this tool whenever the user asks you to 'look at my screen', 'read this error',
+    or when you need visual context of their active workspace (e.g., their code editor).
+    """
+    try:
+        from PIL import ImageGrab
+    except ImportError:
+        return {
+            "success": False,
+            "error_message": "Pillow (PIL) module is not installed. To use screen capture, run: pip install Pillow"
+        }
+
+    try:
+        # Take the screenshot
+        screenshot = ImageGrab.grab(all_screens=False) # Only grab primary to save tokens/bandwidth
+
+        # Save it temporarily
+        os.makedirs("ai_assistant/core/data/screenshots", exist_ok=True)
+        import time
+        filename = f"ai_assistant/core/data/screenshots/desktop_capture_{int(time.time())}.png"
+
+        # Resize if massive (e.g., 4k monitor) to save LLM vision tokens
+        max_size = (1920, 1080)
+        screenshot.thumbnail(max_size)
+        screenshot.save(filename, format="PNG")
+
+        # Encode to base64 for LLM and PiP streaming
+        buffered = BytesIO()
+        screenshot.save(buffered, format="PNG")
+        encoded_string = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+        return {
+            "success": True,
+            "result": f"Successfully captured desktop screenshot and saved to {filename}. Analyze the visual contents.",
+            "base64_image": encoded_string,
+            "filename": filename
+        }
+
+    except Exception as e:
+         return {"success": False, "error_message": f"Failed to capture desktop screen: {str(e)}"}
+
+tool_system_instance.register_tool(
+    tool_name="capture_desktop_screenshot",
+    description="Takes a live screenshot of the user's actual desktop monitor. Essential for seeing what the user is looking at (like code errors or active apps).",
+    module_path=__name__,
+    function_name_in_module="capture_desktop_screenshot",
+    func_callable=capture_desktop_screenshot,
+    pydantic_model=CaptureDesktopSchema
 )
