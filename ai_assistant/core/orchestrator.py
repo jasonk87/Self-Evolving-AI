@@ -285,7 +285,24 @@ class DynamicOrchestrator:
         current_steps = []
         max_steps = MAX_REACT_STEPS
         collected_images = initial_images or []
-        tools_desc = tool_system_instance.get_tools_description()
+                # Extract previously loaded schemas with an auto-ejection mechanism
+        # Only schemas requested or tools actively used in the last 15 tool executions remain in context.
+        loaded_schemas = {}
+        recent_history = state.tool_results[-15:] if len(state.tool_results) > 15 else state.tool_results
+
+        for rec in recent_history:
+            if rec.action_name == "get_tool_schema" and rec.success:
+                if rec.input_summary and isinstance(rec.input_summary, dict):
+                    requested_tool = rec.input_summary.get("tool_name")
+                    if requested_tool:
+                        loaded_schemas[requested_tool] = str(rec.result_summary)
+
+        tools_desc = tool_system_instance.get_tools_description(verbose=False)
+        if loaded_schemas:
+            tools_desc += "\n\nCurrently Loaded Detailed Schemas:\n"
+            for t_name, t_schema in loaded_schemas.items():
+                tools_desc += f"--- {t_name} ---\n{t_schema}\n"
+
 
         # Initial Strategist Prompt
         execution_history = ""

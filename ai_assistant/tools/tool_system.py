@@ -218,6 +218,18 @@ class ToolSystem:
         refresh_tool_entry = {'tool_name': 'refresh_available_tools', 'description': 'Reloads all custom tool modules to discover new or updated tools without restarting. Returns status.', 'type': 'system_internal', 'module_path': self.__class__.__module__, 'function_name': 'refresh_custom_tools', 'callable_cache': self.refresh_custom_tools, 'is_method_on_instance': True}
         self._tool_registry['refresh_available_tools'] = refresh_tool_entry
 
+        # Register get_tool_schema for progressive disclosure
+        get_schema_entry = {
+            'tool_name': 'get_tool_schema',
+            'module_path': 'ai_assistant.tools.tool_system',
+            'function_name': 'get_tool_schema',
+            'description': 'Retrieves the exact JSON Schema for a specified tool to learn its arguments. Requires tool_name (str).',
+            'type': 'system_internal',
+            'callable_cache': self.get_tool_schema_command,
+            'is_method_on_instance': True
+        }
+        self._tool_registry['get_tool_schema'] = get_schema_entry
+
     def register_tool(self, tool_name: str, description: str, module_path: str, function_name_in_module: str, tool_type: str='dynamic', func_callable: Optional[Callable]=None, schema_details: Optional[Dict[str, Any]]=None, pydantic_model: Optional[type]=None) -> bool:
         """
         Registers a new tool or updates an existing one.
@@ -239,6 +251,36 @@ class ToolSystem:
             if is_debug_mode():
                 print(f"ToolSystem: Tool '{name}' not found in registry. Cannot remove.")
             return False
+
+    def get_tool_schema_command(self, tool_name: str) -> str:
+        """Returns the detailed JSON schema for a tool."""
+        tool_info = self.get_tool(tool_name)
+        if not tool_info:
+            return f"Error: Tool '{tool_name}' not found."
+
+        import json
+        if tool_info.get('pydantic_model'):
+            # Return pruned schema
+            schema = tool_info['pydantic_model'].model_json_schema()
+
+            # Prune noisy fields to save tokens
+            if "title" in schema:
+                del schema["title"]
+            if "description" in schema:
+                 del schema["description"] # The agent gets the description from the category list
+
+            # Prune property titles
+            if "properties" in schema:
+                for prop_name, prop_data in schema["properties"].items():
+                    if "title" in prop_data:
+                        del prop_data["title"]
+                    # If description is super obvious, we could remove it, but removing title is safe.
+
+            return json.dumps(schema, indent=2)
+        elif tool_info.get('schema_details'):
+            return json.dumps(tool_info['schema_details'], indent=2)
+        else:
+            return f"Tool '{tool_name}' has no defined strict schema. Description: {tool_info.get('description', 'None')}"
 
     def get_tool(self, name: str) -> Optional[Dict[str, Any]]:
         """Retrieves tool metadata from the registry."""
@@ -382,16 +424,38 @@ class ToolSystem:
             print(f"ToolSystem: Error during execution of tool '{name}': {type(e).__name__} - {e}")
             raise ToolExecutionError(f"Error during execution of tool '{name}': {e}") from e
 
-    def get_tools_description(self) -> str:
+    def get_tools_description(self, verbose: bool = False) -> str:
         """
         Returns a formatted string describing all available tools.
-        Used for the LLM system prompt.
+        If verbose is False (default), returns grouped tools by module with just names and descriptions.
+        This enables "Progressive Disclosure" where the LLM learns categories first.
         """
-        tools_list = []
+        if verbose:
+            tools_list = []
+            for name, data in self._tool_registry.items():
+                desc = data.get('description', 'No description available.')
+                tools_list.append(f"- {name}: {desc}")
+            return '\n'.join(tools_list)
+
+        # Group by module
+        groups = {}
         for name, data in self._tool_registry.items():
-            desc = data.get('description', 'No description available.')
-            tools_list.append(f'- {name}: {desc}')
-        return '\n'.join(tools_list)
+            module_path = data.get('module_path', 'unknown_module')
+            # Extract just the filename/module name cleanly
+            category = module_path.split('.')[-1].replace('_tools', '').replace('_tool', '').replace('_', ' ').title()
+            if category not in groups:
+                groups[category] = []
+            desc = data.get('description', 'No description available.').split('.')[0] + '.' # Just the first sentence
+            groups[category].append(f"  - {name}: {desc}")
+
+        output = ["AVAILABLE TOOL CATEGORIES:"]
+        for cat, tools in sorted(groups.items()):
+            output.append(f"\n[{cat} Tools]")
+            output.extend(tools)
+
+        output.append("\nTo use a tool, you must first request its full schema using `get_tool_schema(tool_name='...')` if you don't know its exact arguments.")
+        return '\n'.join(output)
+
 
     def list_tools(self) -> Dict[str, str]:
         """Returns a dictionary of tool names to their descriptions."""
