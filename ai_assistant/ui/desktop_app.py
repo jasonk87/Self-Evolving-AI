@@ -143,7 +143,7 @@ class FloatingAgentUI(QMainWindow):
             # We must create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            state = loop.run_until_complete(self.controller.process_request(prompt))
+            state = loop.run_until_complete(self.controller.handle_user_request(prompt))
             loop.close()
 
             if state.final_answer:
