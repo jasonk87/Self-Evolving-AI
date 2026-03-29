@@ -758,6 +758,14 @@ Instructions:
                     })
                     last_node_id = tool_result_node_id
 
+                    # Process PiP Visuals
+                    if isinstance(result, dict) and "base64_image" in result:
+                        state.final_images.append(result.get("filename", "unknown.png"))
+                        EventEmitter.emit("pip_update", {
+                            "image_data": result["base64_image"],
+                            "tool_name": tool_name
+                        })
+
                     # Append to history
                     step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
                     execution_history += step_record
