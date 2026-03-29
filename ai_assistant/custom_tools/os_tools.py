@@ -136,3 +136,55 @@ tool_system_instance.register_tool(
     func_callable=capture_desktop_screenshot,
     pydantic_model=CaptureDesktopSchema
 )
+
+class RequestFileSelectionSchema(BaseModel):
+    title: Optional[str] = Field(default="Select a file", description="The prompt or title shown at the top of the OS file dialog window.")
+
+def request_user_file_selection(title: str = "Select a file") -> Dict[str, Any]:
+    """
+    Pauses execution and opens a native OS graphical file browser (like Finder or Windows Explorer).
+    The user can physically click and select a file. The absolute path to that file is then returned to you.
+    Use this whenever the user says 'this file' or asks you to edit something but doesn't give a clear path.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        return {
+            "success": False,
+            "error_message": "Tkinter module is not installed. The OS file dialog cannot be opened."
+        }
+
+    try:
+        # Create a headless Tkinter root
+        root = tk.Tk()
+        root.withdraw()
+
+        # Keep window on top so the user sees it
+        root.attributes('-topmost', True)
+
+        # Open the native OS file dialog
+        file_path = filedialog.askopenfilename(title=title, parent=root)
+
+        # Clean up
+        root.destroy()
+
+        if not file_path:
+            return {"success": False, "error_message": "User canceled the file selection dialog."}
+
+        return {
+            "success": True,
+            "result": file_path
+        }
+
+    except Exception as e:
+         return {"success": False, "error_message": f"Failed to open native OS file dialog: {str(e)}"}
+
+tool_system_instance.register_tool(
+    tool_name="request_user_file_selection",
+    description="Opens a physical OS file explorer window (Finder/Windows Explorer) forcing the user to select a file visually. Returns the absolute path of their selection.",
+    module_path=__name__,
+    function_name_in_module="request_user_file_selection",
+    func_callable=request_user_file_selection,
+    pydantic_model=RequestFileSelectionSchema
+)
