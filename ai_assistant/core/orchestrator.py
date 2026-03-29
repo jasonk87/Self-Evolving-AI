@@ -4,7 +4,6 @@ import re
 import os
 import sys
 import time
-import time
 
 # Ensure project root is in sys.path for stand-alone execution
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
@@ -306,6 +305,13 @@ class DynamicOrchestrator:
 
         # Initial Strategist Prompt
         execution_history = ""
+        if state.tool_results:
+            for i, rec in enumerate(state.tool_results):
+                status_str = "Success" if rec.success else "Failed"
+                res_str = rec.result_summary if rec.success else rec.error_message
+                res_str = str(res_str)[:1000] if res_str else "None"
+                execution_history += f"Tool {i+1} ({rec.action_name}) - {status_str}: {res_str}\n"
+
         final_answer = ""
         success = False
 
