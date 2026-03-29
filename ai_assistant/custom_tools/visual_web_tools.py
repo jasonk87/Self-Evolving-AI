@@ -1,4 +1,5 @@
 import os
+import hashlib
 import base64
 import json
 from typing import Dict, Any, Optional
@@ -25,7 +26,7 @@ async def take_webpage_screenshot(url: str, width: int = 1280, height: int = 800
     try:
         # Create screenshots dir if it doesn't exist
         os.makedirs("ai_assistant/core/data/screenshots", exist_ok=True)
-        filename = f"ai_assistant/core/data/screenshots/screenshot_{hash(url)}.png"
+        filename = f"ai_assistant/core/data/screenshots/screenshot_{hashlib.md5(url.encode()).hexdigest()}.png"
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
