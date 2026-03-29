@@ -283,11 +283,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         Chat.loadChatSession(sessionId, chatContainer);
                         Layout.openMainView('view-chat', 'Chat'); // Switch to stage
                     });
-                    if (target === 'view-sidebar-memory') Memory.loadMemory(
-                        document.getElementById('memory-list'),
-                        document.getElementById('episodes-list'),
-                        document.getElementById('facts-list')
-                    );
+                    if (target === 'view-sidebar-system-health') {
+                        // Preload all tabs initially just to populate lists
+                        Memory.loadMemory(
+                            document.getElementById('memory-list'),
+                            document.getElementById('episodes-list'),
+                            document.getElementById('facts-list')
+                        );
+                        if (typeof window.checkApprovals === 'function') window.checkApprovals();
+                        if (typeof window.fetchQuarantineList === 'function') window.fetchQuarantineList();
+                    }
                 }
             }
         });
@@ -399,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 6. New Chat (Handled via Event Delegation above)
 
-    // Memory Tabs Navigation
+    // Memory and Diagnostic Tabs Navigation
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
             const targetTab = e.target.dataset.tab;
@@ -409,12 +414,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     parent.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
                     e.target.classList.add('active');
                 }
-                const wrapper = e.target.closest('.sidebar-view');
-                if (wrapper) {
-                    wrapper.querySelectorAll('.memory-tab-content').forEach(content => {
-                        content.classList.remove('active');
-                        content.classList.add('hidden');
+
+                // Use the parent's nextElementSibling as the specific wrapper for these tabs
+                // to completely isolate nested UI tab contexts from their outer wrappers
+                const wrapper = parent ? parent.nextElementSibling : null;
+
+                if (wrapper && (wrapper.classList.contains('memory-wrapper') || wrapper.classList.contains('system-health-wrapper') || wrapper.classList.contains('memory-tab-content'))) {
+                    // Hide direct children that are tab contents
+                    Array.from(wrapper.children).forEach(content => {
+                        if (content.classList.contains('memory-tab-content')) {
+                            content.classList.remove('active');
+                            content.classList.add('hidden');
+                        }
                     });
+
                     const activeContent = document.getElementById(targetTab);
                     if (activeContent) {
                         activeContent.classList.remove('hidden');

@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const approvalsList = document.getElementById('approvals-list');
     const badge = document.getElementById('approval-badge');
-    const refreshBtn = document.getElementById('refresh-approvals-btn');
+    const refreshBtn = document.getElementById('refresh-approvals-btn') || document.getElementById('diag-refresh-approvals');
 
     // Poll every 5 seconds
     setInterval(fetchApprovals, 5000);

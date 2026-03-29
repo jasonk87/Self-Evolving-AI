@@ -131,9 +131,17 @@ class ToolSystem:
                 elif is_debug_mode():
                     print(f"ToolSystem: Found schema variable '{schema_variable_name}' for tool '{name}', but it's not a valid schema dict.")
 
+            # Attempt to find the Pydantic schema model if one exists (e.g. MyToolSchema)
+            pydantic_model = None
+            model_name = "".join(word.capitalize() for word in name.split("_")) + "Schema"
+            if hasattr(module_to_inspect, model_name):
+                potential_model = getattr(module_to_inspect, model_name)
+                if inspect.isclass(potential_model):
+                    pydantic_model = potential_model
+
             try:
                 # Force registration/update
-                self.register_tool(tool_name=name, description=tool_description_for_registration, module_path=module_path_str, function_name_in_module=name, tool_type='custom_discovered', func_callable=func_object, schema_details=discovered_schema_details)
+                self.register_tool(tool_name=name, description=tool_description_for_registration, module_path=module_path_str, function_name_in_module=name, tool_type='custom_discovered', func_callable=func_object, schema_details=discovered_schema_details, pydantic_model=pydantic_model)
                 new_tools_registered_in_this_module = True
                 # if is_debug_mode():
                 #     print(f"ToolSystem: Successfully processed custom tool '{name}'.")
@@ -210,13 +218,13 @@ class ToolSystem:
         refresh_tool_entry = {'tool_name': 'refresh_available_tools', 'description': 'Reloads all custom tool modules to discover new or updated tools without restarting. Returns status.', 'type': 'system_internal', 'module_path': self.__class__.__module__, 'function_name': 'refresh_custom_tools', 'callable_cache': self.refresh_custom_tools, 'is_method_on_instance': True}
         self._tool_registry['refresh_available_tools'] = refresh_tool_entry
 
-    def register_tool(self, tool_name: str, description: str, module_path: str, function_name_in_module: str, tool_type: str='dynamic', func_callable: Optional[Callable]=None, schema_details: Optional[Dict[str, Any]]=None) -> bool:
+    def register_tool(self, tool_name: str, description: str, module_path: str, function_name_in_module: str, tool_type: str='dynamic', func_callable: Optional[Callable]=None, schema_details: Optional[Dict[str, Any]]=None, pydantic_model: Optional[type]=None) -> bool:
         """
         Registers a new tool or updates an existing one.
         If func_callable is provided, it's cached. Otherwise, it's loaded on first execution.
         """
         # Always update if schema_details are provided, as they are the source of truth
-        tool_entry = {'tool_name': tool_name, 'module_path': module_path, 'function_name': function_name_in_module, 'description': description, 'type': tool_type, 'callable_cache': func_callable, 'schema_details': schema_details}
+        tool_entry = {'tool_name': tool_name, 'module_path': module_path, 'function_name': function_name_in_module, 'description': description, 'type': tool_type, 'callable_cache': func_callable, 'schema_details': schema_details, 'pydantic_model': pydantic_model}
         self._tool_registry[tool_name] = tool_entry
         return True
 
@@ -305,6 +313,24 @@ class ToolSystem:
                 logger = logging.getLogger(__name__)
                 logger.error(f"Tool payload validation failed for '{name}': {ve}")
                 raise ToolExecutionError(f"Strict Gating failed for tool '{name}' payload: {ve}")
+
+            # If the tool specifically registered a Pydantic model for its parameters, strictly enforce it now
+            pydantic_model = tool_info.get('pydantic_model')
+            if pydantic_model:
+                try:
+                    # Validate the raw kwargs against the required schema
+                    # Note: We do not pass the instantiated model to the function to maintain backwards compatibility
+                    # with functions that expect raw kwargs. We just use it as a validation gate.
+                    validated_kwargs_model = pydantic_model(**final_kwargs)
+
+                    # If we need to, we can optionally use the validated kwargs instead
+                    # final_kwargs = validated_kwargs_model.model_dump()
+                except ValidationError as ve:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Tool '{name}' failed strict Pydantic parameter validation: {ve}")
+                    raise ToolExecutionError(f"Strict Validation failed for tool '{name}': {ve}")
+
 
             if is_debug_mode():
                 print(f"ToolSystem: Executing tool '{name}' with args={args}, final_kwargs={final_kwargs}")
@@ -469,8 +495,8 @@ def _tool_simulate_edit_function_code(module_path: str, function_name: str, new_
     return f"Simulation of code edit for '{module_path}.{function_name}' completed. No actual changes made by this simulation tool."
 tool_system_instance = ToolSystem()
 
-def register_tool(tool_name: str, description: str, module_path: str, function_name_in_module: str, tool_type: str='dynamic', func_callable: Optional[Callable]=None) -> bool:
-    return tool_system_instance.register_tool(tool_name, description, module_path, function_name_in_module, tool_type, func_callable)
+def register_tool(tool_name: str, description: str, module_path: str, function_name_in_module: str, tool_type: str='dynamic', func_callable: Optional[Callable]=None, pydantic_model: Optional[type]=None) -> bool:
+    return tool_system_instance.register_tool(tool_name, description, module_path, function_name_in_module, tool_type, func_callable, pydantic_model=pydantic_model)
 
 def remove_tool(name: str) -> bool:
     """Removes a registered tool. Returns True if successful."""
