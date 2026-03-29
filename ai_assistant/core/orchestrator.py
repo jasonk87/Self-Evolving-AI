@@ -3,6 +3,8 @@
 import re
 import os
 import sys
+import time
+import time
 
 # Ensure project root is in sys.path for stand-alone execution
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
@@ -200,7 +202,6 @@ class DynamicOrchestrator:
 
     def _check_cooldowns(self, cooldown_seconds: int = 900):
         """Check if any quarantined tools have passed their cooldown period (default 15 mins)."""
-        import time
         now = time.time()
         expired_tools = []
         for tool_name, info in self.blocked_tools.items():
@@ -631,6 +632,9 @@ Instructions:
                             step_desc=f"{tool_name}: {thought[:40]}..."
                         )
 
+                    if tool_name and ("edit" in tool_name or "code" in tool_name or "write" in tool_name):
+                        state.current_status = ExecutionStatus.CODING
+
                     # Tool Execution Logic (with self-healing + circuit breaker)
                     execution_success = False
                     result_str = ""
@@ -682,7 +686,10 @@ Instructions:
                                     action_name=tool_name or "unknown",
                                     input_summary=kwargs,
                                     success=True,
-                                    result_summary=result_str
+                                    result_summary=result_str,
+                                    timestamp=time.time(),
+                                    retry_count=attempt - 1,
+                                    source_agent_or_cycle=f"Cycle {step_i+1}"
                                 ))
                                 break
                             except Exception as e:
@@ -711,7 +718,10 @@ Instructions:
                                         action_name=tool_name or "unknown",
                                         input_summary=kwargs,
                                         success=False,
-                                        error_message=result_str
+                                        error_message=result_str,
+                                        timestamp=time.time(),
+                                        retry_count=attempt - 1,
+                                        source_agent_or_cycle=f"Cycle {step_i+1}"
                                     ))
 
                     # Emit Tool Result node for Visual Cortex
