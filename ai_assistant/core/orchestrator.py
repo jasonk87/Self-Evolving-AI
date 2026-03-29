@@ -87,7 +87,7 @@ class DynamicOrchestrator:
         self.blocked_tools: Dict[str, Dict[str, Any]] = {}
         self.failure_counts: Dict[str, int] = {}
 
-        self.quarantine_file = os.path.join(project_root, 'data', 'quarantine_state.json')
+        self.quarantine_file = os.path.join(project_root, 'ai_assistant', 'core', 'data', 'quarantine_state.json')
         self._load_quarantine_state()
 
     def _load_quarantine_state(self):
