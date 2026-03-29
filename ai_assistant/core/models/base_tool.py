@@ -16,7 +16,7 @@ class BaseActionRequest(BaseModel):
         description="The unique identifier or command name of the action to be performed.",
     )
 
-    parameters: BaseModel | Dict[str, Any] = Field(
+    parameters: Union[BaseModel, Dict[str, Any]] = Field(
         default_factory=dict,
         description="Arguments required for the execution of the specified action. Can be a validated Pydantic model.",
     )
