@@ -20,27 +20,23 @@ from typing import List, Dict, Union
 
 logger = logging.getLogger(__name__)
 
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+class EditInstruction(BaseModel):
+    start: int = Field(..., description="Inclusive 1-based start line number.")
+    end: int = Field(..., description="Inclusive 1-based end line number.")
+    content: str = Field(..., description="The new content to replace those lines.")
+
+class ModifyFileLinesSchema(BaseModel):
+    file_path: str = Field(..., description="The absolute path to the file to modify.")
+    edits: List[EditInstruction] = Field(..., description="A list of edit dictionaries, each with 'start' (int), 'end' (int), and 'content' (str).")
+    backup: Optional[bool] = Field(True, description="Whether to create a backup before editing. Default True.")
+
 SCHEMA_MODIFY_FILE_LINES = {
     "name": "modify_file_lines",
     "description": "Surgically modifies a file by replacing specific lines or ranges of lines.",
-    "parameters": [
-        {
-            "name": "file_path",
-            "type": "str",
-            "description": "The absolute path to the file to modify."
-        },
-        {
-            "name": "edits",
-            "type": "list",
-            "description": "A list of edit dictionaries, each with 'start' (int), 'end' (int), and 'content' (str)."
-        },
-        {
-            "name": "backup",
-            "type": "bool",
-            "description": "Whether to create a backup before editing. Default True.",
-            "optional": True
-        }
-    ]
+    "parameters": ModifyFileLinesSchema.model_json_schema()
 }
 
 def modify_file_lines(
@@ -164,47 +160,40 @@ def modify_file_lines(
 
 # --- Tool Wrappers for Self-Modification Functions ---
 
+class ProposeFunctionModificationSchema(BaseModel):
+    module_path: str = Field(..., description="The dotted module path (e.g., 'ai_assistant.custom_tools.my_tool').")
+    function_name: str = Field(..., description="The name of the function to modify.")
+    new_code_string: str = Field(..., description="The complete, new source code for the function. DO NOT USE LAZY PLACEHOLDERS LIKE '# ... existing code ...'.")
+    change_description: str = Field(..., description="Explanation of the change for the reviewer.")
+    unit_test_code: Optional[str] = Field(None, description="MANDATORY IF FEASIBLE: Write an asserting `pytest` function to prove this modification works.")
+
 SCHEMA_PROPOSE_FUNCTION_MODIFICATION = {
     "name": "propose_function_modification",
     "description": "Proposes a modification to a specific Python function source code. Triggers a critical review process.",
-    "parameters": [
-        {
-            "name": "module_path",
-            "type": "str",
-            "description": "The dotted module path (e.g., 'ai_assistant.custom_tools.my_tool')."
-        },
-        {
-            "name": "function_name",
-            "type": "str",
-            "description": "The name of the function to modify."
-        },
-        {
-            "name": "new_code_string",
-            "type": "str",
-            "description": "The complete, new source code for the function."
-        },
-        {
-            "name": "change_description",
-            "type": "str",
-            "description": "Explanation of the change for the reviewer."
-        }
-    ]
+    "parameters": ProposeFunctionModificationSchema.model_json_schema()
 }
 
-async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str) -> Dict[str, Any]:
+async def propose_function_modification(module_path: str, function_name: str, new_code_string: str, change_description: str, unit_test_code: Optional[str] = None) -> Dict[str, Any]:
     """
     Wrapper for edit_function_source_code to be exposed as a tool.
+    Optionally accepts an associated unit test string.
     """
     # Assuming project root is current working directory for now
     project_root = os.getcwd()
 
     try:
+        # Since edit_function_source_code doesn't natively accept unit_test_code yet,
+        # we append the unit test to the change description so the Executor/Council sees it.
+        enhanced_description = change_description
+        if unit_test_code:
+            enhanced_description += f"\n\n[MANDATORY UNIT TEST]\n{unit_test_code}"
+
         result_msg = await edit_function_source_code(
             module_path=module_path,
             function_name=function_name,
             new_code_string=new_code_string,
             project_root_path=project_root,
-            change_description=change_description
+            change_description=enhanced_description
         )
 
         status = "success" if "success" in result_msg.lower() else "error"
@@ -222,36 +211,17 @@ async def propose_function_modification(module_path: str, function_name: str, ne
             "message": f"An unexpected error occurred: {e}"
         }
 
+class ProposeClassMethodModificationSchema(BaseModel):
+    module_path: str = Field(..., description="The module path containing the class.")
+    class_name: str = Field(..., description="The name of the class.")
+    method_name: str = Field(..., description="The name of the method to modify.")
+    new_code: str = Field(..., description="The new method code.")
+    change_description: str = Field(..., description="Description of the change.")
+
 SCHEMA_PROPOSE_CLASS_METHOD_MODIFICATION = {
     "name": "propose_class_method_modification",
     "description": "Proposes a modification to a method within a Python class.",
-    "parameters": [
-        {
-            "name": "module_path",
-            "type": "str",
-            "description": "The module path containing the class."
-        },
-        {
-            "name": "class_name",
-            "type": "str",
-            "description": "The name of the class."
-        },
-        {
-            "name": "method_name",
-            "type": "str",
-            "description": "The name of the method to modify."
-        },
-        {
-            "name": "new_code",
-            "type": "str",
-            "description": "The new method code."
-        },
-        {
-            "name": "change_description",
-            "type": "str",
-            "description": "Description of the change."
-        }
-    ]
+    "parameters": ProposeClassMethodModificationSchema.model_json_schema()
 }
 
 async def propose_class_method_modification(module_path: str, class_name: str, method_name: str, new_code: str, change_description: str) -> Dict[str, Any]:
@@ -271,26 +241,15 @@ async def propose_class_method_modification(module_path: str, class_name: str, m
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+class UpsertImportSchema(BaseModel):
+    module_path: str = Field(..., description="The target module path.")
+    import_statement: str = Field(..., description="The full import statement (e.g., 'from typing import List').")
+    change_description: str = Field(..., description="Reason for adding the import.")
+
 SCHEMA_UPSERT_IMPORT = {
     "name": "upsert_import",
     "description": "Ensures a specific import statement exists in a Python module.",
-    "parameters": [
-        {
-            "name": "module_path",
-            "type": "str",
-            "description": "The target module path."
-        },
-        {
-            "name": "import_statement",
-            "type": "str",
-            "description": "The full import statement (e.g., 'from typing import List')."
-        },
-        {
-            "name": "change_description",
-            "type": "str",
-            "description": "Reason for adding the import."
-        }
-    ]
+    "parameters": UpsertImportSchema.model_json_schema()
 }
 
 async def upsert_import(module_path: str, import_statement: str, change_description: str) -> Dict[str, Any]:
@@ -304,36 +263,17 @@ async def upsert_import(module_path: str, import_statement: str, change_descript
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
+class InsertCodeBlockSchema(BaseModel):
+    module_path: str = Field(..., description="The file or module path.")
+    anchor_code: str = Field(..., description="The existing code string to locate.")
+    new_code: str = Field(..., description="The code to insert.")
+    position: str = Field(..., description="'before' or 'after'.")
+    change_description: str = Field(..., description="Reason for insertion.")
+
 SCHEMA_INSERT_CODE_BLOCK = {
     "name": "insert_code_block",
     "description": "Inserts a block of code before or after a specific anchor string in a file.",
-    "parameters": [
-        {
-            "name": "module_path",
-            "type": "str",
-            "description": "The file or module path."
-        },
-        {
-            "name": "anchor_code",
-            "type": "str",
-            "description": "The existing code string to locate."
-        },
-        {
-            "name": "new_code",
-            "type": "str",
-            "description": "The code to insert."
-        },
-        {
-            "name": "position",
-            "type": "str",
-            "description": "'before' or 'after'."
-        },
-        {
-            "name": "change_description",
-            "type": "str",
-            "description": "Reason for insertion."
-        }
-    ]
+    "parameters": InsertCodeBlockSchema.model_json_schema()
 }
 
 async def insert_code_block(module_path: str, anchor_code: str, new_code: str, position: str, change_description: str) -> Dict[str, Any]:
@@ -352,36 +292,17 @@ async def insert_code_block(module_path: str, anchor_code: str, new_code: str, p
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+class SurgicalEditFunctionSchema(BaseModel):
+    module_path: str = Field(..., description="Target module.")
+    function_name: str = Field(..., description="Target function name.")
+    target_node_pattern: str = Field(..., description="Code string representing the statement to find (e.g., 'return True').")
+    replacement_code: str = Field(..., description="The code to replace it with.")
+    change_description: str = Field(..., description="Reason for change.")
+
 SCHEMA_SURGICAL_EDIT_FUNCTION = {
     "name": "surgical_edit_function",
     "description": "Performs a targeted replacement of a specific statement or block within a function using AST matching.",
-    "parameters": [
-        {
-            "name": "module_path",
-            "type": "str",
-            "description": "Target module."
-        },
-        {
-            "name": "function_name",
-            "type": "str",
-            "description": "Target function name."
-        },
-        {
-            "name": "target_node_pattern",
-            "type": "str",
-            "description": "Code string representing the statement to find (e.g., 'return True')."
-        },
-        {
-            "name": "replacement_code",
-            "type": "str",
-            "description": "The code to replace it with."
-        },
-        {
-            "name": "change_description",
-            "type": "str",
-            "description": "Reason for change."
-        }
-    ]
+    "parameters": SurgicalEditFunctionSchema.model_json_schema()
 }
 
 async def surgical_edit_function(module_path: str, function_name: str, target_node_pattern: str, replacement_code: str, change_description: str) -> Dict[str, Any]:

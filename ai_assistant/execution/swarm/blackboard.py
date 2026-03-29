@@ -6,16 +6,15 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-class BlackboardEvent:
-    def __init__(self, topic: str, source_agent: str, data: Dict[str, Any]):
-        self.event_id = str(uuid.uuid4())
-        self.topic = topic
-        self.source_agent = source_agent
-        self.data = data
-        self.timestamp = datetime.now(timezone.utc)
+from pydantic import BaseModel, Field
 
-    def __repr__(self):
-        return f"<BlackboardEvent topic='{self.topic}' from='{self.source_agent}'>"
+class BlackboardEvent(BaseModel):
+    """Strictly typed payload for inter-agent communication."""
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    topic: str = Field(..., description="The pub/sub topic for routing.")
+    source_agent: str = Field(..., description="The name of the agent publishing the event.")
+    data: Dict[str, Any] = Field(default_factory=dict, description="The strictly structured payload of the event.")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Blackboard:
@@ -62,7 +61,7 @@ class Blackboard:
 
     async def publish(self, topic: str, source_agent: str, data: Dict[str, Any]):
         """Publish an event to all subscribers of the given topic."""
-        event = BlackboardEvent(topic, source_agent, data)
+        event = BlackboardEvent(topic=topic, source_agent=source_agent, data=data)
         self.history.append(event)
 
         logger.info(f"[Blackboard] Event published: {topic} (from {source_agent})")

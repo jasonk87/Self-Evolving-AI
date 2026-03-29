@@ -168,7 +168,19 @@ def execute_sandboxed_python_script(script_content: str = None, input_files: Opt
                     if stderr_val:
                         stderr_val += '\n'
                     stderr_val += f"Warning: Requested output file '{out_fname}' not found in execution directory."
-        return {'status': status, 'return_code': return_code, 'stdout': stdout_val.strip(), 'stderr': stderr_val.strip(), 'output_files': collected_output_files, 'error_message': error_msg_val.strip() if error_msg_val else None, 'executed_script_path': returned_executed_script_path}
+        error_message = error_msg_val.strip() if error_msg_val else None
+
+        # Attempt to detect and handle Dependency Paralysis proactively
+        if status == 'error' and error_message and 'ModuleNotFoundError' in error_message:
+            import re
+            match = re.search(r"No module named '([^']+)'", error_message)
+            if match:
+                missing_module = match.group(1)
+                suggestion_msg = f" \n\n[DEPENDENCY PARALYSIS DETECTED]: The script failed because it requires the external package '{missing_module}'. You must use the `install_python_package` tool to install '{missing_module}' before retrying this script."
+                error_message += suggestion_msg
+                if stderr_val: stderr_val += suggestion_msg
+
+        return {'status': status, 'return_code': return_code, 'stdout': stdout_val.strip(), 'stderr': stderr_val.strip(), 'output_files': collected_output_files, 'error_message': error_message, 'executed_script_path': returned_executed_script_path}
 
 def execute_safe_terminal_command(command: str) -> Dict[str, Any]:
     """
@@ -199,7 +211,16 @@ def execute_safe_terminal_command(command: str) -> Dict[str, Any]:
         return {'status': 'error', 'error_message': f'Command not found: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
-EXECUTE_SAFE_TERMINAL_COMMAND_SCHEMA = {'name': 'execute_safe_terminal_command', 'description': 'Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.', 'parameters': [{'name': 'command', 'type': 'str', 'description': 'The command string to execute.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr', 'error_message'."}}
+from pydantic import BaseModel, Field
+
+class ExecuteSafeTerminalCommandSchema(BaseModel):
+    command: str = Field(..., description="The command string to execute.")
+
+EXECUTE_SAFE_TERMINAL_COMMAND_SCHEMA = {
+    'name': 'execute_safe_terminal_command',
+    'description': 'Executes a terminal command if it matches a strict allowlist (e.g., pip install). secure alternative to full shell access.',
+    'parameters': ExecuteSafeTerminalCommandSchema.model_json_schema()
+}
 
 def install_python_package(package_name: str) -> Dict[str, Any]:
     """
@@ -226,7 +247,14 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
         return {'status': 'timeout', 'error_message': 'Package installation timed out.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error during installation: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
-INSTALL_PYTHON_PACKAGE_SCHEMA = {'name': 'install_python_package', 'description': "Installs a Python package using the current environment's pip.", 'parameters': [{'name': 'package_name', 'type': 'str', 'description': 'The name of the package to install.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}}
+class InstallPythonPackageSchema(BaseModel):
+    package_name: str = Field(..., description="The name of the package to install.")
+
+INSTALL_PYTHON_PACKAGE_SCHEMA = {
+    'name': 'install_python_package',
+    'description': "Installs a Python package using the current environment's pip.",
+    'parameters': InstallPythonPackageSchema.model_json_schema()
+}
 
 def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -277,15 +305,15 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error executing command: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 
+class RunTerminalCommandSchema(BaseModel):
+    command: str = Field(..., description="The command string to execute.")
+    timeout_seconds: Optional[int] = Field(120, description="Timeout in seconds. Default 120.")
+    cwd: Optional[str] = Field(None, description="Expected working directory.")
+
 RUN_TERMINAL_COMMAND_SCHEMA = {
     'name': 'run_terminal_command', 
     'description': "Executes ANY terminal command on the host OS. Use for git, testing, starting servers, or system administration.", 
-    'parameters': [
-        {'name': 'command', 'type': 'str', 'description': 'The command string to execute.'},
-        {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout in seconds. Default 120.'},
-        {'name': 'cwd', 'type': 'str', 'description': 'Optional. Expected working directory.'}
-    ], 
-    'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}
+    'parameters': RunTerminalCommandSchema.model_json_schema()
 }
 
 def search_codebase(query: str, directory: str = ".", include_globs: Optional[List[str]] = None, case_sensitive: bool = False) -> Dict[str, Any]:
@@ -355,18 +383,30 @@ def search_codebase(query: str, directory: str = ".", include_globs: Optional[Li
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error during directory traversal: {str(e)}'}
 
+class SearchCodebaseSchema(BaseModel):
+    query: str = Field(..., description="The regex string to search for.")
+    directory: Optional[str] = Field(".", description="Directory to search in. Default is '.'.")
+    include_globs: Optional[List[str]] = Field(None, description="List of string glob patterns to filter (e.g. ['*.py']).")
+    case_sensitive: Optional[bool] = Field(False, description="Boolean to enforce case-sensitivity. Default False.")
+
 SEARCH_CODEBASE_SCHEMA = {
     'name': 'search_codebase', 
     'description': "Performs a regex search across a directory (similar to grep), ignoring .git and node_modules. Essential for navigating large codebases.", 
-    'parameters': [
-        {'name': 'query', 'type': 'str', 'description': 'The regex string to search for.'},
-        {'name': 'directory', 'type': 'str', 'description': 'Optional. Directory to search in. Default is "."'},
-        {'name': 'include_globs', 'type': 'list', 'description': 'Optional. List of string glob patterns to filter (e.g. ["*.py"]).'},
-        {'name': 'case_sensitive', 'type': 'bool', 'description': 'Optional. Boolean to enforce case-sensitivity. Default False.'}
-    ], 
-    'returns': {'type': 'dict', 'description': "A dict with 'status', 'total_matches', and a 'matches' list containing file, line_number, and content."}
+    'parameters': SearchCodebaseSchema.model_json_schema()
 }
-EXECUTE_SANDBOXED_PYTHON_SCRIPT_SCHEMA = {'name': 'execute_sandboxed_python_script', 'description': 'Executes a given Python script string in a temporary, somewhat isolated environment. WARNING: Basic PoC sandbox with minimal security. Use with extreme caution.', 'parameters': [{'name': 'script_content', 'type': 'str', 'description': 'The Python script content as a string.'}, {'name': 'input_files', 'type': 'dict', 'description': 'Optional. Filename:content map for files to create in the execution dir.'}, {'name': 'output_filenames', 'type': 'list', 'description': 'Optional. List of filenames expected to be created by the script, whose content will be returned.'}, {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout for script execution (default 10s).'}, {'name': 'python_executable', 'type': 'str', 'description': "Optional. Path to python interpreter (e.g., 'python' or '/usr/bin/python3'). Defaults to 'python'."}], 'returns': {'type': 'dict', 'description': "A dict with 'status' ('success', 'timeout', 'error'), 'return_code', 'stdout', 'stderr', 'output_files' (dict), 'error_message'."}}
+
+class ExecuteSandboxedPythonScriptSchema(BaseModel):
+    script_content: str = Field(..., description="The Python script content as a string.")
+    input_files: Optional[Dict[str, str]] = Field(None, description="Filename:content map for files to create in the execution dir.")
+    output_filenames: Optional[List[str]] = Field(None, description="List of filenames expected to be created by the script, whose content will be returned.")
+    timeout_seconds: Optional[int] = Field(10, description="Timeout for script execution (default 10s).")
+    python_executable: Optional[str] = Field("python", description="Path to python interpreter (e.g., 'python' or '/usr/bin/python3'). Defaults to 'python'.")
+
+EXECUTE_SANDBOXED_PYTHON_SCRIPT_SCHEMA = {
+    'name': 'execute_sandboxed_python_script',
+    'description': 'Executes a given Python script string in a temporary, somewhat isolated environment. WARNING: Basic PoC sandbox with minimal security. Use with extreme caution.',
+    'parameters': ExecuteSandboxedPythonScriptSchema.model_json_schema()
+}
 
 def run_all_tests() -> Dict[str, Any]:
     """
@@ -384,7 +424,14 @@ def run_all_tests() -> Dict[str, Any]:
         return {'status': 'error', 'error_message': 'pytest not found. Please ensure it is installed.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error running tests: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
-RUN_ALL_TESTS_SCHEMA = {'name': 'run_all_tests', 'description': 'Runs all tests in the current environment using pytest.', 'parameters': [], 'returns': {'type': 'dict', 'description': 'Results of the test run including stdout/stderr.'}}
+class RunAllTestsSchema(BaseModel):
+    pass
+
+RUN_ALL_TESTS_SCHEMA = {
+    'name': 'run_all_tests',
+    'description': 'Runs all tests in the current environment using pytest.',
+    'parameters': RunAllTestsSchema.model_json_schema()
+}
 if __name__ == '__main__':
     print('--- Testing code_execution_tools.py ---')
     print('\n--- Testing execute_sandboxed_python_script ---')
@@ -402,7 +449,7 @@ if __name__ == '__main__':
     print(f'Test 3 Output: {res3}')
     assert res3['status'] == 'timeout'
     assert 'timed out' in res3['error_message']
-    script4 = '\ntry:\n    with open(\'input.txt\', \'r\') as f_in:\n        content = f_in.read()\n    with open(\'output.txt\', \'w\') as f_out:\n        f_out.write(f"Read: {{content.strip()}}")\n    print("Script processed files.")\nexcept Exception as e_script:\n    print(f"Error in script4: {{e_script}}")\n'
+    script4 = '\ntry:\n    with open(\'input.txt\', \'r\') as f_in:\n        content = f_in.read()\n    with open(\'output.txt\', \'w\') as f_out:\n        f_out.write(f"Read: {content.strip()}")\n    print("Script processed files.")\nexcept Exception as e_script:\n    print(f"Error in script4: {e_script}")\n'
     input_data = {'input.txt': 'Hello from input file!'}
     output_request = ['output.txt', 'non_existent_output.txt']
     res4 = execute_sandboxed_python_script(script4, input_files=input_data, output_filenames=output_request, timeout_seconds=2)

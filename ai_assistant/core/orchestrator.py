@@ -24,6 +24,8 @@ from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
+from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.actions import OperatorResponse
 
 # Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
@@ -109,25 +111,26 @@ class DynamicOrchestrator:
         except Exception as e:
             logger.error(f"Failed to save quarantine state: {e}")
 
-    async def process_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> Tuple[bool, str, Optional[List[str]]]:
+    async def process_prompt(self, state: ExecutionState, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> ExecutionState:
         """
         Process a user prompt using the Universal Bicameral Brain architecture.
-        Returns (success, response_message, images)
+        Accepts and mutates an ExecutionState object.
         """
         try:
-            self.current_goal = prompt
+            self.current_goal = state.original_user_prompt
             
             # 1. Vision Analysis (Common for all modes if images exist)
-            prompt_with_context = await self._enrich_prompt_with_vision(prompt, images)
+            prompt_with_context = await self._enrich_prompt_with_vision(state.original_user_prompt, images)
 
             # 2. Context Gathering (RAG, Project Context)
             full_context_str, context_metadata = await self._gather_context(prompt_with_context)
 
-            logger.info(f"DynamicOrchestrator: Starting Universal Cycle for prompt: {prompt[:50]}...")
+            logger.info(f"DynamicOrchestrator: Starting Universal Cycle for prompt: {state.original_user_prompt[:50]}...")
             print(color_text(f"--> Strategy: Universal Bicameral", CLIColors.SYSTEM_MESSAGE))
 
             # 3. Execute Universal Cycle
-            return await self._execute_universal_cycle(prompt_with_context, full_context_str, conversation_history, session_id, context_source)
+            await self._execute_universal_cycle(state, prompt_with_context, full_context_str, conversation_history, session_id, context_source, images)
+            return state
 
         except BudgetExceededError as e:
             logger.warning(f"Budget exceeded: {e}")
@@ -140,10 +143,16 @@ class DynamicOrchestrator:
             </div>
             ```"""
             # We bypass the LLM for rephrasing here because the LLM is blocked!
-            return False, f"I cannot complete your request because the system budget has been reached.\n{html}", None
+            state.current_status = "failed"
+            state.errors.append("Budget Exceeded")
+            state.final_answer = f"I cannot complete your request because the system budget has been reached.\n{html}"
+            return state
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            return False, f"An unexpected error occurred: {str(e)}", None
+            state.current_status = "failed"
+            state.errors.append(f"An unexpected error occurred: {str(e)}")
+            state.final_answer = "An internal error occurred."
+            return state
 
         finally:
             # 5. Session Level Summarization (Rolling)
@@ -261,19 +270,20 @@ class DynamicOrchestrator:
             "blocked_reason": self.blocked_tools.get(tool_name, {}).get("reason"),
         }
 
-    async def _execute_universal_cycle(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str) -> Tuple[bool, str, Optional[List[str]]]:
+    async def _execute_universal_cycle(self, state: ExecutionState, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str, initial_images: Optional[List[str]]) -> None:
         """
         The Universal Bicameral Cycle: Strategist (Think) -> Operator (Act) -> Loop.
+        Mutates ExecutionState.
         """
         # Step A: Recall Failures
-        failure_warning = await self.episodic_manager.recall_failures(prompt)
+        failure_warning = await self.episodic_manager.recall_failures(state.original_user_prompt)
         if failure_warning:
             print(color_text(f"--> Episodic Memory: {failure_warning}", CLIColors.WARNING))
             context = f"{failure_warning}\n\n{context}"
 
         current_steps = []
         max_steps = MAX_REACT_STEPS
-        collected_images = []
+        collected_images = initial_images or []
         tools_desc = tool_system_instance.get_tools_description()
 
         # Initial Strategist Prompt
@@ -327,6 +337,9 @@ class DynamicOrchestrator:
             })
             last_node_id = root_node_id
 
+            # Set the effective prompt which may be enriched with vision context
+            state.working_prompt = prompt
+
             # We loop through cycles
             for step_i in range(max_steps):
                 print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
@@ -362,9 +375,10 @@ class DynamicOrchestrator:
                     q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
                     quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
 
+                state.current_status = "planning"
                 # Construct base prompt and enforce absolute limits
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
-Goal: {prompt}
+Goal: {state.original_user_prompt}
 {persona_guide}
 {quarantine_info}
 Context:
@@ -389,7 +403,7 @@ Few-Shot Examples (How to Think):
 
                     # Reconstruct
                     strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
-Goal: {prompt}
+Goal: {state.original_user_prompt}
 {persona_guide}
 {quarantine_info}
 Context:
@@ -460,10 +474,11 @@ Output strictly your reasoning and the plan for the Operator.
                     )
 
                 # Phase 2: Operator (Act)
+                state.current_status = "tool_execution"
                 print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
 
                 operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
-Goal: {prompt}
+Goal: {state.original_user_prompt}
 {persona_guide}
 
 Available Tools:
@@ -520,17 +535,30 @@ Instructions:
                 # We append execution history to operator too so it knows what happened
                 operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction (JSON):"
 
-                # Use RAW strategy. The Operator prompt asks for JSON. Hidden thoughts are handled by <think> removal in client if present.
+                # Use RAW strategy. The Operator prompt asks for JSON.
                 operator_response = await invoke_gemini_model_async(
                     prompt=operator_prompt,
                     model_name=config.DEFAULT_MODEL,
-                    strategy="RAW"
+                    strategy="RAW",
+                    response_schema=OperatorResponse
                 )
 
                 # Operator thoughts are inside the JSON "thought" field usually.
 
                 # Phase 3: Loop Logic
-                parsed_response = self._parse_tool_call(operator_response) # Reuse parser, effectively parsing JSON
+                parsed_response = None
+                try:
+                    # Clean up markdown code blocks if the LLM still wrapped the JSON
+                    clean_resp = operator_response.strip()
+                    if clean_resp.startswith("```json"):
+                        clean_resp = clean_resp[7:]
+                    if clean_resp.endswith("```"):
+                        clean_resp = clean_resp[:-3]
+                    clean_resp = clean_resp.strip()
+
+                    parsed_response = json.loads(clean_resp)
+                except Exception as e:
+                    parsed_response = self._parse_tool_call(operator_response) # Fallback to fuzzy parser
 
                 # Normalize the new schema to the old internal variables
                 tool_call = None
@@ -614,14 +642,20 @@ Instructions:
                     else:
                         for attempt in range(max_retries + 1):
                             try:
-                                result = await tool_system_instance.execute_tool(
-                                tool_name,
-                                args=tuple(args),
-                                kwargs=kwargs,
-                                task_manager=self.task_manager,
-                                notification_manager=self.notification_manager,
-                                action_executor=self.action_executor
-                            )
+                                # `execute_tool` now returns a validated dictionary based on BaseActionResponse
+                                tool_response = await tool_system_instance.execute_tool(
+                                    tool_name,
+                                    args=tuple(args),
+                                    kwargs=kwargs,
+                                    task_manager=self.task_manager,
+                                    notification_manager=self.notification_manager,
+                                    action_executor=self.action_executor
+                                )
+
+                                result = tool_response.get("result")
+
+                                if not tool_response.get("success"):
+                                    raise Exception(tool_response.get("error_message") or str(result))
 
                                 if isinstance(result, dict) and 'images' in result:
                                     new_images = result.get('images', [])
@@ -644,10 +678,15 @@ Instructions:
                                     break
 
                                 execution_success = True
+                                state.tool_results.append({
+                                    "action_name": tool_name,
+                                    "success": True,
+                                    "result": result_str
+                                })
                                 break
                             except Exception as e:
                                 context_data = {
-                                    "goal": prompt,
+                                    "goal": state.original_user_prompt,
                                     "args": args,
                                     "kwargs": kwargs,
                                     "execution_history_excerpt": execution_history[-1000:] if execution_history else ""
@@ -656,14 +695,22 @@ Instructions:
                                 if failure_meta.get("activated"):
                                     result_str = f"Circuit breaker activated for tool '{tool_name}': {failure_meta.get('blocked_reason')}"
                                     print(color_text(f"⛔ {result_str}", CLIColors.WARNING))
+                                    state.errors.append(result_str)
                                     break
 
                                 if attempt < max_retries:
                                     print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
+                                    state.errors.append(f"Tool {tool_name} failed: {e}")
                                     # Optional: auto-repair logic could go here
                                     await asyncio.sleep(1)
                                 else:
                                     result_str = f"Error: {str(e)}"
+                                    state.errors.append(result_str)
+                                    state.tool_results.append({
+                                        "action_name": tool_name,
+                                        "success": False,
+                                        "error_message": result_str
+                                    })
 
                     # Emit Tool Result node for Visual Cortex
                     tool_result_node_id = f"thought_res_{uuid.uuid4().hex[:8]}"
@@ -694,6 +741,7 @@ Instructions:
 
                     if is_suspicious_json:
                          print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
+                         state.errors.append(f"Cycle {step_i+1}: Operator output invalid JSON")
                          execution_history += f"Cycle {step_i+1}: Operator output invalid JSON. Retrying.\n"
                          # Continue loop (retry)
                          continue
@@ -710,19 +758,26 @@ Instructions:
 
             if not success and not final_answer:
                 final_answer = "Maximum cycles reached."
+                state.errors.append("Maximum cycles reached without final answer.")
 
             # Record Experience
             tools_used_names = [step['tool'] for step in current_steps if 'tool' in step]
             outcome = "SUCCESS" if success else "FAILURE"
             asyncio.create_task(self.episodic_manager.record_experience(
-                prompt=prompt,
+                prompt=state.original_user_prompt,
                 plan=current_steps,
                 outcome=outcome,
                 tools_used=tools_used_names
             ))
 
-            return success, final_answer, collected_images
-        
+            state.final_answer = final_answer
+            state.final_images = collected_images
+
+            if success:
+                state.current_status = "completed"
+            else:
+                state.current_status = "failed"
+
         finally:
             # Clean up ephemeral task
             if current_ui_task:

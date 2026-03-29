@@ -321,12 +321,20 @@ async def run_autonomous_goal_processor():
                     # create_task wraps it. We can define a wrapper.
                     async def _run_and_report(gid=goal_id, sess_id=session_id, desc=goal_desc, source_sess=goal.get("metadata", {}).get("source_session_id")):
                         try:
-                            success, result_text, _ = await _orchestrator.process_prompt(
-                                prompt=desc,
+                            from ai_assistant.core.models.state import ExecutionState
+                            state = ExecutionState(original_user_prompt=desc, context_limits={"max_tokens": 100000})
+                            state = await _orchestrator.process_prompt(
+                                state=state,
                                 session_id=sess_id,
                                 context_source="SYSTEM" # Use SYSTEM personas
                             )
                             
+                            success = state.current_status == "completed"
+                            result_text = state.final_answer or ""
+
+                            if not success and not result_text:
+                                result_text = "Task encountered errors:\n" + "\n".join(state.errors)
+
                             # Update Goal Status
                             new_status = "completed" if success else "failed"
                             goal_management.update_goal_status(gid, status=new_status)

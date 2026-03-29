@@ -128,84 +128,69 @@ def create_dynamic_specialist(name: str, description: str, logic_code: str, reti
     except Exception as e:
         return f"Failed to create specialist '{name}': {e}"
 
+from pydantic import BaseModel, Field
+
+class SpawnEphemeralAgentSchema(BaseModel):
+    task_description: str = Field(..., description="The task description.")
+    scope_type: Optional[str] = Field("session", description="'session' (ephemeral) or 'user' (persistent).")
+
+class RunAgentCodeSchema(BaseModel):
+    agent_id: str
+    filename: str
+    code: str
+    cmd_args: Optional[List[str]] = None
+
+class SubmitAgentReportSchema(BaseModel):
+    agent_id: str
+    report_content: str
+
+class CreateDynamicSpecialistSchema(BaseModel):
+    name: str = Field(..., description="The name of the specialist.")
+    description: str = Field(..., description="What the specialist does.")
+    logic_code: str = Field(..., description="The python code defining the tool logic (must include SCHEMA).")
+    retirement_policy: str = Field(..., description="Mandatory defined conditions for retiring this specialist.")
+    rollback_instructions: str = Field(..., description="Mandatory steps on how to clean up after this specialist.")
+
+class SpawnBackgroundAgentSchema(BaseModel):
+    task_description: str
+    session_id: Optional[str] = None
+
+class ListActiveAgentsSchema(BaseModel):
+    pass
+
+class WakeAgentSchema(BaseModel):
+    agent_id: str = Field(..., description="The ID of the existing persistent agent.")
+    new_task: str = Field(..., description="The new task description for the agent to execute.")
+
+
 SCHEMA = {
     "spawn_ephemeral_agent": {
         "description": "Spawns a new ephemeral or persistent agent with a dedicated workspace.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "task_description": {"type": "string", "description": "The task description."},
-                "scope_type": {"type": "string", "description": "'session' (ephemeral) or 'user' (persistent)."}
-            },
-            "required": ["task_description"]
-        }
+        "parameters": SpawnEphemeralAgentSchema.model_json_schema()
     },
     "run_agent_code": {
         "description": "Writes code to a file in the agent's workspace and executes it.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string"},
-                "filename": {"type": "string"},
-                "code": {"type": "string"},
-                "cmd_args": {"type": "array", "items": {"type": "string"}}
-            },
-            "required": ["agent_id", "filename", "code"]
-        }
+        "parameters": RunAgentCodeSchema.model_json_schema()
     },
     "submit_agent_report": {
         "description": "Submits a report from the agent and terminates it.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string"},
-                "report_content": {"type": "string"}
-            },
-            "required": ["agent_id", "report_content"]
-        }
+        "parameters": SubmitAgentReportSchema.model_json_schema()
     },
     "create_dynamic_specialist": {
         "description": "Create a dynamic specialist agent on the fly by writing a tool plugin. Mandates defined retirement policies and rollback paths.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "The name of the specialist."},
-                "description": {"type": "string", "description": "What the specialist does."},
-                "logic_code": {"type": "string", "description": "The python code defining the tool logic (must include SCHEMA)."},
-                "retirement_policy": {"type": "string", "description": "Mandatory defined conditions for retiring this specialist."},
-                "rollback_instructions": {"type": "string", "description": "Mandatory steps on how to clean up after this specialist."}
-            },
-            "required": ["name", "description", "logic_code", "retirement_policy", "rollback_instructions"]
-        }
+        "parameters": CreateDynamicSpecialistSchema.model_json_schema()
     },
     "spawn_background_agent": {
         "description": "Spawns a background agent to perform a time-consuming task.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "task_description": {"type": "string"},
-                "session_id": {"type": "string"}
-            },
-            "required": ["task_description"]
-        }
+        "parameters": SpawnBackgroundAgentSchema.model_json_schema()
     },
     "list_active_agents": {
         "description": "Scans the temp_agents directory to return a list of currently active sub-agents and their metadata.",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
+        "parameters": ListActiveAgentsSchema.model_json_schema()
     },
     "wake_agent": {
         "description": "Wakes an existing persistent agent and assigns it a new task to handle autonomously.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string", "description": "The ID of the existing persistent agent."},
-                "new_task": {"type": "string", "description": "The new task description for the agent to execute."}
-            },
-            "required": ["agent_id", "new_task"]
-        }
+        "parameters": WakeAgentSchema.model_json_schema()
     }
 }
 

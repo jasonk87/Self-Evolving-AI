@@ -427,7 +427,16 @@ def _perform_tool_registration(module_path: str, function_name: str, tool_name: 
 async def _process_command_wrapper(prompt: str, orchestrator: DynamicOrchestrator, queue: asyncio.Queue):
     """Wraps orchestrator processing, handles learning, and puts results on a queue."""
     try:
-        success, response = await orchestrator.process_prompt(prompt)
+        from ai_assistant.core.models.state import ExecutionState
+        state = ExecutionState(original_user_prompt=prompt, context_limits={"max_tokens": 100000})
+        state = await orchestrator.process_prompt(state=state)
+
+        success = state.current_status == "completed"
+        response = state.final_answer or ""
+
+        if not success and not response:
+            response = "Task encountered errors:\n" + "\n".join(state.errors)
+
         status_message_str = format_status("Task completed", True) if success else format_status("Task failed", False)
         status_message_display = status_message_str.value if hasattr(status_message_str, "value") else str(status_message_str)
 
