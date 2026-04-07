@@ -443,6 +443,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Socket Events
+
+    // Picture-in-Picture Logic
+    const pipContainer = document.getElementById('pip-container');
+    const pipImage = document.getElementById('pip-image');
+    const pipFooter = document.getElementById('pip-footer-text');
+    const closePipBtn = document.getElementById('close-pip');
+
+    if (closePipBtn) {
+        closePipBtn.addEventListener('click', () => {
+            pipContainer.classList.add('hidden');
+        });
+    }
+
+    socket.on('pip_update', function(data) {
+        console.log("Received PiP Update from tool:", data.tool_name);
+        if (data.image_data) {
+            pipImage.src = `data:image/png;base64,${data.image_data}`;
+            pipFooter.textContent = `Tool: ${data.tool_name || 'Vision Update'}`;
+            pipContainer.classList.remove('hidden');
+        }
+    });
+
     socket.on('response', (data) => {
         if (Terminal.getWaitingForTerminal()) {
             // Ensure terminal is visible?

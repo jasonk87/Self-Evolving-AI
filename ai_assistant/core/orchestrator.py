@@ -3,6 +3,7 @@
 import re
 import os
 import sys
+import time
 
 # Ensure project root is in sys.path for stand-alone execution
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
@@ -24,7 +25,7 @@ from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
-from ai_assistant.core.models.state import ExecutionState
+from ai_assistant.core.models.state import ExecutionState, ToolExecutionRecord, ExecutionStatus
 from ai_assistant.core.models.actions import OperatorResponse
 
 # Legacy imports to keep signature compatible
@@ -85,7 +86,7 @@ class DynamicOrchestrator:
         self.blocked_tools: Dict[str, Dict[str, Any]] = {}
         self.failure_counts: Dict[str, int] = {}
 
-        self.quarantine_file = os.path.join(project_root, 'data', 'quarantine_state.json')
+        self.quarantine_file = os.path.join(project_root, 'ai_assistant', 'core', 'data', 'quarantine_state.json')
         self._load_quarantine_state()
 
     def _load_quarantine_state(self):
@@ -143,13 +144,13 @@ class DynamicOrchestrator:
             </div>
             ```"""
             # We bypass the LLM for rephrasing here because the LLM is blocked!
-            state.current_status = "failed"
+            state.current_status = ExecutionStatus.FAILED
             state.errors.append("Budget Exceeded")
             state.final_answer = f"I cannot complete your request because the system budget has been reached.\n{html}"
             return state
         except Exception as e:
             logger.error(f"Error in process_prompt: {e}", exc_info=True)
-            state.current_status = "failed"
+            state.current_status = ExecutionStatus.FAILED
             state.errors.append(f"An unexpected error occurred: {str(e)}")
             state.final_answer = "An internal error occurred."
             return state
@@ -200,7 +201,6 @@ class DynamicOrchestrator:
 
     def _check_cooldowns(self, cooldown_seconds: int = 900):
         """Check if any quarantined tools have passed their cooldown period (default 15 mins)."""
-        import time
         now = time.time()
         expired_tools = []
         for tool_name, info in self.blocked_tools.items():
@@ -284,10 +284,34 @@ class DynamicOrchestrator:
         current_steps = []
         max_steps = MAX_REACT_STEPS
         collected_images = initial_images or []
-        tools_desc = tool_system_instance.get_tools_description()
+                # Extract previously loaded schemas with an auto-ejection mechanism
+        # Only schemas requested or tools actively used in the last 15 tool executions remain in context.
+        loaded_schemas = {}
+        recent_history = state.tool_results[-15:] if len(state.tool_results) > 15 else state.tool_results
+
+        for rec in recent_history:
+            if rec.action_name == "get_tool_schema" and rec.success:
+                if rec.input_summary and isinstance(rec.input_summary, dict):
+                    requested_tool = rec.input_summary.get("tool_name")
+                    if requested_tool:
+                        loaded_schemas[requested_tool] = str(rec.result_summary)
+
+        tools_desc = tool_system_instance.get_tools_description(verbose=False)
+        if loaded_schemas:
+            tools_desc += "\n\nCurrently Loaded Detailed Schemas:\n"
+            for t_name, t_schema in loaded_schemas.items():
+                tools_desc += f"--- {t_name} ---\n{t_schema}\n"
+
 
         # Initial Strategist Prompt
         execution_history = ""
+        if state.tool_results:
+            for i, rec in enumerate(state.tool_results):
+                status_str = "Success" if rec.success else "Failed"
+                res_str = rec.result_summary if rec.success else rec.error_message
+                res_str = str(res_str)[:1000] if res_str else "None"
+                execution_history += f"Tool {i+1} ({rec.action_name}) - {status_str}: {res_str}\n"
+
         final_answer = ""
         success = False
 
@@ -375,7 +399,7 @@ class DynamicOrchestrator:
                     q_list = ", ".join([f"'{t}'" for t in quarantined_tools.keys()])
                     quarantine_info = f"\n[CRITICAL WARNING]: The following tools are currently QUARANTINED due to repeated failures: {q_list}. DO NOT attempt to use them. You MUST find an alternative approach or report the blockage to the user.\n"
 
-                state.current_status = "planning"
+                state.current_status = ExecutionStatus.PLANNING
                 # Construct base prompt and enforce absolute limits
                 strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
 Goal: {state.original_user_prompt}
@@ -474,7 +498,7 @@ Output strictly your reasoning and the plan for the Operator.
                     )
 
                 # Phase 2: Operator (Act)
-                state.current_status = "tool_execution"
+                state.current_status = ExecutionStatus.TOOL_EXECUTION
                 print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
 
                 operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
@@ -631,6 +655,9 @@ Instructions:
                             step_desc=f"{tool_name}: {thought[:40]}..."
                         )
 
+                    if tool_name and ("edit" in tool_name or "code" in tool_name or "write" in tool_name):
+                        state.current_status = ExecutionStatus.CODING
+
                     # Tool Execution Logic (with self-healing + circuit breaker)
                     execution_success = False
                     result_str = ""
@@ -678,11 +705,15 @@ Instructions:
                                     break
 
                                 execution_success = True
-                                state.tool_results.append({
-                                    "action_name": tool_name,
-                                    "success": True,
-                                    "result": result_str
-                                })
+                                state.tool_results.append(ToolExecutionRecord(
+                                    action_name=tool_name or "unknown",
+                                    input_summary=kwargs,
+                                    success=True,
+                                    result_summary=result_str,
+                                    timestamp=time.time(),
+                                    retry_count=attempt - 1,
+                                    source_agent_or_cycle=f"Cycle {step_i+1}"
+                                ))
                                 break
                             except Exception as e:
                                 context_data = {
@@ -706,11 +737,15 @@ Instructions:
                                 else:
                                     result_str = f"Error: {str(e)}"
                                     state.errors.append(result_str)
-                                    state.tool_results.append({
-                                        "action_name": tool_name,
-                                        "success": False,
-                                        "error_message": result_str
-                                    })
+                                    state.tool_results.append(ToolExecutionRecord(
+                                        action_name=tool_name or "unknown",
+                                        input_summary=kwargs,
+                                        success=False,
+                                        error_message=result_str,
+                                        timestamp=time.time(),
+                                        retry_count=attempt - 1,
+                                        source_agent_or_cycle=f"Cycle {step_i+1}"
+                                    ))
 
                     # Emit Tool Result node for Visual Cortex
                     tool_result_node_id = f"thought_res_{uuid.uuid4().hex[:8]}"
@@ -722,6 +757,14 @@ Instructions:
                         "cycle": step_i + 1
                     })
                     last_node_id = tool_result_node_id
+
+                    # Process PiP Visuals
+                    if isinstance(result, dict) and "base64_image" in result:
+                        state.final_images.append(result.get("filename", "unknown.png"))
+                        EventEmitter.emit("pip_update", {
+                            "image_data": result["base64_image"],
+                            "tool_name": tool_name
+                        })
 
                     # Append to history
                     step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
@@ -774,9 +817,9 @@ Instructions:
             state.final_images = collected_images
 
             if success:
-                state.current_status = "completed"
+                state.current_status = ExecutionStatus.COMPLETED
             else:
-                state.current_status = "failed"
+                state.current_status = ExecutionStatus.FAILED
 
         finally:
             # Clean up ephemeral task
