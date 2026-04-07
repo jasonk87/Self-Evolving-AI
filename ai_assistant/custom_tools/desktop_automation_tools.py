@@ -1,7 +1,6 @@
 import os
 import platform
 import subprocess
-import shlex
 import webbrowser
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -70,9 +69,10 @@ def launch_application(app_name: str, file_path: Optional[str] = None) -> Dict[s
         else:
             return {"success": False, "error_message": f"Unsupported OS: {system}"}
 
-        # Execute
+        # Execute safely as a list without shell=True
         if system == "Windows":
-            subprocess.Popen(command, shell=True)
+            # Create a detached process
+            subprocess.Popen(command, shell=False, creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0)
         else:
             # We use Popen so we don't block the agent waiting for the app to close
             subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -109,6 +109,8 @@ def register_socket_events(socketio):
         socketio.emit(event_name, data)
 
     EventEmitter.register_listener(bridge_system_events)
+    # Explicitly catch PiP updates for the frontend to guarantee delivery
+    EventEmitter.on("pip_update", lambda data: socketio.emit("pip_update", data))
 
     # --- Log Handler Logic (if needed to serve logs via socket) ---
     # The LogHandler in web_app.py uses `socketio.emit` directly. 

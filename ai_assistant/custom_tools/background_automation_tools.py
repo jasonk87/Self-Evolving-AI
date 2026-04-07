@@ -43,12 +43,21 @@ class CustomFileActionHandler(FileSystemEventHandler):
             return
 
         try:
-            # Safely replace the {filepath} variable using shlex.quote to prevent command injection
-            safe_filepath = shlex.quote(filepath)
+            import platform
+
+            # Windows cmd.exe uses double-quotes for escaping paths with spaces and does not support POSIX single quotes from shlex.quote.
+            if platform.system() == "Windows":
+                # Very basic sanitization: ensure no unescaped double quotes inside the path, then wrap it.
+                # Filesystem paths in Windows shouldn't contain " anyway.
+                safe_filepath = '"' + filepath.replace('"', '\"') + '"'
+            else:
+                import shlex
+                safe_filepath = shlex.quote(filepath)
+
             final_command = self.command_template.replace("{filepath}", safe_filepath)
             logger.info(f"Watcher triggered on {filepath}. Executing: {final_command}")
 
-            # Execute as a detached background process so it doesn't block the watcher
+            # Execute as a detached background process
             subprocess.Popen(final_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             logger.error(f"Watcher action failed for {filepath}: {e}")
