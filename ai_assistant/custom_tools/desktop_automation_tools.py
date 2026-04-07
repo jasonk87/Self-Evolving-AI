@@ -1,6 +1,7 @@
 import os
 import platform
 import subprocess
+import shlex
 import webbrowser
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field

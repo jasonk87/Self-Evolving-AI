@@ -4,6 +4,7 @@ import uuid
 import logging
 import threading
 import subprocess
+import shlex
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
@@ -42,8 +43,9 @@ class CustomFileActionHandler(FileSystemEventHandler):
             return
 
         try:
-            # Safely replace the {filepath} variable and execute the bash command
-            final_command = self.command_template.replace("{filepath}", f'"{filepath}"')
+            # Safely replace the {filepath} variable using shlex.quote to prevent command injection
+            safe_filepath = shlex.quote(filepath)
+            final_command = self.command_template.replace("{filepath}", safe_filepath)
             logger.info(f"Watcher triggered on {filepath}. Executing: {final_command}")
 
             # Execute as a detached background process so it doesn't block the watcher

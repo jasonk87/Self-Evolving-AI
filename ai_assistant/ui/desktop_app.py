@@ -1,6 +1,7 @@
 import sys
 import os
 import threading
+import uuid
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QLineEdit, QTextBrowser, QGraphicsDropShadowEffect
@@ -34,7 +35,10 @@ class FloatingAgentUI(QMainWindow):
         self.old_pos = None
 
         # Initialize AI Brain
-        self.controller = SystemController()
+        # Controller requires an orchestrator instance per its init
+        from ai_assistant.core.orchestrator import DynamicOrchestrator
+        self.controller = SystemController(orchestrator=DynamicOrchestrator())
+        self.session_id = uuid.uuid4().hex
         self.signals = WorkerSignals()
         self.signals.finished.connect(self.display_agent_response)
         self.signals.error.connect(self.display_agent_error)
@@ -143,7 +147,7 @@ class FloatingAgentUI(QMainWindow):
             # We must create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            state = loop.run_until_complete(self.controller.handle_user_request(prompt))
+            state = loop.run_until_complete(self.controller.handle_user_request(prompt=prompt, session_id=self.session_id))
             loop.close()
 
             if state.final_answer:
