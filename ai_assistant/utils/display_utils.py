@@ -97,11 +97,10 @@ def format_component_output(component: str, message: str, is_thinking: bool = Fa
         message: The message to format
         is_thinking: Whether this is part of the thinking process
     """
-    from ai_assistant.config import is_debug_mode, THINKING_CONFIG
+    from ai_assistant.config import is_debug_mode
     
     if not is_debug_mode():
-        display_config = THINKING_CONFIG.get("display", {})
-        if is_thinking and not display_config.get("show_in_release", False):
+        if is_thinking:
             return ANSI("")
         return ANSI(message)
         
@@ -112,18 +111,23 @@ def format_component_output(component: str, message: str, is_thinking: bool = Fa
         "thinker": CLIColors.THINKER
     }
     
-    prefix = THINKING_CONFIG["components"].get(component.lower(), "")
+    component_prefixes = {
+        "planner": "[Planner] ",
+        "reviewer": "[Reviewer] ",
+        "executor": "[Executor] ",
+        "thinker": "[Thinker] ",
+    }
+    prefix = component_prefixes.get(component.lower(), "")
     color = component_colors.get(component.lower(), CLIColors.AI_RESPONSE)
     
     # Special handling for thinking process
     if is_thinking:
-        display_config = THINKING_CONFIG.get("display", {})
-        if not display_config.get("show_working", False):
+        if not is_debug_mode():
             return ANSI("")
         steps = message.split("\n")
         formatted_steps = []
         for step in steps:
-            formatted_steps.append(color_text(f"{display_config.get('step_prefix', '')}{step}", color))
+            formatted_steps.append(color_text(step, color))
         final_str = "\n".join(formatted_steps)
         return ANSI(final_str)
     

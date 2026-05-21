@@ -31,8 +31,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
     async def test_direct_mode_routing(self, mock_determine_mode, mock_invoke_gemini):
         # Setup
         mock_determine_mode.return_value = ExecutionMode.DIRECT
-        # For universal cycle, we need side effect for loop
-        mock_invoke_gemini.side_effect = ["FINAL ANSWER: Direct response.", '```json\n{"type": "final_answer", "params": {"message": "Direct response."}}\n```']
+        mock_invoke_gemini.side_effect = ['```json\n{"type": "final_answer", "params": {"message": "Direct response."}}\n```']
 
         # Execute
         from ai_assistant.core.models.state import ExecutionState
@@ -53,14 +52,8 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         # Setup
         mock_determine_mode.return_value = ExecutionMode.FAST_REACT
 
-        # Mock LLM responses for the loop (Strategist, Operator, Strategist)
-        # 1. Tool call (Strategist plan)
-        # 2. Operator execution json
-        # 3. Strategist final answer
         mock_invoke_gemini.side_effect = [
-            "Use test tool",
-            '```json\n{"type": "tool_call", "params": {"name": "test_tool", "arguments": {"arg1": "val1"}}}\n```',
-            'FINAL ANSWER: Done.',
+            '```json\n{"type": "tool_call", "name": "test_tool", "params": {"arg1": "val1"}}\n```',
             '```json\n{"type": "final_answer", "params": {"message": "Done."}}\n```'
         ]
 
@@ -78,22 +71,18 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(success)
         self.assertEqual(response, "Done.")
-        self.assertEqual(mock_invoke_gemini.call_count, 4)
-        # Note: The precise execution parameters changed to dict arguments based on schema format updates in universal cycle
+        self.assertEqual(mock_invoke_gemini.call_count, 2)
         mock_tool_system.execute_tool.assert_called_once()
 
     @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
     @patch('ai_assistant.core.orchestrator.TaskRouter.determine_mode')
     @patch('ai_assistant.core.orchestrator.tool_system_instance')
-    async def test_thinking_pro_mode_execution(self, mock_tool_system, mock_determine_mode, mock_invoke_gemini):
+    async def test_complex_fast_react_execution(self, mock_tool_system, mock_determine_mode, mock_invoke_gemini):
         # Setup
-        mock_determine_mode.return_value = ExecutionMode.THINKING_PRO
+        mock_determine_mode.return_value = ExecutionMode.FAST_REACT
 
-        # Mock Thinking responses (Now routing to Universal Cycle)
         mock_invoke_gemini.side_effect = [
-            'Use complex tool',
-            '```json\n{"type": "tool_call", "params": {"action": "complex_tool", "args": []}}\n```',
-            'FINAL ANSWER: Solved complex problem.',
+            '```json\n{"type": "tool_call", "name": "complex_tool", "params": {"args": []}}\n```',
             '```json\n{"type": "final_answer", "params": {"message": "Solved complex problem."}}\n```'
         ]
 
@@ -111,8 +100,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(success)
         self.assertEqual(response, "Solved complex problem.")
-        self.assertEqual(mock_invoke_gemini.call_count, 4)
-        # Ensure standard model was used as Universal cycle now runs it
+        self.assertEqual(mock_invoke_gemini.call_count, 2)
         args, kwargs = mock_invoke_gemini.call_args_list[0]
 
     @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
@@ -122,7 +110,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         # Setup: Router returns None or something invalid (should default to FAST_REACT)
         mock_determine_mode.side_effect = Exception("Router Error")
 
-        mock_invoke_gemini.side_effect = ["FINAL ANSWER: Fallback success.", '```json\n{"type": "final_answer", "params": {"message": "Fallback success."}}\n```']
+        mock_invoke_gemini.side_effect = ['```json\n{"type": "final_answer", "params": {"message": "Fallback success."}}\n```']
         mock_tool_system.get_tools_description.return_value = "Tools"
 
         # Execute

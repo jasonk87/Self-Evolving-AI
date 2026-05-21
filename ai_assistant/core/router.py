@@ -1,7 +1,6 @@
 import logging
 from typing import Optional, Dict, Any
 from ai_assistant.core.enums import ExecutionMode
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
 from ai_assistant.config import DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
@@ -17,20 +16,20 @@ Modes:
    - Use for: Standard coding tasks, active chat, quick lookups, tool usage, debugging simple errors.
    - Examples: "Write a script", "Check weather", "Debug this error", "Find file X".
 
-3. THINKING_PRO: Deep Iterative Branching. Heavy engine.
+3. FAST_REACT: Tool-capable execution loop for complex requests.
    - Use for: Complex architecture, deep debugging, high-risk tasks, refactoring entire systems, planning large projects.
    - Examples: "Design a system", "Refactor entire backend", "Research and plan a new feature".
 
 Instructions:
 - Analyze the user's prompt and context.
-- Output ONLY the mode name: DIRECT, FAST_REACT, or THINKING_PRO.
+- Output ONLY the mode name: DIRECT or FAST_REACT.
 - Do not output any other text.
 """
 
 import re
 
 class TaskRouter:
-    def __init__(self, llm_model: str = "gemini-2.0-flash"):
+    def __init__(self, llm_model: str = DEFAULT_MODEL):
         self.llm_model = llm_model
         
         # Pre-compile regex patterns for lightning-fast routing
@@ -68,8 +67,8 @@ class TaskRouter:
                 
         for pattern in self.thinking_patterns:
             if pattern.search(prompt_clean):
-                logger.info("Router: Heuristic match -> THINKING_PRO")
-                return ExecutionMode.THINKING_PRO
+                logger.info("Router: Heuristic match -> FAST_REACT")
+                return ExecutionMode.FAST_REACT
                 
         for pattern in self.fast_react_patterns:
             if pattern.search(prompt_clean):

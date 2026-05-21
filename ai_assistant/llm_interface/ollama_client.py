@@ -9,16 +9,8 @@ import os # Added import os
 from ai_assistant.config import (
     DEFAULT_MODEL as CFG_DEFAULT_MODEL,
     is_debug_mode,
-    ENABLE_THINKING,
-    THINKING_SUPPORTED_MODELS,
-    ENABLE_CHAIN_OF_THOUGHT,
-    DEFAULT_TEMPERATURE_THINKING,
-    DEFAULT_TEMPERATURE_RESPONSE,
-    THINKING_CONFIG,
     LLM_PROVIDER,
     VERBOSE_LLM_LOGGING,
-    REASONING_STRATEGIES,
-    PARALLEL_THINKING_CONFIG,
     DAILY_TOKEN_BUDGET,
     CATEGORY_BUDGETS
 )
@@ -31,29 +23,6 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
 OLLAMA_CHAT_API_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 DEFAULT_OLLAMA_MODEL = CFG_DEFAULT_MODEL
-
-THINKING_PROMPT_TEMPLATE = """You are a highly capable AI assistant with strong analytical and problem-solving abilities. Let's solve this problem step by step.
-
-Original prompt: {user_prompt}
-
-Before providing the final answer, I want you to think through this carefully. Break down your thought process:
-1. Understand what's being asked
-2. Identify the key elements and requirements
-3. Consider potential approaches
-4. Plan your response
-5. Think about edge cases or potential issues
-
-Do not give the final answer yet. Instead, walk me through your thinking process step by step.
-Think it through..."""
-
-RESPONSE_WITH_THINKING_PROMPT_TEMPLATE = """Now that you've thought it through, use your analysis to provide a clear, concise, and accurate response.
-
-Your previous thinking process:
-{thinking_process}
-
-Original prompt: {user_prompt}
-
-Provide your final response now, using your thought process to ensure accuracy and completeness."""
 
 def process_llm_response(response_data: Dict) -> Optional[Tuple[str, Optional[str]]]:
     if not response_data:
@@ -94,60 +63,9 @@ def invoke_ollama_model(
     _check_budget(task_name or "unknown")
 
     if LLM_PROVIDER == "gemini":
-        # Note: Synchronous parallel thinking is not currently supported.
-        # If task_name implies parallel, it will fall back to standard sync call.
-        return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens)
+        return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens, strategy="RAW")
 
-    enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
-    enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
-    use_chat_api = enable_thinking
-
-    if enable_chain_of_thought:
-        thinking_prompt = THINKING_PROMPT_TEMPLATE.format(user_prompt=prompt)
-        thinking_payload = {
-            "model": model_name,
-            "prompt": thinking_prompt,
-            "stream": False,
-            "options": {
-                "temperature": DEFAULT_TEMPERATURE_THINKING,
-                "num_predict": max_tokens
-            }
-        }
-        if is_debug_mode():
-            print(f"[DEBUG] Chain of thought - Thinking phase starting for model {model_name}")
-            print(f"[DEBUG] Thinking prompt: {thinking_prompt[:200]}...")
-        try:
-            thinking_response = requests.post(OLLAMA_API_ENDPOINT, json=thinking_payload, timeout=600)
-            thinking_response.raise_for_status()
-            thinking_result = thinking_response.json().get("response", "").strip()
-            if thinking_result:
-                if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                    print(f"[DEBUG] {THINKING_CONFIG['display']['prefix'].strip()} {thinking_result} {THINKING_CONFIG['display']['suffix'].strip()}")
-                elif not is_debug_mode() and THINKING_CONFIG["display"]["show_in_release"]:
-                    print(f"{THINKING_CONFIG['display']['prefix'].strip()} {thinking_result} {THINKING_CONFIG['display']['suffix'].strip()}")
-            elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                 print(f"[DEBUG] CoT: No thinking process generated.")
-            response_prompt = RESPONSE_WITH_THINKING_PROMPT_TEMPLATE.format(
-                thinking_process=thinking_result, user_prompt=prompt
-            )
-            final_payload = {
-                "model": model_name, "prompt": response_prompt, "stream": False,
-                "options": {"temperature": DEFAULT_TEMPERATURE_RESPONSE, "num_predict": max_tokens}
-            }
-            if is_debug_mode():
-                print(f"[DEBUG] Chain of thought - Response phase starting")
-                print(f"[DEBUG] Response prompt: {response_prompt[:200]}...")
-            final_response = requests.post(OLLAMA_API_ENDPOINT, json=final_payload, timeout=600)
-            final_response.raise_for_status()
-            final_result = final_response.json().get("response", "").strip()
-            if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                print(f"[DEBUG] CoT Final Response: {final_result[:200]}...")
-
-            telemetry_tracker.track_call(model_name, len(prompt), len(final_result), task=f"ollama_sync_cot_{task_name or 'unknown'}")
-            return final_result
-        except requests.exceptions.RequestException as e:
-            print(f"Error during chain of thought process: {e}")
-            return None
+    use_chat_api = False
 
     payload = {
         "model": model_name,
@@ -156,7 +74,6 @@ def invoke_ollama_model(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens}
     }
-    if use_chat_api: payload["think"] = True
     api_endpoint = OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT
 
     if VERBOSE_LLM_LOGGING:
@@ -169,7 +86,6 @@ def invoke_ollama_model(
     try:
         if is_debug_mode() and not VERBOSE_LLM_LOGGING:
             print(f"[DEBUG] Sending request to Ollama with model: {model_name}, prompt: '{prompt[:100]}...'")
-            if enable_thinking: print(f"[DEBUG] Native thinking enabled for model {model_name}")
         elif not VERBOSE_LLM_LOGGING:
              print(f"Sending request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
              
@@ -204,14 +120,6 @@ def invoke_ollama_model(
              print(f"CONTENT:\n{content}")
              print(f"{'-'*60}\n")
 
-        if enable_thinking:
-            if thinking:
-                if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                    print(f"[DEBUG] {THINKING_CONFIG['display']['prefix'].strip()} {thinking} {THINKING_CONFIG['display']['suffix'].strip()}")
-                elif not is_debug_mode() and THINKING_CONFIG["display"]["show_in_release"]:
-                    print(f"{THINKING_CONFIG['display']['prefix'].strip()} {thinking} {THINKING_CONFIG['display']['suffix'].strip()}")
-            elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                print(f"[DEBUG] Native thinking enabled for {model_name}, but no thinking process was returned by the model.")
         if is_debug_mode(): print(f"[DEBUG] Final content being returned: {content[:200]}...")
         telemetry_tracker.track_call(model_name, len(prompt), len(content), task=f"ollama_sync_{task_name or 'unknown'}")
         return content
@@ -230,94 +138,21 @@ async def invoke_ollama_model_async_internal(
 ) -> Optional[str]:
     _check_budget(task_name or "unknown")
 
-    # Check Reasoning Strategy
-    reasoning_mode = "STANDARD"
-    if task_name:
-        reasoning_mode = REASONING_STRATEGIES.get(task_name, "STANDARD")
-    elif "default" in REASONING_STRATEGIES:
-         reasoning_mode = REASONING_STRATEGIES["default"]
-
     if LLM_PROVIDER == "gemini":
-        if reasoning_mode == "PARALLEL":
-            return await gemini_client.invoke_parallel_thinking(
-                prompt,
-                model_name=model_name,
-                temperature=PARALLEL_THINKING_CONFIG.get("temperature_branches", temperature),
-                max_tokens=max_tokens,
-                num_branches=PARALLEL_THINKING_CONFIG.get("num_branches", 3),
-                merge_model=PARALLEL_THINKING_CONFIG.get("merge_model"),
-                temperature_merge=PARALLEL_THINKING_CONFIG.get("temperature_merge", 0.2),
-                task_name=task_name or "unknown"
-            )
-        elif reasoning_mode == "RAW":
-            return await gemini_client.invoke_gemini_model_async(
-                prompt,
-                model_name=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                strategy="RAW",
-                task_name=task_name or "unknown"
-            )
-        else:
-            # Default to SPLIT_BRAIN (UNIVERSAL_BICAMERAL)
-            return await gemini_client.invoke_gemini_model_async(prompt, model_name, temperature, max_tokens, task_name=task_name or "unknown")
+        return await gemini_client.invoke_gemini_model_async(
+            prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            strategy="RAW",
+            task_name=task_name or "unknown"
+        )
 
-    enable_thinking = ENABLE_THINKING and model_name in THINKING_SUPPORTED_MODELS
-    enable_chain_of_thought = ENABLE_CHAIN_OF_THOUGHT and not enable_thinking
-    use_chat_api = enable_thinking
+    use_chat_api = False
 
     current_api_endpoint = api_endpoint_override if api_endpoint_override else OLLAMA_API_ENDPOINT
     if use_chat_api and not api_endpoint_override:
         current_api_endpoint = OLLAMA_CHAT_API_ENDPOINT
-
-
-    if enable_chain_of_thought:
-        thinking_prompt = THINKING_PROMPT_TEMPLATE.format(user_prompt=prompt)
-        thinking_payload = {
-            "model": model_name, "prompt": thinking_prompt, "stream": False,
-            "options": {"temperature": DEFAULT_TEMPERATURE_THINKING, "num_predict": max_tokens}
-        }
-        if is_debug_mode():
-            print(f"[DEBUG] Chain of thought - Thinking phase starting for model {model_name}")
-            print(f"[DEBUG] Thinking prompt: {thinking_prompt[:200]}...")
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600.0)) as session:
-            try:
-                async with session.post(OLLAMA_API_ENDPOINT, json=thinking_payload) as thinking_response:
-                    thinking_response.raise_for_status()
-                    thinking_data = await thinking_response.json()
-                    thinking_result = thinking_data.get("response", "").strip()
-                    if thinking_result:
-                        if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                            print(f"[DEBUG] {THINKING_CONFIG['display']['prefix'].strip()} {thinking_result} {THINKING_CONFIG['display']['suffix'].strip()}")
-                        elif not is_debug_mode() and THINKING_CONFIG["display"]["show_in_release"]:
-                            print(f"{THINKING_CONFIG['display']['prefix'].strip()} {thinking_result} {THINKING_CONFIG['display']['suffix'].strip()}")
-                    elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                        print(f"[DEBUG] Async CoT: No thinking process generated.")
-                    response_prompt = RESPONSE_WITH_THINKING_PROMPT_TEMPLATE.format(
-                        thinking_process=thinking_result, user_prompt=prompt
-                    )
-                    final_payload = {
-                        "model": model_name, "prompt": response_prompt, "stream": False,
-                        "options": {"temperature": DEFAULT_TEMPERATURE_RESPONSE, "num_predict": max_tokens}
-                    }
-                    if is_debug_mode():
-                        print(f"[DEBUG] Chain of thought - Response phase starting")
-                        print(f"[DEBUG] Response prompt: {response_prompt[:200]}...")
-                    async with session.post(OLLAMA_API_ENDPOINT, json=final_payload) as final_response:
-                        final_response.raise_for_status()
-                        final_data = await final_response.json()
-                        final_result = final_data.get("response", "").strip()
-                        if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                             print(f"[DEBUG] Async CoT Final Response: {final_result[:200]}...")
-                        telemetry_tracker.track_call(model_name, len(prompt), len(final_result), task=f"ollama_async_cot_{task_name or 'unknown'}")
-                        return final_result
-            except aiohttp.ClientError as e: print(f"HTTP error occurred in async CoT: {e}"); return None
-            except json.JSONDecodeError as e: print(f"Error decoding JSON in async CoT: {e}"); return None
-            except Exception as e: print(f"An unexpected error occurred in async CoT: {e}"); return None
-        
-        # Windows/ProactorEventLoop workaround
-        await asyncio.sleep(0.250)
-
     payload = {
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}] if use_chat_api else None,
@@ -325,10 +160,6 @@ async def invoke_ollama_model_async_internal(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens}
     }
-    if use_chat_api: payload["think"] = True
-
-    if use_chat_api: payload["think"] = True
-
     current_api_endpoint = api_endpoint_override if api_endpoint_override else (OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT)
 
     if VERBOSE_LLM_LOGGING:
@@ -340,7 +171,6 @@ async def invoke_ollama_model_async_internal(
 
     if is_debug_mode() and not VERBOSE_LLM_LOGGING:
         print(f"[DEBUG] Sending async request to Ollama with model: {model_name}, prompt: '{prompt[:100]}...' to {current_api_endpoint}")
-        if enable_thinking: print(f"[DEBUG] Native thinking enabled for model {model_name}")
     elif not VERBOSE_LLM_LOGGING:
          print(f"Sending async request to Ollama with model: {model_name}, prompt: '{prompt[:50]}...'")
 
@@ -363,14 +193,6 @@ async def invoke_ollama_model_async_internal(
                      print(f"CONTENT:\n{content}")
                      print(f"{'-'*60}\n")
 
-                if enable_thinking:
-                    if thinking:
-                        if is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                            print(f"[DEBUG] {THINKING_CONFIG['display']['prefix'].strip()} {thinking} {THINKING_CONFIG['display']['suffix'].strip()}")
-                        elif not is_debug_mode() and THINKING_CONFIG["display"]["show_in_release"]:
-                            print(f"{THINKING_CONFIG['display']['prefix'].strip()} {thinking} {THINKING_CONFIG['display']['suffix'].strip()}")
-                    elif is_debug_mode() and THINKING_CONFIG["display"]["show_working"]:
-                        print(f"[DEBUG] Async native thinking enabled for {model_name}, but no thinking process was returned by the model.")
                 if is_debug_mode() and not VERBOSE_LLM_LOGGING: print(f"[DEBUG] Async final content being returned: {content[:200]}...")
                 telemetry_tracker.track_call(model_name, len(prompt), len(content), task=f"ollama_async_{task_name or 'unknown'}")
                 return content
@@ -451,16 +273,12 @@ class OllamaProvider:
         task_name: Optional[str] = None
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
-        enable_thinking = ENABLE_THINKING and effective_model_name in THINKING_SUPPORTED_MODELS
-        use_chat_api = enable_thinking
-        api_to_use = self.chat_endpoint if use_chat_api else self.generate_endpoint
-
         return await invoke_ollama_model_async_internal(
             prompt=prompt,
             model_name=effective_model_name,
             temperature=temperature,
             max_tokens=max_tokens,
-            api_endpoint_override=api_to_use,
+            api_endpoint_override=self.generate_endpoint,
             task_name=task_name
         )
 

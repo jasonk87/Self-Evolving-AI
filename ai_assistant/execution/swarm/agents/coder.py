@@ -69,11 +69,7 @@ class CoderAgent(BaseSwarmAgent):
 
         try:
             # Assume we are using gemini or ollama via the provided llm_provider
-            code = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
-                model_name="gemini-2.0-flash", # Use standard task model
-                temperature=0.2
-            )
+            code = await self.llm_provider.invoke_ollama_model_async(prompt, temperature=0.2)
 
             # Clean markdown
             cleaned_code = code.replace("```python", "").replace("```", "").strip()

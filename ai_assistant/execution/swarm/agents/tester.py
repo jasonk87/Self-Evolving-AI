@@ -60,11 +60,7 @@ class TesterAgent(BaseSwarmAgent):
         Output ONLY the raw Python test code for the file. Do not include markdown or explanations.
         """
         try:
-            code = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
-                model_name="gemini-2.0-flash",
-                temperature=0.2
-            )
+            code = await self.llm_provider.invoke_ollama_model_async(prompt, temperature=0.2)
             cleaned_code = code.replace("```python", "").replace("```", "").strip()
             self.drafts[filename] = cleaned_code
 

@@ -17,7 +17,7 @@ def test_config_schema_endpoint(monkeypatch):
 
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
         get_settings_schema=lambda: {
-            "ENABLE_THINKING": {"type": "boolean", "description": "x"},
+            "AUTO_WEB_PIP": {"type": "boolean", "description": "x"},
             "DEFAULT_MODEL": {"type": "string", "description": "y"},
         }
     ))
@@ -29,4 +29,4 @@ def test_config_schema_endpoint(monkeypatch):
     payload = response.get_json()
     assert payload["success"] is True
     assert payload["schema_version"] == 1
-    assert "ENABLE_THINKING" in payload["settings"]
+    assert "AUTO_WEB_PIP" in payload["settings"]

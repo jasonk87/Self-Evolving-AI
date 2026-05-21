@@ -9,7 +9,7 @@ def main():
     api_key = config._get_api_key()
     print(f"Key Prefix: {api_key[:5] if api_key else 'None'}")
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.DEFAULT_MODEL}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
     

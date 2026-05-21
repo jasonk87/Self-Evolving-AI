@@ -18,7 +18,7 @@ def test_config_update_coerces_and_updates(monkeypatch):
     updates = {}
 
     def coerce_setting_value(key, value):
-        if key == "ENABLE_THINKING":
+        if key == "AUTO_WEB_PIP":
             return str(value).lower() == "true"
         return value
 
@@ -32,12 +32,12 @@ def test_config_update_coerces_and_updates(monkeypatch):
     ))
 
     with app.test_client() as client:
-        response = client.post('/api/config', json={"ENABLE_THINKING": "true"})
+        response = client.post('/api/config', json={"AUTO_WEB_PIP": "true"})
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert updates["ENABLE_THINKING"] is True
+    assert updates["AUTO_WEB_PIP"] is True
 
 
 def test_config_update_returns_400_on_invalid_value(monkeypatch):
@@ -52,7 +52,7 @@ def test_config_update_returns_400_on_invalid_value(monkeypatch):
     ))
 
     with app.test_client() as client:
-        response = client.post('/api/config', json={"ENABLE_THINKING": "maybe"})
+        response = client.post('/api/config', json={"AUTO_WEB_PIP": "maybe"})
 
     assert response.status_code == 400
     payload = response.get_json()

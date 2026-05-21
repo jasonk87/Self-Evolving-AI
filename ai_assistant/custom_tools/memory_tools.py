@@ -4,11 +4,6 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from ai_assistant.core.task_manager import TaskManager
-# We need to access LearningAgent. 
-# Since LearningAgent is heavy and stateful, ideally we use the one in background service 
-# or instantiate a fresh one that points to the same files.
-# Instantiating a fresh one is safer for simple file operations.
-from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.core.notification_manager import NotificationManager
 
 logger = logging.getLogger(__name__)
@@ -25,6 +20,8 @@ async def trigger_learning_scan(notification_manager: Optional[NotificationManag
         str: A summary of what was learned (if anything).
     """
     try:
+        from ai_assistant.learning.learning import LearningAgent
+
         # Instantiate a temporary LearningAgent for this operation
         # We pass a minimal NotificationManager if none provided, though usually it is.
         nm = notification_manager or NotificationManager()

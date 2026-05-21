@@ -66,7 +66,6 @@ class ReviewerAgent(BaseSwarmAgent):
         try:
             polished_code = await self.llm_provider.invoke_ollama_model_async(
                 prompt,
-                model_name="gemini-2.0-flash",
                 temperature=0.1 # Low temp for style/docs
             )
             cleaned_code = polished_code.replace("```python", "").replace("```", "").strip()

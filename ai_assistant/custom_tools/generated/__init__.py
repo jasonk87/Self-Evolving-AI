@@ -45,7 +45,6 @@ _OPTIONAL_EXPORTS = [
     ("weather_tool", [("get_weather", "get_weather")]),
     ("remind_at_3_40", [("remind_at_3_40", "remind_at_3_40")]),
     ("twilio_text_tool", [("send_text_message", "send_text_message")]),
-    ("ai_response_generator", [("generate_two_responses", "generate_two_responses")]),
     ("location_utils", [("get_location_by_ip", "get_location_by_ip")]),
     ("generate_safe_html", [("generate_safe_html", "generate_safe_html")]),
     ("chat_html_tool", [("chat_dynamic_html", "chat_dynamic_html")]),

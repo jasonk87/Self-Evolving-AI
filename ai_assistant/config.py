@@ -8,7 +8,8 @@ import os
 
 LLM_PROVIDER = "gemini" 
 
-DEFAULT_MODEL = "gemini-2.0-flash"  # Switched to stable 2.0 model
+GEMINI_FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_MODEL = GEMINI_FLASH_LITE_MODEL
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
@@ -52,84 +53,28 @@ def _get_api_key() -> str:
         return GOOGLE_API_KEY
     return os.environ.get("GOOGLE_API_KEY", "")
 
-# Define models that support native thinking
-THINKING_SUPPORTED_MODELS: List[str] = [
-    "qwen3:latest",
-    "deepseek-r1:latest",
-    "qwen3:8B",
-    "gemini-2.0-flash-exp",
-    "gemini-2.0-flash"
-]
-
-# Enable or disable thinking capability globally (overrides per-model settings)
-ENABLE_THINKING = True  # Set to False to disable thinking output globally
-
-# Chain of thought settings for models that don't support native thinking
-ENABLE_CHAIN_OF_THOUGHT = True  # Enable chain of thought prompting for non-thinking models
-DEFAULT_EXECUTION_MODE = "THINKING_PRO"  # Options: AUTO, DIRECT, FAST_REACT, THINKING_PRO
-DEFAULT_TEMPERATURE_THINKING = 0.7  # Temperature for thinking phase
-DEFAULT_TEMPERATURE_RESPONSE = 0.5  # Temperature for response phase (slightly lower for more focused responses)
-
-# Thinking output configuration
-THINKING_CONFIG = {
-    "display": {
-        "prefix": "[Thinking] ",
-        "suffix": "...done thinking.",
-        "plan_prefix": "[Action Plan] ",
-        "step_prefix": "Step ",
-        "max_steps": 5,
-        "show_working": True,     # Show thinking steps in debug mode
-        "show_in_release": False  # Never show thinking in release mode
-    },
-    "components": {
-        "planner": "[Planner] ",
-        "reviewer": "[Reviewer] ",
-        "executor": "[Executor] ",
-        "thinker": "[Thinker] "
-    }
-}
+DEFAULT_EXECUTION_MODE = "DIRECT"
 
 # Task-specific model configurations.
 # This allows using different models for different capabilities (e.g., code generation, planning, reflection).
 # If a task is not listed here, or if its value is None, the DEFAULT_MODEL will be used.
 TASK_MODELS: Dict[str, Optional[str]] = {
-    "code_generation": "gemini-2.0-flash",
-    "planning": "gemini-2.0-flash",
-    "reflection": "gemini-2.0-flash",
-    "conversation_intelligence": "gemini-2.0-flash",
-    "argument_population": "gemini-2.0-flash",
-    "goal_preprocessing": "gemini-2.0-flash",
-    "summarization": "gemini-2.0-flash",
-    "reviewing": "gemini-2.0-flash",
-    "fact_extraction": "gemini-2.0-flash",
-    "tool_design": "gemini-2.0-flash",
-    "tool_creation": "gemini-2.0-flash",
-    "council_skeptic": "gemini-2.0-flash",
-    "council_judge": "gemini-2.0-flash",
+    "code_generation": GEMINI_FLASH_LITE_MODEL,
+    "planning": GEMINI_FLASH_LITE_MODEL,
+    "reflection": GEMINI_FLASH_LITE_MODEL,
+    "conversation_intelligence": GEMINI_FLASH_LITE_MODEL,
+    "argument_population": GEMINI_FLASH_LITE_MODEL,
+    "goal_preprocessing": GEMINI_FLASH_LITE_MODEL,
+    "summarization": GEMINI_FLASH_LITE_MODEL,
+    "reviewing": GEMINI_FLASH_LITE_MODEL,
+    "fact_extraction": GEMINI_FLASH_LITE_MODEL,
+    "tool_design": GEMINI_FLASH_LITE_MODEL,
+    "tool_creation": GEMINI_FLASH_LITE_MODEL,
+    "council_skeptic": GEMINI_FLASH_LITE_MODEL,
+    "council_judge": GEMINI_FLASH_LITE_MODEL,
 }
 
-# Reasoning Strategies Configuration
-# Maps specific tasks to a strategy: "RAW", "STANDARD" (SPLIT_BRAIN), or "PARALLEL".
-# "RAW": Direct single call (Efficient).
-# "STANDARD" / "UNIVERSAL_BICAMERAL": Split Brain (Think -> Act) (Robust).
-# "PARALLEL": Parallel Thinking (3 passes + Merge) (Deepest).
-REASONING_STRATEGIES: Dict[str, str] = {
-    "planning": "RAW",
-    "code_generation": "RAW",
-    "conversation_intelligence": "RAW",
-    "council_judge": "RAW",
-    "reviewing": "RAW",
-    "summarization": "RAW",
-    "default": "RAW"
-}
-
-# Parallel Thinking Configuration
-PARALLEL_THINKING_CONFIG = {
-    "num_branches": 3,
-    "merge_model": "gemini-2.0-flash-exp", # Using the experimental model for better reasoning
-    "temperature_branches": 0.7,
-    "temperature_merge": 0.2
-}
+REASONING_STRATEGIES: Dict[str, str] = {"default": "RAW"}
 
 # Number of recent conversational turns (user/AI exchanges) to include in LLM prompts for context
 CONVERSATION_HISTORY_TURNS = 5
@@ -349,26 +294,26 @@ DEFAULT_LLM_PROVIDER = "gemini"
 TASK_PROFILES = {
     "chat": {
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
-        "mode": "BICAMERAL",
+        "model": GEMINI_FLASH_LITE_MODEL,
+        "mode": "DIRECT",
         "endpoint": None
     },
     "coding": {
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
-        "mode": "BICAMERAL",
+        "model": GEMINI_FLASH_LITE_MODEL,
+        "mode": "DIRECT",
         "endpoint": None
     },
     "background_dreamer": {
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
-        "mode": "BICAMERAL",
+        "model": GEMINI_FLASH_LITE_MODEL,
+        "mode": "DIRECT",
         "endpoint": None
     },
     "local_agent": {
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
-        "mode": "BICAMERAL",
+        "model": GEMINI_FLASH_LITE_MODEL,
+        "mode": "DIRECT",
         "endpoint": None
     }
 }

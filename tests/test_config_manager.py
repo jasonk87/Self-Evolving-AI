@@ -17,7 +17,7 @@ class TestConfigManager(unittest.TestCase):
         
     def test_update_and_load(self):
         original_mode = config_module.DEFAULT_EXECUTION_MODE
-        test_mode = "DIRECT" if original_mode != "DIRECT" else "THINKING_PRO"
+        test_mode = "DIRECT" if original_mode != "DIRECT" else "FAST_REACT"
         
         print(f"Original Mode: {original_mode}")
         

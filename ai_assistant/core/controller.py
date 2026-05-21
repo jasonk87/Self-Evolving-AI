@@ -46,7 +46,7 @@ class SystemController:
         # We start by capturing the prompt and establishing initial context limits.
         state = ExecutionState(
             original_user_prompt=prompt,
-            context_limits={"max_tokens": getattr(self.orchestrator, 'MAX_STRATEGIST_PROMPT_TOKENS', 120000)}
+            context_limits={"max_tokens": getattr(self.orchestrator, 'MAX_ACTION_PROMPT_TOKENS', 120000)}
         )
 
         state.current_status = "planning"

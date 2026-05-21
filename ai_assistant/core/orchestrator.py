@@ -5,7 +5,7 @@ import os
 import sys
 
 # Ensure project root is in sys.path for stand-alone execution
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -42,12 +42,12 @@ logger = logging.getLogger(__name__)
 
 # Constants
 MAX_REACT_STEPS = 10
-MAX_STRATEGIST_PROMPT_TOKENS = 120000  # Conservative limit, Gemini handles more but optimizing costs
+MAX_ACTION_PROMPT_TOKENS = 120000  # Conservative limit, Gemini handles more but optimizing costs
 
 class DynamicOrchestrator:
     """
     Orchestrates the dynamic planning and execution of user prompts.
-    Implements a Universal Bicameral Architecture (Strategist -> Operator).
+    Uses a direct single-call ReAct loop.
     """
 
     def __init__(self, 
@@ -95,6 +95,13 @@ class DynamicOrchestrator:
                     state = json.load(f)
                     self.blocked_tools = state.get("blocked_tools", {})
                     self.failure_counts = state.get("failure_counts", {})
+                    for alias in ("google_search", "search_web", "web_search"):
+                        self.blocked_tools.pop(alias, None)
+                    self.failure_counts = {
+                        key: value
+                        for key, value in self.failure_counts.items()
+                        if not key.startswith(("google_search|", "search_web|", "web_search|"))
+                    }
         except Exception as e:
             logger.error(f"Failed to load quarantine state: {e}")
 
@@ -112,7 +119,7 @@ class DynamicOrchestrator:
 
     async def process_prompt(self, state: ExecutionState, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> ExecutionState:
         """
-        Process a user prompt using the Universal Bicameral Brain architecture.
+        Process a user prompt using the direct ReAct architecture.
         Accepts and mutates an ExecutionState object.
         """
         try:
@@ -124,10 +131,10 @@ class DynamicOrchestrator:
             # 2. Context Gathering (RAG, Project Context)
             full_context_str, context_metadata = await self._gather_context(prompt_with_context)
 
-            logger.info(f"DynamicOrchestrator: Starting Universal Cycle for prompt: {state.original_user_prompt[:50]}...")
-            print(color_text(f"--> Strategy: Universal Bicameral", CLIColors.SYSTEM_MESSAGE))
+            logger.info(f"DynamicOrchestrator: Starting direct ReAct cycle for prompt: {state.original_user_prompt[:50]}...")
+            print(color_text(f"--> Strategy: Direct ReAct", CLIColors.SYSTEM_MESSAGE))
 
-            # 3. Execute Universal Cycle
+            # 3. Execute direct ReAct cycle
             await self._execute_universal_cycle(state, prompt_with_context, full_context_str, conversation_history, session_id, context_source, images)
             return state
 
@@ -274,7 +281,7 @@ class DynamicOrchestrator:
 
     async def _execute_universal_cycle(self, state: ExecutionState, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str, initial_images: Optional[List[str]]) -> None:
         """
-        The Universal Bicameral Cycle: Strategist (Think) -> Operator (Act) -> Loop.
+        Direct ReAct cycle: one model call chooses the next tool call or final answer.
         Mutates ExecutionState.
         """
         # Step A: Recall Failures
@@ -288,7 +295,6 @@ class DynamicOrchestrator:
         collected_images = initial_images or []
         tools_desc = tool_system_instance.get_tools_description()
 
-        # Initial Strategist Prompt
         execution_history = ""
         final_answer = ""
         success = False
@@ -341,13 +347,13 @@ class DynamicOrchestrator:
 
             # We loop through cycles
             for step_i in range(max_steps):
-                print(color_text(f"\n--- Cycle {step_i+1}: Strategist (Thinking) ---", CLIColors.THOUGHT))
+                print(color_text(f"\n--- Cycle {step_i+1}: Direct ReAct ---", CLIColors.THOUGHT))
                 
                 if current_ui_task:
                     self.task_manager.update_task_status(
                         current_ui_task.task_id,
                         ActiveTaskStatus.PLANNING,
-                        step_desc=f"Thinking (Cycle {step_i+1})...",
+                        step_desc=f"Working (Cycle {step_i+1})...",
                         progress=min(90, step_i * 10)
                     )
 
@@ -365,8 +371,6 @@ class DynamicOrchestrator:
                         chat_history_str = truncate_to_token_limit(chat_history_str, 40000)
                         logger.warning(f"Chat history truncated. Was ~{history_tokens} tokens.")
                 
-                # Phase 1: Strategist (Think)
-
                 # Expose Quarantined Tools
                 quarantine_info = ""
                 quarantined_tools = self.get_blocked_tools()
@@ -376,7 +380,7 @@ class DynamicOrchestrator:
 
                 state.current_status = "planning"
                 # Construct base prompt and enforce absolute limits
-                strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
+                action_prompt = f"""You are a tool-capable assistant. Decide the next action for this request in one step.
 Goal: {state.original_user_prompt}
 {persona_guide}
 {quarantine_info}
@@ -389,11 +393,42 @@ Chat History:
 Execution History:
 {execution_history}
 
-Few-Shot Examples (How to Think):
+Available Tools:
+{tools_desc}
+
+Return STRICT JSON only. No markdown.
+Schema:
+{{
+  "thought": "Brief reason for the action, one sentence max",
+  "type": "tool_call" OR "final_answer",
+  "name": "tool_name_if_tool_call",
+  "params": {{ ... arguments for the tool or {{"message": "final answer"}} }}
+}}
+
+Examples:
+{{
+  "thought": "A web lookup is needed.",
+  "type": "tool_call",
+  "name": "search_web",
+  "params": {{ "query": "latest python version" }}
+}}
+
+{{
+  "thought": "The answer is available.",
+  "type": "final_answer",
+  "name": null,
+  "params": {{ "message": "The result is 1200." }}
+}}
+
+Rules:
+1. If the user goal requires a tool, return exactly one tool call.
+2. If tool results in Execution History answer the request, return a final answer.
+3. If a previous tool failed, choose a different viable tool or explain the blockage.
+4. For tools that use args/kwargs, you may return params as {{"args": [...], "kwargs": {{...}}}}.
 """
-                total_tokens = estimate_tokens(strategist_prompt)
-                if total_tokens > MAX_STRATEGIST_PROMPT_TOKENS:
-                    logger.warning(f"Strategist prompt exceeds {MAX_STRATEGIST_PROMPT_TOKENS} tokens ({total_tokens}). Forcing truncation on history/context to fit limits safely.")
+                total_tokens = estimate_tokens(action_prompt)
+                if total_tokens > MAX_ACTION_PROMPT_TOKENS:
+                    logger.warning(f"Action prompt exceeds {MAX_ACTION_PROMPT_TOKENS} tokens ({total_tokens}). Forcing truncation on history/context to fit limits safely.")
                     # Force prune history more aggressively
                     if history:
                         chat_history_str = truncate_to_token_limit(chat_history_str, 10000)
@@ -401,7 +436,7 @@ Few-Shot Examples (How to Think):
                         execution_history = truncate_to_token_limit(execution_history, 5000)
 
                     # Reconstruct
-                    strategist_prompt = f"""You are the Strategist. Your goal is to analyze the user request and plan the next best action using a ReAct (Reasoning + Acting) approach.
+                    action_prompt = f"""You are a tool-capable assistant. Decide the next action for this request in one step.
 Goal: {state.original_user_prompt}
 {persona_guide}
 {quarantine_info}
@@ -414,137 +449,21 @@ Chat History:
 Execution History:
 {execution_history}
 
-Few-Shot Examples (How to Think):
-Example 1:
-User: "What is the weather in Tokyo?"
-Strategist: "The user wants weather information. I need to check if I have a weather tool. I see 'get_weather' in the tool list. I should instruct the Operator to use it."
-Plan: Call tool 'get_weather' with args=["Tokyo"].
-
-Example 2:
-User: "Calculate 25 * 48"
-Strategist: "The user wants a calculation. I can use the 'python_repl' or a calculator tool. 'python_repl' is safer for complex math, but let's check tools. I see 'calculator'. Plan: Use 'calculator' with expression '25 * 48'."
-Operator Result: 1200
-Strategist: "The calculation is done. I have the answer. I should instruct the Operator to give the final answer."
-Plan: FINAL ANSWER: The result is 1200.
-
-Instructions:
-1. Analyze the current situation based on the Goal, Context, Chat History, and Execution History.
-2. VERIFY PREVIOUS STEPS: If the Execution History shows a failure or unexpected result, ANALYZE WHY. Do not repeat the same mistake. Modify your plan.
-3. Determine if the goal is met.
-4. If not met, plan the EXACT next step for the Operator.
-5. Do NOT execute tools yourself. You only PLAN.
-6. If the goal is met or you have a final answer, instruct the Operator to provide it.
-
-Output strictly your reasoning and the plan for the Operator.
-"""
-                # Use RAW strategy to avoid double-thinking (The Strategist IS the thinker)
-                strategist_response = await invoke_gemini_model_async(
-                    prompt=strategist_prompt,
-                    model_name=config.DEFAULT_MODEL,
-                    strategy="RAW"
-                )
-                strategist_thoughts = "Strategist reasoning is embedded in the plan."
-                
-                # Log the deep thought (The whole response is the thought/plan)
-                # print(color_text(f"Strategist Thoughts:\n{strategist_thoughts}", CLIColors.THOUGHT))
-                
-                # Emit thought event for UI
-                strategist_node_id = f"thought_strat_{uuid.uuid4().hex[:8]}"
-                EventEmitter.emit("thought_update", {
-                    "node_id": strategist_node_id,
-                    "parent_id": last_node_id,
-                    "role": "Strategist",
-                    "thought": strategist_response, # The whole plan is the thought
-                    "cycle": step_i + 1
-                })
-                last_node_id = strategist_node_id
-
-                print(color_text(f"Strategist Plan: {strategist_response[:200]}...", CLIColors.THOUGHT))
-                
-                # Update UI with strategy excerpt
-                if current_ui_task:
-                    # Extract a short summary of the plan
-                    plan_excerpt = strategist_response.split('\n')[0][:50]
-                    self.task_manager.update_task_status(
-                        current_ui_task.task_id,
-                        ActiveTaskStatus.PLANNING,
-                        step_desc=f"{plan_excerpt}...",
-                         progress=min(90, step_i * 10 + 5)
-                    )
-
-                # Phase 2: Operator (Act)
-                state.current_status = "tool_execution"
-                print(color_text(f"--- Cycle {step_i+1}: Operator (Acting) ---", CLIColors.TOOL_NAME))
-
-                operator_system_prompt = f"""You are the Operator. You execute the Strategist's plan.
-Goal: {state.original_user_prompt}
-{persona_guide}
-
 Available Tools:
 {tools_desc}
 
-Strategist's Plan:
-{strategist_response}
-
-MANDATORY: ALL RESPONSES MUST BE VALID JSON.
-You must return a single JSON object. Do not include markdown code blocks or additional text.
-
-Schema:
-{{
-  "thought": "Brief reasoning for this action",
-  "type": "tool_call" OR "final_answer",
-  "name": "tool_name_if_tool_call",
-  "params": {{ ... arguments for tool or message content ... }}
-}}
-
-Few-Shot Examples (How to Act):
-Example 1 (Tool Call):
-Strategist: "I need to search for 'latest python version'."
-Operator:
-{{
-  "thought": "Searching for python version as planned.",
-  "type": "tool_call",
-  "name": "search_web",
-  "params": {{ "query": "latest python version" }}
-}}
-
-Example 2 (Final Answer):
-Strategist: "I have the info. Answer the user: It is 3.12."
-Operator:
-{{
-  "thought": "Answering the user.",
-  "type": "final_answer",
-  "name": null,
-  "params": {{ "message": "The latest Python version is 3.12." }}
-}}
-
-Instructions:
-1. Follow the Strategist's plan exactly.
-2. Output STRICT JSON only.
-3. If the plan is to use a tool, set "type" to "tool_call" and "name" to the tool name. Put arguments in "params".
-   **IMPORTANT:** If a tool takes positional arguments (like `args=['val']` in Python), map them to named parameters if possible, or use a "args" list in "params" if the tool schema requires it. (Ideally, use the tool's defined parameter names).
-   *Compatibility Note:* If the system expects "args" list and "kwargs" dict, structure "params" as `{{"args": [...], "kwargs": {{...}}}}` OR just flat parameters if the tool system handles mapping.
-   *Current System Constraint:* The tool executor expects `args` (list) and `kwargs` (dict). You can output:
-   `"params": {{ "args": ["arg1"], "kwargs": {{ "key": "val" }} }}`
-   OR
-   `"params": {{ "arg1": "val1", "arg2": "val2" }}` (The system will try to map these to kwargs).
-
-4. If the plan is to answer the user, set "type" to "final_answer" and put the response string in "params": `{{"message": "..."}}`.
+Return STRICT JSON only using the schema described earlier.
 """
-                # We append execution history to operator too so it knows what happened
-                operator_prompt = f"{operator_system_prompt}\n\nExecution History:\n{execution_history}\n\nAction (JSON):"
+                state.current_status = "tool_execution"
+                print(color_text(f"--- Cycle {step_i+1}: Action Selection ---", CLIColors.TOOL_NAME))
 
-                # Use RAW strategy. The Operator prompt asks for JSON. Hidden thoughts are handled by <think> removal in client if present.
-                operator_response = await invoke_gemini_model_async(
-                    prompt=operator_prompt,
+                action_response = await invoke_gemini_model_async(
+                    prompt=action_prompt,
                     model_name=config.DEFAULT_MODEL,
                     strategy="RAW"
                 )
 
-                # Operator thoughts are inside the JSON "thought" field usually.
-
-                # Phase 3: Loop Logic
-                parsed_response = self._parse_tool_call(operator_response) # Reuse parser, effectively parsing JSON
+                parsed_response = self._parse_tool_call(action_response) # Reuse parser, effectively parsing JSON
 
                 # Normalize the new schema to the old internal variables
                 tool_call = None
@@ -596,18 +515,18 @@ Instructions:
                     kwargs = tool_call.get("kwargs", {})
                     thought = tool_call.get("thought", "")
 
-                    # Emit thought event for UI (Operator Action)
-                    operator_node_id = f"thought_op_{uuid.uuid4().hex[:8]}"
+                    # Emit action event for UI
+                    action_node_id = f"thought_action_{uuid.uuid4().hex[:8]}"
                     EventEmitter.emit("thought_update", {
-                        "node_id": operator_node_id,
+                        "node_id": action_node_id,
                         "parent_id": last_node_id,
-                        "role": "Operator",
+                        "role": "Action",
                         "thought": f"Action: {tool_name}\nReasoning: {thought}",
                         "cycle": step_i + 1
                     })
-                    last_node_id = operator_node_id
+                    last_node_id = action_node_id
 
-                    print(color_text(f"Operator Action: {thought}", CLIColors.THOUGHT))
+                    print(color_text(f"Action: {thought}", CLIColors.THOUGHT))
                     print(color_text(f"Running Tool: {tool_name}", CLIColors.TOOL_NAME))
 
                     if current_ui_task:
@@ -710,35 +629,35 @@ Instructions:
                     last_node_id = tool_result_node_id
 
                     # Append to history
-                    step_record = f"Cycle {step_i+1}:\nStrategist: {strategist_response}\nOperator Action: {tool_name}\nResult: {result_str[:1000]}\n"
+                    step_record = f"Cycle {step_i+1}:\nAction: {tool_name}\nReason: {thought}\nResult: {result_str[:1000]}\n"
                     execution_history += step_record
                     current_steps.append({
                         "cycle": step_i + 1,
-                        "strategist": strategist_response,
+                        "reason": thought,
                         "tool": tool_name,
                         "result": result_str
                     })
-                    # Operator didn't use a tool or say FINAL ANSWER. Treat as a conversational response or error?
+                    # The model did not use a tool or final-answer schema. Treat as conversational response or retry if it looks like broken JSON.
                     
                     # Safety check: If response looks like JSON but wasn't parsed, DO NOT treat as final answer.
-                    is_suspicious_json = operator_response.strip().startswith("{") or \
-                                         operator_response.strip().lower().startswith("json") or \
-                                         '"type":' in operator_response
+                    is_suspicious_json = action_response.strip().startswith("{") or \
+                                         action_response.strip().lower().startswith("json") or \
+                                         '"type":' in action_response
 
                     if is_suspicious_json:
                          print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
-                         state.errors.append(f"Cycle {step_i+1}: Operator output invalid JSON")
-                         execution_history += f"Cycle {step_i+1}: Operator output invalid JSON. Retrying.\n"
+                         state.errors.append(f"Cycle {step_i+1}: Action output invalid JSON")
+                         execution_history += f"Cycle {step_i+1}: Action output invalid JSON. Retrying.\n"
                          # Continue loop (retry)
                          continue
 
                     # If it's just chatting, treat as final answer.
-                    if not operator_response or not operator_response.strip():
+                    if not action_response or not action_response.strip():
                         # Fallback for empty model response
-                        logger.warning("Operator returned empty response. using fallback.")
+                        logger.warning("Model returned empty response. using fallback.")
                         final_answer = "Task Completed. (No text response generated)"
                     else:
-                        final_answer = operator_response
+                        final_answer = action_response
                     success = True
                     break
 
@@ -930,7 +849,7 @@ Chat History:
 
 Output ONLY the summary text."""
 
-            summary = await invoke_gemini_model_async(prompt, model_name="gemini-2.0-flash")
+            summary = await invoke_gemini_model_async(prompt, model_name=config.DEFAULT_MODEL)
             if not summary:
                 return
 
@@ -942,7 +861,7 @@ Output ONLY the summary text."""
                 )
             else:
                 title_prompt = f"Generate a short (3-5 words) title for this chat:\n{summary}"
-                title = await invoke_gemini_model_async(title_prompt, model_name="gemini-2.0-flash")
+                title = await invoke_gemini_model_async(title_prompt, model_name=config.DEFAULT_MODEL)
                 title = title.strip().replace('"', '') if title else "Chat Session"
                 
                 self.memory_manager.add_episode(

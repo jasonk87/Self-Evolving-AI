@@ -12,7 +12,7 @@ from ai_assistant.memory.persistent_memory import (
 )
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_data_dir
+from ai_assistant.config import DEFAULT_MODEL, get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,7 @@ class MemoryMaintenanceService:
             prompt = AUDIT_PROMPT_TEMPLATE.format(facts_list=facts_list_str)
             
             try:
-                # Use smart model for classification accuracy
-                response = await invoke_ollama_model_async(prompt, model_name="gemini-2.0-flash-exp") 
+                response = await invoke_ollama_model_async(prompt, model_name=DEFAULT_MODEL)
                 if not response: continue
                 
                 # Robust JSON Parse

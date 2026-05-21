@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+﻿from types import SimpleNamespace
 
 from flask import Flask
 
@@ -161,18 +161,18 @@ def test_chat_set_config_command_updates_setting(monkeypatch):
         return True
 
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: str(raw).strip().lower() in {"true", "1", "yes", "on"},
         update_setting=update_setting,
     ))
 
     with app.test_client() as client:
-        response = client.post('/chat', json={"message": "/set-config ENABLE_THINKING false", "session_id": "s1"})
+        response = client.post('/chat', json={"message": "/set-config AUTO_WEB_PIP false", "session_id": "s1"})
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert updates["ENABLE_THINKING"] is False
+    assert updates["AUTO_WEB_PIP"] is False
 
 
 def test_chat_show_config_command_returns_value(monkeypatch):
@@ -181,7 +181,7 @@ def test_chat_show_config_command_returns_value(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"DEFAULT_EXECUTION_MODE": "THINKING_PRO"},
+        get_all_settings=lambda: {"DEFAULT_EXECUTION_MODE": "FAST_REACT"},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -192,7 +192,7 @@ def test_chat_show_config_command_returns_value(monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert "DEFAULT_EXECUTION_MODE = THINKING_PRO" in payload["response"]
+    assert "DEFAULT_EXECUTION_MODE = FAST_REACT" in payload["response"]
 
 
 def test_chat_set_config_rejects_invalid_value(monkeypatch):
@@ -205,13 +205,13 @@ def test_chat_set_config_rejects_invalid_value(monkeypatch):
         raise ValueError("Expected boolean value (true/false)")
 
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=coerce_setting_value,
         update_setting=lambda key, value: True,
     ))
 
     with app.test_client() as client:
-        response = client.post('/chat', json={"message": "/set-config ENABLE_THINKING maybe", "session_id": "s1"})
+        response = client.post('/chat', json={"message": "/set-config AUTO_WEB_PIP maybe", "session_id": "s1"})
 
     assert response.status_code == 400
     payload = response.get_json()
@@ -225,7 +225,7 @@ def test_chat_set_reminder_command(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -246,7 +246,7 @@ def test_chat_list_and_delete_reminder_commands(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -269,7 +269,7 @@ def test_chat_update_reminder_command_updates_fields(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -306,7 +306,7 @@ def test_chat_update_reminder_command_supports_message_only(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -344,7 +344,7 @@ def test_chat_delegate_code_command_creates_task(monkeypatch):
     monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace())
     monkeypatch.setattr(app_globals, "ai_loop", object(), raising=False)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
         get_time=lambda: "2026-01-01T00:00:00",
@@ -398,7 +398,7 @@ def test_chat_work_status_command_for_specific_task(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -427,7 +427,7 @@ def test_chat_work_status_command_accepts_task_id_prefix(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -460,7 +460,7 @@ def test_chat_work_status_lists_recent_task_statuses(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -499,7 +499,7 @@ def test_chat_work_inbox_lists_notices(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -528,7 +528,7 @@ def test_chat_work_inbox_clear_marks_read(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -557,7 +557,7 @@ def test_chat_work_inbox_read_specific_notice(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -595,7 +595,7 @@ def test_chat_work_inbox_read_usage_error(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -615,7 +615,7 @@ def test_chat_identity_continuity_reuses_session(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -635,7 +635,7 @@ def test_chat_start_rotates_identity_session(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -660,7 +660,7 @@ def test_chat_work_inbox_persists_across_rotated_session_for_same_identity(monke
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -692,7 +692,7 @@ def test_chat_work_inbox_isolated_between_identities(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -722,7 +722,7 @@ def test_chat_identity_continuity_overrides_mismatched_session_id(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -742,7 +742,7 @@ def test_chat_identity_continuity_uses_rotated_session_even_if_old_session_id_pr
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -764,7 +764,7 @@ def test_chat_work_inbox_open_notice_returns_context(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -801,7 +801,7 @@ def test_chat_work_inbox_retry_notice_executes_retry(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -836,7 +836,7 @@ def test_chat_work_inbox_retry_notice_without_task_returns_400(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -863,7 +863,7 @@ def test_chat_work_inbox_open_notice_not_found(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -883,7 +883,7 @@ def test_chat_session_info_command_identity_mapping(monkeypatch):
     _setup_chat_manager(monkeypatch)
     monkeypatch.setattr(app_globals, "orchestrator", None)
     monkeypatch.setattr(app_globals, "config_manager", SimpleNamespace(
-        get_all_settings=lambda: {"ENABLE_THINKING": True},
+        get_all_settings=lambda: {"AUTO_WEB_PIP": True},
         coerce_setting_value=lambda key, raw: raw,
         update_setting=lambda key, value: True,
     ))
@@ -1036,3 +1036,4 @@ def test_identity_session_pointer_reset_rejects_oversized_identity_key(monkeypat
     payload = response.get_json()
     assert payload["success"] is False
     assert "exceeds max length" in payload["error"]
+

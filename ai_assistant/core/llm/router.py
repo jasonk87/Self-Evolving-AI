@@ -5,7 +5,7 @@ from ai_assistant.core.llm.gemini_provider import GeminiProvider
 from ai_assistant.core.llm.ollama_provider import OllamaProvider
 
 class ModelRouter:
-    """Routes tasks to the appropriate LLM provider and mode based on config.TASK_PROFILES."""
+    """Routes tasks to the appropriate LLM provider and direct-call mode."""
 
     def __init__(self):
         self._providers: Dict[str, LLMProvider] = {
@@ -25,8 +25,8 @@ class ModelRouter:
         provider_name = profile.get("provider", getattr(config, 'DEFAULT_LLM_PROVIDER', 'gemini'))
 
         # Fallbacks for specific missing attributes
-        model = profile.get("model", getattr(config, 'DEFAULT_MODEL', 'gemini-2.0-flash'))
-        mode = profile.get("mode", "BICAMERAL")
+        model = profile.get("model", getattr(config, 'DEFAULT_MODEL', 'gemini-2.5-flash-lite'))
+        mode = profile.get("mode", "DIRECT")
         endpoint = profile.get("endpoint")
 
         provider = self._providers.get(provider_name.lower())

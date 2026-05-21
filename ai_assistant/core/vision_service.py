@@ -17,6 +17,7 @@ import ai_assistant.config as config
 from ai_assistant.core.events import emit_system_event
 
 logger = logging.getLogger(__name__)
+_missing_playwright_browser_warned = False
 
 
 def _get_async_playwright():
@@ -27,6 +28,28 @@ def _get_async_playwright():
             "and run `playwright install` if browser binaries are needed."
         )
     return async_playwright
+
+
+def _is_missing_playwright_browser_error(error: Exception) -> bool:
+    message = str(error)
+    return (
+        "Executable doesn't exist" in message
+        and "playwright install" in message
+    )
+
+
+def _log_browser_error(operation: str, target: str, error: Exception) -> None:
+    global _missing_playwright_browser_warned
+    if _is_missing_playwright_browser_error(error):
+        if not _missing_playwright_browser_warned:
+            logger.warning(
+                "VisionService: Playwright browser binaries are missing; "
+                "skipping browser visuals until `playwright install` is run."
+            )
+            _missing_playwright_browser_warned = True
+        return
+
+    logger.error(f"VisionService: Error {operation} for {target}: {error}")
 
 
 class VisionService:
@@ -115,7 +138,7 @@ class VisionService:
             return base64_screenshot
 
         except Exception as e:
-            logger.error(f"VisionService: Error capturing screenshot for {file_path_or_url}: {e}")
+            _log_browser_error("capturing screenshot", file_path_or_url, e)
             return None
         finally:
             if browser:
@@ -158,7 +181,7 @@ class VisionService:
             return text_content
 
         except Exception as e:
-            logger.error(f"VisionService: Error scraping text from {url}: {e}")
+            _log_browser_error("scraping text", url, e)
             return None
         finally:
             if browser:
@@ -226,7 +249,7 @@ class VisionService:
             return images[:limit]
 
         except Exception as e:
-            logger.error(f"VisionService: Error scraping images from {url}: {e}")
+            _log_browser_error("scraping images", url, e)
             return []
         finally:
             if browser:
@@ -322,7 +345,7 @@ class VisionService:
         try:
             response_text = await invoke_gemini_model_async(
                 prompt=system_prompt,
-                model_name="gemini-2.0-flash-exp",
+                model_name=config.DEFAULT_MODEL,
                 images=[image_data],
                 temperature=0.2 # Low temperature for analytical task
             )

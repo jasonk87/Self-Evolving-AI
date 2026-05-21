@@ -31,7 +31,7 @@ def update_system_config(key: str, value: Any) -> str:
     Restricted to safe keys to prevent system instability.
     
     Args:
-        key (str): The configuration key to update (e.g., "ENABLE_THINKING").
+        key (str): The configuration key to update (e.g., "DEFAULT_EXECUTION_MODE").
         value (Any): The new value.
         
     Returns:
@@ -40,8 +40,6 @@ def update_system_config(key: str, value: Any) -> str:
     # Whitelist of modifiable settings
     ALLOWED_KEYS = {
         "GHOST_MODE",
-        "ENABLE_THINKING",
-        "ENABLE_CHAIN_OF_THOUGHT",
         "DEFAULT_EXECUTION_MODE",
         "AUTONOMOUS_LEARNING_ENABLED",
         "AUTO_APPROVE_DELAY_SECONDS",

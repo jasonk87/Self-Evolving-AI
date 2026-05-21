@@ -25,4 +25,4 @@ def test_google_custom_search_uses_visualization_when_auto_pip(monkeypatch):
     result = asyncio.run(search_tools.google_custom_search("openai"))
 
     assert result["images"] == ["b64-image"]
-    assert any("google.com/search" in url for url in fake.calls)
+    assert any("bing.com/search" in url for url in fake.calls)

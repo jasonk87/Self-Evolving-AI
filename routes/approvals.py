@@ -24,8 +24,13 @@ import importlib.util
 import os
 import json
 import uuid
+import asyncio
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro):
+    return asyncio.run(coro)
 
 DEFAULT_NOTICE_SCOPE = "local_default"
 MAX_IDENTITY_COMPONENT_LENGTH = 256
@@ -2507,7 +2512,7 @@ def get_approvals():
         return jsonify({"error": str(e), "success": False}), 500
 
 @api_bp.route('/approvals/<req_id>/approve', methods=['POST'])
-async def approve_request(req_id):
+def approve_request(req_id):
     """Approves a request (either transient or persistent insight)."""
     try:
         feedback = request.json.get('feedback') if request.json else None
@@ -2516,7 +2521,7 @@ async def approve_request(req_id):
         if approval_manager.get_request(req_id):
             if feedback:
                 logger.info(f"User approved request {req_id} with feedback: {feedback}")
-            success = await approval_manager.approve_request(req_id)
+            success = _run_async(approval_manager.approve_request(req_id))
             if success: return jsonify({"success": True})
 
         # 2. Try LearningAgent Insights
@@ -2529,7 +2534,12 @@ async def approve_request(req_id):
                     app_globals.memory_manager.add_fact(f"User Approved Insight {req_id} with feedback: {feedback}")
 
                 if insight.type in [InsightType.TOOL_BUG_SUSPECTED, InsightType.TOOL_ENHANCEMENT_SUGGESTED]:
-                     success = await app_globals.orchestrator.learning_agent.execute_self_healing_for_insight(insight, apply_immediately=True)
+                     success = _run_async(
+                         app_globals.orchestrator.learning_agent.execute_self_healing_for_insight(
+                             insight,
+                             apply_immediately=True,
+                         )
+                     )
                 else:
                     app_globals.orchestrator.learning_agent._save_insights()
                     success = True # Just mark as saved/approved for now

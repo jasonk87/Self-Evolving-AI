@@ -487,7 +487,7 @@ JSON Plan:
             if current_attempt > 0 :
                  print(f"PlannerAgent (LLM): Correction prompt (first 500 chars):\n{current_prompt[:500]}...\n")
             
-            # Explicitly pass task_name="planning" to trigger Parallel Thinking if configured
+            # Pass task_name for model/accounting metadata.
             llm_response_str = await invoke_ollama_model_async(
                 current_prompt,
                 model_name=model_for_planning,

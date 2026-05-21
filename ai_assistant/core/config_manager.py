@@ -46,14 +46,12 @@ class ConfigManager:
         """Saves the current values from config.py to config.json (initial seed)."""
         data = {
             "DEFAULT_EXECUTION_MODE": config_module.DEFAULT_EXECUTION_MODE,
-            "ENABLE_THINKING": config_module.ENABLE_THINKING,
             "DEFAULT_MODEL": config_module.DEFAULT_MODEL,
             "TASK_MODELS": config_module.TASK_MODELS,
             "REASONING_STRATEGIES": config_module.REASONING_STRATEGIES,
             "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
-            "PARALLEL_THINKING_CONFIG": config_module.PARALLEL_THINKING_CONFIG,
             "GHOST_MODE": config_module.GHOST_MODE,
             "AUTO_WEB_PIP": config_module.AUTO_WEB_PIP,
             "REMINDER_CHECK_INTERVAL_SECONDS": config_module.REMINDER_CHECK_INTERVAL_SECONDS,
@@ -139,14 +137,12 @@ class ConfigManager:
         # without explicitly declaring a property beforehand
         return {
             "DEFAULT_EXECUTION_MODE": getattr(config_module, 'DEFAULT_EXECUTION_MODE', "AUTO"),
-            "ENABLE_THINKING": getattr(config_module, 'ENABLE_THINKING', True),
-            "DEFAULT_MODEL": getattr(config_module, 'DEFAULT_MODEL', "gemini-2.0-flash"),
+            "DEFAULT_MODEL": getattr(config_module, 'DEFAULT_MODEL', "gemini-2.5-flash-lite"),
             "TASK_MODELS": getattr(config_module, 'TASK_MODELS', {}),
             "REASONING_STRATEGIES": getattr(config_module, 'REASONING_STRATEGIES', {}),
             "CONVERSATION_HISTORY_TURNS": getattr(config_module, 'CONVERSATION_HISTORY_TURNS', 5),
             "AUTONOMOUS_LEARNING_ENABLED": getattr(config_module, 'AUTONOMOUS_LEARNING_ENABLED', True),
             "AUTO_APPROVE_DELAY_SECONDS": getattr(config_module, 'AUTO_APPROVE_DELAY_SECONDS', 600),
-            "PARALLEL_THINKING_CONFIG": getattr(config_module, 'PARALLEL_THINKING_CONFIG', {}),
             "GHOST_MODE": getattr(config_module, 'GHOST_MODE', False),
             "AUTO_WEB_PIP": getattr(config_module, 'AUTO_WEB_PIP', True),
             "REMINDER_CHECK_INTERVAL_SECONDS": getattr(config_module, 'REMINDER_CHECK_INTERVAL_SECONDS', 10),
@@ -167,11 +163,7 @@ class ConfigManager:
             "DEFAULT_EXECUTION_MODE": {
                 "type": "string",
                 "description": "Default execution policy for new tasks.",
-                "enum": ["AUTO", "THINKING_PRO", "FAST_REACT", "DIRECT"],
-            },
-            "ENABLE_THINKING": {
-                "type": "boolean",
-                "description": "Enable internal reasoning traces where supported.",
+                "enum": ["AUTO", "FAST_REACT", "DIRECT"],
             },
             "DEFAULT_MODEL": {
                 "type": "string",
@@ -183,7 +175,7 @@ class ConfigManager:
             },
             "REASONING_STRATEGIES": {
                 "type": "object",
-                "description": "Per-task reasoning strategy mapping.",
+                "description": "Per-task strategy mapping. Gemini calls are direct by default.",
             },
             "CONVERSATION_HISTORY_TURNS": {
                 "type": "integer",
@@ -196,10 +188,6 @@ class ConfigManager:
             "AUTO_APPROVE_DELAY_SECONDS": {
                 "type": "number",
                 "description": "Delay before auto-approval executes (seconds).",
-            },
-            "PARALLEL_THINKING_CONFIG": {
-                "type": "object",
-                "description": "Configuration for parallel reasoning execution.",
             },
             "GHOST_MODE": {
                 "type": "boolean",

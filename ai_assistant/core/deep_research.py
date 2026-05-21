@@ -6,8 +6,8 @@ import aiohttp
 from typing import Dict, Any, List, Optional
 from ai_assistant.core.vision_service import VisionService
 from ai_assistant.custom_tools.search_tools import google_custom_search
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async
-from ai_assistant.config import DEEP_RESEARCH_MAX_URLS, DEEP_RESEARCH_TIMEOUT
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.config import DEFAULT_MODEL, DEEP_RESEARCH_MAX_URLS, DEEP_RESEARCH_TIMEOUT
 import ai_assistant.config as config
 from ai_assistant.tools.base import ToolBase
 
@@ -150,10 +150,10 @@ class DeepResearcher(ToolBase):
             f"If this page contains NO relevant information to the query, answer exactly 'SKIP'."
         )
 
-        response, _ = await invoke_split_brain_async(
-            prompt, 
-            model_name="gemini-2.0-flash",
-            context_text=f"Analyzing content from {url}"
+        response = await invoke_gemini_model_async(
+            prompt=f"Analyzing content from {url}\n\n{prompt}",
+            model_name=DEFAULT_MODEL,
+            task_name="deep_research_analyze_page"
         )
         return response.strip()
 
@@ -172,9 +172,9 @@ class DeepResearcher(ToolBase):
             f"Cite the sources (URLs) where appropriate in the text."
         )
 
-        response, _ = await invoke_split_brain_async(
-            prompt, 
-            model_name="gemini-2.0-flash",
-            context_text="Synthesizing research findings"
+        response = await invoke_gemini_model_async(
+            prompt=f"Synthesizing research findings\n\n{prompt}",
+            model_name=DEFAULT_MODEL,
+            task_name="deep_research_synthesis"
         )
         return response.strip()

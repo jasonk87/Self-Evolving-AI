@@ -5,7 +5,7 @@ from . import api_bp
 import logging
 import app_globals
 from ai_assistant.core.project_manager import find_project
-from ai_assistant.llm_interface.gemini_client import invoke_split_brain_async
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 import json
 import asyncio
 from ai_assistant.custom_tools.reminder_tool import set_reminder, list_reminders, delete_reminder, update_reminder
@@ -752,13 +752,16 @@ def summarize_session(session_id):
 
         prompt += "\\nFormat the output as JSON with keys: 'summary' (string), 'title' (string), 'topics' (list of strings)."
 
-        # 3. Call LLM (using split brain)
+        # 3. Call LLM
         import asyncio
         future = asyncio.run_coroutine_threadsafe(
-            invoke_split_brain_async(prompt, context_text="Summarizing Session"),
+            invoke_gemini_model_async(
+                prompt=f"Summarizing Session\n\n{prompt}",
+                task_name="session_summary",
+            ),
             app_globals.ai_loop
         )
-        response_text, _ = future.result()
+        response_text = future.result()
 
         # 4. Parse JSON Response
         try:

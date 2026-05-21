@@ -49,7 +49,7 @@ from ai_assistant.tools.tool_system import get_tool
 from ai_assistant.core.chat_manager import ChatSessionManager
 from ai_assistant.config import get_projects_dir, get_data_dir # Assuming chat sessions are in data dir or similar
 from ai_assistant.core import self_modification # For code reading
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, invoke_split_brain_async # For root cause analysis
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 
 
 class LearningAgent:
@@ -167,6 +167,23 @@ class LearningAgent:
         else: # pragma: no cover
             print(f"LearningAgent: Failed to save insights.")
 
+    def add_insight(self, insight: ActionableInsight) -> bool:
+        """Adds and persists an insight if it is not already present."""
+        if any(existing.insight_id == insight.insight_id for existing in self.insights):
+            return False
+
+        for existing in self.insights:
+            if (
+                existing.type == insight.type
+                and existing.description == insight.description
+                and existing.related_tool_name == insight.related_tool_name
+            ):
+                return False
+
+        self.insights.append(insight)
+        self._save_insights()
+        return True
+
     def ingest_reflection_suggestions(self, suggestions: List[Dict[str, Any]]) -> int:
         """
         Ingests improvement suggestions from the autonomous reflection cycle.
@@ -258,10 +275,10 @@ Explain EXACTLY why the error occurred based on the code logic.
 Be concise and specific (e.g., "Line 45 assumes `x` is a list, but it is None because...").
 Do not provide a full fix, just the diagnosis.
 """
-        response, _ = await invoke_split_brain_async(
-            prompt, 
+        response = await invoke_gemini_model_async(
+            prompt=f"Analyzing root cause for {tool_name}\n\n{prompt}",
             temperature=0.0,
-            context_text=f"Analyzing root cause for {tool_name}"
+            task_name="root_cause_analysis"
         )
         return response if response else "Could not generate root cause analysis."
 
@@ -899,7 +916,10 @@ Example:
 
         try:
             # specialized model for extraction if available, otherwise default
-            response, _ = await invoke_split_brain_async(prompt, context_text="Fact Extraction")
+            response = await invoke_gemini_model_async(
+                prompt=f"Fact Extraction\n\n{prompt}",
+                task_name="fact_extraction",
+            )
             
             import json
             import re

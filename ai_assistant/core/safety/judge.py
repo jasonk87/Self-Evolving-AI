@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 import os
 
 from ai_assistant.core.safety.constitution import SYSTEM_DIRECTIVES
+from ai_assistant.config import DEFAULT_MODEL
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ class SafetyVerdict:
 class ConstitutionalJudge:
     def __init__(self):
         self.constitution = "\n".join([f"- {rule}" for rule in SYSTEM_DIRECTIVES])
-        self.model = "gemini-2.0-flash-exp"  # Using a fast, smart model
+        self.model = DEFAULT_MODEL
 
     def evaluate_action(self, action_description: str, code_snippet: Optional[str] = None) -> SafetyVerdict:
         """

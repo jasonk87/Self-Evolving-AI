@@ -2,8 +2,6 @@ import os
 import time
 import logging
 from ai_assistant.config import get_data_dir
-from ai_assistant.core import background_service
-from ai_assistant.core.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +74,8 @@ def get_background_task_status() -> str:
     Useful for knowing what the AI is doing "subconsciously".
     """
     try:
+        from ai_assistant.core import background_service
+
         status = background_service.get_service_status()
         
         is_active = status.get('is_active', False)

@@ -7,7 +7,7 @@ import os
 import uuid
 import logging
 
-from ai_assistant.config import is_debug_mode
+from ai_assistant.config import DEFAULT_MODEL, is_debug_mode
 from ai_assistant.core import self_modification
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
@@ -209,7 +209,7 @@ class ActionExecutor:
         """
 
         try:
-            model_name = "gemini-2.0-flash-exp" # Default fallback
+            model_name = DEFAULT_MODEL
             if hasattr(self.code_service.llm_provider, 'model'):
                 model_name = self.code_service.llm_provider.model
             elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):
@@ -672,7 +672,7 @@ class ActionExecutor:
             return False, "LLM provider not available.", "none"
 
         try:
-            model_name = "gemini-2.0-flash-exp"
+            model_name = DEFAULT_MODEL
             if hasattr(self.code_service.llm_provider, 'model'):
                 model_name = self.code_service.llm_provider.model
             elif hasattr(self.code_service.llm_provider, 'DEFAULT_MODEL'):

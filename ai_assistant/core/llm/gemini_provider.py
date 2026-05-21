@@ -14,11 +14,17 @@ class GeminiProvider(LLMProvider):
         images: Optional[List[str]] = None,
         endpoint_url: Optional[str] = None
     ) -> str:
-        # Wrap the existing gemini client functionality
+        if system_instruction:
+            prompt = f"{system_instruction}\n\n{prompt}"
+        if history:
+            history_text = "\n".join(
+                f"{item.get('role', 'user')}: {item.get('content', '')}"
+                for item in history
+            )
+            prompt = f"Conversation history:\n{history_text}\n\nCurrent prompt:\n{prompt}"
+
         return await invoke_gemini_model_async(
             prompt=prompt,
-            system_instruction=system_instruction,
-            history=history,
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,

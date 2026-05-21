@@ -73,7 +73,6 @@ class TestOrchestratorSelfHealing(unittest.IsolatedAsyncioTestCase):
             context="",
             history=[],
             session_id="sess",
-            use_parallel_thinking=False,
             model_name="model"
         )
 

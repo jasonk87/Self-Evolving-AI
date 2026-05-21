@@ -13,6 +13,19 @@ class _FakeToolSystem:
         }
 
 
+def _make_isolated_orchestrator():
+    orch = DynamicOrchestrator(
+        planner=SimpleNamespace(),
+        executor=SimpleNamespace(),
+        learning_agent=SimpleNamespace(),
+        action_executor=SimpleNamespace(),
+    )
+    orch.blocked_tools = {}
+    orch.failure_counts = {}
+    orch._save_quarantine_state = lambda: None
+    return orch
+
+
 def test_self_awareness_tool_accepts_query_alias_without_typeerror(monkeypatch):
     monkeypatch.setattr(
         "ai_assistant.custom_tools.awareness_tools.get_system_status_summary",
@@ -37,12 +50,7 @@ def test_list_available_tools_uses_singleton_tool_system(monkeypatch):
 
 
 def test_orchestrator_ui_feedback_task_details_include_worker_profile():
-    orch = DynamicOrchestrator(
-        planner=SimpleNamespace(),
-        executor=SimpleNamespace(),
-        learning_agent=SimpleNamespace(),
-        action_executor=SimpleNamespace(),
-    )
+    orch = _make_isolated_orchestrator()
 
     details = orch._build_ui_feedback_task_details()
 
@@ -52,12 +60,7 @@ def test_orchestrator_ui_feedback_task_details_include_worker_profile():
 
 
 def test_orchestrator_register_tool_failure_activates_circuit_breaker_at_threshold():
-    orch = DynamicOrchestrator(
-        planner=SimpleNamespace(),
-        executor=SimpleNamespace(),
-        learning_agent=SimpleNamespace(),
-        action_executor=SimpleNamespace(),
-    )
+    orch = _make_isolated_orchestrator()
 
     err = RuntimeError("boom")
     first = orch._register_tool_failure("search_duckduckgo", err, threshold=2)
@@ -70,12 +73,7 @@ def test_orchestrator_register_tool_failure_activates_circuit_breaker_at_thresho
 
 
 def test_orchestrator_register_tool_failure_separates_distinct_errors():
-    orch = DynamicOrchestrator(
-        planner=SimpleNamespace(),
-        executor=SimpleNamespace(),
-        learning_agent=SimpleNamespace(),
-        action_executor=SimpleNamespace(),
-    )
+    orch = _make_isolated_orchestrator()
 
     orch._register_tool_failure("search_duckduckgo", RuntimeError("first"), threshold=3)
     orch._register_tool_failure("search_duckduckgo", ValueError("second"), threshold=3)

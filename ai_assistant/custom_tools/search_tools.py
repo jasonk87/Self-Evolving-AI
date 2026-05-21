@@ -27,7 +27,9 @@ async def google_custom_search(query: str, num_results: int = 5) -> Dict[str, An
             search_url = f"https://www.bing.com/search?q={encoded_query}"
             
             print(f"Ghost Mode: Visualizing search for '{query}'...")
-            await vision.capture_page_screenshot(search_url)
+            b64_screenshot = await vision.capture_page_screenshot(search_url)
+            if b64_screenshot:
+                images.append(b64_screenshot)
         except Exception as e:
             print(f"Ghost Mode Visualization Error: {e}")
 

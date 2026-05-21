@@ -2,6 +2,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 import json
+import re
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 from ai_assistant.learning.learning import ActionableInsight, InsightType
@@ -62,6 +63,20 @@ class ConversationalAnalyst:
             transcript.append(f"{role}: {content}")
         return "\n\n".join(transcript)
 
+    def _extract_json_object(self, response: str) -> Dict[str, Any]:
+        """Extract the first JSON object from a model response."""
+        cleaned = response.strip()
+        fenced_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+        if fenced_match:
+            cleaned = fenced_match.group(1).strip()
+        else:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                cleaned = cleaned[start:end + 1]
+
+        return json.loads(cleaned)
+
     async def analyze_session_transcript(self, session_data: Dict) -> List[ActionableInsight]:
         transcript = self._format_transcript(session_data)
         if not transcript.strip():
@@ -74,14 +89,7 @@ class ConversationalAnalyst:
             if not response:
                 return []
             
-            # Parse JSON
-            json_str = response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0]
-            
-            data = json.loads(json_str)
+            data = self._extract_json_object(response)
             insights_data = data.get("insights", [])
             
             actionable_insights = []

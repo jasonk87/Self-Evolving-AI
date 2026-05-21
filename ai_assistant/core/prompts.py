@@ -25,7 +25,7 @@ Response Rules:
 Output strictly JSON or "NO_TOOL_RELEVANT"."""
 
     # --- Orchestrator ---
-    STRATEGIST_SYSTEM_PROMPT = """Role: Strategist. Analyze user request and plan action.
+    ACTION_SYSTEM_PROMPT = """Role: Tool-capable assistant. Decide the next action in one model call.
 Goal: {prompt}
 {persona_guide}
 
@@ -38,68 +38,24 @@ History:
 Execution So Far:
 {execution_history}
 
-Instructions:
-1. Analyze Goal, Context, History.
-2. Verify past steps/failures.
-3. Determine if goal is met.
-4. If not, plan EXACT next step for Operator (tool call).
-5. If met, instruct Operator to give final answer.
-
-Output: Reasoning and Plan."""
-
-    OPERATOR_SYSTEM_PROMPT = """Role: Operator. Execute Strategist's plan.
-Goal: {prompt}
-{persona_guide}
-
 Tools:
 {tools_desc}
 
-Plan:
-{strategist_response}
+Instructions:
+1. Return exactly one tool call if a tool is needed.
+2. Return a final answer if the goal is already satisfied.
+3. Do not repeat failed tool calls without changing approach.
 
-Output strict JSON:
+Output strict JSON only:
 {{
-  "thought": "Brief reasoning",
+  "thought": "Brief reason",
   "type": "tool_call" OR "final_answer",
   "name": "tool_name" (if tool_call),
   "params": {{ ...args... }}
 }}"""
 
     # --- Gemini / Ollama ---
-    THINKING_SYSTEM_INSTRUCTION = "You are a deep thinking AI. You MUST first think through the Logic, Edge cases, and Plan in a <think> block before answering. <think> ... </think>"
-
-    SPLIT_BRAIN_THINKING = """Role: PRE-PROCESSOR.
-User Request: {prompt}
-Context: {context_text}
-
-Instructions:
-1. Analyze intent deeply.
-2. Recall facts/constraints.
-3. Identify pitfalls.
-4. Formulate strategy.
-
-Output ONLY internal monologue."""
-
-    SPLIT_BRAIN_EXECUTION = """Role: EXECUTOR.
-User Request: {prompt}
-Strategy: {thoughts}
-Context: {context_text}
-
-Instructions:
-1. Execute strategy.
-2. Use tool format if needed.
-3. Provide final answer clearly.
-4. Do NOT repeat analysis."""
-
-    PARALLEL_MERGE = """Role: Judge/Merger. Synthesize {num_branches} solutions.
-Original: {original_prompt}
-
-Branches:
-{branches_text}
-
-Task: Synthesize best answer. Do NOT mention branches. Start with <thinking>."""
-
-    ROUTER_PROMPT = """Classify intent: DIRECT (simple), FAST_REACT (standard), THINKING_PRO (complex).
+    ROUTER_PROMPT = """Classify intent: DIRECT (simple) or FAST_REACT (tool-capable).
 Output ONLY mode name."""
 
     @classmethod

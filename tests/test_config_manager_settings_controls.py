@@ -17,8 +17,8 @@ def test_settings_schema_includes_runtime_controls():
 def test_coerce_setting_value_validates_enum():
     manager = ConfigManager()
 
-    value = manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "THINKING_PRO")
-    assert value == "THINKING_PRO"
+    value = manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "FAST_REACT")
+    assert value == "FAST_REACT"
 
     try:
         manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "INVALID")
@@ -29,7 +29,7 @@ def test_coerce_setting_value_validates_enum():
 
 def test_update_setting_rejects_unmanaged_keys():
     manager = ConfigManager()
-    current = getattr(config_module, "ENABLE_THINKING")
+    current = getattr(config_module, "DEFAULT_EXECUTION_MODE")
 
     assert manager.update_setting("NOT_A_REAL_SETTING", 123) is False
-    assert getattr(config_module, "ENABLE_THINKING") == current
+    assert getattr(config_module, "DEFAULT_EXECUTION_MODE") == current

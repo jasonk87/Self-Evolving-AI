@@ -1081,13 +1081,13 @@ async def _background_loop_async():
                                     module_path = tool_info.get("module_path")
                                     function_name = tool_info.get("function_name")
 
-                                    # Use CodeService with Parallel Mode
+                                    # Use CodeService with the standard direct model path.
                                     fix_result = await learning_agent.action_executor.code_service.modify_code(
                                         context="SELF_FIX_TOOL",
                                         modification_instruction=f"Fix the following crash detected during dream simulation: {stdout_str}\nStderr: {stderr_str}",
                                         module_path=module_path,
                                         function_name=function_name,
-                                        llm_config={"task_name": "code_generation"} # Parallel Thinking
+                                        llm_config={"task_name": "code_generation"}
                                     )
 
                                     if fix_result.get("status") == "SUCCESS_CODE_GENERATED":

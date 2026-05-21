@@ -58,7 +58,7 @@ class ToolSystem:
             ('ai_assistant.custom_tools.navigation_tools', 'navigation_tools.py'),
             ('ai_assistant.custom_tools.project_execution_tools', 'project_execution_tools.py'),
             ('ai_assistant.custom_tools.project_management_tools', 'project_management_tools.py'),
-            ('ai_assistant.custom_tools.reminder_tool.py', 'reminder_tool.py'),
+            ('ai_assistant.custom_tools.reminder_tool', 'reminder_tool.py'),
             ('ai_assistant.custom_tools.search_tools', 'search_tools.py'),
             ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'),
             ('ai_assistant.custom_tools.system_config_tools', 'system_config_tools.py'),

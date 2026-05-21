@@ -20,7 +20,7 @@ def verify_config_api():
             
         # 2. Test POST /api/config
         original_mode = config.get('DEFAULT_EXECUTION_MODE')
-        test_mode = "DIRECT" if original_mode != "DIRECT" else "THINKING_PRO"
+        test_mode = "DIRECT" if original_mode != "DIRECT" else "FAST_REACT"
         
         payload = {"DEFAULT_EXECUTION_MODE": test_mode}
         resp = requests.post(f"{BASE_URL}/api/config", json=payload)
