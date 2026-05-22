@@ -5,10 +5,12 @@ from ai_assistant.planning.plan_simulator import PlanSimulator
 
 class TestPlanSimulator(unittest.TestCase):
     def setUp(self):
-        self.simulator = PlanSimulator(initial_files=["main.py", "utils.py"])
+        self.mock_provider = MagicMock()
+        self.mock_provider.generate_response = AsyncMock()
+        self.simulator = PlanSimulator(initial_files=["main.py", "utils.py"], llm_provider=self.mock_provider)
 
-    @patch('ai_assistant.planning.plan_simulator.invoke_ollama_model_async')
-    def test_simulation_catches_deletion_conflict(self, mock_invoke):
+    def test_simulation_catches_deletion_conflict(self):
+        mock_invoke = self.mock_provider.generate_response
         # Setup mock to simulate a sequence of events
         # Step 1: Delete main.py
         # Step 2: Edit main.py (Should fail)
@@ -69,8 +71,8 @@ class TestPlanSimulator(unittest.TestCase):
         self.assertEqual(result["issues"][0]["risk_level"], "HIGH")
         self.assertIn("does not exist", result["issues"][0]["reason"])
 
-    @patch('ai_assistant.planning.plan_simulator.invoke_ollama_model_async')
-    def test_simulation_tracks_file_creation(self, mock_invoke):
+    def test_simulation_tracks_file_creation(self):
+        mock_invoke = self.mock_provider.generate_response
         # Step 1: Create new_file.py
         # Step 2: Edit new_file.py (Should succeed)
 

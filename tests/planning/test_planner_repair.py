@@ -3,21 +3,26 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import asyncio
 import json
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
-from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.core.llm.gemini_provider import GeminiProvider
 
 class TestPlannerRepair(unittest.TestCase):
     def setUp(self):
-        self.mock_provider = MagicMock(spec=OllamaProvider)
-        self.mock_provider.invoke_ollama_model_async = AsyncMock()
+        self.mock_provider = MagicMock(spec=GeminiProvider)
+        self.mock_provider.generate_response = AsyncMock()
 
         # Patch config to return dummy model names
         self.config_patcher = patch('ai_assistant.config.get_model_for_task', return_value="mock_model")
         self.config_patcher.start()
 
+        # Patch load_learned_facts to return an empty list
+        self.facts_patcher = patch('ai_assistant.planning.hierarchical_planner.load_learned_facts', return_value=[])
+        self.facts_patcher.start()
+
         self.planner = HierarchicalPlanner(llm_provider=self.mock_provider)
 
     def tearDown(self):
         self.config_patcher.stop()
+        self.facts_patcher.stop()
 
     @patch('ai_assistant.planning.hierarchical_planner.PlanSimulator')
     @patch('ai_assistant.planning.hierarchical_planner.os.walk')
@@ -85,7 +90,7 @@ class TestPlannerRepair(unittest.TestCase):
                 ])
             return ""
 
-        self.mock_provider.invoke_ollama_model_async.side_effect = mock_llm_invoke
+        self.mock_provider.generate_response.side_effect = mock_llm_invoke
 
         # 3. Run the Planner
         final_plan = asyncio.run(self.planner.generate_full_project_plan("Test Goal"))
@@ -97,8 +102,9 @@ class TestPlannerRepair(unittest.TestCase):
         # Should have called LLM for repair
         # We can check if "REPAIR the plan" was in one of the calls
         repair_called = False
-        for call_args in self.mock_provider.invoke_ollama_model_async.call_args_list:
-            if "REPAIR the plan" in call_args[0][0]:
+        for call in self.mock_provider.generate_response.call_args_list:
+            prompt_val = call[1].get('prompt') if 'prompt' in call[1] else (call[0][0] if len(call[0]) > 0 else "")
+            if "REPAIR the plan" in prompt_val:
                 repair_called = True
                 break
         self.assertTrue(repair_called, "LLM should have been called for plan repair.")
@@ -128,7 +134,7 @@ class TestPlannerRepair(unittest.TestCase):
             if "convert the above detailed task" in prompt: return json.dumps({"type": "python_script", "details": {}})
             return ""
 
-        self.mock_provider.invoke_ollama_model_async.side_effect = mock_llm_invoke
+        self.mock_provider.generate_response.side_effect = mock_llm_invoke
 
         final_plan = asyncio.run(self.planner.generate_full_project_plan("Test Goal"))
 

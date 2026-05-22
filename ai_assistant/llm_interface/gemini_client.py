@@ -154,40 +154,55 @@ def _invoke_raw_gemini_sync(
     if VERBOSE_LLM_LOGGING:
         print(color_text(f">>> [Gemini Sync] Requesting ({model_name})...", CLIColors.OKBLUE))
 
-    try:
-        response = requests.post(
-            url, 
-            headers=headers, 
-            json=payload, 
-            params={"key": api_key},
-            timeout=60
-        )
-        if response.status_code == 429:
-             logger.warning("Gemini API Rate Limit Hit (Sync). Backing off...")
-             time.sleep(5)
-             
-        response.raise_for_status()
-        data = response.json()
-        
-        if "candidates" in data and len(data["candidates"]) > 0:
-            candidate = data["candidates"][0]
-            if "content" in candidate and "parts" in candidate["content"]:
-                 raw_text = candidate["content"]["parts"][0]["text"]
-                 if VERBOSE_LLM_LOGGING:
-                     print(color_text(f"<<< [Gemini Sync] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
-                 telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task=f"gemini_sync_{task_name}")
-                 return _extract_and_log_thinking(raw_text)
-            elif "finishReason" in candidate:
-                reason = candidate['finishReason']
-                logger.warning(f"Gemini finished with reason: {reason}")
-                raise GeminiError(f"Gemini finished with reason: {reason}")
-        
-        logger.warning(f"Unexpected response structure from Gemini: {data}")
-        raise GeminiError(f"Unexpected response structure from Gemini: {data}")
+    base_delay = 2
+    attempt = 0
+    max_attempts = 5
+    while True:
+        try:
+            response = requests.post(
+                url, 
+                headers=headers, 
+                json=payload, 
+                params={"key": api_key},
+                timeout=60
+            )
+            if response.status_code in (429, 500, 502, 503, 504):
+                 attempt += 1
+                 if attempt > max_attempts:
+                     response.raise_for_status()
+                 wait_time = base_delay * (2 ** min(attempt, 5))
+                 logger.warning(f"Gemini API transient error ({response.status_code}) or rate limit (Sync). Retrying in {wait_time}s (attempt {attempt}/{max_attempts})...")
+                 time.sleep(wait_time)
+                 continue
+                 
+            response.raise_for_status()
+            data = response.json()
+            
+            if "candidates" in data and len(data["candidates"]) > 0:
+                candidate = data["candidates"][0]
+                if "content" in candidate and "parts" in candidate["content"]:
+                     raw_text = candidate["content"]["parts"][0]["text"]
+                     if VERBOSE_LLM_LOGGING:
+                         print(color_text(f"<<< [Gemini Sync] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
+                     telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task=f"gemini_sync_{task_name}")
+                     return _extract_and_log_thinking(raw_text)
+                elif "finishReason" in candidate:
+                    reason = candidate['finishReason']
+                    logger.warning(f"Gemini finished with reason: {reason}")
+                    raise GeminiError(f"Gemini finished with reason: {reason}")
+            
+            logger.warning(f"Unexpected response structure from Gemini: {data}")
+            raise GeminiError(f"Unexpected response structure from Gemini: {data}")
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error invoking Gemini model (sync): {e}")
-        raise GeminiError(f"Error invoking Gemini model (sync): {e}")
+        except requests.exceptions.RequestException as e:
+            attempt += 1
+            if attempt <= max_attempts:
+                 wait_time = base_delay * (2 ** min(attempt, 5))
+                 logger.warning(f"RequestException in Gemini sync call: {e}. Retrying in {wait_time}s (attempt {attempt}/{max_attempts})...")
+                 time.sleep(wait_time)
+                 continue
+            logger.error(f"Error invoking Gemini model (sync) after {attempt} attempts: {e}")
+            raise GeminiError(f"Error invoking Gemini model (sync): {e}")
 
 async def _invoke_raw_gemini_async(
     prompt: str,
@@ -243,10 +258,12 @@ async def _invoke_raw_gemini_async(
                     async with session.post(
                         url, headers=headers, json=payload, params={"key": api_key}, timeout=60
                     ) as response:
-                        if response.status == 429:
+                        if response.status in (429, 500, 502, 503, 504):
                             attempt += 1
+                            if attempt > 5:
+                                response.raise_for_status()
                             wait_time = base_delay * (2 ** min(attempt, 5))
-                            logger.warning(f"Gemini Rate Limit (Async). Retrying in {wait_time}s...")
+                            logger.warning(f"Gemini API transient error ({response.status}) or rate limit (Async). Retrying in {wait_time}s (attempt {attempt}/5)...")
                             await asyncio.sleep(wait_time)
                             continue
                         
@@ -276,8 +293,10 @@ async def _invoke_raw_gemini_async(
 
                 except aiohttp.ClientError as e:
                     attempt += 1
-                    if attempt < 5:
-                         await asyncio.sleep(base_delay)
+                    if attempt <= 5:
+                         wait_time = base_delay * (2 ** min(attempt, 5))
+                         logger.warning(f"ClientError in Gemini async call: {e}. Retrying in {wait_time}s (attempt {attempt}/5)...")
+                         await asyncio.sleep(wait_time)
                          continue
                     raise GeminiError(f"ClientError in Gemini async call: {e}")
                 except Exception as e:

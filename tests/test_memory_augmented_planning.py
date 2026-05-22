@@ -6,7 +6,7 @@ import tempfile
 import datetime
 from unittest.mock import patch, MagicMock
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
-from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.core.llm.gemini_provider import GeminiProvider
 
 class TestMemoryAugmentedPlanning(unittest.TestCase):
 
@@ -41,7 +41,7 @@ class TestMemoryAugmentedPlanning(unittest.TestCase):
 
     async def async_test_facts_injection(self):
         # Mock LLM provider to capture the prompt
-        mock_llm = MagicMock(spec=OllamaProvider)
+        mock_llm = MagicMock(spec=GeminiProvider)
         captured_prompt = []
 
         async def mock_invoke(prompt, model_name, **kwargs):
@@ -52,7 +52,7 @@ class TestMemoryAugmentedPlanning(unittest.TestCase):
             - Step 2
             """
 
-        mock_llm.invoke_ollama_model_async = mock_invoke
+        mock_llm.generate_response = mock_invoke
 
         # Create planner
         planner = HierarchicalPlanner(llm_provider=mock_llm)

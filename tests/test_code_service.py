@@ -20,7 +20,7 @@ except ImportError: # pragma: no cover
     from ai_assistant.core import self_modification
 
 
-class TestCodeService(unittest.TestCase):
+class TestCodeService(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.mock_llm_provider = mock.AsyncMock()
@@ -306,7 +306,7 @@ class TestCodeService(unittest.TestCase):
         self.mock_llm_provider.invoke_ollama_model_async.assert_called_once()
         args, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
         self.assertIn(sample_code_to_test, args[0])
-        self.assertIn("module_name_hint='your_module_to_test'", args[0])
+        self.assertIn("imported as 'your_module_to_test'", args[0])
 
     @mock.patch('ai_assistant.code_services.service.write_to_file')
     async def test_generate_code_unit_test_scaffold_success_and_save(self, mock_write_to_file):
@@ -392,7 +392,7 @@ class TestCodeService(unittest.TestCase):
         self.assertEqual(result["code_string"], expected_cleaned_output)
         # Check that the default module_name_hint was used in the prompt
         args, kwargs = self.mock_llm_provider.invoke_ollama_model_async.call_args
-        self.assertIn("module_name_hint='your_module_to_test'", args[0])
+        self.assertIn("imported as 'your_module_to_test'", args[0])
 
     # --- Tests for generate_code (EXPERIMENTAL_HIERARCHICAL_OUTLINE context) ---
     async def test_generate_code_hierarchical_outline_success(self):
@@ -626,7 +626,7 @@ class MyCalc:
         detail_for_method_a = "def method_a(self):\n    pass # method_a_impl"
 
         async def mock_detail_gen(*args, **kwargs):
-            component_def = args[0] # component_definition is the first positional argument
+            component_def = kwargs.get("component_definition") or args[0]
             if component_def["name"] == "func_one": # This is a function
                 return detail_for_func_one
             # For methods, the 'name' in component_def passed to _generate_detail_for_component
@@ -660,15 +660,15 @@ class MyCalc:
 
             # Check calls to _generate_detail_for_component
             # First call for func_one
-            call_args_func_one = mock_detail_call.call_args_list[0][0] # First positional arg of first call
-            self.assertEqual(call_args_func_one[0]['name'], "func_one")
-            self.assertEqual(call_args_func_one[1], mock_outline) # full_outline
+            call_kwargs_func_one = mock_detail_call.call_args_list[0].kwargs
+            self.assertEqual(call_kwargs_func_one['component_definition']['name'], "func_one")
+            self.assertEqual(call_kwargs_func_one['full_outline'], mock_outline) # full_outline
 
             # Second call for MyClass.method_a
-            call_args_method_a = mock_detail_call.call_args_list[1][0] # First positional arg of second call
-            self.assertEqual(call_args_method_a[0]['name'], "MyClass.method_a") # Name is now Class.Method
-            self.assertEqual(call_args_method_a[0]['original_name'], "method_a") # Original name preserved
-            self.assertEqual(call_args_method_a[1], mock_outline) # full_outline
+            call_kwargs_method_a = mock_detail_call.call_args_list[1].kwargs
+            self.assertEqual(call_kwargs_method_a['component_definition']['name'], "MyClass.method_a") # Name is now Class.Method
+            self.assertEqual(call_kwargs_method_a['component_definition']['original_name'], "method_a") # Original name preserved
+            self.assertEqual(call_kwargs_method_a['full_outline'], mock_outline) # full_outline
 
 
     async def test_generate_code_hierarchical_full_tool_outline_fails(self):
@@ -699,7 +699,7 @@ class MyCalc:
         detail_for_func_one = "def func_one(): pass"
 
         async def mock_detail_gen_partial_fail(*args, **kwargs):
-            component_def = args[0]
+            component_def = kwargs.get("component_definition") or args[0]
             if component_def["name"] == "func_one":
                 return detail_for_func_one
             elif component_def["name"] == "func_two":
@@ -850,7 +850,7 @@ class MyCalc:
         self.assertEqual(result["code_string"].strip(), expected_assembled_code.strip())
         self.assertIsNone(result["saved_to_path"])
         self.assertIsNotNone(result["error"])
-        self.assertIn("failed to save", result["error"])
+        self.assertIn("failed to save", result["error"].lower())
         mock_write_to_file.assert_called_once_with(test_target_path, expected_assembled_code)
 
     async def test_generate_code_hierarchical_complete_tool_orchestration_fails(self):

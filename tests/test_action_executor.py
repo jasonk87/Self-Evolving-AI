@@ -159,8 +159,14 @@ class TestActionExecutor(unittest.TestCase):
         self.executor = ActionExecutor(learning_agent=mock.MagicMock()) # Pass a mock LearningAgent
         self.original_log_entries = list(core_global_reflection_log.log_entries)
         core_global_reflection_log.log_entries = []
+        
+        # Mock CriticalReviewCoordinator.execute_council_debate to prevent live LLM calls
+        self.debate_patcher = mock.patch('ai_assistant.core.critical_reviewer.CriticalReviewCoordinator.execute_council_debate', new_callable=mock.AsyncMock)
+        self.mock_execute_debate = self.debate_patcher.start()
+        self.mock_execute_debate.return_value = (True, "Approved by Mock Council")
 
     def tearDown(self):
+        self.debate_patcher.stop()
         core_global_reflection_log.log_entries = self.original_log_entries
 
     @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code')

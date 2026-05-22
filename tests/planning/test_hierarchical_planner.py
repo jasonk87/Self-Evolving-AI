@@ -11,19 +11,21 @@ if project_root not in sys.path: # pragma: no cover
     sys.path.insert(0, project_root)
 
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner, LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE
-from ai_assistant.llm_interface.ollama_client import OllamaProvider # For spec in mock
+from ai_assistant.core.llm.gemini_provider import GeminiProvider # For spec in mock
 
 class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
-        # Mock the specific method that will be called by the planner
-        # If HierarchicalPlanner directly calls invoke_ollama_model_async, mock that.
-        # If it calls a more generic method like 'get_completion', mock that.
-        # Based on HierarchicalPlanner code, it calls invoke_ollama_model_async.
-        self.mock_llm_provider.invoke_ollama_model_async = AsyncMock()
+        self.mock_llm_provider = AsyncMock(spec=GeminiProvider)
+        self.mock_llm_provider.generate_response = AsyncMock()
 
         self.planner = HierarchicalPlanner(llm_provider=self.mock_llm_provider)
+
+        self.facts_patcher = patch('ai_assistant.planning.hierarchical_planner.load_learned_facts', return_value=[])
+        self.facts_patcher.start()
+
+    def tearDown(self):
+        self.facts_patcher.stop()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_successful_outline_generation(self, mock_get_model):
@@ -36,7 +38,7 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
         - Real-time Notifications
         - API Endpoints
         """
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response
+        self.mock_llm_provider.generate_response.return_value = llm_response
 
         expected_outline = [
             "User Authentication",
@@ -50,8 +52,8 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outline, expected_outline)
 
         expected_prompt = LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE.format(learned_facts_section='', user_goal=user_goal)
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_outline_model",
             temperature=0.6,
             max_tokens=500
@@ -64,7 +66,7 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
         user_goal = "Refactor the user profile page."
         project_context = "The project is a Flask application using SQLAlchemy. User model exists."
         llm_response = "- Update Profile Form\n- Update Profile View Logic\n- Database Schema Migration (if any)"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response
+        self.mock_llm_provider.generate_response.return_value = llm_response
 
         expected_outline = [
             "Update Profile Form",
@@ -78,8 +80,8 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
         expected_prompt = LLM_HP_OUTLINE_GENERATION_PROMPT_TEMPLATE.format(learned_facts_section='', user_goal=user_goal)
         expected_prompt += f"\n\nExisting project context to consider:\n{project_context}"
 
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_outline_model_ctx",
             temperature=0.6,
             max_tokens=500
@@ -109,8 +111,8 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
 
         for name, llm_response_str in test_cases.items():
             with self.subTest(format=name):
-                self.mock_llm_provider.invoke_ollama_model_async.reset_mock() # Reset for each subtest
-                self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_str
+                self.mock_llm_provider.generate_response.reset_mock() # Reset for each subtest
+                self.mock_llm_provider.generate_response.return_value = llm_response_str
 
                 outline = await self.planner.generate_high_level_outline(user_goal)
                 self.assertEqual(outline, expected_results[name])
@@ -118,17 +120,17 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
     async def test_empty_goal_returns_empty_list(self):
         outline = await self.planner.generate_high_level_outline("")
         self.assertEqual(outline, [])
-        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+        self.mock_llm_provider.generate_response.assert_not_called()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_empty_response_returns_empty_list(self, mock_get_model):
         mock_get_model.return_value = "mock_empty_model"
         user_goal = "A valid goal"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty string
+        self.mock_llm_provider.generate_response.return_value = "" # Empty string
         outline = await self.planner.generate_high_level_outline(user_goal)
         self.assertEqual(outline, [])
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = None # None response
+        self.mock_llm_provider.generate_response.return_value = None # None response
         outline_none = await self.planner.generate_high_level_outline(user_goal)
         self.assertEqual(outline_none, [])
 
@@ -136,7 +138,7 @@ class TestHierarchicalPlannerOutline(unittest.IsolatedAsyncioTestCase):
     async def test_llm_error_returns_empty_list(self, mock_get_model):
         mock_get_model.return_value = "mock_error_model"
         user_goal = "Goal that causes LLM error"
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM API is down")
+        self.mock_llm_provider.generate_response.side_effect = Exception("LLM API is down")
 
         # Capture print output to check for error logging (if implemented with print)
         with patch('builtins.print') as mock_print:
@@ -159,9 +161,15 @@ if __name__ == '__main__': # pragma: no cover
 class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
-        self.mock_llm_provider.invoke_ollama_model_async = AsyncMock() # Specific mock for the method
+        self.mock_llm_provider = AsyncMock(spec=GeminiProvider)
+        self.mock_llm_provider.generate_response = AsyncMock() # Specific mock for the method
         self.planner = HierarchicalPlanner(llm_provider=self.mock_llm_provider)
+
+        self.facts_patcher = patch('ai_assistant.planning.hierarchical_planner.load_learned_facts', return_value=[])
+        self.facts_patcher.start()
+
+    def tearDown(self):
+        self.facts_patcher.stop()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_successful_detailed_task_generation(self, mock_get_model):
@@ -173,7 +181,7 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
         - Implement movement
         - Implement food mechanism
         """
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response
+        self.mock_llm_provider.generate_response.return_value = llm_response
 
         expected_tasks = [
             "Define snake data structure",
@@ -190,8 +198,8 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
             outline_item=outline_item,
             project_context_section="" # No project context in this test
         )
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_detailed_task_model",
             temperature=0.5,
             max_tokens=700
@@ -205,7 +213,7 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
         outline_item = "User Authentication API"
         project_context = "Current API uses Flask-RESTful. JWT for tokens."
         llm_response = "- Update /login endpoint for JWT\n- Update /register endpoint\n- Add /refresh_token endpoint"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response
+        self.mock_llm_provider.generate_response.return_value = llm_response
 
         expected_tasks = [
             "Update /login endpoint for JWT",
@@ -222,8 +230,8 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
             outline_item=outline_item,
             project_context_section=project_context_section
         )
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_detailed_task_model_ctx",
             temperature=0.5,
             max_tokens=700
@@ -250,8 +258,8 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
 
         for name, llm_response_str in test_cases.items():
             with self.subTest(format=name):
-                self.mock_llm_provider.invoke_ollama_model_async.reset_mock()
-                self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_str
+                self.mock_llm_provider.generate_response.reset_mock()
+                self.mock_llm_provider.generate_response.return_value = llm_response_str
 
                 detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item(outline_item, user_goal)
                 self.assertEqual(detailed_tasks, expected_results[name])
@@ -259,36 +267,36 @@ class TestHierarchicalPlannerDetailedTasks(unittest.IsolatedAsyncioTestCase):
     async def test_empty_outline_item_returns_empty_list(self):
         detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item("", "Valid User Goal")
         self.assertEqual(detailed_tasks, [])
-        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+        self.mock_llm_provider.generate_response.assert_not_called()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_empty_user_goal_argument_still_calls_llm_if_outline_item_present(self, mock_get_model):
         # Current implementation now checks both and returns empty if either is missing.
         detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item("Valid Outline Item", "")
         self.assertEqual(detailed_tasks, [])
-        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+        self.mock_llm_provider.generate_response.assert_not_called()
 
     async def test_empty_user_goal_and_empty_outline_item_returns_empty_list(self):
         detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item("", "")
         self.assertEqual(detailed_tasks, [])
-        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+        self.mock_llm_provider.generate_response.assert_not_called()
 
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_empty_response_for_detailed_tasks(self, mock_get_model):
         mock_get_model.return_value = "mock_empty_detailed_model"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "" # Empty string
+        self.mock_llm_provider.generate_response.return_value = "" # Empty string
         detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item("Item", "Goal")
         self.assertEqual(detailed_tasks, [])
 
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = None # None response
+        self.mock_llm_provider.generate_response.return_value = None # None response
         detailed_tasks_none = await self.planner.generate_detailed_tasks_for_outline_item("Item", "Goal")
         self.assertEqual(detailed_tasks_none, [])
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_error_for_detailed_tasks(self, mock_get_model):
         mock_get_model.return_value = "mock_error_detailed_model"
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM API Detailed Task Error")
+        self.mock_llm_provider.generate_response.side_effect = Exception("LLM API Detailed Task Error")
 
         with patch('builtins.print') as mock_print: # To check if error is printed
             detailed_tasks = await self.planner.generate_detailed_tasks_for_outline_item("Item", "Goal")
@@ -303,7 +311,10 @@ class TestHierarchicalPlannerFullPlan(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # HierarchicalPlanner needs an llm_provider. We can pass a basic MagicMock
         # as the methods we are testing will have their LLM calls (via other planner methods) mocked.
-        self.mock_llm_provider_for_init = MagicMock(spec=OllamaProvider)
+        self.mock_llm_provider_for_init = MagicMock(spec=GeminiProvider)
+        self.mock_llm_provider_for_init.generate_response = AsyncMock(
+            return_value='{"files_added": [], "files_removed": [], "files_modified": [], "risk_level": "LOW", "risk_reason": "", "predicted_outcome": ""}'
+        )
         self.planner = HierarchicalPlanner(llm_provider=self.mock_llm_provider_for_init)
 
     @patch.object(HierarchicalPlanner, 'generate_project_plan_step_for_task', new_callable=AsyncMock)
@@ -465,9 +476,15 @@ class TestHierarchicalPlannerFullPlan(unittest.IsolatedAsyncioTestCase):
 class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        self.mock_llm_provider = AsyncMock(spec=OllamaProvider)
-        self.mock_llm_provider.invoke_ollama_model_async = AsyncMock()
+        self.mock_llm_provider = AsyncMock(spec=GeminiProvider)
+        self.mock_llm_provider.generate_response = AsyncMock()
         self.planner = HierarchicalPlanner(llm_provider=self.mock_llm_provider)
+
+        self.facts_patcher = patch('ai_assistant.planning.hierarchical_planner.load_learned_facts', return_value=[])
+        self.facts_patcher.start()
+
+    def tearDown(self):
+        self.facts_patcher.stop()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_successful_elaboration_python_script(self, mock_get_model):
@@ -485,7 +502,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
             "type": "python_script",
             "details": expected_details
         })
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_json
+        self.mock_llm_provider.generate_response.return_value = llm_response_json
 
         result = await self.planner.generate_project_plan_step_for_task(detailed_task, user_goal)
 
@@ -499,8 +516,8 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
             detailed_task=detailed_task,
             project_context_section=""
         )
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_step_elab_model",
             temperature=0.3,
             max_tokens=1000
@@ -514,7 +531,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
         user_goal = "Setup database."
         expected_details = {"prompt_to_user": "Is the database schema correct?"}
         llm_response_json = json.dumps({"type": "human_review_gate", "details": expected_details})
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_json
+        self.mock_llm_provider.generate_response.return_value = llm_response_json
 
         result = await self.planner.generate_project_plan_step_for_task(detailed_task, user_goal)
         self.assertEqual(result["type"], "human_review_gate")
@@ -527,7 +544,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
         user_goal = "Document API."
         expected_details = {"message": "API version is v1.2"}
         llm_response_json = json.dumps({"type": "informational", "details": expected_details})
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_json
+        self.mock_llm_provider.generate_response.return_value = llm_response_json
 
         result = await self.planner.generate_project_plan_step_for_task(detailed_task, user_goal)
         self.assertEqual(result["type"], "informational")
@@ -540,7 +557,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
         user_goal = "Build e-commerce API."
         project_context = "Using FastAPI framework. Product model already defined."
         llm_response_json = json.dumps({"type": "python_script", "details": {"script_content_prompt": "Define FastAPI routes..."}})
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_json
+        self.mock_llm_provider.generate_response.return_value = llm_response_json
 
         await self.planner.generate_project_plan_step_for_task(detailed_task, user_goal, project_context)
 
@@ -551,8 +568,8 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
             detailed_task=detailed_task,
             project_context_section=project_context_section
         )
-        self.mock_llm_provider.invoke_ollama_model_async.assert_called_once_with(
-            expected_prompt,
+        self.mock_llm_provider.generate_response.assert_called_once_with(
+            prompt=expected_prompt,
             model_name="mock_step_elab_model_ctx",
             temperature=0.3,
             max_tokens=1000
@@ -562,7 +579,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
     async def test_llm_returns_json_with_markdown_fences(self, mock_get_model):
         mock_get_model.return_value = "mock_step_elab_model_fences"
         llm_response_fenced = "```json\n{\"type\": \"informational\", \"details\": {\"message\": \"Fenced content\"}}\n```"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_fenced
+        self.mock_llm_provider.generate_response.return_value = llm_response_fenced
 
         result = await self.planner.generate_project_plan_step_for_task("Task", "Goal")
         self.assertIsNotNone(result)
@@ -572,7 +589,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_returns_invalid_json(self, mock_get_model):
         mock_get_model.return_value = "mock_step_elab_model_invalid"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = "This is not JSON"
+        self.mock_llm_provider.generate_response.return_value = "This is not JSON"
         with patch('builtins.print') as mock_print:
             result = await self.planner.generate_project_plan_step_for_task("Task", "Goal")
         self.assertIsNone(result)
@@ -589,8 +606,8 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
         ]
         for i, llm_response_json in enumerate(test_cases):
             with self.subTest(case_index=i):
-                self.mock_llm_provider.invoke_ollama_model_async.reset_mock()
-                self.mock_llm_provider.invoke_ollama_model_async.return_value = llm_response_json
+                self.mock_llm_provider.generate_response.reset_mock()
+                self.mock_llm_provider.generate_response.return_value = llm_response_json
                 with patch('builtins.print') as mock_print:
                     result = await self.planner.generate_project_plan_step_for_task("Task", "Goal")
                 self.assertIsNone(result)
@@ -600,12 +617,12 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
     async def test_empty_detailed_task_returns_none(self):
         result = await self.planner.generate_project_plan_step_for_task("", "User Goal")
         self.assertIsNone(result)
-        self.mock_llm_provider.invoke_ollama_model_async.assert_not_called()
+        self.mock_llm_provider.generate_response.assert_not_called()
 
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_empty_response_for_step_elaboration(self, mock_get_model):
         mock_get_model.return_value = "mock_empty_elab_model"
-        self.mock_llm_provider.invoke_ollama_model_async.return_value = ""
+        self.mock_llm_provider.generate_response.return_value = ""
         with patch('builtins.print') as mock_print:
             result = await self.planner.generate_project_plan_step_for_task("Task", "Goal")
         self.assertIsNone(result)
@@ -615,7 +632,7 @@ class TestHierarchicalPlannerStepElaboration(unittest.IsolatedAsyncioTestCase):
     @patch('ai_assistant.config.get_model_for_task')
     async def test_llm_error_for_step_elaboration(self, mock_get_model):
         mock_get_model.return_value = "mock_error_elab_model"
-        self.mock_llm_provider.invoke_ollama_model_async.side_effect = Exception("LLM API Error")
+        self.mock_llm_provider.generate_response.side_effect = Exception("LLM API Error")
         with patch('builtins.print') as mock_print:
             result = await self.planner.generate_project_plan_step_for_task("Task", "Goal")
         self.assertIsNone(result)

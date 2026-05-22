@@ -13,7 +13,7 @@ except ImportError: # pragma: no cover
         sys.path.insert(0, project_root)
     from ai_assistant.core.reviewer import ReviewerAgent, REVIEW_CODE_PROMPT_TEMPLATE
 
-class TestReviewerAgent(unittest.TestCase):
+class TestReviewerAgent(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.mock_llm_model_name = "mock_reviewer_model"
         # Patch get_model_for_task in the context of the reviewer module
@@ -79,7 +79,7 @@ class TestReviewerAgent(unittest.TestCase):
         mock_invoke_llm.return_value = "This is not JSON"
         result = await self.reviewer.review_code("def f(): pass", "reqs", code_diff="diff")
         self.assertEqual(result["status"], "error")
-        self.assertIn("Failed to parse LLM response as JSON", result["comments"])
+        self.assertIn("Failed to parse review data from LLM response", result["comments"])
 
     @patch('ai_assistant.core.reviewer.invoke_ollama_model_async', new_callable=AsyncMock)
     async def test_review_code_llm_empty_response(self, mock_invoke_llm):

@@ -981,9 +981,9 @@ async def select_suggestion_for_autonomous_action( # Made async
                         "tool_name": code_mod_params['function_name'],
                         "module_path": code_mod_params['module_path'],
                         "overall_outcome_success": overall_success_from_apply,
-                        "edit_status": code_mod_result.get("edit_outcome", {}).get("status"),
+                        "edit_status": (code_mod_result.get("edit_outcome") or {}).get("status"),
                         "test_status": test_passed_for_log,
-                        "revert_status": code_mod_result.get("revert_outcome", {}).get("status"),
+                        "revert_status": (code_mod_result.get("revert_outcome") or {}).get("status"),
                         "commit_status": commit_info_for_log.get("status") if commit_info_for_log else None,
                         "priority_score": priority_score_for_log
                     }

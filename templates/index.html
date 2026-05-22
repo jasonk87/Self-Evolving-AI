@@ -119,6 +119,16 @@
                         </svg>
                     </span>
                 </div>
+                <div class="activity-item" title="Approvals" data-target="view-sidebar-approvals" data-label="Approvals">
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </span>
+                    <span id="approval-badge" class="badge hidden"></span>
+                </div>
                 <!-- Cortex & Mission Control moved to top bar -->
             </div>
 
@@ -127,6 +137,16 @@
 
         <!-- 2. SIDEBAR PANEL (Drawer/Context) -->
         <aside class="sidebar-panel glass-panel collapsed" id="sidebar-panel">
+
+            <!-- Mobile Sidebar tabs switcher (visible only on mobile) -->
+            <div class="mobile-sidebar-tabs" id="mobile-sidebar-tabs">
+                <button class="mobile-sidebar-tab active" data-target="view-sidebar-chats">Chats</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-files">Files</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-memory">Memory</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-council">Council</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-quarantine">Quarantine</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-approvals">Approvals</button>
+            </div>
 
             <!-- Chats View -->
             <div id="view-sidebar-chats" class="sidebar-view hidden">
@@ -505,43 +525,87 @@
                         </div>
                     </div>
                 </div>
+            </div> <!-- Closes #view-settings -->
 
-                <!-- 4. BOTTOM PANEL (Terminal) -->
-                <section class="bottom-panel collapsed" id="bottom-panel">
-                    <div class="bottom-panel-header">
-                        <div class="bottom-tab active" data-target="terminal-view">
-                            <span>Terminal</span>
-                        </div>
-                        <div class="bottom-actions">
-                            <button class="btn-icon" id="clear-terminal" title="Clear Output">🚫</button>
-                            <button class="btn-icon toggle-icon" id="toggle-bottom-panel" title="Toggle Panel">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                    stroke-linejoin="round">
-                                    <polyline points="18 15 12 9 6 15"></polyline>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
+        </main> <!-- Closes .main-stage -->
 
-                    <div id="terminal-wrapper" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
-                        <!-- Terminal Content -->
-                        <div id="terminal-output" class="terminal-output">
-                            <div class="line system">Terminal Online...</div>
-                        </div>
-                        <div class="terminal-input-wrapper">
-                            <span class="prompt">$</span>
-                            <div class="input-row">
-                                <input type="text" id="terminal-input" placeholder="Command...">
-                                <button id="terminal-send-btn" class="btn-icon" title="Send">➤</button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
+        <!-- 4. BOTTOM PANEL (Terminal) -->
+        <section class="bottom-panel collapsed" id="bottom-panel">
+            <div class="bottom-panel-header">
+                <div class="bottom-tab active" data-target="terminal-view">
+                    <span>Terminal</span>
+                </div>
+                <div class="bottom-actions">
+                    <button class="btn-icon" id="clear-terminal" title="Clear Output">🚫</button>
+                    <button class="btn-icon toggle-icon" id="toggle-bottom-panel" title="Toggle Panel">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <polyline points="18 15 12 9 6 15"></polyline>
+                        </svg>
+                    </button>
+                </div>
             </div>
 
-            <!-- Modals -->
+            <div id="terminal-wrapper" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+                <!-- Terminal Content -->
+                <div id="terminal-output" class="terminal-output">
+                    <div class="line system">Terminal Online...</div>
+                </div>
+                <div class="terminal-input-wrapper">
+                    <span class="prompt">$</span>
+                    <div class="input-row">
+                        <input type="text" id="terminal-input" placeholder="Command...">
+                        <button id="terminal-send-btn" class="btn-icon" title="Send">➤</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. MOBILE BOTTOM NAVIGATION -->
+        <nav class="mobile-nav-bar" id="mobile-nav-bar">
+            <button class="mobile-nav-item active" data-target="view-chat">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                </svg>
+                <span>Chat</span>
+            </button>
+            <button class="mobile-nav-item" data-target="view-mission-control">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <span>Mission</span>
+            </button>
+            <button class="mobile-nav-item" data-target="view-cortex">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <span>Cortex</span>
+            </button>
+            <button class="mobile-nav-item" id="mobile-terminal-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                <span>Console</span>
+            </button>
+            <button class="mobile-nav-item" id="mobile-menu-btn-bottom">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+                <span>Menu</span>
+            </button>
+        </nav>
+
+    </div> <!-- Closes .app-layout -->
+
+    <!-- Modals -->
             <div id="custom-modal" class="modal-overlay">
                 <div class="modal-content">
                     <div class="modal-header" id="modal-title">Title</div>

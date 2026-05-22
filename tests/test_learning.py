@@ -49,7 +49,7 @@ class TestActionableInsight(unittest.TestCase):
         self.assertEqual(insight.insight_id, "custom_id_123")
 
 
-class TestLearningAgent(unittest.TestCase):
+class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.temp_insights_file = tempfile.NamedTemporaryFile(delete=False, mode='w+', suffix='.json')
@@ -120,7 +120,7 @@ class TestLearningAgent(unittest.TestCase):
             self.assertEqual(agent.insights[0].insight_id, "id1")
             self.assertEqual(agent.insights[1].type, InsightType.TOOL_BUG_SUSPECTED)
 
-    def test_process_reflection_entry_generates_insight(self):
+    async def test_process_reflection_entry_generates_insight(self):
         with mock.patch('ai_assistant.learning.learning.ActionExecutor'): # Mock ActionExecutor
             agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
 
@@ -129,7 +129,7 @@ class TestLearningAgent(unittest.TestCase):
             goal="test failure", status="FAILURE", error_type="TestError",
             error_message="Something broke", plan=failed_plan, results=[Exception("TestError")]
         )
-        insight = agent.process_reflection_entry(mock_entry_failure)
+        insight = await agent.process_reflection_entry(mock_entry_failure)
 
         self.assertIsNotNone(insight)
         self.assertEqual(len(agent.insights), 1)

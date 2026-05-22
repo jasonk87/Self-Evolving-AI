@@ -91,6 +91,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatSessionsList = document.getElementById('chat-sessions-list');
     const fileTreeContainer = document.getElementById('file-tree');
 
+    // Helper to sync sidebar tab active state on mobile
+    function syncSidebarTabState(targetId) {
+        document.querySelectorAll('.mobile-sidebar-tab').forEach(tab => {
+            if (tab.dataset.target === targetId) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+    }
+
+    // Helper to load sidebar content dynamically
+    const loadSidebarData = (target) => {
+        if (target === 'view-sidebar-files') {
+            Files.loadProjects(fileTreeContainer, () => {
+                const path = Files.getCurrentFilePath();
+                const filename = path ? path.split('/').pop() : 'Editor';
+                Layout.openMainView('view-editor-main', filename);
+            });
+        }
+        if (target === 'view-sidebar-chats') {
+            Chat.loadSessions(chatSessionsList, (sessionId) => {
+                Chat.loadChatSession(sessionId, chatContainer);
+                Layout.openMainView('view-chat', 'Chat'); // Switch to stage
+            });
+        }
+        if (target === 'view-sidebar-memory') {
+            Memory.loadMemory(
+                document.getElementById('memory-list'),
+                document.getElementById('episodes-list'),
+                (sessionId) => {
+                    Chat.loadChatSession(sessionId, chatContainer);
+                    Layout.openMainView('view-chat', 'Chat');
+                }
+            );
+        }
+    };
+
     // --- Layout State Management ---
     const Layout = {
         openSidebarView: (viewId) => {
@@ -122,6 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.activity-item').forEach(i => i.classList.remove('active'));
             const trigger = document.querySelector(`.activity-item[data-target="${viewId}"]`);
             if (trigger) trigger.classList.add('active');
+
+            // 4. Sync mobile sidebar tabs
+            syncSidebarTabState(viewId);
         },
 
         closeSidebar: () => {
@@ -193,6 +234,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (forceState === true) bottomPanel.classList.remove('collapsed');
             else if (forceState === false) bottomPanel.classList.add('collapsed');
             else bottomPanel.classList.toggle('collapsed');
+
+            const mobileTerminalBtn = document.getElementById('mobile-terminal-btn');
+            if (mobileTerminalBtn) {
+                if (bottomPanel.classList.contains('collapsed')) {
+                    mobileTerminalBtn.classList.remove('active');
+                } else {
+                    mobileTerminalBtn.classList.add('active');
+                }
+            }
         }
     };
 
@@ -273,21 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     Layout.closeSidebar();
                 } else {
                     Layout.openSidebarView(target);
-                    // Load Data
-                    if (target === 'view-sidebar-files') Files.loadProjects(fileTreeContainer, () => {
-                        const path = Files.getCurrentFilePath();
-                        const filename = path ? path.split('/').pop() : 'Editor';
-                        Layout.openMainView('view-editor-main', filename);
-                    });
-                    if (target === 'view-sidebar-chats') Chat.loadSessions(chatSessionsList, (sessionId) => {
-                        Chat.loadChatSession(sessionId, chatContainer);
-                        Layout.openMainView('view-chat', 'Chat'); // Switch to stage
-                    });
-                    if (target === 'view-sidebar-memory') Memory.loadMemory(
-                        document.getElementById('memory-list'),
-                        document.getElementById('episodes-list'),
-                        document.getElementById('facts-list')
-                    );
+                    loadSidebarData(target);
                 }
             }
         });
@@ -313,25 +349,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 2. Mobile Menu
+    // 2. Mobile Menu & Navigation
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenuBtnBottom = document.getElementById('mobile-menu-btn-bottom');
     const mobileOverlay = document.getElementById('mobile-overlay');
 
-    if (mobileMenuBtn) {
-        mobileMenuBtn.addEventListener('click', () => {
-            sidebarPanel.classList.toggle('active'); // Mobile drawer
-            mobileOverlay.classList.toggle('active');
+    const toggleMobileMenu = () => {
+        sidebarPanel.classList.toggle('active'); // Mobile drawer
+        mobileOverlay.classList.toggle('active');
 
-            // If opening, ensure sidebar is visible (not collapsed width)
-            if (sidebarPanel.classList.contains('active')) {
-                sidebarPanel.classList.remove('collapsed');
-                // Open default view if none
-                if (document.querySelectorAll('.sidebar-view:not(.hidden)').length === 0) {
-                    Layout.openSidebarView('view-sidebar-chats');
-                }
+        // If opening, ensure sidebar is visible (not collapsed width)
+        if (sidebarPanel.classList.contains('active')) {
+            sidebarPanel.classList.remove('collapsed');
+            // Open default view if none
+            if (document.querySelectorAll('.sidebar-view:not(.hidden)').length === 0) {
+                Layout.openSidebarView('view-sidebar-chats');
+                loadSidebarData('view-sidebar-chats');
             }
-        });
-    }
+        }
+    };
+
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', toggleMobileMenu);
+    if (mobileMenuBtnBottom) mobileMenuBtnBottom.addEventListener('click', toggleMobileMenu);
 
     if (mobileOverlay) {
         mobileOverlay.addEventListener('click', () => {
@@ -339,6 +378,41 @@ document.addEventListener('DOMContentLoaded', () => {
             mobileOverlay.classList.remove('active');
         });
     }
+
+    // Mobile Bottom Nav items (Chat, Mission, Cortex)
+    document.querySelectorAll('.mobile-nav-item[data-target]').forEach(item => {
+        item.addEventListener('click', () => {
+            const targetId = item.dataset.target;
+            const label = item.querySelector('span')?.textContent || 'View';
+
+            document.querySelectorAll('.mobile-nav-item').forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+
+            if (targetId) {
+                Layout.openMainView(targetId, label);
+                Layout.toggleBottomPanel(false); // Collapsed on view switch
+            }
+        });
+    });
+
+    // Mobile Terminal btn
+    const mobileTerminalBtn = document.getElementById('mobile-terminal-btn');
+    if (mobileTerminalBtn) {
+        mobileTerminalBtn.addEventListener('click', () => {
+            Layout.toggleBottomPanel();
+        });
+    }
+
+    // Mobile Sidebar tabs switcher
+    document.querySelectorAll('.mobile-sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.target;
+            if (target) {
+                Layout.openSidebarView(target);
+                loadSidebarData(target);
+            }
+        });
+    });
 
     // 3. Bottom Panel
     document.getElementById('toggle-bottom-panel')?.addEventListener('click', () => {

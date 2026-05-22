@@ -1,23 +1,25 @@
-/* Premium Glassmorphism / Cyberpunk Theme - Unified UI */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
 :root {
-    --bg-color: #030305;
-    /* Deep void black for higher contrast */
-    --glass-bg: rgba(18, 18, 24, 0.45);
-    /* Frosted and subtle */
-    --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+    --bg-color: #040508; /* Deep Midnight Cyber Void */
+    --glass-bg: rgba(10, 12, 22, 0.55);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.05);
+    --border-color: rgba(255, 255, 255, 0.06);
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
-    --accent-cyan: #06b6d4;
-    /* Sleek modern cyan */
-    --accent-purple: #a855f7;
-    /* Sleek modern purple */
-    --accent-glow: 0 0 20px rgba(6, 182, 212, 0.35);
-    --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+    --text-muted: #64748b;
+    --accent-cyan: #00f0ff; /* Radiant Electric Cyan */
+    --accent-purple: #bd00ff; /* Electric Violet */
+    --accent-pink: #ff007f; /* Cyber Pink */
+    --accent-glow: 0 0 20px rgba(0, 240, 255, 0.25);
+    --accent-glow-purple: 0 0 20px rgba(189, 0, 255, 0.25);
+    --success-color: #00ff88;
+    --warning-color: #ffd700;
+    --error-color: #ff3366;
+    --font-ui: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
     --font-code: 'JetBrains Mono', 'Fira Code', monospace;
-    --easing: cubic-bezier(0.34, 1.56, 0.64, 1);
-    /* Bouncy, premium apple-like easing */
+    --easing: cubic-bezier(0.16, 1, 0.3, 1);
     --easing-smooth: cubic-bezier(0.25, 1, 0.5, 1);
-    /* Smooth slide easing */
 }
 
 * {
@@ -2213,16 +2215,14 @@ body {
 @media (max-width: 768px) {
     .app-layout {
         grid-template-columns: 1fr;
-        grid-template-rows: 50px 1fr 0;
-        /* Remove 40px gap for hidden bottom panel */
-        /* Mobile Header | Main | Bottom Header */
+        grid-template-rows: 50px 1fr 56px;
         grid-template-areas:
             "mobile-header"
             "main"
-            "bottom";
+            "mobile-nav";
     }
 
-    /* Remove Desktop Activity Bar */
+    /* Hide Desktop Activity Bar */
     .activity-bar {
         display: none;
     }
@@ -2234,9 +2234,41 @@ body {
         align-items: center;
         justify-content: space-between;
         padding: 0 15px;
-        background: rgba(13, 17, 23, 0.95);
+        background: rgba(5, 6, 11, 0.95);
         border-bottom: var(--glass-border);
         z-index: 50;
+    }
+
+    /* Mobile Sidebar Switcher styling */
+    .mobile-sidebar-tabs {
+        display: flex !important;
+        overflow-x: auto;
+        padding: 10px 8px;
+        background: rgba(0, 0, 0, 0.25);
+        border-bottom: 1px solid var(--border-color);
+        gap: 6px;
+        scrollbar-width: none; /* Firefox */
+    }
+    .mobile-sidebar-tabs::-webkit-scrollbar {
+        display: none; /* Safari/Chrome */
+    }
+    .mobile-sidebar-tab {
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 16px;
+        color: var(--text-secondary);
+        padding: 6px 12px;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s var(--easing);
+    }
+    .mobile-sidebar-tab.active {
+        background: rgba(0, 240, 255, 0.12);
+        border-color: rgba(0, 240, 255, 0.3);
+        color: var(--accent-cyan);
+        box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
     }
 
     /* Sidebar Drawer */
@@ -2246,18 +2278,18 @@ body {
         left: 0;
         bottom: 0;
         width: 80%;
-        max-width: 300px;
+        max-width: 320px;
         z-index: 1000;
         transform: translateX(-100%);
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
-        background: #0d1117;
+        border-right: 1px solid var(--border-color);
+        background: #06070a;
         margin-left: 0;
+        box-shadow: 20px 0 40px rgba(0, 0, 0, 0.6);
     }
 
     .sidebar-panel.active {
         transform: translateX(0);
         width: 80%;
-        /* Ensure width is set */
     }
 
     /* Mobile Overlay for Sidebar */
@@ -2267,10 +2299,11 @@ body {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
         z-index: 900;
         display: none;
-        backdrop-filter: blur(2px);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
     }
 
     .mobile-overlay.active {
@@ -2283,45 +2316,60 @@ body {
     }
 
     .main-tabs-header {
-        /* Tabs hidden on mobile for now, or just scrollable */
         display: flex;
-        /* Ensure it stays visible/functional if needed, or hide */
         overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .main-tabs-header::-webkit-scrollbar {
+        display: none;
     }
 
-    /* Bottom Panel (Mobile) - HIDDEN as per user request */
+    /* Bottom Panel (Mobile) - Convert to slide-up sheet overlay */
     .bottom-panel {
-        display: none !important;
+        display: flex !important;
+        grid-area: unset !important;
+        position: fixed;
+        bottom: 56px; /* sit above bottom nav */
+        left: 0;
+        width: 100%;
+        height: 60vh;
+        z-index: 99;
+        transform: translateY(calc(100% + 56px));
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        border-top: 1px solid var(--accent-cyan);
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.5);
+        background: #07090e;
+    }
+
+    .bottom-panel:not(.collapsed) {
+        transform: translateY(0);
     }
 
     /* Increase chat reading space on mobile */
     #chat-container {
-        padding: 10px;
-        gap: 10px;
+        padding: 12px;
+        gap: 12px;
     }
 
     .message .content {
         max-width: 95%;
-        /* Use almost full width on small screens */
         padding: 10px 14px;
         font-size: 14px;
     }
 
     .message {
         gap: 10px;
-        /* Bring avatar closer to text */
     }
 
     /* Input Area adjustments for mobile */
     .input-area {
-        padding: 10px;
-        /* Reduce padding to save screen space */
+        padding: 8px 12px;
         gap: 6px;
     }
 
     #chat-input {
-        font-size: 16px;
-        /* Prevent iOS zoom */
+        font-size: 16px; /* Prevent iOS zoom */
         padding: 8px 10px;
     }
 
@@ -2330,8 +2378,8 @@ body {
     #voice-toggle-btn,
     #image-upload-btn,
     #send-btn {
-        width: 36px;
-        height: 36px;
+        width: 38px;
+        height: 38px;
         font-size: 16px;
     }
 
@@ -2339,8 +2387,139 @@ body {
         padding: 6px 10px;
         font-size: 11px;
     }
+}
 
-    /* Anti-zoom */
+/* --- Mobile Bottom Nav Bar --- */
+.mobile-nav-bar {
+    grid-area: mobile-nav;
+    display: none; /* hidden on desktop */
+}
+
+@media (max-width: 768px) {
+    .mobile-nav-bar {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        background: rgba(10, 12, 22, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        height: 56px;
+        z-index: 100;
+        padding: 0 10px;
+    }
+
+    .mobile-nav-item {
+        flex: 1;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 10px;
+        font-weight: 500;
+        font-family: var(--font-ui);
+        gap: 3px;
+        cursor: pointer;
+        transition: all 0.2s var(--easing);
+        position: relative;
+    }
+
+    .mobile-nav-item svg {
+        stroke: var(--text-secondary);
+        stroke-width: 2;
+        width: 20px;
+        height: 20px;
+        transition: all 0.2s var(--easing);
+    }
+
+    .mobile-nav-item:active svg,
+    .mobile-nav-item.active svg {
+        stroke: var(--accent-cyan);
+        transform: translateY(-2px);
+        filter: drop-shadow(0 0 5px rgba(0, 240, 255, 0.6));
+    }
+
+    .mobile-nav-item.active {
+        color: var(--accent-cyan);
+    }
+}
+
+/* --- Mobile Sidebar View Switcher Desktop Hide --- */
+.mobile-sidebar-tabs {
+    display: none;
+}
+
+/* --- Premium Message Bubble Enhancements --- */
+.message {
+    margin-bottom: 15px;
+    animation: fadeInUp 0.3s var(--easing);
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message .bubble {
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    line-height: 1.5;
+    position: relative;
+}
+
+.message.user .bubble {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(6, 182, 212, 0.04) 100%);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-bottom-right-radius: 2px;
+    color: #fff;
+}
+
+.message.assistant .bubble {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(168, 85, 247, 0.03) 100%);
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-bottom-left-radius: 2px;
+}
+
+/* Pulsing highlight for active task cards in Mission Control */
+.task-card.active-state {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+    animation: cardPulse 2s infinite alternate;
+}
+
+@keyframes cardPulse {
+    0% {
+        box-shadow: 0 0 8px rgba(0, 240, 255, 0.1);
+    }
+    100% {
+        box-shadow: 0 0 18px rgba(0, 240, 255, 0.25);
+    }
+}
+
+/* Style for generic badges */
+.badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--error-color);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    line-height: 1;
+    box-shadow: 0 0 8px rgba(255, 51, 102, 0.4);
 }
 
 /* Helper for mobile menu button */

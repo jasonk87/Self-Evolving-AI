@@ -6,9 +6,10 @@ from ai_assistant.learning.learning import LearningAgent, InsightType
 from ai_assistant.core.reflection import ReflectionLogEntry
 
 @pytest.mark.asyncio
-async def test_root_cause_analysis_flow():
+async def test_root_cause_analysis_flow(tmp_path):
     # Setup
-    agent = LearningAgent(insights_filepath="test_insights.json")
+    insights_file = tmp_path / "test_insights.json"
+    agent = LearningAgent(insights_filepath=str(insights_file))
     
     # Mock data
     mock_entry = ReflectionLogEntry(
@@ -50,8 +51,7 @@ def divide(a, b):
         
         # Verify LLM was called with code
         mock_llm.assert_called_once()
-        call_args = mock_llm.call_args[0]
-        prompt = call_args[0]
+        prompt = mock_llm.call_args.kwargs.get("prompt") or mock_llm.call_args[0][0]
         assert mock_code in prompt
         assert "division by zero" in prompt
         

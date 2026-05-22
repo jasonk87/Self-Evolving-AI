@@ -10,6 +10,10 @@ if project_root not in sys.path:
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.config import DEFAULT_MODEL
 
+import pytest
+
+@pytest.mark.llm
+@pytest.mark.asyncio
 async def test_gemini():
     print(f"Testing Gemini client with model: {DEFAULT_MODEL}")
     try:

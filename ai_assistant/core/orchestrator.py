@@ -231,6 +231,16 @@ class DynamicOrchestrator:
         context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Track repeated failures and activate a per-tool circuit breaker when threshold is hit."""
+        # Detect parameter validation errors
+        error_type_name = type(error).__name__
+        if error_type_name == "ToolValidationError" or "ToolValidationError" in str(type(error)):
+            return {
+                "signature": f"{tool_name}|Validation|{error}",
+                "count": 0,
+                "activated": False,
+                "blocked_reason": None,
+            }
+
         if threshold is None:
             threshold = config.QUARANTINE_FAILURE_THRESHOLD
         signature = self._build_tool_failure_signature(tool_name, error)
@@ -544,6 +554,7 @@ Return STRICT JSON only using the schema described earlier.
                     if tool_name in self.blocked_tools:
                         blocked_reason = self.blocked_tools.get(tool_name, {}).get("reason", "tool temporarily blocked")
                         result_str = f"Circuit breaker active for tool '{tool_name}': {blocked_reason}"
+                        state.errors.append(result_str)
                     else:
                         for attempt in range(max_retries + 1):
                             try:
@@ -603,6 +614,18 @@ Return STRICT JSON only using the schema described earlier.
                                     state.errors.append(result_str)
                                     break
 
+                                # Skip execution retries for parameter signature/validation errors
+                                error_type_name = type(e).__name__
+                                if error_type_name == "ToolValidationError" or "ToolValidationError" in str(type(e)):
+                                    result_str = f"Error: {str(e)}"
+                                    state.errors.append(result_str)
+                                    state.tool_results.append({
+                                        "action_name": tool_name,
+                                        "success": False,
+                                        "error_message": result_str
+                                    })
+                                    break
+
                                 if attempt < max_retries:
                                     print(color_text(f"⚠️ Tool '{tool_name}' failed. Retrying...", CLIColors.WARNING))
                                     state.errors.append(f"Tool {tool_name} failed: {e}")
@@ -637,29 +660,31 @@ Return STRICT JSON only using the schema described earlier.
                         "tool": tool_name,
                         "result": result_str
                     })
-                    # The model did not use a tool or final-answer schema. Treat as conversational response or retry if it looks like broken JSON.
-                    
-                    # Safety check: If response looks like JSON but wasn't parsed, DO NOT treat as final answer.
-                    is_suspicious_json = action_response.strip().startswith("{") or \
-                                         action_response.strip().lower().startswith("json") or \
-                                         '"type":' in action_response
+                    continue
 
-                    if is_suspicious_json:
-                         print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
-                         state.errors.append(f"Cycle {step_i+1}: Action output invalid JSON")
-                         execution_history += f"Cycle {step_i+1}: Action output invalid JSON. Retrying.\n"
-                         # Continue loop (retry)
-                         continue
+                # The model did not use a tool or final-answer schema. Treat as conversational response or retry if it looks like broken JSON.
+                
+                # Safety check: If response looks like JSON but wasn't parsed, DO NOT treat as final answer.
+                is_suspicious_json = action_response.strip().startswith("{") or \
+                                     action_response.strip().lower().startswith("json") or \
+                                     '"type":' in action_response
 
-                    # If it's just chatting, treat as final answer.
-                    if not action_response or not action_response.strip():
-                        # Fallback for empty model response
-                        logger.warning("Model returned empty response. using fallback.")
-                        final_answer = "Task Completed. (No text response generated)"
-                    else:
-                        final_answer = action_response
-                    success = True
-                    break
+                if is_suspicious_json:
+                     print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
+                     state.errors.append(f"Cycle {step_i+1}: Action output invalid JSON")
+                     execution_history += f"Cycle {step_i+1}: Action output invalid JSON. Retrying.\n"
+                     # Continue loop (retry)
+                     continue
+
+                # If it's just chatting, treat as final answer.
+                if not action_response or not action_response.strip():
+                    # Fallback for empty model response
+                    logger.warning("Model returned empty response. using fallback.")
+                    final_answer = "Task Completed. (No text response generated)"
+                else:
+                    final_answer = action_response
+                success = True
+                break
 
             if not success and not final_answer:
                 final_answer = "Maximum cycles reached."

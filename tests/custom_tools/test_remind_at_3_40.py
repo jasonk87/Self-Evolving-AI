@@ -9,6 +9,8 @@ from ai_assistant.custom_tools.generated.remind_at_3_40 import remind_at_3_40
 async def test_remind_at_3_40_happy_path(monkeypatch):
     """Test the normal operation of remind_at_3_40."""
     callback_mock = AsyncMock()
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, 'sleep', sleep_mock)
 
     # Mock datetime.datetime.now() to return a time close to 3:40 PM
     now = datetime.datetime.now()
@@ -17,14 +19,17 @@ async def test_remind_at_3_40_happy_path(monkeypatch):
 
     await remind_at_3_40(callback_mock)
 
-    # Assert that the callback was called
+    # Assert that the callback was called and correct sleep duration was passed
     callback_mock.assert_called_once()
+    sleep_mock.assert_called_once_with(1.0)
 
 
 @pytest.mark.asyncio
 async def test_remind_at_3_40_already_past_3_40(monkeypatch):
     """Test when the current time is already past 3:40 PM."""
     callback_mock = AsyncMock()
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, 'sleep', sleep_mock)
 
     # Mock datetime.datetime.now() to return a time past 3:40 PM
     now = datetime.datetime.now()
@@ -33,8 +38,9 @@ async def test_remind_at_3_40_already_past_3_40(monkeypatch):
 
     await remind_at_3_40(callback_mock)
 
-    # Assert that the callback was called
+    # Assert that the callback was called and correct sleep duration (next day) was passed
     callback_mock.assert_called_once()
+    sleep_mock.assert_called_once_with(86399.0)
 
 
 @pytest.mark.asyncio
@@ -42,6 +48,9 @@ async def test_remind_at_3_40_callback_raises_exception(monkeypatch):
     """Test when the callback function raises an exception."""
     async def callback_with_exception():
         raise ValueError("Callback failed")
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, 'sleep', sleep_mock)
 
     # Mock datetime.datetime.now() to return a time close to 3:40 PM
     now = datetime.datetime.now()
@@ -51,11 +60,15 @@ async def test_remind_at_3_40_callback_raises_exception(monkeypatch):
     with pytest.raises(ValueError, match="Callback failed"):
         await remind_at_3_40(callback_with_exception)
 
+    sleep_mock.assert_called_once_with(1.0)
+
 
 @pytest.mark.asyncio
 async def test_remind_at_3_40_midnight(monkeypatch):
     """Test when the current time is close to midnight."""
     callback_mock = AsyncMock()
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, 'sleep', sleep_mock)
 
     # Mock datetime.datetime.now() to return a time close to midnight
     now = datetime.datetime.now()
@@ -64,14 +77,17 @@ async def test_remind_at_3_40_midnight(monkeypatch):
 
     await remind_at_3_40(callback_mock)
 
-    # Assert that the callback was called
+    # Assert that the callback was called and correct sleep duration was passed
     callback_mock.assert_called_once()
+    sleep_mock.assert_called_once_with(56399.0)
 
 
 @pytest.mark.asyncio
 async def test_remind_at_3_40_early_morning(monkeypatch):
     """Test when the current time is in the early morning."""
     callback_mock = AsyncMock()
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, 'sleep', sleep_mock)
 
     # Mock datetime.datetime.now() to return a time in the early morning
     now = datetime.datetime.now()
@@ -80,5 +96,6 @@ async def test_remind_at_3_40_early_morning(monkeypatch):
 
     await remind_at_3_40(callback_mock)
 
-    # Assert that the callback was called
+    # Assert that the callback was called and correct sleep duration was passed
     callback_mock.assert_called_once()
+    sleep_mock.assert_called_once_with(43201.0)

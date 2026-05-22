@@ -240,7 +240,7 @@ class CodeService:
             logger.info(f"CodeService.generate_code called with context='{context}', description='{prompt_or_description[:50]}...' (Task ID: {task_id})")
 
             if not self.llm_provider:
-                result = {"status": "ERROR_LLM_PROVIDER_MISSING", "code_string": None, "metadata": None, "logs": ["LLM provider not configured."], "error": "LLM provider missing."}
+                result = {"status": "ERROR_LLM_PROVIDER_MISSING", "code_string": None, "metadata": None, "logs": ["LLM provider not configured."], "error": "LLM provider not configured."}
                 self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
                 return result
 
@@ -282,22 +282,20 @@ class CodeService:
                 parsed_metadata: Optional[Dict[str, str]] = None
                 actual_code_str: str = ""
                 if raw_llm_output.startswith("# METADATA:"):
+                    lines = raw_llm_output.split('\n', 1)
+                    metadata_line = lines[0]
+                    actual_code_str = lines[1] if len(lines) > 1 else ""
                     try:
-                        lines = raw_llm_output.split('\n', 1)
-                        metadata_line = lines[0]
                         metadata_json_str_match = re.search(r"{\s*.*?\s*}", metadata_line)
                         if metadata_json_str_match:
                             metadata_json_str = metadata_json_str_match.group(0)
                             parsed_metadata = json.loads(metadata_json_str)
                             logs.append(f"Successfully parsed metadata: {parsed_metadata}")
-                            actual_code_str = lines[1] if len(lines) > 1 else ""
                         else: # pragma: no cover
                             logs.append("Could not find JSON object in metadata line.")
-                            actual_code_str = raw_llm_output
                     except Exception as e: # pragma: no cover
                         logger.warning(f"Failed to parse metadata JSON for NEW_TOOL: {e}")
                         logs.append(f"Error parsing metadata: {e}. Treating rest as code.")
-                        actual_code_str = raw_llm_output.lstrip("# METADATA:") if raw_llm_output.startswith("# METADATA:") else raw_llm_output
                 else:
                     logs.append("LLM output for NEW_TOOL did not start with '# METADATA:'.")
                     actual_code_str = raw_llm_output
@@ -306,10 +304,16 @@ class CodeService:
                 cleaned_code = re.sub(r"\n?\s*```\s*$", "", cleaned_code, flags=re.IGNORECASE | re.MULTILINE).strip()
                 cleaned_code = cleaned_code.replace("\\n", "\n")
 
-
-                if not cleaned_code: # pragma: no cover
+                is_empty = not cleaned_code or not re.sub(r"#.*", "", cleaned_code).strip()
+                if is_empty:
                     logs.append("Extracted code is empty after cleaning for NEW_TOOL.")
-                    result = {"status": "ERROR_CODE_EMPTY_POST_METADATA" if parsed_metadata else "ERROR_LLM_NO_CODE", "code_string": None, "metadata": parsed_metadata, "logs": logs, "error": "No actual code block found or code was empty."}
+                    result = {
+                        "status": "ERROR_CODE_EMPTY_POST_METADATA" if parsed_metadata else "ERROR_LLM_NO_CODE",
+                        "code_string": cleaned_code if cleaned_code else None,
+                        "metadata": parsed_metadata,
+                        "logs": logs,
+                        "error": "No actual code block found or code was empty."
+                    }
                     self._update_task(task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=result.get("error"), step_desc=result.get("status"))
                     return result
                 if not parsed_metadata: # pragma: no cover
@@ -447,7 +451,7 @@ class CodeService:
             elif context == "EXPERIMENTAL_HIERARCHICAL_FULL_TOOL":
                 high_level_description = prompt_or_description
                 logs = [f"Context: EXPERIMENTAL_HIERARCHICAL_FULL_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
-                self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating outline via _generate_hierarchical_outline")
+                self._update_task(task_id, ActiveTaskStatus.PLANNING, step_desc="Generating outline via _generate_hierarchical_outline")
 
                 outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
                 logs.extend(outline_gen_result.get("logs", []))
@@ -547,7 +551,7 @@ class CodeService:
                 high_level_description = prompt_or_description
                 logs = [f"Context: HIERARCHICAL_GEN_COMPLETE_TOOL. Desc: {high_level_description[:50]}... (Task ID: {task_id})"]
 
-                self._update_task(task_id, ActiveTaskStatus.PLANNING_CODE_STRUCTURE, step_desc="Generating outline for complete tool")
+                self._update_task(task_id, ActiveTaskStatus.PLANNING, step_desc="Generating outline for complete tool")
                 outline_gen_result = await self._generate_hierarchical_outline(high_level_description, llm_config)
 
                 logs.extend(outline_gen_result.get("logs", []))

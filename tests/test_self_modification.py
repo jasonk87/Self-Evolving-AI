@@ -21,7 +21,7 @@ class TestSelfModificationWithReview(unittest.TestCase):
         self.module_path = "ai_assistant.dummy_module"
         self.function_name = "dummy_function"
         self.new_code_string = "def dummy_function():\n    print('new version')"
-        self.project_root_path = "/fake/project/root"
+        self.project_root_path = os.path.abspath("/fake/project/root")
         self.file_path = os.path.join(self.project_root_path, *self.module_path.split('.'), ".py")
         self.change_description = "Test change: Updated print statement."
         self.original_code = "def dummy_function():\n    print('old version')"

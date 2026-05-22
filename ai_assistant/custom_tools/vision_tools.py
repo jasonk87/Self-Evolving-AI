@@ -65,3 +65,25 @@ async def take_screenshot(mode: str = "desktop", url: Optional[str] = None) -> D
     except Exception as e:
         logger.error(f"Error in take_screenshot tool: {e}")
         return {"status": "error", "message": str(e)}
+
+# Define schema for ToolSystem discovery
+TAKE_SCREENSHOT_SCHEMA = {
+    "name": "take_screenshot",
+    "description": "Captures a screenshot of the host desktop or a specific web page.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "description": "Capture mode. Options are 'desktop' (host screen) or 'web' (requires url). Defaults to 'desktop'.",
+                "enum": ["desktop", "web"]
+            },
+            "url": {
+                "type": "string",
+                "description": "The URL to capture if mode is 'web'."
+            }
+        },
+        "required": []
+    }
+}
+

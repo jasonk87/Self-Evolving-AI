@@ -121,8 +121,8 @@ class PlanSimulator:
 
         try:
             if self.llm_provider:
-                response = await self.llm_provider.invoke_ollama_model_async(
-                    prompt,
+                response = await self.llm_provider.generate_response(
+                    prompt=prompt,
                     model_name=model_name,
                     temperature=0.1, # Low temp for deterministic logic
                     max_tokens=500

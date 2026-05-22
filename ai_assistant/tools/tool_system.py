@@ -28,6 +28,10 @@ class ToolExecutionError(Exception):
     """Raised when a tool fails to load or execute."""
     pass
 
+class ToolValidationError(ToolExecutionError):
+    """Raised when a tool call has invalid parameters or schema validation failures."""
+    pass
+
 class ToolSystem:
 
     def __init__(self, tool_registry_file: Optional[str]=None):
@@ -63,7 +67,8 @@ class ToolSystem:
             ('ai_assistant.custom_tools.suggestion_management_tools', 'suggestion_management_tools.py'),
             ('ai_assistant.custom_tools.system_config_tools', 'system_config_tools.py'),
             ('ai_assistant.custom_tools.system_tools', 'system_tools.py'),
-            ('ai_assistant.custom_tools.testing_tools', 'testing_tools.py')
+            ('ai_assistant.custom_tools.testing_tools', 'testing_tools.py'),
+            ('ai_assistant.custom_tools.vision_tools', 'vision_tools.py')
         ]
 
         # Always run discovery to ensure new tools are registered
@@ -293,6 +298,16 @@ class ToolSystem:
                 final_kwargs['action_executor'] = action_executor
                 if is_debug_mode():
                     print(f"ToolSystem: Injecting ActionExecutor into tool '{name}'.")
+        # Validate parameters against the function's signature before executing
+        if sig:
+            try:
+                sig.bind(*args, **final_kwargs)
+            except TypeError as te:
+                raise ToolValidationError(
+                    f"Parameter signature mismatch for tool '{name}': {te}. "
+                    f"Expected signature: {name}{sig}"
+                )
+
         try:
             # Proactive Validation: Ensure the request conforms to BaseActionRequest schema for consistency,
             # even though we map args/kwargs locally to python functions.
@@ -304,7 +319,7 @@ class ToolSystem:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Tool payload validation failed for '{name}': {ve}")
-                raise ToolExecutionError(f"Strict Gating failed for tool '{name}' payload: {ve}")
+                raise ToolValidationError(f"Strict Gating failed for tool '{name}' payload: {ve}")
 
             if is_debug_mode():
                 print(f"ToolSystem: Executing tool '{name}' with args={args}, final_kwargs={final_kwargs}")

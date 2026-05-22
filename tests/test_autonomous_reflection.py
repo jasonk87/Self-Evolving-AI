@@ -26,7 +26,7 @@ DEFAULT_OLLAMA_MODEL_FOR_TEST = "test_model"
 # For simplicity, let's rename existing classes if their scope expands significantly
 # or add a new class. Given the tasks, let's add to a new class for clarity.
 
-class TestAutonomousReflectionEnhancements(unittest.TestCase):
+class TestAutonomousReflectionEnhancements(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         # Common setup for new tests, if any
@@ -48,8 +48,8 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         }
 
     @patch('ai_assistant.core.reflection.global_reflection_log.log_execution')
-    @patch('ai_assistant.learning.evolution.apply_code_modification')
-    def test_select_suggestion_logs_self_modification_details_on_success(self, mock_apply_code, mock_log_exec):
+    @patch('ai_assistant.core.autonomous_reflection.apply_code_modification')
+    async def test_select_suggestion_logs_self_modification_details_on_success(self, mock_apply_code, mock_log_exec):
         mock_apply_return = {
             "overall_status": True, "overall_message": "All good, code modified and committed.",
             "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
@@ -59,7 +59,7 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         }
         mock_apply_code.return_value = mock_apply_return
 
-        select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
+        await select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
         
         mock_log_exec.assert_called_once()
         call_kwargs = mock_log_exec.call_args[1]
@@ -69,15 +69,19 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         self.assertEqual(call_kwargs['modification_type'], "MODIFY_TOOL_CODE")
         self.assertEqual(call_kwargs['post_modification_test_passed'], True)
         self.assertEqual(call_kwargs['post_modification_test_details'], mock_apply_return['test_outcome'])
-        self.assertEqual(call_kwargs['commit_info'], mock_apply_return['commit_outcome'])
+        self.assertEqual(call_kwargs['commit_info'], {
+            "status": mock_apply_return['commit_outcome']['status'],
+            "message": mock_apply_return['commit_outcome']['commit_message_generated'],
+            "error": mock_apply_return['commit_outcome']['error_message']
+        })
         self.assertTrue(call_kwargs['overall_success']) # Based on mock_apply_return['overall_status']
         self.assertIn("Self-modification attempt for suggestion SUG_MODIFY_001", call_kwargs['goal_description'])
         self.assertEqual(call_kwargs['notes'], mock_apply_return['overall_message'])
         self.assertEqual(call_kwargs['modification_details']['module'], self.sample_suggestion_for_modify['action_details']['module_path'])
 
     @patch('ai_assistant.core.reflection.global_reflection_log.log_execution')
-    @patch('ai_assistant.learning.evolution.apply_code_modification')
-    def test_select_suggestion_logs_self_modification_details_on_test_failure(self, mock_apply_code, mock_log_exec):
+    @patch('ai_assistant.core.autonomous_reflection.apply_code_modification')
+    async def test_select_suggestion_logs_self_modification_details_on_test_failure(self, mock_apply_code, mock_log_exec):
         mock_apply_return_test_fail = {
             "overall_status": False, "overall_message": "Tests failed, reverted.",
             "edit_outcome": {"status": True, "message": "Edited successfully.", "backup_path": "path/to/dummy_tool_module.py.bak"},
@@ -87,7 +91,7 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         }
         mock_apply_code.return_value = mock_apply_return_test_fail
 
-        select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
+        await select_suggestion_for_autonomous_action([self.sample_suggestion_for_modify])
         
         mock_log_exec.assert_called_once()
         call_kwargs = mock_log_exec.call_args[1]
@@ -145,6 +149,8 @@ class TestAutonomousReflectionEnhancements(unittest.TestCase):
         _invoke_suggestion_generation_llm(
             identified_patterns_json_list_str=json.dumps(sample_patterns),
             available_tools_json_str=json.dumps(sample_tools),
+            rejected_suggestions_str="None.",
+            failed_suggestions_str="None.",
             llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST
         )
 
@@ -184,37 +190,41 @@ class TestInvokeSuggestionScoringLLM(unittest.TestCase):
         # You could add more assertions here to check the prompt contents if needed, by inspecting mock_invoke_ollama.call_args
 
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_invalid_json(self, mock_print, mock_invoke_ollama):
+    @patch('ai_assistant.core.autonomous_reflection.logger')
+    def test_llm_returns_invalid_json(self, mock_logger, mock_invoke_ollama):
         mock_invoke_ollama.return_value = "This is not JSON"
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Error decoding JSON from suggestion scoring LLM: Expecting value: line 1 column 1 (char 0). Response: This is not JSON")
+        mock_logger.error.assert_called_once()
 
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_json_with_missing_keys(self, mock_print, mock_invoke_ollama):
+    @patch('ai_assistant.core.autonomous_reflection.logger')
+    def test_llm_returns_json_with_missing_keys(self, mock_logger, mock_invoke_ollama):
         mock_invoke_ollama.return_value = '{ "impact_score": 4, "risk_score": 2 }' # Missing "effort_score"
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Warning: LLM response for suggestion scoring missing key 'effort_score'. Response: { \"impact_score\": 4, \"risk_score\": 2 }")
+        mock_logger.warning.assert_called_once_with(
+            "LLM response for suggestion scoring missing key 'effort_score'. Response: { \"impact_score\": 4, \"risk_score\": 2 }"
+        )
 
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
-    @patch('builtins.print')
-    def test_llm_returns_json_with_non_integer_scores(self, mock_print, mock_invoke_ollama):
+    @patch('ai_assistant.core.autonomous_reflection.logger')
+    def test_llm_returns_json_with_non_integer_scores(self, mock_logger, mock_invoke_ollama):
         mock_invoke_ollama.return_value = '{ "impact_score": "high", "risk_score": 2, "effort_score": 3 }'
         
         sample_suggestion = {"suggestion_text": "Test", "action_type": "ANY"}
         result = _invoke_suggestion_scoring_llm(sample_suggestion, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
         self.assertIsNone(result)
-        mock_print.assert_any_call("Warning: LLM response for suggestion scoring key 'impact_score' is not an integer. Value: high. Response: { \"impact_score\": \"high\", \"risk_score\": 2, \"effort_score\": 3 }")
+        mock_logger.warning.assert_called_once_with(
+            "LLM response for suggestion scoring key 'impact_score' is not an integer. Value: high. Response: { \"impact_score\": \"high\", \"risk_score\": 2, \"effort_score\": 3 }"
+        )
 
     @patch('ai_assistant.core.autonomous_reflection.invoke_ollama_model')
     def test_handling_action_details_present_and_absent(self, mock_invoke_ollama):
@@ -231,7 +241,7 @@ class TestInvokeSuggestionScoringLLM(unittest.TestCase):
         # Check if prompt formatting for action_details was as expected (stringified JSON)
         args_with_details, _ = mock_invoke_ollama.call_args
         prompt_with_details = args_with_details[0]
-        self.assertIn('"action_details": {"tool_name": "some_tool", "change": "critical"}', prompt_with_details.replace("\\", "")) # Handle potential escapes
+        self.assertIn('- Action Details (JSON): {"tool_name": "some_tool", "change": "critical"}', prompt_with_details.replace("\\", "")) # Handle potential escapes
 
         mock_invoke_ollama.reset_mock() # Reset for the next call
 
@@ -247,17 +257,26 @@ class TestInvokeSuggestionScoringLLM(unittest.TestCase):
         
         args_without_details, _ = mock_invoke_ollama.call_args
         prompt_without_details = args_without_details[0]
-        self.assertIn('"action_details_json_str": "{}"', prompt_without_details.replace(" ", "").replace("\\n", "")) # Check for empty JSON object in prompt
+        self.assertIn('- Action Details (JSON): {}', prompt_without_details) # Check for empty JSON object in prompt
 
 
 class TestRunSelfReflectionCycleScoring(unittest.TestCase):
+
+    def setUp(self):
+        self.sleep_patcher = patch('ai_assistant.core.autonomous_reflection.time.sleep')
+        self.mock_sleep = self.sleep_patcher.start()
+
+    def tearDown(self):
+        self.sleep_patcher.stop()
 
     @patch('ai_assistant.core.autonomous_reflection.get_reflection_log_summary_for_analysis')
     @patch('ai_assistant.core.autonomous_reflection._invoke_pattern_identification_llm')
     @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_generation_llm')
     @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_scoring_llm')
+    @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_review_llm')
     def test_successful_scoring_for_all_suggestions(
         self, 
+        mock_review_suggestion,
         mock_score_suggestion, 
         mock_generate_suggestions, 
         mock_identify_patterns, 
@@ -278,6 +297,12 @@ class TestRunSelfReflectionCycleScoring(unittest.TestCase):
             {"impact_score": 5, "risk_score": 1, "effort_score": 2},
             {"impact_score": 4, "risk_score": 2, "effort_score": 3},
         ]
+        mock_review_suggestion.return_value = {
+            "review_looks_good": True,
+            "qualitative_review": "Looks fine",
+            "confidence_score": 0.8,
+            "suggested_modifications_to_proposal": ""
+        }
         
         result = run_self_reflection_cycle(available_tools={"tool1": "desc"}, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
@@ -302,10 +327,12 @@ class TestRunSelfReflectionCycleScoring(unittest.TestCase):
     @patch('ai_assistant.core.autonomous_reflection._invoke_pattern_identification_llm')
     @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_generation_llm')
     @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_scoring_llm')
-    @patch('builtins.print') # To suppress or check print warnings
+    @patch('ai_assistant.core.autonomous_reflection._invoke_suggestion_review_llm')
+    @patch('ai_assistant.core.autonomous_reflection.logger')
     def test_scoring_fails_for_one_suggestion(
         self, 
-        mock_print,
+        mock_logger,
+        mock_review_suggestion,
         mock_score_suggestion, 
         mock_generate_suggestions, 
         mock_identify_patterns, 
@@ -325,6 +352,12 @@ class TestRunSelfReflectionCycleScoring(unittest.TestCase):
             {"impact_score": 5, "risk_score": 1, "effort_score": 2},
             None, 
         ]
+        mock_review_suggestion.return_value = {
+            "review_looks_good": True,
+            "qualitative_review": "Looks fine",
+            "confidence_score": 0.8,
+            "suggested_modifications_to_proposal": ""
+        }
         
         result = run_self_reflection_cycle(available_tools={"tool1": "desc"}, llm_model_name=DEFAULT_OLLAMA_MODEL_FOR_TEST)
         
@@ -341,7 +374,7 @@ class TestRunSelfReflectionCycleScoring(unittest.TestCase):
         self.assertEqual(result[1]["risk_score"], -1)  # Default error score
         self.assertEqual(result[1]["effort_score"], -1) # Default error score
         
-        mock_print.assert_any_call("Warning: Failed to score suggestion ID: SUG_002. Assigning default error scores (-1).")
+        mock_logger.warning.assert_any_call("Failed to score suggestion ID: SUG_002. Assigning default error scores (-1).")
         self.assertEqual(mock_score_suggestion.call_count, 2)
 
     @patch('ai_assistant.core.autonomous_reflection.get_reflection_log_summary_for_analysis')
@@ -377,7 +410,7 @@ class TestRunSelfReflectionCycleScoring(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class TestSelectSuggestionForAutonomousAction(unittest.TestCase):
+class TestSelectSuggestionForAutonomousAction(unittest.IsolatedAsyncioTestCase):
 
     def _create_sample_suggestion(self, id, action_type, action_details, impact, risk, effort):
         return {
@@ -388,67 +421,89 @@ class TestSelectSuggestionForAutonomousAction(unittest.TestCase):
             "impact_score": impact,
             "risk_score": risk,
             "effort_score": effort,
+            "review_looks_good": True,
+            "reviewer_confidence": 0.9,
+            "qualitative_review": "Looks good"
             # "_priority_score" will be calculated by the function if scores are valid
         }
 
-    def test_basic_selection_with_scoring(self):
+    async def test_basic_selection_with_scoring(self):
         suggestions = [
             self._create_sample_suggestion("S1", "UPDATE_TOOL_DESCRIPTION", {"tool_name": "t1", "new_description": "d1"}, impact=3, risk=1, effort=1), # Priority: 3-1-0.5 = 1.5
             self._create_sample_suggestion("S2", "CREATE_NEW_TOOL", {"tool_description_prompt": "p2"}, impact=5, risk=1, effort=2), # Priority: 5-1-1 = 3
             self._create_sample_suggestion("S3", "UPDATE_TOOL_DESCRIPTION", {"tool_name": "t3", "new_description": "d3"}, impact=4, risk=2, effort=2), # Priority: 4-2-1 = 1
         ]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNotNone(selected)
         self.assertEqual(selected["suggestion_id"], "S2")
 
-    def test_higher_scored_suggestion_is_invalid_action_details(self):
+    async def test_higher_scored_suggestion_is_invalid_action_details(self):
         suggestions = [
             self._create_sample_suggestion("S1_invalid_details", "CREATE_NEW_TOOL", {"tool_description_prompt": ""}, impact=5, risk=1, effort=1), # High priority (3.5), but invalid (empty prompt)
             self._create_sample_suggestion("S2_valid", "UPDATE_TOOL_DESCRIPTION", {"tool_name": "t2", "new_description": "d2"}, impact=3, risk=1, effort=1), # Lower priority (1.5) but valid
         ]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNotNone(selected)
         self.assertEqual(selected["suggestion_id"], "S2_valid")
 
-    def test_filtering_by_action_type(self):
+    @patch('ai_assistant.core.autonomous_reflection.apply_code_modification')
+    async def test_filtering_by_action_type(self, mock_apply_code):
+        mock_apply_code.return_value = {
+            "overall_status": True,
+            "overall_message": "Mock status",
+            "edit_outcome": {"status": True, "message": "Mock edit"},
+            "test_outcome": {"passed": True, "notes": "Mock tests"},
+            "revert_outcome": None,
+            "commit_outcome": None
+        }
         suggestions = [
-            self._create_sample_suggestion("S1_unsupported_type", "MODIFY_TOOL_CODE", {"tool_name": "t1", "suggested_change_description": "c1"}, impact=5, risk=1, effort=1), # High priority (3.5), but unsupported type
+            self._create_sample_suggestion(
+                "S1_unsupported_type",
+                "MODIFY_TOOL_CODE",
+                {
+                    "module_path": "ai_assistant.dummy_modules.dummy_tool_module",
+                    "function_name": "sample_tool_function",
+                    "suggested_code_change": "def sample_tool_function(param1):\n    return param1 * 2",
+                    "suggested_change_description": "c1"
+                },
+                impact=5, risk=1, effort=1
+            ),
             self._create_sample_suggestion("S2_supported_type", "CREATE_NEW_TOOL", {"tool_description_prompt": "p2"}, impact=3, risk=1, effort=1), # Lower priority (1.5) but supported type
         ]
-        # Default supported: ["UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        # Default supported includes MODIFY_TOOL_CODE, so we exclude it to make S1_unsupported_type unsupported
+        selected = await select_suggestion_for_autonomous_action(suggestions, supported_action_types=["UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"])
         self.assertIsNotNone(selected)
         self.assertEqual(selected["suggestion_id"], "S2_supported_type")
         
         # Test with explicit supported types
-        selected_custom = select_suggestion_for_autonomous_action(suggestions, supported_action_types=["MODIFY_TOOL_CODE"])
+        selected_custom = await select_suggestion_for_autonomous_action(suggestions, supported_action_types=["MODIFY_TOOL_CODE"])
         self.assertIsNotNone(selected_custom)
         self.assertEqual(selected_custom["suggestion_id"], "S1_unsupported_type")
 
 
-    def test_filtering_out_failed_scores(self):
+    async def test_filtering_out_failed_scores(self):
         suggestions = [
             self._create_sample_suggestion("S1_failed_score", "CREATE_NEW_TOOL", {"tool_description_prompt": "p1"}, impact=5, risk=-1, effort=1), # High "raw" impact, but risk is -1
             self._create_sample_suggestion("S2_valid_scores", "UPDATE_TOOL_DESCRIPTION", {"tool_name": "t2", "new_description": "d2"}, impact=3, risk=1, effort=1), # Valid scores, priority 1.5
         ]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNotNone(selected)
         self.assertEqual(selected["suggestion_id"], "S2_valid_scores")
 
-    def test_empty_suggestion_list(self):
-        selected = select_suggestion_for_autonomous_action([])
+    async def test_empty_suggestion_list(self):
+        selected = await select_suggestion_for_autonomous_action([])
         self.assertIsNone(selected)
 
-    def test_no_suitable_suggestion_found_all_invalid(self):
+    async def test_no_suitable_suggestion_found_all_invalid(self):
         suggestions = [
             self._create_sample_suggestion("S1_unsupported", "MODIFY_TOOL_CODE", {"tool_name": "t1", "suggested_change_description": "c1"}, impact=5, risk=1, effort=1),
             self._create_sample_suggestion("S2_failed_score", "CREATE_NEW_TOOL", {"tool_description_prompt": "p2"}, impact=5, risk=1, effort=-1),
             self._create_sample_suggestion("S3_invalid_details", "UPDATE_TOOL_DESCRIPTION", {"tool_name": "t3"}, impact=4, risk=1, effort=1), # Missing new_description
         ]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNone(selected)
         
-    def test_priority_calculation_and_sorting(self):
+    async def test_priority_calculation_and_sorting(self):
         # Effort has 0.5 multiplier, lower is better for risk and effort
         # Priority = Impact - Risk - (Effort * 0.5)
         suggestions = [
@@ -458,11 +513,11 @@ class TestSelectSuggestionForAutonomousAction(unittest.TestCase):
             self._create_sample_suggestion("S_HighImpact_MidRisk_LowEffort", "CREATE_NEW_TOOL", {"tool_description_prompt": "p4"}, impact=5, risk=2, effort=1), # P = 5 - 2 - 0.5 = 2.5 (Highest)
         ]
         # Expected order: S_HighImpact_MidRisk_LowEffort (2.5), S_MidImpact_LowRisk_MidEffort (2), S_LowImpact_LowRisk_LowEffort (0.5), S_HighImpact_HighRisk_HighEffort (0)
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNotNone(selected)
         self.assertEqual(selected["suggestion_id"], "S_HighImpact_MidRisk_LowEffort")
 
-    def test_selection_amongst_equally_prioritized_valid_suggestions(self):
+    async def test_selection_amongst_equally_prioritized_valid_suggestions(self):
         # If multiple suggestions have the same highest priority score and are valid,
         # the current implementation will pick the one that appears first in the *sorted* list.
         # The sort is stable, so if they had same priority, their original relative order (after filtering) would be maintained.
@@ -471,7 +526,7 @@ class TestSelectSuggestionForAutonomousAction(unittest.TestCase):
              self._create_sample_suggestion("S1_equal_priority", "CREATE_NEW_TOOL", {"tool_description_prompt": "prompt1"}, impact=4, risk=1, effort=2), # P = 4 - 1 - 1 = 2
              self._create_sample_suggestion("S2_equal_priority", "UPDATE_TOOL_DESCRIPTION", {"tool_name":"t1", "new_description": "desc1"}, impact=4, risk=1, effort=2), # P = 4 - 1 - 1 = 2
         ]
-        selected = select_suggestion_for_autonomous_action(suggestions)
+        selected = await select_suggestion_for_autonomous_action(suggestions)
         self.assertIsNotNone(selected)
         # The exact one depends on Python's list sort stability if scores are identical.
         # Both are valid, so one of them should be chosen.

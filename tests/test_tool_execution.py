@@ -19,6 +19,16 @@ def _pick_tool(available_tools):
         return "greet_user", ("Jules",)
     if "add_numbers" in available_tools:
         return "add_numbers", (5, 7)
+    if "get_system_status_summary" in available_tools:
+        return "get_system_status_summary", ()
+    if "list_formatted_suggestions" in available_tools:
+        return "list_formatted_suggestions", ()
+    if "get_self_awareness_info_and_converse" in available_tools:
+        return "get_self_awareness_info_and_converse", ()
+
+    for name in available_tools:
+        if name not in ("create_dynamic_specialist", "edit_function_source_code"):
+            return name, ()
 
     first_tool_name = next(iter(available_tools.keys()), None)
     if first_tool_name is None:

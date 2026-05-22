@@ -14,6 +14,9 @@ def list_suggestions(status: Optional[str] = None) -> str:
              with keys like 'id', 'type', 'description', and 'status'.
              Returns a JSON string with an error message if an error occurs.
     """
+    if status is not None and not isinstance(status, str):
+        raise TypeError("status must be a string")
+
     try:
         # Mock suggestion data (replace with actual data source in a real implementation)
         suggestions = [
@@ -25,7 +28,7 @@ def list_suggestions(status: Optional[str] = None) -> str:
         ]
 
         # Filter suggestions by status if provided
-        if status:
+        if status is not None:
             filtered_suggestions = [s for s in suggestions if s["status"] == status]
         else:
             filtered_suggestions = suggestions

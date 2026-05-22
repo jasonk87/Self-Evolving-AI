@@ -66,14 +66,14 @@ class ConversationalAnalyst:
     def _extract_json_object(self, response: str) -> Dict[str, Any]:
         """Extract the first JSON object from a model response."""
         cleaned = response.strip()
-        fenced_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+        fenced_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL)
         if fenced_match:
             cleaned = fenced_match.group(1).strip()
-        else:
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                cleaned = cleaned[start:end + 1]
+
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end >= start:
+            cleaned = cleaned[start:end + 1]
 
         return json.loads(cleaned)
 

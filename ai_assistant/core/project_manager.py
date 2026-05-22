@@ -193,7 +193,7 @@ def update_project(identifier: str, new_name: Optional[str] = None, new_descript
         return None
 
     if not updated:
-        print(color_text(f"No actual changes detected for project '{current_project_obj['name']}'. Name and description are the same.", CLIColors.WARNING_MESSAGE))
+        print(color_text(f"No actual changes detected for project '{current_project_obj['name']}'. Name and description are the same.", CLIColors.WARNING))
         return project_to_update # Return the project as is
 
     if _save_projects(projects):

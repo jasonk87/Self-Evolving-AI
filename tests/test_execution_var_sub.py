@@ -15,9 +15,8 @@ class TestExecutionVariableSubstitution(unittest.TestCase):
         self.mock_learning = MagicMock()
         
         # Async mock for execute_tool
-        f = asyncio.Future()
-        f.set_result("tool_execution_result")
-        self.mock_tool_system.execute_tool.return_value = f
+        from unittest.mock import AsyncMock
+        self.mock_tool_system.execute_tool = AsyncMock(return_value="tool_execution_result")
 
     def test_resolve_arguments_simple_substitution(self):
         """Test simple [[step_N_output]] substitution"""

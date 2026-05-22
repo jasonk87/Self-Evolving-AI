@@ -19,6 +19,7 @@ from ai_assistant.communication import cli # Module to test
 
 class TestCliToolGenerationFlow(unittest.IsolatedAsyncioTestCase):
 
+    @mock.patch('ai_assistant.communication.cli.print_formatted_text')
     @mock.patch('ai_assistant.communication.cli.global_reflection_log.log_execution') # Mock logging
     @mock.patch('ai_assistant.communication.cli._perform_tool_registration') # Mock tool registration
     @mock.patch('ai_assistant.communication.cli.write_to_file') # Mock file saving (fs_utils)
@@ -27,7 +28,7 @@ class TestCliToolGenerationFlow(unittest.IsolatedAsyncioTestCase):
     @mock.patch('ai_assistant.communication.cli.tool_system_instance.execute_tool', new_callable=mock.AsyncMock) # Mock code review tool
     async def test_handle_code_generation_triggers_scaffold_success(
         self, mock_execute_review_tool, MockCodeService, mock_input,
-        mock_cli_write_to_file, mock_perform_registration, mock_log_execution
+        mock_cli_write_to_file, mock_perform_registration, mock_log_execution, mock_print_formatted_text
     ):
         # --- Setup Mocks ---
 

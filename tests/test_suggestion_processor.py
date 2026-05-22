@@ -23,7 +23,7 @@ except ImportError as e: # pragma: no cover
     # from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 
-class TestSuggestionProcessor(unittest.TestCase):
+class TestSuggestionProcessor(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.mock_action_executor = AsyncMock(spec=ActionExecutor)
 

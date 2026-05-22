@@ -40,6 +40,27 @@ def test_conversational_analyst_extracts_json_from_chatter():
     assert parsed["insights"][0]["type"] == "USER_FRUSTRATION"
 
 
+def test_conversational_analyst_extracts_json_with_nested_objects():
+    response = """
+    Here is the analysis:
+    ```json
+    {
+      "insights": [
+        {
+          "type": "USER_FRUSTRATION",
+          "description": "User was blocked.",
+          "evidence": "failed",
+          "suggestion": "Fix fallback."
+        }
+      ]
+    }
+    ```
+    Thanks.
+    """
+    parsed = ConversationalAnalyst()._extract_json_object(response)
+    assert parsed["insights"][0]["type"] == "USER_FRUSTRATION"
+
+
 @pytest.mark.parametrize("alias", ["search_web", "web_search", "google_search", "news_search"])
 def test_search_aliases_are_registered(alias):
     assert alias in list_tools()

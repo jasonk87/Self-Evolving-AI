@@ -249,7 +249,7 @@ def list_formatted_suggestions(status_filter: Optional[str]='pending') -> List[D
         A list of dictionaries, where each dictionary contains key details of a suggestion.
         Returns an empty list if no suggestions match or if suggestion_manager is unavailable.
     """
-    from ai_assistant.custom_tools.suggestion_management import list_suggestions
+    from ai_assistant.core.suggestion_manager import list_suggestions
     try:
         all_suggs = list_suggestions()
     except Exception:

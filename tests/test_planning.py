@@ -3,7 +3,7 @@ from unittest.mock import patch
 import json # To construct mock LLM responses
 from ai_assistant.planning.planning import PlannerAgent
 
-class TestPlannerAgentLLMSearch(unittest.TestCase):
+class TestPlannerAgentLLMSearch(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         """Set up test fixtures, if any."""

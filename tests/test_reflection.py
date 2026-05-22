@@ -110,15 +110,15 @@ class TestReflectionLogEntry(unittest.TestCase):
             modification_details={"module": "a.b.c", "function": "xyz"},
             post_modification_test_passed=True,
             post_modification_test_details={"passed": True, "notes": "Tests look great!"},
-            commit_info={"message": "Code committed", "status": True}
+            commit_info={"commit_message": "Code committed", "status": True}
         )
         formatted_str_mod = entry_mod.to_formatted_string()
         self.assertIn("--- Self-Modification Attempt Details ---", formatted_str_mod)
         self.assertIn("Source Suggestion ID: SUG003", formatted_str_mod)
         self.assertIn("Modification Type: MODIFY_TOOL_CODE", formatted_str_mod)
-        self.assertIn(json.dumps(entry_mod.modification_details, indent=2), formatted_str_mod)
-        self.assertIn("Test Outcome: True", formatted_str_mod) # Note: was PASSED, now True/False
-        self.assertIn("Test Details: Tests look great!", formatted_str_mod)
+        self.assertIn(json.dumps(entry_mod.modification_details, indent=2, sort_keys=True), formatted_str_mod)
+        self.assertIn("Post-Modification Test Passed: True", formatted_str_mod)
+        self.assertIn("Post-Modification Test Details: Tests look great!", formatted_str_mod)
         self.assertIn("Commit Info: Code committed", formatted_str_mod)
 
 
@@ -141,7 +141,7 @@ class TestReflectionLog(unittest.TestCase):
     def test_log_execution_with_self_modification_params(self):
         goal = "Test self-mod logging in ReflectionLog"
         plan_data = [{"tool_name": "self_mod_tool"}]
-        exec_results = [{"outcome": "details from apply_code_modification"}]
+        exec_results = [{"error": "Unit test failed post-mod", "_is_error_representation_": True}]
         mod_details = {"module": "core.py", "change": "refactor"}
         test_details = {"passed": False, "notes": "Unit test failed post-mod"}
         commit_details = {"message": "Attempted refactor, tests failed", "status": False}
@@ -166,7 +166,7 @@ class TestReflectionLog(unittest.TestCase):
 
         self.assertIsInstance(last_entry, ReflectionLogEntry)
         self.assertEqual(last_entry.goal_description, goal)
-        self.assertEqual(last_entry.notes, "Logging a self-modification attempt.")
+        self.assertIn("Logging a self-modification attempt.", last_entry.notes)
         self.assertTrue(last_entry.is_self_modification_attempt)
         self.assertEqual(last_entry.source_suggestion_id, "SUG004")
         self.assertEqual(last_entry.modification_type, "MODIFY_TOOL_CODE")

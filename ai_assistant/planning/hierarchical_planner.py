@@ -4,7 +4,7 @@ import json # Added for __main__ printing
 from typing import List, Any, Optional, Dict # Added Dict
 import os
 # Assuming a generic LLM service interface or a specific one like OllamaProvider
-from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.memory.persistent_memory import load_learned_facts
 from ai_assistant.planning.plan_simulator import PlanSimulator
 # For __main__ example, we'll mock this.
@@ -139,7 +139,7 @@ Respond ONLY with the valid JSON list. Do not include markdown or explanations.
 """
 
 class HierarchicalPlanner:
-    def __init__(self, llm_provider: OllamaProvider): # Assuming OllamaProvider for now
+    def __init__(self, llm_provider: LLMProvider):
         """
         Initializes the HierarchicalPlanner.
 
@@ -232,11 +232,11 @@ class HierarchicalPlanner:
             model_name = get_model_for_task("hierarchical_planning_outline")
 
 
-            response_text = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
+            response_text = await self.llm_provider.generate_response(
+                prompt=prompt,
                 model_name=model_name,
-                temperature=0.6, # Slightly higher for some creativity in breakdown
-                max_tokens=500 # Should be enough for an outline
+                temperature=0.6,
+                max_tokens=500
             )
 
             if not response_text or not response_text.strip():
@@ -300,11 +300,11 @@ class HierarchicalPlanner:
             from ai_assistant.config import get_model_for_task # Local import
             model_name = get_model_for_task("hierarchical_planning_tasks")
 
-            response_text = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
+            response_text = await self.llm_provider.generate_response(
+                prompt=prompt,
                 model_name=model_name,
-                temperature=0.5, # Slightly less creative for more direct task breakdown
-                max_tokens=700 # Enough for a list of tasks
+                temperature=0.5,
+                max_tokens=700
             )
 
             if not response_text or not response_text.strip():
@@ -365,11 +365,11 @@ class HierarchicalPlanner:
             from ai_assistant.config import get_model_for_task # Local import
             model_name = get_model_for_task("hierarchical_planning_step_elaboration")
 
-            response_text = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
+            response_text = await self.llm_provider.generate_response(
+                prompt=prompt,
                 model_name=model_name,
-                temperature=0.3, # More deterministic for JSON output
-                max_tokens=1000 # Allow for detailed prompts within JSON
+                temperature=0.3,
+                max_tokens=1000
             )
 
             if not response_text or not response_text.strip():
@@ -550,8 +550,8 @@ class HierarchicalPlanner:
             from ai_assistant.config import get_model_for_task
             model_name = get_model_for_task("hierarchical_planning_step_elaboration") # Reuse robust model
 
-            response = await self.llm_provider.invoke_ollama_model_async(
-                prompt,
+            response = await self.llm_provider.generate_response(
+                prompt=prompt,
                 model_name=model_name,
                 temperature=0.2,
                 max_tokens=2000
@@ -580,8 +580,25 @@ if __name__ == '__main__': # pragma: no cover
     import json # For printing dicts nicely in main
 
     # Mock LLMProvider for the __main__ example
-    class MockLLMProvider(OllamaProvider): # Inherit to satisfy type hint
-        async def invoke_ollama_model_async(self, prompt: str, model_name: str, temperature: float = 0.7, max_tokens: int = 1500) -> str:
+    class MockLLMProvider(LLMProvider):
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @property
+        def provider_name(self) -> str:
+            return "mock"
+
+        async def generate_response(
+            self,
+            prompt: str,
+            system_instruction: Optional[str] = None,
+            history: Optional[List[Dict[str, str]]] = None,
+            model_name: Optional[str] = None,
+            temperature: float = 0.7,
+            max_tokens: int = 8192,
+            images: Optional[List[str]] = None,
+            endpoint_url: Optional[str] = None
+        ) -> str:
             print(f"\n--- MockLLMProvider received prompt for model {model_name} (Temp: {temperature}, MaxTokens: {max_tokens}) ---")
             print(prompt[:600] + "..." if len(prompt) > 600 else prompt) # Print preview if too long
             print("--- End of MockLLMProvider prompt ---")
