@@ -8,6 +8,19 @@ import threading
 import traceback
 import time
 import sys
+
+# Configure standard streams to avoid UnicodeEncodeError on Windows
+if sys.stdout is not None and hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr is not None and hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 from datetime import datetime
 from typing import List, Optional
 import audioop # For Kill Switch RMS calculation
@@ -25,7 +38,7 @@ import aiohttp
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai_live_link")
-fh = logging.FileHandler('live_debug.log')
+fh = logging.FileHandler('live_debug.log', encoding='utf-8')
 fh.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 fh.setFormatter(formatter)

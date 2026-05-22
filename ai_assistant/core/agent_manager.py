@@ -53,7 +53,7 @@ class AgentManager:
                 "agent_id": agent_id,
                 "created_at": time.time()
             }
-            with open(os.path.join(workspace_path, "metadata.json"), "w") as f:
+            with open(os.path.join(workspace_path, "metadata.json"), "w", encoding='utf-8') as f:
                 json.dump(metadata, f)
 
             logging.info(f"Created/Accessed workspace for agent {agent_id} at {workspace_path}")
@@ -81,7 +81,7 @@ class AgentManager:
             meta_path = os.path.join(workspace_path, "metadata.json")
             if os.path.exists(meta_path):
                 try:
-                    with open(meta_path, 'r') as f:
+                    with open(meta_path, 'r', encoding='utf-8') as f:
                         meta = json.load(f)
                         if meta.get("scope_type") == "user":
                             is_persistent = True

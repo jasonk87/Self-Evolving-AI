@@ -459,7 +459,7 @@ def _load_architect_state():
     state_file = os.path.join(get_data_dir(), ARCHITECT_STATE_FILE)
     if os.path.exists(state_file):
         try:
-            with open(state_file, 'r') as f:
+            with open(state_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 _last_architect_audit_timestamp = data.get("last_audit_timestamp", 0.0)
                 logger.info(f"BackgroundService: Loaded architect state. Last audit: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(_last_architect_audit_timestamp))}")
@@ -472,7 +472,7 @@ def _load_architect_state():
 def _save_architect_state():
     state_file = os.path.join(get_data_dir(), ARCHITECT_STATE_FILE)
     try:
-        with open(state_file, 'w') as f:
+        with open(state_file, 'w', encoding='utf-8') as f:
             json.dump({"last_audit_timestamp": _last_architect_audit_timestamp}, f)
     except Exception as e:
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
