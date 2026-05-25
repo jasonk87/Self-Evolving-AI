@@ -11,6 +11,7 @@ class TokenUsageTracker:
     _instance = None
     _total_input_tokens = 0
     _total_output_tokens = 0
+    _total_thinking_tokens = 0
     _total_calls = 0
     _history: List[Dict[str, Any]] = []
 
@@ -20,15 +21,27 @@ class TokenUsageTracker:
         return cls._instance
 
     @classmethod
-    def track_call(cls, model: str, prompt_len: int, response_len: int, task: str = "unknown"):
+    def track_call(
+        cls,
+        model: str,
+        prompt_len: int,
+        response_len: int,
+        task: str = "unknown",
+        usage_metadata: Dict[str, Any] = None,
+        thinking_budget: int = None,
+    ):
         """
-        Tracks a single LLM call. Estimates tokens as chars / 4 (rough heuristic).
+        Tracks a single LLM call. Uses provider metadata when available and
+        falls back to chars / 4 for older call sites.
         """
-        est_input = prompt_len // 4
-        est_output = response_len // 4
+        usage_metadata = usage_metadata or {}
+        est_input = usage_metadata.get("promptTokenCount", prompt_len // 4)
+        est_output = usage_metadata.get("candidatesTokenCount", response_len // 4)
+        thinking_tokens = usage_metadata.get("thoughtsTokenCount", 0) or 0
 
         cls._total_input_tokens += est_input
         cls._total_output_tokens += est_output
+        cls._total_thinking_tokens += thinking_tokens
         cls._total_calls += 1
 
         entry = {
@@ -37,7 +50,9 @@ class TokenUsageTracker:
             "task": task,
             "input_tokens": est_input,
             "output_tokens": est_output,
-            "total_tokens": est_input + est_output
+            "thinking_tokens": thinking_tokens,
+            "thinking_budget": thinking_budget,
+            "total_tokens": est_input + est_output + thinking_tokens
         }
         cls._history.append(entry)
 
@@ -84,10 +99,36 @@ class TokenUsageTracker:
             "total_calls": cls._total_calls,
             "total_input_tokens": cls._total_input_tokens,
             "total_output_tokens": cls._total_output_tokens,
-            "total_tokens": cls._total_input_tokens + cls._total_output_tokens,
+            "total_thinking_tokens": cls._total_thinking_tokens,
+            "total_tokens": cls._total_input_tokens + cls._total_output_tokens + cls._total_thinking_tokens,
+            "model_usage": cls.get_model_usage(),
             "estimated_cost": cls._estimate_cost(),
             "slo": cls.get_slo_metrics()
         }
+
+    @classmethod
+    def get_model_usage(cls) -> Dict[str, Any]:
+        """Returns token usage grouped by model for UI breakdowns."""
+        usage: Dict[str, Any] = {}
+        for entry in cls._history:
+            model = entry.get("model", "unknown")
+            if model not in usage:
+                usage[model] = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "thinking_tokens": 0,
+                    "total_tokens": 0,
+                    "calls": 0,
+                    "latest_thinking_budget": None,
+                }
+            usage[model]["input_tokens"] += int(entry.get("input_tokens") or 0)
+            usage[model]["output_tokens"] += int(entry.get("output_tokens") or 0)
+            usage[model]["thinking_tokens"] += int(entry.get("thinking_tokens") or 0)
+            usage[model]["total_tokens"] += int(entry.get("total_tokens") or 0)
+            usage[model]["calls"] += 1
+            if entry.get("thinking_budget") is not None:
+                usage[model]["latest_thinking_budget"] = entry.get("thinking_budget")
+        return usage
 
     @classmethod
     def get_history(cls, limit: int = 200) -> List[Dict[str, Any]]:
@@ -103,7 +144,7 @@ class TokenUsageTracker:
     def _estimate_cost(cls) -> float:
         """Estimates cost based on rough Gemini Flash pricing ($0.075/1M input, $0.3/1M output)."""
         input_cost = (cls._total_input_tokens / 1_000_000) * 0.075
-        output_cost = (cls._total_output_tokens / 1_000_000) * 0.30
+        output_cost = ((cls._total_output_tokens + cls._total_thinking_tokens) / 1_000_000) * 0.30
         return round(input_cost + output_cost, 6)
 
     @classmethod
@@ -125,7 +166,8 @@ class TokenUsageTracker:
 
             est_input = entry.get("input_tokens", 0)
             est_output = entry.get("output_tokens", 0)
-            cost = ((est_input / 1_000_000) * 0.075) + ((est_output / 1_000_000) * 0.30)
+            thinking_tokens = entry.get("thinking_tokens", 0)
+            cost = ((est_input / 1_000_000) * 0.075) + (((est_output + thinking_tokens) / 1_000_000) * 0.30)
 
             costs[category] = costs.get(category, 0.0) + cost
 
@@ -134,7 +176,7 @@ class TokenUsageTracker:
     @classmethod
     def check_hard_limit_exceeded(cls, daily_limit: int) -> bool:
         """Checks if the daily limit is exceeded."""
-        return (cls._total_input_tokens + cls._total_output_tokens) > daily_limit
+        return (cls._total_input_tokens + cls._total_output_tokens + cls._total_thinking_tokens) > daily_limit
 
     @classmethod
     def check_category_limit_exceeded(cls, task: str, category_limits: Dict[str, float]) -> bool:

@@ -99,9 +99,13 @@ async function renderTokenBreakdown() {
         for (const [model, stats] of Object.entries(usage.model_usage)) {
             // Rough estimate of cost per model based on tokens (hardcoded approx for visualization)
             // Just visualize token percentage for now
-            const totalTokens = stats.input_tokens + stats.output_tokens;
-            const overallTokens = usage.total_input_tokens + usage.total_output_tokens || 1;
+            const thinkingTokens = stats.thinking_tokens || 0;
+            const totalTokens = stats.total_tokens || (stats.input_tokens + stats.output_tokens + thinkingTokens);
+            const overallTokens = usage.total_tokens || 1;
             const pct = Math.min(100, (totalTokens / overallTokens) * 100).toFixed(1);
+            const budgetText = stats.latest_thinking_budget === null || stats.latest_thinking_budget === undefined
+                ? 'Budget: n/a'
+                : `Budget: ${Number(stats.latest_thinking_budget).toLocaleString()}`;
 
             html += `
                 <div style="margin-bottom: 15px;">
@@ -113,7 +117,7 @@ async function renderTokenBreakdown() {
                         <div style="height: 100%; width: ${pct}%; background: var(--accent-color);"></div>
                     </div>
                     <div style="font-size: 0.8em; color: var(--text-secondary); margin-top: 2px;">
-                        In: ${stats.input_tokens.toLocaleString()} | Out: ${stats.output_tokens.toLocaleString()}
+                        In: ${stats.input_tokens.toLocaleString()} | Out: ${stats.output_tokens.toLocaleString()} | Thinking: ${thinkingTokens.toLocaleString()} | ${budgetText}
                     </div>
                 </div>
             `;

@@ -120,6 +120,11 @@ def get_token_usage():
         "usage": telemetry_tracker.get_usage()
     })
 
+@app.route('/api/telemetry', methods=['GET'])
+def get_telemetry():
+    """Returns token telemetry in the legacy shape expected by the modal."""
+    return jsonify(telemetry_tracker.get_usage())
+
 class User(UserMixin):
     def __init__(self, id):
         self.id = id

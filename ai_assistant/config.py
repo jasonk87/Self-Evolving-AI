@@ -11,6 +11,10 @@ LLM_PROVIDER = "gemini"
 GEMINI_FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_MODEL = GEMINI_FLASH_LITE_MODEL
 
+# Gemini 2.5 Flash-Lite does not think by default. Set a budget to enable it.
+# Use 0 to disable, -1 for dynamic thinking, or 512-24576 for a manual budget.
+GEMINI_THINKING_BUDGET = int(os.environ.get("GEMINI_THINKING_BUDGET", 2048))
+
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 

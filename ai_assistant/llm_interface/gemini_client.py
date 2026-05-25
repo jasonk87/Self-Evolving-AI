@@ -13,6 +13,7 @@ from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.config import (
     GOOGLE_API_KEY, 
     GEMINI_FLASH_LITE_MODEL,
+    GEMINI_THINKING_BUDGET,
     ENABLE_RATE_LIMITING,
     VERBOSE_LLM_LOGGING,
     DAILY_TOKEN_BUDGET,
@@ -25,6 +26,42 @@ from ai_assistant.llm_interface.exceptions import BudgetExceededError
 logger = logging.getLogger(__name__)
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+def _supports_thinking_budget(model_name: str) -> bool:
+    """Gemini 2.5 models use thinkingBudget; Gemini 3 models use thinkingLevel."""
+    return "gemini-2.5" in (model_name or "").lower()
+
+def _get_thinking_budget() -> int:
+    """Reads runtime config so UI changes take effect without restarting imports."""
+    import ai_assistant.config as runtime_config
+    return int(getattr(runtime_config, "GEMINI_THINKING_BUDGET", GEMINI_THINKING_BUDGET))
+
+def _apply_thinking_config(payload: Dict[str, Any], model_name: str) -> Optional[int]:
+    if not _supports_thinking_budget(model_name):
+        return None
+
+    thinking_budget = _get_thinking_budget()
+    payload.setdefault("generationConfig", {})["thinkingConfig"] = {
+        "thinkingBudget": thinking_budget
+    }
+    return thinking_budget
+
+def _split_response_parts(candidate: Dict[str, Any]) -> Tuple[str, str]:
+    content = candidate.get("content") or {}
+    parts = content.get("parts") or []
+    answer_parts = []
+    thought_parts = []
+
+    for part in parts:
+        text = part.get("text", "")
+        if not text:
+            continue
+        if part.get("thought"):
+            thought_parts.append(text)
+        else:
+            answer_parts.append(text)
+
+    return "".join(answer_parts), "".join(thought_parts)
 
 def _check_budget(task: str = "unknown"):
     """Throws BudgetExceededError if hard limits are crossed."""
@@ -150,6 +187,7 @@ def _invoke_raw_gemini_sync(
             "maxOutputTokens": max_tokens
         }
     }
+    thinking_budget = _apply_thinking_config(payload, model_name)
 
     if VERBOSE_LLM_LOGGING:
         print(color_text(f">>> [Gemini Sync] Requesting ({model_name})...", CLIColors.OKBLUE))
@@ -181,10 +219,18 @@ def _invoke_raw_gemini_sync(
             if "candidates" in data and len(data["candidates"]) > 0:
                 candidate = data["candidates"][0]
                 if "content" in candidate and "parts" in candidate["content"]:
-                     raw_text = candidate["content"]["parts"][0]["text"]
+                     raw_text, thought_summary = _split_response_parts(candidate)
+                     raw_text = raw_text or thought_summary
                      if VERBOSE_LLM_LOGGING:
                          print(color_text(f"<<< [Gemini Sync] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
-                     telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task=f"gemini_sync_{task_name}")
+                     telemetry_tracker.track_call(
+                         model_name,
+                         len(prompt),
+                         len(raw_text),
+                         task=f"gemini_sync_{task_name}",
+                         usage_metadata=data.get("usageMetadata"),
+                         thinking_budget=thinking_budget,
+                     )
                      return _extract_and_log_thinking(raw_text)
                 elif "finishReason" in candidate:
                     reason = candidate['finishReason']
@@ -244,6 +290,7 @@ async def _invoke_raw_gemini_async(
             "maxOutputTokens": max_tokens
         }
     }
+    thinking_budget = _apply_thinking_config(payload, model_name)
 
     if VERBOSE_LLM_LOGGING:
         print(color_text(f">>> [Gemini Async] Requesting ({model_name})...", CLIColors.OKBLUE))
@@ -273,10 +320,18 @@ async def _invoke_raw_gemini_async(
                         if "candidates" in data and len(data["candidates"]) > 0:
                             candidate = data["candidates"][0]
                             if "content" in candidate and "parts" in candidate["content"]:
-                                raw_text = candidate["content"]["parts"][0]["text"]
+                                raw_text, thought_summary = _split_response_parts(candidate)
+                                raw_text = raw_text or thought_summary
                                 if VERBOSE_LLM_LOGGING:
                                      print(color_text(f"<<< [Gemini Async] Response Received ({len(raw_text)} chars)", CLIColors.OKGREEN))
-                                telemetry_tracker.track_call(model_name, len(prompt), len(raw_text), task=f"gemini_async_{task_name}")
+                                telemetry_tracker.track_call(
+                                    model_name,
+                                    len(prompt),
+                                    len(raw_text),
+                                    task=f"gemini_async_{task_name}",
+                                    usage_metadata=data.get("usageMetadata"),
+                                    thinking_budget=thinking_budget,
+                                )
                                 return _extract_and_log_thinking(raw_text)
                             elif "finishReason" in candidate:
                                 reason = candidate['finishReason']

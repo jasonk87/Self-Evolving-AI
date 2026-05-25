@@ -614,8 +614,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     if (badge) {
-                        badge.textContent = `⚡ $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
-                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens} (Click for Breakdown)`;
+                        const thinking = usage.total_thinking_tokens || 0;
+                        badge.textContent = `Tokens $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
+                        badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens} | Thinking: ${thinking} (Click for Breakdown)`;
                     }
                 }
             })

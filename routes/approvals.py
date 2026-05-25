@@ -248,9 +248,9 @@ def _coerce_non_negative_float(value, fallback: float) -> float:
     return round(parsed, 4)
 
 
-def _estimate_cost_for_entry(input_tokens: int, output_tokens: int) -> float:
+def _estimate_cost_for_entry(input_tokens: int, output_tokens: int, thinking_tokens: int = 0) -> float:
     input_cost = (max(0, int(input_tokens)) / 1_000_000) * 0.075
-    output_cost = (max(0, int(output_tokens)) / 1_000_000) * 0.30
+    output_cost = (max(0, int(output_tokens) + int(thinking_tokens)) / 1_000_000) * 0.30
     return round(input_cost + output_cost, 6)
 
 
@@ -294,8 +294,9 @@ def _build_token_dashboard_payload(window_hours: int = 24, history_limit: int = 
         category = _classify_token_task_category(task_name)
         input_tokens = max(0, int(entry.get("input_tokens") or 0))
         output_tokens = max(0, int(entry.get("output_tokens") or 0))
+        thinking_tokens = max(0, int(entry.get("thinking_tokens") or 0))
         total_tokens = max(0, int(entry.get("total_tokens") or (input_tokens + output_tokens)))
-        entry_cost = _estimate_cost_for_entry(input_tokens, output_tokens)
+        entry_cost = _estimate_cost_for_entry(input_tokens, output_tokens, thinking_tokens)
 
         totals["calls"] += 1
         totals["input_tokens"] += input_tokens

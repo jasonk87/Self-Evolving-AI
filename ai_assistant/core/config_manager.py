@@ -47,6 +47,7 @@ class ConfigManager:
         data = {
             "DEFAULT_EXECUTION_MODE": config_module.DEFAULT_EXECUTION_MODE,
             "DEFAULT_MODEL": config_module.DEFAULT_MODEL,
+            "GEMINI_THINKING_BUDGET": getattr(config_module, 'GEMINI_THINKING_BUDGET', 2048),
             "TASK_MODELS": config_module.TASK_MODELS,
             "REASONING_STRATEGIES": config_module.REASONING_STRATEGIES,
             "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
@@ -114,6 +115,9 @@ class ConfigManager:
         if "enum" in schema and value not in schema["enum"]:
             raise ValueError(f"Value must be one of: {', '.join(schema['enum'])}")
 
+        if key == "GEMINI_THINKING_BUDGET" and value not in {-1, 0} and not (512 <= value <= 24576):
+            raise ValueError("Gemini 2.5 Flash-Lite thinking budget must be 0, -1, or between 512 and 24576")
+
         return value
 
     def update_setting(self, key: str, value):
@@ -138,6 +142,7 @@ class ConfigManager:
         return {
             "DEFAULT_EXECUTION_MODE": getattr(config_module, 'DEFAULT_EXECUTION_MODE', "AUTO"),
             "DEFAULT_MODEL": getattr(config_module, 'DEFAULT_MODEL', "gemini-2.5-flash-lite"),
+            "GEMINI_THINKING_BUDGET": getattr(config_module, 'GEMINI_THINKING_BUDGET', 2048),
             "TASK_MODELS": getattr(config_module, 'TASK_MODELS', {}),
             "REASONING_STRATEGIES": getattr(config_module, 'REASONING_STRATEGIES', {}),
             "CONVERSATION_HISTORY_TURNS": getattr(config_module, 'CONVERSATION_HISTORY_TURNS', 5),
@@ -168,6 +173,10 @@ class ConfigManager:
             "DEFAULT_MODEL": {
                 "type": "string",
                 "description": "Default model alias for general operations.",
+            },
+            "GEMINI_THINKING_BUDGET": {
+                "type": "integer",
+                "description": "Gemini 2.5 thinking budget. Use 0 to disable, -1 for dynamic, or 512-24576 for Flash-Lite manual thinking.",
             },
             "TASK_MODELS": {
                 "type": "object",
