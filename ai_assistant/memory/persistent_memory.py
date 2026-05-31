@@ -138,42 +138,34 @@ def load_learned_facts(filepath: str = LEARNED_FACTS_FILEPATH) -> List[Dict[str,
         if not data: # Empty list
             return []
 
-        # Check if it's the old format (list of strings) or new format (list of dicts)
-        if isinstance(data[0], str):
-            print(f"Info: Migrating old format learned_facts.json at '{filepath}' to new structured format.")
-            migrated_facts: List[Dict[str, Any]] = []
-            for old_fact_text in data:
-                if not isinstance(old_fact_text, str): # Should not happen if first element was str
-                    print(f"Warning: Non-string item found during migration: {old_fact_text}. Skipping.")
-                    continue
+        migrated_facts: List[Dict[str, Any]] = []
+        needs_migration = False
+
+        for item in data:
+            if isinstance(item, str):
+                needs_migration = True
                 migrated_facts.append({
                     "fact_id": f"fact_{uuid.uuid4().hex[:8]}",
-                    "text": old_fact_text,
+                    "text": item,
                     "category": "uncategorized",
                     "source": "migrated_from_old_format",
                     "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 })
-            # Attempt to save the migrated data back in the new format immediately
+            elif isinstance(item, dict):
+                # Basic validation can be done here if needed
+                migrated_facts.append(item)
+            else:
+                print(f"Warning: Non-string and non-dict item found: {item}. Skipping.")
+
+        if needs_migration:
+            print(f"Info: Migrating old string elements in '{filepath}' to new structured format.")
             if save_learned_facts(migrated_facts, filepath):
                  print(f"Info: Successfully migrated and saved facts in new format to '{filepath}'.")
             else: # pragma: no cover
                  print(f"Error: Failed to save migrated facts to '{filepath}'. Subsequent loads might re-trigger migration.")
-            return migrated_facts
 
-        # If it's already a list of dicts (new format), perform basic validation on first item
-        elif isinstance(data[0], dict):
-            # Simple check for expected keys in the first dictionary
-            # More thorough validation could be added if necessary
-            if "fact_id" in data[0] and "text" in data[0]:
-                return data
-            else: # pragma: no cover
-                print(f"Warning: Data in '{filepath}' is a list of dictionaries, but lacks expected keys (fact_id, text). Returning empty list.")
-                return []
-        else: # pragma: no cover
-             # Unknown format
-            print(f"Warning: Data in '{filepath}' is in an unrecognized list format. Returning empty list.")
-            return []
+        return migrated_facts
 
     except FileNotFoundError: # pragma: no cover
         return []

@@ -501,6 +501,11 @@ body {
     opacity: 1;
 }
 
+#view-mission-control {
+    overflow-y: auto;
+    padding-bottom: 20px;
+}
+
 #cortex-activity-summary {
     padding: 10px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);

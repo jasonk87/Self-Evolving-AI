@@ -16,10 +16,10 @@ export function initTokenModal() {
     const budgetDisplay = document.getElementById('token-daily-budget');
 
     // Fetch initial config for budget
-    fetch('/api/system/config')
+    fetch('/api/config')
         .then(r => r.json())
         .then(config => {
-            if (config.DAILY_TOKEN_BUDGET) {
+            if (config.DAILY_TOKEN_BUDGET !== undefined) {
                 budgetInput.value = config.DAILY_TOKEN_BUDGET;
                 budgetDisplay.textContent = `$${parseFloat(config.DAILY_TOKEN_BUDGET).toFixed(2)}`;
             }
@@ -33,12 +33,10 @@ export function initTokenModal() {
         saveBudgetBtn.textContent = 'Saving...';
 
         try {
-            const formData = new FormData();
-            formData.append('DAILY_TOKEN_BUDGET', val);
-
-            const res = await fetch('/api/system/config', {
+            const res = await fetch('/api/config', {
                 method: 'POST',
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 'DAILY_TOKEN_BUDGET': val })
             });
 
             if (res.ok) {

@@ -77,7 +77,7 @@ const missionControl = {
         if (!d_switch || !m_switch || !a_switch) return;
 
         try {
-            const res = await fetch('/api/system/config');
+            const res = await fetch('/api/config');
             const config = await res.json();
 
             d_switch.checked = config.ALLOW_DREAMER !== false;
@@ -87,10 +87,12 @@ const missionControl = {
         } catch(e) { console.error("Could not init switches", e); }
 
         const toggleConfig = async (key, val) => {
-            const fd = new FormData();
-            fd.append(key, val);
             try {
-                await fetch('/api/system/config', { method: 'POST', body: fd });
+                await fetch('/api/config', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [key]: val }) 
+                });
             } catch(e) { console.error("Toggle config error", e); }
         };
 
