@@ -42,7 +42,7 @@ class AgentManager:
             else:
                 agent_id = str(uuid.uuid4())
 
-        workspace_path = os.path.join(self.base_path, agent_id)
+        workspace_path = self.get_workspace_path(agent_id)
 
         try:
             os.makedirs(workspace_path, exist_ok=True)
@@ -66,7 +66,51 @@ class AgentManager:
         """
         Returns the absolute path to that agent's folder.
         """
-        return os.path.abspath(os.path.join(self.base_path, agent_id))
+        workspace_path = os.path.abspath(os.path.join(self.base_path, agent_id))
+        base_path = os.path.abspath(self.base_path)
+        if os.path.commonpath([base_path, workspace_path]) != base_path:
+            raise ValueError(f"Agent workspace '{agent_id}' resolves outside the configured base directory.")
+        return workspace_path
+
+    def cleanup_stale_session_agents(self, max_age_seconds: int = 3600) -> list[str]:
+        """
+        Removes expired session-scoped workspaces left behind by interrupted runs.
+        User-scoped workspaces are intentionally preserved.
+        """
+        removed_agent_ids = []
+        now = time.time()
+
+        if not os.path.isdir(self.base_path):
+            return removed_agent_ids
+
+        for agent_id in os.listdir(self.base_path):
+            try:
+                workspace_path = self.get_workspace_path(agent_id)
+                if not os.path.isdir(workspace_path):
+                    continue
+
+                metadata_path = os.path.join(workspace_path, "metadata.json")
+                if not os.path.isfile(metadata_path):
+                    continue
+
+                with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+                    metadata = json.load(metadata_file)
+
+                if metadata.get("scope_type") != "session":
+                    continue
+
+                created_at = float(metadata.get("created_at", os.path.getmtime(workspace_path)))
+                if now - created_at <= max_age_seconds:
+                    continue
+
+                self.terminate_agent(agent_id)
+                removed_agent_ids.append(agent_id)
+            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                logging.warning(f"Failed to evaluate stale agent workspace {agent_id}: {exc}")
+
+        if removed_agent_ids:
+            logging.info(f"Removed {len(removed_agent_ids)} stale session agent workspace(s).")
+        return removed_agent_ids
 
     def terminate_agent(self, agent_id: str, force: bool = False):
         """

@@ -39,7 +39,7 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
         self.mock_task_manager.update_task_status.assert_not_called()
         self.mock_notification_manager.add_notification.assert_not_called()
 
-    async def test_resume_interrupted_tasks_marks_non_terminal_as_failed_interrupted(self):
+    async def test_resume_interrupted_tasks_marks_non_terminal_tasks_interrupted(self):
         task1_planning = ActiveTask(task_id="t1", task_type=ActiveTaskType.AGENT_TOOL_CREATION, description="Tool X", status=ActiveTaskStatus.PLANNING)
         task2_generating = ActiveTask(task_id="t2", task_type=ActiveTaskType.USER_PROJECT_FILE_GENERATION, description="File Y", status=ActiveTaskStatus.GENERATING_CODE)
         task3_review_approved = ActiveTask(task_id="t3", task_type=ActiveTaskType.AGENT_TOOL_MODIFICATION, description="Mod Z", status=ActiveTaskStatus.CRITIC_REVIEW_APPROVED)
@@ -50,15 +50,15 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
 
         # Check update_task_status calls
         expected_update_calls = [
-            call(task1_planning.task_id, ActiveTaskStatus.PLANNING,
-                 reason=f"Resuming task from state 'PLANNING'.",
-                 step_desc="Task resumed on agent startup."),
-            call(task2_generating.task_id, ActiveTaskStatus.PLANNING,
-                 reason=f"Resuming task. Reverted from volatile state 'GENERATING_CODE' to PLANNING for safe retry.",
-                 step_desc="Task resumed on agent startup."),
-            call(task3_review_approved.task_id, ActiveTaskStatus.PLANNING,
-                 reason=f"Resuming task. Reverted from volatile state 'CRITIC_REVIEW_APPROVED' to PLANNING for safe retry.",
-                 step_desc="Task resumed on agent startup.")
+            call(task1_planning.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
+                 reason=f"Task was interrupted by restart while in state 'PLANNING'. Retry explicitly if the work is still needed.",
+                 step_desc="Task marked interrupted on agent startup."),
+            call(task2_generating.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
+                 reason=f"Task was interrupted by restart while in state 'GENERATING_CODE'. Retry explicitly if the work is still needed.",
+                 step_desc="Task marked interrupted on agent startup."),
+            call(task3_review_approved.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
+                 reason=f"Task was interrupted by restart while in state 'CRITIC_REVIEW_APPROVED'. Retry explicitly if the work is still needed.",
+                 step_desc="Task marked interrupted on agent startup.")
         ]
         self.mock_task_manager.update_task_status.assert_has_calls(expected_update_calls, any_order=True)
         self.assertEqual(self.mock_task_manager.update_task_status.call_count, 3)
@@ -66,13 +66,13 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
         # Check add_notification calls
         expected_notification_calls = [
             call(NotificationType.GENERAL_INFO,
-                 f"Task '{task1_planning.description[:50]}...' (ID: {task1_planning.task_id}) was recovered from state '{ActiveTaskStatus.PLANNING.name}'. Status: PLANNING.",
+                 f"Task '{task1_planning.description[:50]}...' (ID: {task1_planning.task_id}) was interrupted in state '{ActiveTaskStatus.PLANNING.name}'. Status: FAILED_INTERRUPTED.",
                  related_item_id=task1_planning.task_id, related_item_type="task"),
             call(NotificationType.GENERAL_INFO,
-                 f"Task '{task2_generating.description[:50]}...' (ID: {task2_generating.task_id}) was recovered from state '{ActiveTaskStatus.GENERATING_CODE.name}'. Status: PLANNING.",
+                 f"Task '{task2_generating.description[:50]}...' (ID: {task2_generating.task_id}) was interrupted in state '{ActiveTaskStatus.GENERATING_CODE.name}'. Status: FAILED_INTERRUPTED.",
                  related_item_id=task2_generating.task_id, related_item_type="task"),
             call(NotificationType.GENERAL_INFO,
-                 f"Task '{task3_review_approved.description[:50]}...' (ID: {task3_review_approved.task_id}) was recovered from state '{ActiveTaskStatus.CRITIC_REVIEW_APPROVED.name}'. Status: PLANNING.",
+                 f"Task '{task3_review_approved.description[:50]}...' (ID: {task3_review_approved.task_id}) was interrupted in state '{ActiveTaskStatus.CRITIC_REVIEW_APPROVED.name}'. Status: FAILED_INTERRUPTED.",
                  related_item_id=task3_review_approved.task_id, related_item_type="task")
         ]
         self.mock_notification_manager.add_notification.assert_has_calls(expected_notification_calls, any_order=True)
@@ -90,15 +90,15 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
 
         # update_task_status should only be called for task_planning
         self.mock_task_manager.update_task_status.assert_called_once_with(
-            task_planning.task_id, ActiveTaskStatus.PLANNING,
-            reason=f"Resuming task from state '{ActiveTaskStatus.PLANNING.name}'.",
-            step_desc="Task resumed on agent startup."
+            task_planning.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
+            reason=f"Task was interrupted by restart while in state '{ActiveTaskStatus.PLANNING.name}'. Retry explicitly if the work is still needed.",
+            step_desc="Task marked interrupted on agent startup."
         )
 
         # add_notification should only be called for task_planning
         self.mock_notification_manager.add_notification.assert_called_once_with(
             NotificationType.GENERAL_INFO,
-            f"Task '{task_planning.description[:50]}...' (ID: {task_planning.task_id}) was recovered from state '{ActiveTaskStatus.PLANNING.name}'. Status: PLANNING.",
+            f"Task '{task_planning.description[:50]}...' (ID: {task_planning.task_id}) was interrupted in state '{ActiveTaskStatus.PLANNING.name}'. Status: FAILED_INTERRUPTED.",
             related_item_id=task_planning.task_id, related_item_type="task"
         )
 
@@ -110,9 +110,9 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
 
         # update_task_status should still be called
         self.mock_task_manager.update_task_status.assert_called_once_with(
-            task_initializing.task_id, ActiveTaskStatus.PLANNING,
-            reason=f"Resuming task. Reverted from volatile state 'INITIALIZING' to PLANNING for safe retry.",
-            step_desc="Task resumed on agent startup."
+            task_initializing.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
+            reason=f"Task was interrupted by restart while in state 'INITIALIZING'. Retry explicitly if the work is still needed.",
+            step_desc="Task marked interrupted on agent startup."
         )
         # add_notification should NOT be called
         self.mock_notification_manager.add_notification.assert_not_called()

@@ -92,7 +92,17 @@ class TestSystemArchitect(unittest.IsolatedAsyncioTestCase):
         result = await self.architect.run_cycle()
 
         self.assertIn("identified 1 new goals", result)
-        self.mock_create_goal.assert_called_with(title="Fix 1", description="Fix it", priority="HIGH")
+        self.mock_create_goal.assert_called_with(
+            title="Fix 1",
+            description="Fix it",
+            priority="HIGH",
+            status="PENDING_APPROVAL",
+            metadata={
+                "type": "architect_source_change",
+                "requires_user_approval": True,
+                "created_at": unittest.mock.ANY,
+            },
+        )
         self.mock_save_goals.assert_called_once()
 
 if __name__ == '__main__':

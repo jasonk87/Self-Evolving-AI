@@ -282,8 +282,8 @@ if __name__ == '__main__':
 # --- Deep Research Configuration ---
 DEEP_RESEARCH_MAX_URLS = 3
 DEEP_RESEARCH_TIMEOUT = 60
-GHOST_MODE = True  # If True, the browser will be visible (headless=False)
-AUTO_WEB_PIP = True
+GHOST_MODE = False  # Optional browser visualization. Disabled for fast API-first research.
+AUTO_WEB_PIP = False
 REMINDER_CHECK_INTERVAL_SECONDS = 10
 DREAM_INTERVAL_SECONDS = 86400
 ENABLE_DREAM_MODE = False

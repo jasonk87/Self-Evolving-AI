@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'learned_fact_correction') return 'Fact Correction';
         if (type === 'suggestion') return 'Suggestion';
         if (type === 'architect_proposal') return 'Architect Proposal';
+        if (type === 'architect_source_change') return 'Architect Source Change';
         return type.replace(/_/g, ' ').toUpperCase();
     }
 

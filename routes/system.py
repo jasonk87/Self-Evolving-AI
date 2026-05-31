@@ -235,32 +235,12 @@ def system_shutdown():
         time.sleep(1)
         
         # Signal shutdown to stop new tasks
-        shutdown_manager.request_shutdown(timeout_seconds=240)
+        shutdown_manager.request_shutdown(timeout_seconds=5)
         
-        # Graceful wait loop (Max 4 minutes)
-        timeout = 240
-        start_time = time.time()
-        logger.info(f"Shutdown: Waiting up to {timeout}s for active tasks to complete...")
-
-        while time.time() - start_time < timeout:
-            try:
-                # Check for active tasks
-                active_tasks = app_globals.task_manager.list_active_tasks()
-                if not active_tasks:
-                    logger.info("Shutdown: No active tasks remaining. Proceeding to exit.")
-                    break
-                
-                if (int(time.time()) % 5) == 0: # Log every 5 seconds
-                    logger.info(f"Shutdown: Waiting for {len(active_tasks)} task(s) to finish...")
-                
-                time.sleep(1)
-            except Exception as e:
-                logger.error(f"Shutdown: Error checking tasks: {e}")
-                # If we cant check tasks, we should probably just exit to avoid hanging forever
-                break
-        
-        if time.time() - start_time >= timeout:
-            logger.warning("Shutdown: Timed out waiting for active tasks. Forcing exit.")
+        # We rely on TaskManager's synchronous WAL (Write-Ahead Log) to persist state safely.
+        # Wait just a moment for the response to clear and background threads to catch the signal.
+        logger.info("Shutdown: Tasks are persisted to WAL. Exiting immediately...")
+        time.sleep(2)
 
         # Force exit
         os._exit(0)

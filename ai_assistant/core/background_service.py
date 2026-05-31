@@ -102,6 +102,8 @@ _orchestrator = None
 # Autonomous Goal Processing State
 _last_autonomous_goal_check_time: float = 0.0
 _autonomous_goal_check_interval_seconds = 30 # Check every 30 seconds
+MAX_CONCURRENT_AUTONOMOUS_GOALS = 2
+AUTONOMOUS_GOAL_CLAIM_TTL_SECONDS = 300
 _last_agenda_briefing_date: Optional[str] = None # For Daily Briefing
 
 # Reminder System State
@@ -139,7 +141,14 @@ def set_orchestrator(orchestrator_instance):
     """Sets the orchestrator instance for autonomous goal processing."""
     global _orchestrator
     _orchestrator = orchestrator_instance
+
     logger.info("BackgroundService: Orchestrator instance set.")
+
+def _requires_manual_source_approval(request_type: str) -> bool:
+    """Returns whether an approval-manager request must wait for a human action."""
+    return request_type in {
+        "architect_proposal",
+    }
 
 # Broadcaster for Chat Messages
 _socket_broadcaster = None
@@ -152,45 +161,26 @@ def set_socket_broadcaster(broadcaster_func):
 
 async def broadcast_agent_message(session_id: str, message: str, title: str = "Agent Report"):
     """Sends a message to a specific chat session via the broadcaster."""
-    if _socket_broadcaster:
-        try:
-            # We assume broadcaster_func accepts (session_id, message, title)
-            # or we adapt it to match what web_app expects (likely an event emission)
-            # Actually, web_app.socketio.emit is strictly for sockets. 
-            # We need to UPDATE THE CHAT HISTORY first, then emit.
-            
-            # Since we are in background, we shouldn't import chat_manager directly if we can avoid it?
-            # Actually we can import it, it handles files.
-            from ai_assistant.core.chat_manager import ChatSessionManager
-            from ai_assistant.config import get_projects_dir # Just to get a path relative to root
-            
-            # Re-instantiate or reuse? ChatManager is lightweight.
-            # We need the path.
-            # Assuming standard path:
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
-            cm = ChatSessionManager(chat_storage)
-            
-            # 1. Save to History
-            model_name = "Background Agent" # Or specific agent name
-            # Format message with title
-            formatted_msg = f"**{title}**\n\n{message}"
-            updated_session = cm.add_message(session_id, "assistant", formatted_msg)
-            
+    try:
+        from ai_assistant.core.chat_manager import ChatSessionManager
+
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
+        cm = ChatSessionManager(chat_storage)
+        formatted_msg = f"**{title}**\n\n{message}"
+        cm.add_message(session_id, "assistant", formatted_msg)
+
+        if _socket_broadcaster:
             # 2. Emit to UI
-            # The broadcaster should handle the emission.
-            # We pass the full updated session or just the new message?
-            # Let's pass the payload the UI expects for 'message_received' or 'agent_event'
             await _socket_broadcaster("agent_message", {
                 "session_id": session_id,
                 "role": "assistant",
                 "content": formatted_msg,
                 "timestamp": time.time()
             })
-            logger.info(f"BackgroundService: Broadcasted agent message to {session_id}")
-            
-        except Exception as e:
-            logger.error(f"BackgroundService: Failed to broadcast agent message: {e}")
+        logger.info(f"BackgroundService: Delivered agent message to {session_id}")
+    except Exception as e:
+        logger.error(f"BackgroundService: Failed to deliver agent message: {e}")
 
 def get_service_status():
     """Returns the current status of the background service."""
@@ -278,16 +268,24 @@ async def run_autonomous_goal_processor():
         # Check for pending goals using direct module access
         # Since goal_management is synchronous, we wrap it if needed, but simple dict lookups are fast.
         pending_goals = goal_management.list_goals(status="pending")
+        running_count = len(goal_management.list_goals(status="in_progress"))
+        available_slots = max(0, MAX_CONCURRENT_AUTONOMOUS_GOALS - running_count)
 
-        if pending_goals:
-            logger.info(f"BackgroundService: Found {len(pending_goals)} pending goals.")
+        if pending_goals and available_slots:
+            logger.info(f"BackgroundService: Found {len(pending_goals)} pending goals. Starting up to {available_slots}.")
 
-            for goal in pending_goals:
+            # Explicit agent launches should not wait behind maintenance proposals.
+            pending_goals.sort(key=lambda goal: goal.get("metadata", {}).get("type") != "background_agent")
+            for goal in pending_goals[:available_slots]:
                 goal_id = goal.get("id")
                 goal_desc = goal.get("description")
 
                 if not goal_id or not goal_desc:
                     logger.warning(f"BackgroundService: Skipping invalid goal structure: {goal}")
+                    continue
+
+                if not _claim_autonomous_goal(goal_id):
+                    logger.info(f"BackgroundService: Goal {goal_id} is already claimed by another worker.")
                     continue
 
                 # Mark as in_progress immediately to prevent double processing
@@ -339,9 +337,9 @@ async def run_autonomous_goal_processor():
                             if not success and not result_text:
                                 result_text = "Task encountered errors:\n" + "\n".join(state.errors)
 
-                            # Update Goal Status
+                            # Update Goal Status and preserve the truthful terminal result.
                             new_status = "completed" if success else "failed"
-                            goal_management.update_goal_status(gid, status=new_status)
+                            goal_management.record_goal_result(gid, status=new_status, result_summary=result_text)
                             
                             # Report back to source session if exists
                             if source_sess:
@@ -362,15 +360,59 @@ async def run_autonomous_goal_processor():
                                 
                         except Exception as e:
                             logger.error(f"Error in autonomous wrapper for goal {gid}: {e}")
-                            goal_management.update_goal_status(gid, status="failed")
+                            result_text = f"Background agent failed unexpectedly: {e}"
+                            goal_management.record_goal_result(gid, status="failed", result_summary=result_text)
+                            if source_sess:
+                                await broadcast_agent_message(
+                                    source_sess,
+                                    result_text,
+                                    title=f"Agent Report: {desc[:30]}..."
+                                )
+                        finally:
+                            _release_autonomous_goal_claim(gid)
 
                     asyncio.create_task(_run_and_report())
 
                 else:
+                    _release_autonomous_goal_claim(goal_id)
                     logger.error(f"BackgroundService: Failed to update status for goal {goal_id}. Execution aborted to avoid loops.")
 
     except Exception as e:
         logger.error(f"BackgroundService: Error in autonomous goal processor: {e}", exc_info=True)
+
+def should_run_autonomous_goal_processor(current_loop_time: float, next_check_time: float) -> bool:
+    """Runs queued user work promptly even when background maintenance is sleeping."""
+    return bool(goal_management.list_goals(status="pending")) or current_loop_time >= next_check_time
+
+def _goal_claim_path(goal_id: str) -> str:
+    claim_dir = os.path.join(get_data_dir(), "autonomous_goal_claims")
+    os.makedirs(claim_dir, exist_ok=True)
+    return os.path.join(claim_dir, f"{goal_id}.lock")
+
+def _claim_autonomous_goal(goal_id: str) -> bool:
+    """Claims a queued goal across app processes using an atomic lock-file create."""
+    claim_path = _goal_claim_path(goal_id)
+    try:
+        fd = os.open(claim_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            if time.time() - os.path.getmtime(claim_path) <= AUTONOMOUS_GOAL_CLAIM_TTL_SECONDS:
+                return False
+            os.remove(claim_path)
+        except FileNotFoundError:
+            pass
+        return _claim_autonomous_goal(goal_id)
+
+    with os.fdopen(fd, "w", encoding="utf-8") as claim_file:
+        claim_file.write(str(os.getpid()))
+    return True
+
+def _release_autonomous_goal_claim(goal_id: str) -> None:
+    """Releases an autonomous goal claim after terminal reporting."""
+    try:
+        os.remove(_goal_claim_path(goal_id))
+    except FileNotFoundError:
+        pass
 
 
 def sanitize_project_name(name: str) -> str:
@@ -570,6 +612,13 @@ async def _background_loop_async():
             int(getattr(runtime_config, "DREAM_INTERVAL_SECONDS", globals().get('_dream_interval_seconds', 86400)))
         )
         
+        # --- Autonomous Goal Processing Task ---
+        # User-assigned work is not maintenance and must run before idle throttling.
+        if should_run_autonomous_goal_processor(current_loop_time, next_autonomous_goal_check_time):
+            await run_autonomous_goal_processor()
+            _last_autonomous_goal_check_time = time.time()
+            next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
+
         # --- Deep Sleep Check ---
         if is_deep_sleep_active():
             if is_debug_mode():
@@ -690,20 +739,48 @@ async def _background_loop_async():
                         _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
 
                         if suggestions:
-                            logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions. Queueing for approval.")
+                            logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions. Routing to Weebo.")
+                            
+                            from ai_assistant.core.suggestion_manager import add_new_suggestion, _update_suggestion_status
+                            
+                            prompt_text = "SYSTEM: A background self-reflection cycle generated the following insights/suggestions for you to evaluate and handle autonomously:\n\n"
+                            
                             if learning_agent:
-                                for suggestion in suggestions:
-                                    # Create specific callback for this suggestion
-                                    # We use default argument binding to capture the loop variable 'suggestion'
-                                    async def _ingest_callback(s=suggestion):
-                                        learning_agent.ingest_reflection_suggestions([s])
+                                for i, suggestion in enumerate(suggestions):
+                                    suggestion_desc = suggestion.get("suggestion_text", "No description")
+                                    action_type = suggestion.get("action_type", "UNKNOWN")
                                     
-                                    approval_manager.add_request(
-                                        req_type="suggestion",
-                                        data=suggestion,
-                                        description=suggestion.get("suggestion_text", "No description"),
-                                        execute_func=_ingest_callback
+                                    sugg_record = add_new_suggestion(
+                                        type=action_type,
+                                        description=suggestion_desc,
+                                        action_details=suggestion.get("action_details", {})
                                     )
+                                    
+                                    if sugg_record:
+                                        _update_suggestion_status(sugg_record['suggestion_id'], "ROUTED_TO_WEEBO", "Routed to autonomous loop.")
+                                    
+                                    prompt_text += f"{i+1}. [{action_type}] {suggestion_desc}\n"
+                                    
+                            prompt_text += "\nPlease use your tools to apply these changes or modifications if you determine they are beneficial. You do not need to ask for user permission."
+
+                            if _orchestrator:
+                                async def _weebo_process(prompt=prompt_text):
+                                    try:
+                                        from ai_assistant.core.models.state import ExecutionState
+                                        import uuid
+                                        session_id = f"autonomous_insight_{uuid.uuid4().hex[:8]}"
+                                        state = ExecutionState(original_user_prompt=prompt, context_limits={"max_tokens": 100000})
+                                        
+                                        logger.info(f"BackgroundService: Triggering Orchestrator to process suggestions (Session: {session_id}).")
+                                        await _orchestrator.process_prompt(
+                                            state=state,
+                                            session_id=session_id,
+                                            context_source="SYSTEM"
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"BackgroundService: Error during autonomous insight processing: {e}", exc_info=True)
+                                
+                                asyncio.create_task(_weebo_process())
                         elif suggestions == []: # pragma: no cover
                             logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
                         else: 
@@ -752,12 +829,6 @@ async def _background_loop_async():
                 _last_fact_curation_time = time.time()
                 next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
         
-        # --- Autonomous Goal Processing Task ---
-        if current_loop_time >= next_autonomous_goal_check_time:
-            await run_autonomous_goal_processor()
-            _last_autonomous_goal_check_time = time.time()
-            next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
-
         # --- Active Learning: Conversation Scan ---
         if learning_agent and current_loop_time >= _last_conversation_scan_time + _conversation_scan_interval_seconds:
             try:
@@ -1238,6 +1309,10 @@ async def _background_loop_async():
                          req_id = req['id']
                          req_time = req['timestamp']
                          age = current_loop_time - req_time
+
+                         if _requires_manual_source_approval(req.get("type")):
+                             logger.info(f"BackgroundService: Request {req_id} requires manual source-change approval.")
+                             continue
                          
                          if age >= AUTO_APPROVE_DELAY_SECONDS:
                              logger.info(f"BackgroundService: Evaluating request {req_id} for auto-approval (Age: {age:.1f}s).")

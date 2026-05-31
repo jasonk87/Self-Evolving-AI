@@ -1,4 +1,5 @@
 # Code for goal management.
+import time
 import uuid
 from typing import List, Dict, Optional, Union
 from ai_assistant.memory.persistent_memory import save_goals_to_file, load_goals_from_file
@@ -15,7 +16,7 @@ DEFAULT_GOALS_FILE = os.path.join(DEFAULT_GOALS_FILE_DIR, "goals.json")
 #     "id": "unique_id_string",
 #     "title": "Achieve world peace",
 #     "description": "Detailed description...",
-#     "status": "PENDING_APPROVAL",  # "PENDING_APPROVAL", "pending", "in_progress", "completed", "failed"
+#     "status": "pending",  # "pending", "in_progress", "completed", "failed"
 #     "priority": "HIGH"  # "HIGH", "MEDIUM", "LOW" or int
 # }
 
@@ -63,20 +64,33 @@ def load_persisted_goals() -> bool:
     return True # Consider it successful in terms of attempting a load.
 
 def _initialize_goals_db():
-    """Loads goals from the default file when the module is first initialized, and reverts in_progress goals to pending."""
+    """Loads goals and resumes interrupted work without bypassing source-change review."""
     global _goals_db
     print(f"GoalManagement: Initializing goals database from '{DEFAULT_GOALS_FILE}'...")
     _goals_db = load_goals_from_file(DEFAULT_GOALS_FILE)
     if _goals_db:
         print(f"GoalManagement: Successfully loaded {len(_goals_db)} goals on startup.")
         reverted_count = 0
+        tagged_legacy_source_changes = 0
         for goal_id, goal in _goals_db.items():
-            if goal.get("status") == "in_progress":
+            is_legacy_background_launch = (
+                goal.get("status") == "PENDING_APPROVAL"
+                and goal.get("metadata", {}).get("type") == "background_agent"
+            )
+            if goal.get("status") == "in_progress" or is_legacy_background_launch:
                 goal["status"] = "pending"
                 reverted_count += 1
+            elif goal.get("status") == "PENDING_APPROVAL" and not goal.get("metadata"):
+                goal["metadata"] = {
+                    "type": "architect_source_change",
+                    "requires_user_approval": True,
+                    "legacy_migrated": True,
+                }
+                tagged_legacy_source_changes += 1
         
-        if reverted_count > 0:
-            print(f"GoalManagement: Reverted {reverted_count} 'in_progress' goals back to 'pending' for resumption.")
+        if reverted_count > 0 or tagged_legacy_source_changes > 0:
+            print(f"GoalManagement: Moved {reverted_count} interrupted or legacy background goal(s) into the runnable queue.")
+            print(f"GoalManagement: Tagged {tagged_legacy_source_changes} legacy source-change proposal(s) for explicit approval.")
             save_current_goals() # Save the reverted states back to disk
     else:
         print("GoalManagement: No goals loaded on startup or file not found/empty. Starting with an empty database.")
@@ -137,10 +151,14 @@ def create_goal(title: str, description: str = "", priority: Union[int, str] = 3
         "id": goal_id,
         "title": real_title,
         "description": real_description,
-        "status": "PENDING_APPROVAL",
+        "status": kwargs.get("status", "pending"),
         "priority": real_priority,
     }
+    metadata = kwargs.get("metadata")
+    if isinstance(metadata, dict):
+        goal["metadata"] = metadata
     _goals_db[goal_id] = goal
+    save_current_goals()
     return goal
 
 def get_goal(goal_id: str) -> Optional[Dict]:
@@ -233,6 +251,24 @@ def update_goal_status(goal_id: str, status: str) -> bool:
     if updated_goal:
         return save_current_goals()
     return False
+
+def record_goal_result(goal_id: str, status: str, result_summary: str) -> bool:
+    """Persists a terminal goal status and the result that produced it."""
+    goal = update_goal(goal_id, status=status)
+    if not goal:
+        return False
+    metadata = goal.setdefault("metadata", {})
+    metadata["completed_at"] = time.time()
+    metadata["result_summary"] = str(result_summary or "")
+    metadata.setdefault("execution_mode", "one_shot")
+    return save_current_goals()
+
+def approve_goal(goal_id: str) -> bool:
+    """Moves an approval-gated goal into the runnable queue."""
+    goal = get_goal(goal_id)
+    if not goal or goal.get("status") != "PENDING_APPROVAL":
+        return False
+    return update_goal_status(goal_id, status="pending")
 
 # --- Initialization ---
 _initialize_goals_db() # Load goals when module is imported

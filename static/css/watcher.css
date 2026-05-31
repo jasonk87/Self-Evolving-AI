@@ -21,6 +21,11 @@
 .btn-pill-neon:hover {
     background: rgba(0, 255, 249, 0.1);
     box-shadow: 0 0 15px rgba(0, 255, 249, 0.4);
+    transform: translateY(-2px);
+}
+
+.btn-pill-neon:active {
+    transform: translateY(0) scale(0.95);
 }
 
 .btn-pill-neon.active {

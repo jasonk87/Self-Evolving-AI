@@ -28,6 +28,8 @@ class TestSelfModificationWithReview(unittest.TestCase):
         self.full_original_file_content = f"{self.original_code}\n\ndef another_function():\n    pass"
 
     @patch('ai_assistant.core.self_modification._run_pylint_check') # Mock pylint to avoid subprocess
+    @patch('ai_assistant.core.self_modification.SandboxManager.execute_test')
+    @patch('ai_assistant.core.self_modification.invoke_ollama_model_async', new_callable=AsyncMock)
     @patch('ai_assistant.core.self_modification.RefinementAgent')
     @patch('ai_assistant.core.self_modification._resolve_file_path_robust')
     @patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review', new_callable=AsyncMock)
@@ -39,6 +41,7 @@ class TestSelfModificationWithReview(unittest.TestCase):
     def test_edit_function_approved(self, mock_os_exists, mock_shutil_copy,
                                     mock_file_open_builtin, mock_get_func_code, mock_generate_diff,
                                     mock_request_review, mock_resolve_file_path, mock_refinement_agent,
+                                    mock_generate_sandbox_test, mock_execute_sandbox,
                                     mock_run_pylint):
 
         # Setup Mocks
@@ -51,6 +54,8 @@ class TestSelfModificationWithReview(unittest.TestCase):
         mock_run_pylint.return_value = None
 
         mock_request_review.return_value = (True, [{"status": "approved", "comments": "LGTM!"}])
+        mock_generate_sandbox_test.return_value = "def test_generated():\n    assert True"
+        mock_execute_sandbox.return_value = (True, "passed", "")
         mock_file_open_builtin.return_value.read.return_value = self.full_original_file_content
 
         # Config RefinementAgent (even if not used on approved path, good practice)

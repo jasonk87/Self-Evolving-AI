@@ -2,7 +2,6 @@ from datetime import date, datetime
 import re
 from typing import Any
 from typing import Union
-from duckduckgo_search import DDGS
 import json
 from typing import Optional, Union, List, Dict, Any
 
@@ -108,7 +107,7 @@ async def search_duckduckgo(*args, **kwargs) -> str:
         str: A JSON string representing a list of search results.
     """
     import json
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     from ai_assistant.custom_tools.my_extra_tools import search_google_custom_search
     query: Optional[str] = None
     if 'query' in kwargs:
@@ -175,8 +174,14 @@ async def search_duckduckgo(*args, **kwargs) -> str:
                     results.append({'title': r['title'], 'href': r['href'], 'body': r['body']})
     except Exception as e:
         print(f"Error during DuckDuckGo search for query '{search_query}': {e}")
-        
+
     if not results:
+        try:
+            results = await asyncio.to_thread(_search_duckduckgo_html, search_query, max_results)
+        except Exception as e:
+            print(f"Error during direct DuckDuckGo HTML fallback for query '{search_query}': {e}")
+        
+    if not results and kwargs.get("google_fallback", True):
         print('DuckDuckGo returned no results. Attempting Google Custom Search fallback...')
         try:
             google_res_data = await search_google_custom_search(search_query, num_results=max_results)
@@ -196,29 +201,62 @@ async def search_duckduckgo(*args, **kwargs) -> str:
         
     return {"results": json.dumps(results), "images": images, "query_used": search_query, "queried_at": datetime.now().isoformat()}
 
+def _search_duckduckgo_html(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Uses DuckDuckGo's HTML endpoint when metasearch backends return no parsed items."""
+    import requests
+    from bs4 import BeautifulSoup
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    response = requests.get(
+        "https://html.duckduckgo.com/html/",
+        params={"q": query},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    results = []
+    for item in soup.select(".result"):
+        link = item.select_one(".result__a")
+        if not link:
+            continue
+        href = link.get("href", "")
+        parsed = urlparse(href)
+        if parsed.netloc.endswith("duckduckgo.com"):
+            href = unquote(parse_qs(parsed.query).get("uddg", [href])[0])
+        snippet = item.select_one(".result__snippet")
+        results.append({
+            "title": link.get_text(" ", strip=True),
+            "href": href,
+            "body": snippet.get_text(" ", strip=True) if snippet else "",
+        })
+        if len(results) >= max_results:
+            break
+    return results
+
 async def search_web(*args, **kwargs) -> str:
     """
-    Searches the web using the assistant's resilient search path.
+    Searches the web using Google Custom Search first.
 
-    Alias for search_duckduckgo; use this for current news, facts, and general web lookup.
+    Falls back to DuckDuckGo when Google is unavailable or returns no results.
     """
-    return await search_duckduckgo(*args, **kwargs)
+    return await search_google_first(*args, **kwargs)
 
 async def web_search(*args, **kwargs) -> str:
     """
-    Searches the web using the assistant's resilient search path.
+    Searches the web using Google Custom Search first.
 
-    Alias for search_duckduckgo; use this for current news, facts, and general web lookup.
+    Falls back to DuckDuckGo when Google is unavailable or returns no results.
     """
-    return await search_duckduckgo(*args, **kwargs)
+    return await search_google_first(*args, **kwargs)
 
 async def google_search(*args, **kwargs) -> str:
     """
-    Searches the web for current information.
+    Searches the web using Google Custom Search first.
 
-    Compatibility alias for search_duckduckgo with Google Custom Search fallback.
+    Falls back to DuckDuckGo when Google is unavailable or returns no results.
     """
-    return await search_duckduckgo(*args, **kwargs)
+    return await search_google_first(*args, **kwargs)
 
 async def news_search(query: str='top news headlines today', num_results: Union[int, str]=5) -> str:
     """
@@ -227,7 +265,48 @@ async def news_search(query: str='top news headlines today', num_results: Union[
     Use this for requests like "what is on the news today", "latest headlines",
     or "breaking news right now".
     """
-    return await search_duckduckgo(query=query, num_results=num_results)
+    return await search_google_first(query=query, num_results=num_results)
+
+async def search_google_first(*args, **kwargs) -> str:
+    """
+    Uses Google Custom Search as the fast primary lookup and DuckDuckGo as fallback.
+    """
+    query: Optional[str] = None
+    if 'query' in kwargs:
+        query = str(kwargs['query'])
+    elif args:
+        query = str(args[0])
+    if not query:
+        print('Error: search_google_first requires a query argument.')
+        return '[]'
+
+    search_query = _enrich_current_news_query(query)
+    try:
+        max_results = int(kwargs.get("num_results", 5))
+    except (TypeError, ValueError):
+        max_results = 5
+    max_results = max(1, min(max_results, 10))
+
+    try:
+        google_res_data = await search_google_custom_search(search_query, num_results=max_results)
+        if isinstance(google_res_data, dict):
+            google_results = google_res_data.get("results", "[]")
+            if isinstance(google_results, str) and google_results.strip() not in {"", "[]"}:
+                return {
+                    "results": google_results,
+                    "images": google_res_data.get("images", []),
+                    "query_used": search_query,
+                    "queried_at": datetime.now().isoformat(),
+                    "provider": "google",
+                }
+    except Exception as e:
+        print(f"Google primary search failed: {e}")
+
+    print("Google returned no results. Attempting DuckDuckGo fallback...")
+    result = await search_duckduckgo(query=search_query, num_results=max_results, google_fallback=False)
+    if isinstance(result, dict):
+        result.setdefault("provider", "duckduckgo")
+    return result
 
 async def search_google_custom_search(query: str, num_results: Union[int, str]=5) -> str:
     """
@@ -267,7 +346,7 @@ async def search_google_custom_search(query: str, num_results: Union[int, str]=5
 
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model
 
-def process_search_results(search_query: str, search_results_json: str='[]', processing_instruction: str='answer_query', **kwargs) -> str:
+def process_search_results(search_query: str, search_results_json: Union[str, Dict[str, Any], List[Dict[str, Any]]]='[]', processing_instruction: str='answer_query', **kwargs) -> str:
     """
     Processes JSON search results based on a specified instruction to generate a response using Gemini.
     """
@@ -282,6 +361,11 @@ def process_search_results(search_query: str, search_results_json: str='[]', pro
     EXTRACT_ENTITIES_LLM_PROMPT_TEMPLATE = '\nGiven the original search query: "{query}"\nAnd the following search results (JSON format):\n---\n{results_json}\n---\n{freshness_guidance}\nBased *only* on the provided search results, list the key entities (e.g., people, organizations, locations, dates, specific terms or concepts) that are relevant to the original search query.\nIf the search results are empty or no distinct entities can be extracted, state that.\nFormat the output as a comma-separated list or a bulleted list if more appropriate.\nEntities:\n'
     CUSTOM_INSTRUCTION_LLM_PROMPT_TEMPLATE = '\nGiven the original search query: "{query}"\nAnd the following search results (JSON format):\n---\n{results_json}\n---\n{freshness_guidance}\nBased *only* on the provided search results, follow this specific instruction: {custom_instruction}\nIf the results are insufficient to follow the instruction, state that.\nResponse:\n'
     
+    if isinstance(search_results_json, dict):
+        search_results_json = search_results_json.get("results", search_results_json)
+    if not isinstance(search_results_json, str):
+        search_results_json = json.dumps(search_results_json)
+
     try:
         if not search_results_json.strip() or search_results_json == '[]':
             return 'No relevant information found in the search results. Please try a different query.'

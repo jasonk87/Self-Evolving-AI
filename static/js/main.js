@@ -555,7 +555,6 @@ document.addEventListener('DOMContentLoaded', () => {
             councilContainer.appendChild(entry);
             councilContainer.scrollTop = councilContainer.scrollHeight;
         }
-
         // 2. Mirror to Terminal
         const terminalOutput = document.getElementById('terminal-output');
         if (terminalOutput) {
@@ -571,7 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Check if collapsed
                     const panel = document.getElementById('bottom-panel');
                     if (panel && panel.classList.contains('collapsed')) {
-                        Layout.toggleBottomPanel(true); // Force open
+                        // Layout.toggleBottomPanel(true); // Force open
                         // Layout scroll to bottom?
                     }
                 }
@@ -596,7 +595,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (toolbar) {
                             badge = document.createElement('div');
                             badge.id = 'token-usage-badge';
-                            badge.className = 'toolbar-item';
+                            badge.className = 'toolbar-item token-badge';
+                            badge.style.width = 'auto';
+                            badge.style.whiteSpace = 'nowrap';
                             badge.style.fontSize = '12px';
                             badge.style.padding = '0 10px';
                             badge.style.display = 'flex';

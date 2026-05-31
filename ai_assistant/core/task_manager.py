@@ -28,6 +28,7 @@ class ActiveTaskStatus(Enum):
     # Added from later inspection
     FAILED_CODE_GENERATION = auto()
     REFINING_PLAN = auto()
+    RUNNING = auto()
 
 
 class ActiveTaskType(Enum):
@@ -42,6 +43,7 @@ class ActiveTaskType(Enum):
     PLANNING_CODE_STRUCTURE = auto() # For outline generation
     HIERARCHICAL_PROJECT_EXECUTION = auto() # For executing a plan from HierarchicalPlanner
     EPHEMERAL_AGENT_TASK = auto() # For running short-lived ephemeral agents
+    AGENT_TOOL_EXECUTION = auto()
 
 
 
@@ -228,13 +230,10 @@ class ActiveTask:
 ACTIVE_TASKS_FILE_NAME = "active_tasks.json"
 import os
 import json
+from ai_assistant.config import get_data_dir
 from .notification_manager import NotificationManager, NotificationType
 from .events import EventEmitter # Import EventEmitter
 
-
-def get_data_dir():
-    """Gets the application's data directory."""
-    return os.path.join(os.path.expanduser("~"), ".ai_assistant_data")
 
 def _ensure_data_dir_exists():
     """Ensures the application's data directory exists."""
@@ -282,7 +281,8 @@ class TaskManager:
                     try:
                         tasks_data = json.load(f)
                         for t in tasks_data:
-                            recovered_tasks[t["task_id"]] = t
+                            if t.get("status") not in {status.name for status in TERMINAL_TASK_STATUSES}:
+                                recovered_tasks[t["task_id"]] = t
                     except json.JSONDecodeError:
                         print("TaskManager: Base JSON corrupted. Relying entirely on WAL replay.")
 
@@ -296,7 +296,10 @@ class TaskManager:
                             t_id = record["task"]["task_id"]
                             # For simplicity, we assume 'update' means 'upsert'
                             if record["action"] in ["add", "update"]:
-                                recovered_tasks[t_id] = record["task"]
+                                if record["task"].get("status") in {status.name for status in TERMINAL_TASK_STATUSES}:
+                                    recovered_tasks.pop(t_id, None)
+                                else:
+                                    recovered_tasks[t_id] = record["task"]
                             elif record["action"] == "archive" and t_id in recovered_tasks:
                                 del recovered_tasks[t_id]
                     except Exception as e:
@@ -321,7 +324,8 @@ class TaskManager:
                     for task_dict in tasks_data:
                         try:
                             task = ActiveTask.from_dict(task_dict)
-                            self._active_tasks[task.task_id] = task
+                            if task.status not in TERMINAL_TASK_STATUSES:
+                                self._active_tasks[task.task_id] = task
                         except (KeyError, ValueError) as e: # pragma: no cover
                              print(f"TaskManager: Error deserializing task from dict {task_dict.get('task_id', 'UnknownID')}: {e}")
             else: # pragma: no cover
@@ -516,7 +520,8 @@ class TaskManager:
                 ActiveTaskStatus.CRITIC_REVIEW_REJECTED,
                 ActiveTaskStatus.POST_MOD_TEST_FAILED,
                 ActiveTaskStatus.FAILED_CODE_GENERATION,
-                ActiveTaskStatus.FAILED_INTERRUPTED
+                ActiveTaskStatus.FAILED_INTERRUPTED,
+                ActiveTaskStatus.PROJECT_PLAN_FAILED_STEP
             ]
             if new_status in terminal_statuses:
                 print(f"TaskManager: Task {task_id} reached terminal status: {new_status.name}. Archiving.")
@@ -563,7 +568,7 @@ class TaskManager:
         else:
             print(f"TaskManager: Error - Task {task_id} not found for status update.")
         
-        if task:
+        if task and new_status not in TERMINAL_TASK_STATUSES:
              # Fast append to WAL for standard updates instead of slow full snapshot save
              self._append_to_wal(task, "update")
              

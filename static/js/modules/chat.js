@@ -198,8 +198,6 @@ export function appendMessage(container, role, text, images = null) {
         });
     }
 
-    // Basic Markdown Parsing (Simplified for module)
-    // In production we might use a library like 'marked', but sticking to the custom logic from main.js
     let parts = text.split(/(```html-dynamic[\s\S]*?```)/g);
     let finalHtml = "";
 
@@ -209,13 +207,11 @@ export function appendMessage(container, role, text, images = null) {
             let cleanHtml = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(rawHtml) : "<i>(DOMPurify missing)</i>";
             finalHtml += `<div class="dynamic-html-wrapper">${cleanHtml}</div>`;
         } else {
-            let md = part
-                .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="chat-image" style="max-width: 100%; border-radius: 5px; margin: 5px 0;">')
-                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-light);">$1</a>')
-                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .replace(/\n/g, '<br>');
-            finalHtml += md;
+            if (typeof marked !== 'undefined') {
+                finalHtml += marked.parse(part);
+            } else {
+                finalHtml += part.replace(/\n/g, '<br>');
+            }
         }
     });
 
@@ -225,6 +221,35 @@ export function appendMessage(container, role, text, images = null) {
         : '';
 
     msgDiv.innerHTML = `<div class="avatar">${avatarText}</div><div class="content">${imagesHtml}${finalHtml}${actionChipsHtml}</div>`;
+    
+    // Apply Highlight.js and Copy Buttons
+    msgDiv.querySelectorAll('pre code').forEach((block) => {
+        if (typeof hljs !== 'undefined') {
+            hljs.highlightElement(block);
+        }
+        
+        const pre = block.parentElement;
+        pre.style.position = 'relative';
+        
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-copy-code';
+        copyBtn.innerHTML = 'Copy';
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(block.innerText);
+                copyBtn.innerHTML = 'Copied!';
+                copyBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyBtn.innerHTML = 'Copy';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        });
+        pre.appendChild(copyBtn);
+    });
+
     container.appendChild(msgDiv);
 
     if (actionCommands.length > 0) {

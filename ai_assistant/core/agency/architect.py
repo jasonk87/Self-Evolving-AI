@@ -4,6 +4,7 @@ import logging
 import asyncio
 from typing import List, Dict, Optional
 import uuid
+import time
 
 from ai_assistant.core.safety.judge import judge, SafetyVerdict
 from ai_assistant.goals.goal_management import create_goal, save_current_goals
@@ -178,7 +179,13 @@ Example:
             create_goal(
                 title=goal_data.get("title"),
                 description=goal_data.get("description"),
-                priority=goal_data.get("priority", "MEDIUM")
+                priority=goal_data.get("priority", "MEDIUM"),
+                status="PENDING_APPROVAL",
+                metadata={
+                    "type": "architect_source_change",
+                    "requires_user_approval": True,
+                    "created_at": time.time(),
+                },
             )
             new_goals_count += 1
 

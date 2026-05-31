@@ -68,13 +68,14 @@ def read_system_logs(lines: int = 50, log_file: str = "server.log") -> str:
     except Exception as e:
         return f"Error reading log file: {e}"
 
-def get_background_task_status() -> str:
+def get_background_task_status(goal_id: str = None) -> str:
     """
     Returns the status of background AI services (Dreamer, Architect, Curation, etc.).
     Useful for knowing what the AI is doing "subconsciously".
     """
     try:
         from ai_assistant.core import background_service
+        from ai_assistant.goals.goal_management import get_goal, list_goals
 
         status = background_service.get_service_status()
         
@@ -96,9 +97,68 @@ def get_background_task_status() -> str:
         human_readable += f"• Last Architect Audit: {fmt_time(status.get('last_architect_audit_timestamp'))}\n"
         human_readable += f"• Last Visual Audit:    {fmt_time(status.get('last_visual_audit_timestamp'))}\n"
         
+        if goal_id:
+            goal = get_goal(goal_id)
+            if not goal:
+                human_readable += f"\nBackground Goal '{goal_id}': NOT FOUND\n"
+            else:
+                human_readable += f"\nBackground Goal '{goal_id}': {goal.get('status')}\n"
+                human_readable += f"Task: {goal.get('description') or goal.get('title')}\n"
+        else:
+            gated_goals = list_goals(status="PENDING_APPROVAL")
+            gated_background_count = len([
+                goal for goal in gated_goals
+                if goal.get("metadata", {}).get("type") == "background_agent"
+            ])
+            gated_source_change_count = len(gated_goals) - gated_background_count
+            queued_count = len(list_goals(status="pending"))
+            running_count = len(list_goals(status="in_progress"))
+            human_readable += (
+                f"\nBackground Goals: {queued_count} queued, {running_count} running, "
+                f"{gated_background_count} legacy launch(es) awaiting approval\n"
+                f"Source-Change Proposals: {gated_source_change_count} awaiting approval\n"
+            )
+
         return human_readable
     except Exception as e:
         return f"Error fetching background status: {e}"
+
+def find_background_agent_status(goal_id: str = None) -> str:
+    """Reports a background-agent goal by ID, or the most recently created one."""
+    from ai_assistant.goals.goal_management import list_goals
+
+    background_goals = [
+        goal for goal in list_goals()
+        if goal.get("metadata", {}).get("type") == "background_agent"
+    ]
+    if not background_goals:
+        return "No background-agent goals have been recorded."
+
+    if goal_id:
+        goal = next((item for item in background_goals if item.get("id") == goal_id), None)
+        if not goal:
+            return f"Background-agent goal '{goal_id}' was not found."
+    else:
+        goal = max(background_goals, key=lambda item: item.get("metadata", {}).get("created_at", 0))
+    metadata = goal.get("metadata", {})
+    status = goal.get("status", "unknown")
+    lines = [
+        f"Background agent goal: {goal.get('description') or goal.get('title')}",
+        f"Goal ID: {goal.get('id')}",
+        f"Durable status: {status}",
+        f"Execution mode: {metadata.get('execution_mode', 'one_shot')}",
+    ]
+    if status == "completed":
+        lines.append("This task is finished. No continuous monitor or scheduled search is active.")
+    elif status == "pending":
+        lines.append("This task is queued and does not require user approval.")
+    elif status == "in_progress":
+        lines.append("This task is currently running.")
+    elif status == "failed":
+        lines.append("This task failed.")
+    if metadata.get("result_summary"):
+        lines.append(f"Last result: {metadata['result_summary']}")
+    return "\n".join(lines)
 
 def inspect_memory_stats() -> str:
     """

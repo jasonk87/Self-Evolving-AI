@@ -618,7 +618,7 @@ def test_token_budget_update_endpoint_normalizes_values(monkeypatch):
     assert captured["settings"]["hard_stop_enabled"] is True
 
 
-def test_reflection_suggestions_endpoint_returns_pending_items(monkeypatch):
+def test_reflection_suggestions_endpoint_returns_all_items(monkeypatch):
     app = _build_test_app()
 
     insights = [
@@ -640,7 +640,7 @@ def test_reflection_suggestions_endpoint_returns_pending_items(monkeypatch):
             insight_id="i_done",
             type=SimpleNamespace(name="IMPROVEMENT"),
             status="APPROVED",
-            description="Should be excluded",
+            description="Should be included",
             creation_timestamp=300,
         ),
     ]
@@ -649,15 +649,15 @@ def test_reflection_suggestions_endpoint_returns_pending_items(monkeypatch):
     monkeypatch.setattr(app_globals, "orchestrator", fake_orchestrator)
 
     with app.test_client() as client:
-        response = client.get('/api/status/reflection-suggestions?limit=1')
+        response = client.get('/api/status/reflection-suggestions?limit=2')
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert payload["limit"] == 1
-    assert payload["count"] == 1
-    assert payload["items"][0]["insight_id"] == "i_new"
-    assert payload["items"][0]["type"] == "SELF_HEALING"
+    assert payload["limit"] == 2
+    assert payload["count"] == 2
+    assert payload["items"][0]["insight_id"] == "i_done"
+    assert payload["items"][1]["insight_id"] == "i_new"
 
 
 def test_reflection_suggestions_endpoint_returns_empty_when_unavailable(monkeypatch):

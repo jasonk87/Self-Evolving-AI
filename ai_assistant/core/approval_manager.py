@@ -2,7 +2,11 @@ import uuid
 import time
 import asyncio
 import logging
+import inspect
+import json
+import os
 from typing import Dict, Any, List, Optional, Callable
+from ai_assistant.config import get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +18,31 @@ class ApprovalManager:
             cls._instance = super(ApprovalManager, cls).__new__(cls)
             cls._instance.pending_requests = {}
             cls._instance.callbacks = {} # request_id -> callable
+            cls._instance.filepath = os.path.join(get_data_dir(), "pending_approvals.json")
+            cls._instance._load_pending_requests()
         return cls._instance
+
+    def _load_pending_requests(self):
+        try:
+            if not os.path.exists(self.filepath):
+                return
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                requests = json.load(f)
+            if isinstance(requests, list):
+                self.pending_requests = {
+                    req["id"]: req for req in requests
+                    if isinstance(req, dict) and req.get("id")
+                }
+        except Exception as e:
+            logger.error(f"Failed to load pending approvals: {e}")
+
+    def _save_pending_requests(self):
+        try:
+            os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(list(self.pending_requests.values()), f, indent=2, default=str)
+        except Exception as e:
+            logger.error(f"Failed to save pending approvals: {e}")
 
     def add_request(self, req_type: str, data: Any, description: str, execute_func: Callable = None) -> str:
         """
@@ -46,13 +74,13 @@ class ApprovalManager:
             "type": req_type,
             "data": data,
             "description": description,
-            "timestamp": time.time() * 1000, # Milliseconds for JS
+            "timestamp": time.time(),
             "status": "pending"
         }
         
         if execute_func:
             self.callbacks[req_id] = execute_func
-            
+        self._save_pending_requests()
         logger.info(f"Added approval request {req_id} of type {req_type}")
         return req_id
 
@@ -106,7 +134,12 @@ class ApprovalManager:
 
     def get_pending_requests(self) -> List[Dict]:
         """Returns list of pending requests sorted by newest first."""
-        return sorted(list(self.pending_requests.values()), key=lambda x: x['timestamp'], reverse=True)
+        requests = list(self.pending_requests.values())
+        for req in requests:
+            timestamp = req.get("timestamp", 0)
+            if timestamp > 10_000_000_000:
+                req["timestamp"] = timestamp / 1000
+        return sorted(requests, key=lambda x: x['timestamp'], reverse=True)
 
     def get_request(self, req_id: str) -> Optional[Dict]:
         """Retrieves a specific request by ID."""
@@ -122,10 +155,9 @@ class ApprovalManager:
             
             if func:
                 try:
-                    if asyncio.iscoroutinefunction(func):
-                        await func()
-                    else:
-                        func()
+                    result = func()
+                    if inspect.isawaitable(result):
+                        await result
                 except Exception as e:
                     logger.error(f"Error executing approved request {req_id}: {e}")
                     success = False
@@ -166,6 +198,7 @@ class ApprovalManager:
             del self.pending_requests[req_id]
         if req_id in self.callbacks:
             del self.callbacks[req_id]
+        self._save_pending_requests()
 
 # Singleton instance
 approval_manager = ApprovalManager()

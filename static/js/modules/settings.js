@@ -35,8 +35,9 @@ function renderSettingsForm(config, container) {
     container.innerHTML = '';
 
     // Sort keys mostly alphabetically, or define a specific order
-    const priorityKeys = ['DEFAULT_MODEL', 'LLM_PROVIDER', 'ENABLE_THINKING', 'SAFE_MODE', 'GHOST_MODE'];
-    const keys = Object.keys(config).sort((a, b) => {
+    const hiddenKeys = new Set(['GHOST_MODE', 'AUTO_WEB_PIP']);
+    const priorityKeys = ['DEFAULT_MODEL', 'LLM_PROVIDER', 'ENABLE_THINKING', 'SAFE_MODE'];
+    const keys = Object.keys(config).filter(key => !hiddenKeys.has(key)).sort((a, b) => {
         const aIdx = priorityKeys.indexOf(a);
         const bIdx = priorityKeys.indexOf(b);
         if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;

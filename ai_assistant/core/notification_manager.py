@@ -43,6 +43,8 @@ class NotificationType(Enum):
     SUGGESTION_APPROVED_USER = auto()
     SUGGESTION_DENIED_USER = auto()
     SUGGESTION_IMPLEMENTED = auto()
+    REQUIRE_USER_APPROVAL = auto()
+    FACT_LEARNED = auto()
 
     # Self-modification specific
     SELF_MODIFICATION_APPLIED = auto()
@@ -51,6 +53,7 @@ class NotificationType(Enum):
 
     # Evolution Proposals
     EVOLUTION_PROPOSAL = auto()
+    EVOLUTION_APPLIED = auto()
 
     # General System Info
     GENERAL_INFO = auto()

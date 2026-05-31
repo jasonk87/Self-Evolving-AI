@@ -111,8 +111,8 @@ async function renderTokenBreakdown() {
                         <span>${model}</span>
                         <span>${pct}% (${totalTokens.toLocaleString()} tokens)</span>
                     </div>
-                    <div style="width: 100%; background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
-                        <div style="height: 100%; width: ${pct}%; background: var(--accent-color);"></div>
+                    <div style="width: 100%; background: rgba(255,255,255,0.05); border-radius: 4px; height: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.02);">
+                        <div style="height: 100%; width: ${pct}%; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); border-radius: 4px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);"></div>
                     </div>
                     <div style="font-size: 0.8em; color: var(--text-secondary); margin-top: 2px;">
                         In: ${stats.input_tokens.toLocaleString()} | Out: ${stats.output_tokens.toLocaleString()} | Thinking: ${thinkingTokens.toLocaleString()} | ${budgetText}

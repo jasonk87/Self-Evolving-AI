@@ -49,6 +49,11 @@ from ai_assistant.tools.tool_system import get_tool
 from ai_assistant.core.chat_manager import ChatSessionManager
 from ai_assistant.config import get_projects_dir, get_data_dir # Assuming chat sessions are in data dir or similar
 from ai_assistant.core import self_modification # For code reading
+from ai_assistant.core.failure_freshness import (
+    SUPERSEDED_FAILURE_STATUS,
+    annotate_failure_metadata,
+    is_failure_stale,
+)
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 
 
@@ -184,6 +189,25 @@ class LearningAgent:
         self._save_insights()
         return True
 
+    def _supersede_stale_failure_insights(self) -> int:
+        """Keep historical failures while preventing repairs based on obsolete runtime state."""
+        superseded_count = 0
+        for insight in self.insights:
+            if insight.type not in {InsightType.TOOL_BUG_SUSPECTED, InsightType.SELF_CORRECTION_FAILURE}:
+                continue
+            annotate_failure_metadata(insight.metadata, insight.creation_timestamp)
+            if (
+                insight.status != SUPERSEDED_FAILURE_STATUS
+                and is_failure_stale(insight.metadata, insight.creation_timestamp)
+            ):
+                insight.status = SUPERSEDED_FAILURE_STATUS
+                insight.metadata["superseded_reason"] = "Runtime source or configuration changed after this failure was recorded."
+                insight.metadata["superseded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                superseded_count += 1
+        if superseded_count:
+            self._save_insights()
+        return superseded_count
+
     def ingest_reflection_suggestions(self, suggestions: List[Dict[str, Any]]) -> int:
         """
         Ingests improvement suggestions from the autonomous reflection cycle.
@@ -295,9 +319,9 @@ Do not provide a full fix, just the diagnosis.
             "create_tool": "generate_new_tool_from_description",
             "modify_tool": "stage_agent_tool_modification",
             "tool_modifier": "stage_agent_tool_modification",
-            "search_web": "search_duckduckgo", # Common alias
-            "web_search": "search_duckduckgo",
-            "google_search": "search_duckduckgo" # Prefer DDG unless forced
+            "search_web": "google_search",
+            "web_search": "google_search",
+            "google_search": "google_search"
         }
         
         # System Action Types that should NEVER be identified as tools
@@ -370,6 +394,14 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         # Store original_reflection_entry_ref_id in metadata for PROPOSE_TOOL_MODIFICATION
         # This will be used by ActionExecutor to find the original failing plan for re-testing
         metadata_for_insight["original_reflection_entry_ref_id"] = source_entry_ref_id
+        metadata_for_insight["runtime_revision_at_failure"] = entry.runtime_revision_at_failure
+        annotate_failure_metadata(metadata_for_insight, entry.timestamp)
+
+        if entry.status in ["FAILURE", "PARTIAL_SUCCESS"] and is_failure_stale(
+            metadata_for_insight, entry.timestamp
+        ):
+            print(f"LearningAgent: Skipping stale historical failure entry {entry.entry_id}; runtime changed after it was recorded.")
+            return None
 
 
         # Check specifically for user-rejected insights for this tool
@@ -468,19 +500,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
 
                 # --- REGRESSION CHECK ---
                 if self.memory_manager:
-                    # 1. Check for explicit "Fixed" facts
-                    facts = self.memory_manager.get_all_facts()
-                    # Simple semantic check (could be improved with embedding search)
-                    is_fixed_according_to_memory = any(
-                        related_tool_name in fact["text"] and "fixed" in fact["text"].lower() and "not" not in fact["text"].lower()
-                        for fact in facts
-                    )
-                    
-                    if is_fixed_according_to_memory:
-                        print(f"LearningAgent: SKIPPING insight generation for '{related_tool_name}'. Memory says it is fixed.")
-                        return None
-
-                    # 2. Check for recent User Rejections matches
+                    # Check for recent User Rejections matches
                     rejected_insights = [i for i in self.insights if i.status == "REJECTED_BY_USER" and i.related_tool_name == related_tool_name]
                     if rejected_insights:
                         print(f"LearningAgent: SKIPPING insight generation for '{related_tool_name}'. User recently rejected fixes for this tool.")
@@ -547,6 +567,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         return None
 
     async def review_and_propose_next_action(self) -> Optional[Tuple[Dict[str, Any], bool]]:
+        self._supersede_stale_failure_insights()
         actionable_new_insights = [insight for insight in self.insights if insight.status == "NEW"]
         if not actionable_new_insights:
             # print("LearningAgent: No new actionable insights to review.")
@@ -721,6 +742,14 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
             apply_immediately: If True, disables staging mode (verification-only) and applies the fix if verified.
         """
         print(f"LearningAgent: Processing insight {insight.insight_id} for self-healing (apply_immediately={apply_immediately}).")
+        annotate_failure_metadata(insight.metadata, insight.creation_timestamp)
+        if is_failure_stale(insight.metadata, insight.creation_timestamp):
+            insight.status = SUPERSEDED_FAILURE_STATUS
+            insight.metadata["superseded_reason"] = "Runtime source or configuration changed after this failure was recorded."
+            insight.metadata["superseded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self._save_insights()
+            print(f"LearningAgent: Skipping stale historical insight {insight.insight_id}; runtime changed after the failure.")
+            return False
 
         # Construct the action
         action = {}
@@ -859,6 +888,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         using the ActionExecutor in 'staging_mode'.
         Returns the number of insights processed.
         """
+        self._supersede_stale_failure_insights()
         # Filter for relevant insights
         bug_insights = [
             insight for insight in self.insights

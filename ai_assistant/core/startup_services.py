@@ -44,20 +44,16 @@ async def resume_interrupted_tasks(
             interrupted_tasks_found += 1
             original_status = task.status
 
-            if original_status == ActiveTaskStatus.PLANNING:
-                reason = f"Resuming task from state '{original_status.name}'."
-                new_status = ActiveTaskStatus.PLANNING
-            else:
-                reason = f"Resuming task. Reverted from volatile state '{original_status.name}' to PLANNING for safe retry."
-                new_status = ActiveTaskStatus.PLANNING
+            reason = f"Task was interrupted by restart while in state '{original_status.name}'. Retry explicitly if the work is still needed."
+            new_status = ActiveTaskStatus.FAILED_INTERRUPTED
 
-            print(f"StartupServices: Recovering Task {task.task_id} ('{task.description[:30]}...'). Reverting to {new_status.name}. Original status: {original_status.name}")
+            print(f"StartupServices: Marking Task {task.task_id} ('{task.description[:30]}...') as {new_status.name}. Original status: {original_status.name}")
 
             task_manager.update_task_status(
                 task.task_id,
                 new_status,
                 reason=reason,
-                step_desc="Task resumed on agent startup."
+                step_desc="Task marked interrupted on agent startup."
             )
 
             if task.session_id and not str(task.session_id).startswith("autonomous_goal_"):
@@ -78,7 +74,7 @@ async def resume_interrupted_tasks(
                                 break
                                 
                         if not already_injected:
-                            sys_msg = f"[System restarted] The system was restarted while executing the following task: '{task.description}'. The task state has been reverted to PLANNING for safe resumption. Please review progress or prompt the agent to continue if desired."
+                            sys_msg = f"[System restarted] The system was restarted while executing the following task: '{task.description}'. The orphaned task was marked FAILED_INTERRUPTED. Retry it explicitly if the work is still needed."
                             cm.add_message(task.session_id, "system", sys_msg)
                 except Exception as e:
                     logger.error(f"StartupServices: Failed to inject resume message for session {task.session_id}: {e}")
@@ -86,7 +82,7 @@ async def resume_interrupted_tasks(
             if notification_manager:
                 notification_manager.add_notification(
                     NotificationType.GENERAL_INFO, # Changed from TASK_INTERRUPTED to GENERAL_INFO
-                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was recovered from state '{original_status.name}'. Status: {new_status.name}.",
+                    f"Task '{task.description[:50]}...' (ID: {task.task_id}) was interrupted in state '{original_status.name}'. Status: {new_status.name}.",
                     related_item_id=task.task_id,
                     related_item_type="task"
                 )
@@ -131,15 +127,15 @@ if __name__ == '__main__': # pragma: no cover
         expected_update_calls = [
             MagicMock(
                 task_id=task1_planning.task_id,
-                new_status=ActiveTaskStatus.PLANNING, # Resumed (kept original)
-                reason=f"Resuming task from state '{ActiveTaskStatus.PLANNING.name}'.",
-                step_desc="Task resumed on agent startup."
+                new_status=ActiveTaskStatus.FAILED_INTERRUPTED,
+                reason=f"Task was interrupted by restart while in state '{ActiveTaskStatus.PLANNING.name}'. Retry explicitly if the work is still needed.",
+                step_desc="Task marked interrupted on agent startup."
             ),
             MagicMock(
                 task_id=task2_generating.task_id,
-                new_status=ActiveTaskStatus.PLANNING, # Reverted to PLANNING
-                reason=f"Resuming task. Reverted from volatile state '{ActiveTaskStatus.GENERATING_CODE.name}' to PLANNING for safe retry.",
-                step_desc="Task resumed on agent startup."
+                new_status=ActiveTaskStatus.FAILED_INTERRUPTED,
+                reason=f"Task was interrupted by restart while in state '{ActiveTaskStatus.GENERATING_CODE.name}'. Retry explicitly if the work is still needed.",
+                step_desc="Task marked interrupted on agent startup."
             )
         ]
 
@@ -151,16 +147,16 @@ if __name__ == '__main__': # pragma: no cover
         # Check task1
         call1_args, call1_kwargs = update_calls_actual[0]
         assert call1_args[0] == task1_planning.task_id
-        assert call1_args[1] == ActiveTaskStatus.PLANNING
-        assert call1_kwargs['reason'] == f"Resuming task from state '{ActiveTaskStatus.PLANNING.name}'."
-        assert call1_kwargs['step_desc'] == "Task resumed on agent startup."
+        assert call1_args[1] == ActiveTaskStatus.FAILED_INTERRUPTED
+        assert call1_kwargs['reason'] == f"Task was interrupted by restart while in state '{ActiveTaskStatus.PLANNING.name}'. Retry explicitly if the work is still needed."
+        assert call1_kwargs['step_desc'] == "Task marked interrupted on agent startup."
 
         # Check task2
         call2_args, call2_kwargs = update_calls_actual[1]
         assert call2_args[0] == task2_generating.task_id
-        assert call2_args[1] == ActiveTaskStatus.PLANNING
-        assert call2_kwargs['reason'] == f"Resuming task. Reverted from volatile state '{ActiveTaskStatus.GENERATING_CODE.name}' to PLANNING for safe retry."
-        assert call2_kwargs['step_desc'] == "Task resumed on agent startup."
+        assert call2_args[1] == ActiveTaskStatus.FAILED_INTERRUPTED
+        assert call2_kwargs['reason'] == f"Task was interrupted by restart while in state '{ActiveTaskStatus.GENERATING_CODE.name}'. Retry explicitly if the work is still needed."
+        assert call2_kwargs['step_desc'] == "Task marked interrupted on agent startup."
 
         # Check calls to add_notification
         # add_notification should be called twice
@@ -174,7 +170,7 @@ if __name__ == '__main__': # pragma: no cover
         notif_call2_args, notif_call2_kwargs = mock_notification_manager.add_notification.call_args_list[1]
         assert notif_call2_args[0] == NotificationType.GENERAL_INFO
         assert task2_generating.task_id in notif_call2_args[1]
-        assert "Status: PLANNING" in notif_call2_args[1]
+        assert "Status: FAILED_INTERRUPTED" in notif_call2_args[1]
         assert notif_call2_kwargs['related_item_id'] == task2_generating.task_id
 
         print("--- resume_interrupted_tasks Test Finished ---")

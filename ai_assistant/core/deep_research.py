@@ -61,7 +61,8 @@ class DeepResearcher(ToolBase):
 
         # Step 1: Search
         self.emit_status("Searching Google for relevant sources...")
-        search_results = google_custom_search(query, num_results=max_depth)
+        search_data = await google_custom_search(query, num_results=max_depth)
+        search_results = search_data.get("results", [])
         if not search_results:
             return {
                 "summary": "I could not find any search results for your query. Please check your internet connection or try a different query.",

@@ -1175,51 +1175,71 @@ def _find_reflection_insight(req_id: str):
 
 
 def _collect_reflection_suggestions(limit: int = 20) -> list:
-    if not app_globals.orchestrator:
-        return []
-
-    learning_agent = getattr(app_globals.orchestrator, "learning_agent", None)
-    insights = getattr(learning_agent, "insights", None)
-    if not insights:
-        return []
-
     items = []
-    for insight in insights:
-        status = str(getattr(insight, "status", "") or "")
-        if status not in {"NEW", "SELF_HEALING_PROPOSED"}:
-            continue
+    
+    if app_globals.orchestrator:
+        learning_agent = getattr(app_globals.orchestrator, "learning_agent", None)
+        insights = getattr(learning_agent, "insights", None)
+        if insights:
+            for insight in insights:
+                status = str(getattr(insight, "status", "") or "")
+                
+                insight_type = getattr(insight, "type", None)
+                if hasattr(insight_type, "name"):
+                    insight_type_name = insight_type.name
+                else:
+                    insight_type_name = str(insight_type or "UNKNOWN")
+        
+                created = getattr(insight, "creation_timestamp", 0)
+                try:
+                    created_ts = float(created)
+                except (TypeError, ValueError):
+                    created_ts = 0.0
+        
+                insight_id = str(getattr(insight, "insight_id", "") or "").strip()
+                if not insight_id:
+                    continue
+        
+                recommended_templates = _recommend_specialist_templates(insight_type_name)
+                items.append({
+                    "insight_id": insight_id,
+                    "type": insight_type_name,
+                    "status": status,
+                    "description": getattr(insight, "description", ""),
+                    "created_at": created,
+                    "created_at_ts": created_ts,
+                    "recommended_specialist_templates": recommended_templates,
+                    "actions": {
+                        "approve": f"/api/status/reflection-suggestions/{insight_id}/approve",
+                        "reject": f"/api/status/reflection-suggestions/{insight_id}/reject",
+                        "spawn_specialist": f"/api/status/reflection-suggestions/{insight_id}/spawn-specialist",
+                    },
+                })
 
-        insight_type = getattr(insight, "type", None)
-        if hasattr(insight_type, "name"):
-            insight_type_name = insight_type.name
-        else:
-            insight_type_name = str(insight_type or "UNKNOWN")
-
-        created = getattr(insight, "creation_timestamp", 0)
-        try:
-            created_ts = float(created)
-        except (TypeError, ValueError):
+    try:
+        from ai_assistant.core.suggestion_manager import list_suggestions
+        from datetime import datetime
+        for sugg in list_suggestions():
+            created_iso = sugg.get("created_at")
             created_ts = 0.0
-
-        insight_id = str(getattr(insight, "insight_id", "") or "").strip()
-        if not insight_id:
-            continue
-
-        recommended_templates = _recommend_specialist_templates(insight_type_name)
-        items.append({
-            "insight_id": insight_id,
-            "type": insight_type_name,
-            "status": status,
-            "description": getattr(insight, "description", ""),
-            "created_at": created,
-            "created_at_ts": created_ts,
-            "recommended_specialist_templates": recommended_templates,
-            "actions": {
-                "approve": f"/api/status/reflection-suggestions/{insight_id}/approve",
-                "reject": f"/api/status/reflection-suggestions/{insight_id}/reject",
-                "spawn_specialist": f"/api/status/reflection-suggestions/{insight_id}/spawn-specialist",
-            },
-        })
+            if created_iso:
+                try:
+                    created_ts = datetime.fromisoformat(created_iso.replace('Z', '+00:00')).timestamp()
+                except Exception:
+                    pass
+            
+            items.append({
+                "insight_id": sugg.get("suggestion_id", ""),
+                "type": sugg.get("type", "UNKNOWN"),
+                "status": sugg.get("status", "UNKNOWN"),
+                "description": sugg.get("description", ""),
+                "created_at": created_ts,
+                "created_at_ts": created_ts,
+                "recommended_specialist_templates": [],
+                "actions": {}
+            })
+    except Exception as e:
+        logger.error(f"Error loading suggestions for mission control: {e}")
 
     sorted_items = sorted(items, key=lambda i: i.get("created_at_ts", 0), reverse=True)[:max(0, int(limit))]
     for item in sorted_items:
@@ -2484,7 +2504,21 @@ def get_approvals():
             req_copy['source'] = 'approval_manager'
             serialized_requests.append(req_copy)
 
-        # 2. Get persistent 'NEW' insights from LearningAgent
+        # 2. Source-changing architect proposals require a human click in this UI.
+        from ai_assistant.goals.goal_management import list_goals
+        for goal in list_goals(status="PENDING_APPROVAL"):
+            if goal.get("metadata", {}).get("type") != "architect_source_change":
+                continue
+            serialized_requests.append({
+                "id": goal["id"],
+                "type": "architect_source_change",
+                "description": goal.get("description") or goal.get("title"),
+                "timestamp": goal.get("metadata", {}).get("created_at", 0),
+                "data": serialize_approval_data(goal),
+                "source": "goal_management",
+            })
+
+        # 3. Get persistent 'NEW' insights from LearningAgent
         if app_globals.orchestrator and app_globals.orchestrator.learning_agent:
             pending_insights = [
                 i for i in app_globals.orchestrator.learning_agent.insights 
@@ -2525,7 +2559,17 @@ def approve_request(req_id):
             success = _run_async(approval_manager.approve_request(req_id))
             if success: return jsonify({"success": True})
 
-        # 2. Try LearningAgent Insights
+        # 2. Architect proposals can only be released from this user-facing route.
+        from ai_assistant.custom_tools.agent_tools import _approve_source_change_proposal_from_ui
+        from ai_assistant.goals.goal_management import get_goal
+        goal = get_goal(req_id)
+        if goal and goal.get("metadata", {}).get("type") == "architect_source_change":
+            result = _approve_source_change_proposal_from_ui(req_id)
+            if result.startswith("Approved "):
+                return jsonify({"success": True, "message": result})
+            return jsonify({"success": False, "error": result}), 400
+
+        # 3. Try LearningAgent Insights
         if app_globals.orchestrator and app_globals.orchestrator.learning_agent:
             insight = next((i for i in app_globals.orchestrator.learning_agent.insights if i.insight_id == req_id), None)
             if insight:
@@ -2568,7 +2612,15 @@ def deny_request(req_id):
             success = approval_manager.deny_request(req_id)
             if success: return jsonify({"success": True})
 
-        # 2. Try LearningAgent Insights
+        # 2. Denying an architect proposal is also an explicit human UI action.
+        from ai_assistant.goals.goal_management import get_goal, update_goal_status
+        goal = get_goal(req_id)
+        if goal and goal.get("metadata", {}).get("type") == "architect_source_change":
+            if update_goal_status(req_id, "failed"):
+                return jsonify({"success": True})
+            return jsonify({"success": False, "error": "Could not deny architect proposal."}), 500
+
+        # 3. Try LearningAgent Insights
         if app_globals.orchestrator and app_globals.orchestrator.learning_agent:
             insight = next((i for i in app_globals.orchestrator.learning_agent.insights if i.insight_id == req_id), None)
             if insight:

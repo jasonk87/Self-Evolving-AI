@@ -1,4 +1,5 @@
 from prompt_toolkit.formatted_text import ANSI
+from typing import Optional
 
 class CLIColors:
     # Base colors with better contrast
@@ -61,11 +62,18 @@ def format_message(prefix: str, message: str, color: str, show_prefix: bool = Tr
 
 def format_input_prompt() -> ANSI:
     """Format the input prompt with a visually appealing indicator"""
-    # Original prompt:
-    # arrow = color_text("→", CLIColors.INPUT_PROMPT + CLIColors.BOLD)
-    # return f"\n{arrow} {color_text('', CLIColors.USER_INPUT)}"
-    # New prompt: A blue ">" followed by a space
     return ANSI(f"{CLIColors.BLUE}>{CLIColors.END_COLOR} ")
+
+def format_custom_shell_prompt(cwd: str, git_branch: Optional[str] = None) -> ANSI:
+    """Format a dynamic hybrid shell prompt with git branch and CWD details."""
+    weebo_prefix = color_text("Weebo", CLIColors.AI_RESPONSE + CLIColors.BOLD)
+    branch_str = ""
+    if git_branch:
+        branch_str = f"({color_text(git_branch, CLIColors.WARNING)}) "
+    
+    formatted_cwd = color_text(cwd, CLIColors.USER_INPUT)
+    arrow = color_text(">", CLIColors.INPUT_PROMPT + CLIColors.BOLD)
+    return ANSI(f"\n{weebo_prefix} {branch_str}[{formatted_cwd}] {arrow} ")
 
 def format_thinking() -> ANSI:
     """Format the 'thinking' indicator"""

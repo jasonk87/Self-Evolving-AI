@@ -58,7 +58,8 @@ def invoke_ollama_model(
     model_name: str = DEFAULT_OLLAMA_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 1500,
-    task_name: Optional[str] = None
+    task_name: Optional[str] = None,
+    json_mode: bool = False
 ) -> Optional[str]:
     _check_budget(task_name or "unknown")
 
@@ -74,6 +75,8 @@ def invoke_ollama_model(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens}
     }
+    if json_mode:
+        payload["format"] = "json"
     api_endpoint = OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT
 
     if VERBOSE_LLM_LOGGING:
@@ -134,7 +137,8 @@ async def invoke_ollama_model_async_internal(
     temperature: float = 0.7,
     max_tokens: int = 1500,
     api_endpoint_override: Optional[str] = None,
-    task_name: Optional[str] = None
+    task_name: Optional[str] = None,
+    json_mode: bool = False
 ) -> Optional[str]:
     _check_budget(task_name or "unknown")
 
@@ -160,6 +164,8 @@ async def invoke_ollama_model_async_internal(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens}
     }
+    if json_mode:
+        payload["format"] = "json"
     current_api_endpoint = api_endpoint_override if api_endpoint_override else (OLLAMA_CHAT_API_ENDPOINT if use_chat_api else OLLAMA_API_ENDPOINT)
 
     if VERBOSE_LLM_LOGGING:
@@ -209,10 +215,11 @@ async def invoke_ollama_model_async(
     temperature: float = 0.7,
     max_tokens: int = 1500,
     api_endpoint_override: Optional[str] = None,
-    task_name: Optional[str] = None
+    task_name: Optional[str] = None,
+    json_mode: bool = False
 ) -> Optional[str]:
     return await retry_with_backoff(retries=3, base_delay=1.0, max_delay=10.0, jitter=True)(invoke_ollama_model_async_internal)(
-        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_name
+        prompt, model_name, temperature, max_tokens, api_endpoint_override, task_name, json_mode
     )
 
 class OllamaProvider:
@@ -270,7 +277,8 @@ class OllamaProvider:
         model_name: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1500,
-        task_name: Optional[str] = None
+        task_name: Optional[str] = None,
+        json_mode: bool = False
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         return await invoke_ollama_model_async_internal(
@@ -279,7 +287,8 @@ class OllamaProvider:
             temperature=temperature,
             max_tokens=max_tokens,
             api_endpoint_override=self.generate_endpoint,
-            task_name=task_name
+            task_name=task_name,
+            json_mode=json_mode
         )
 
     def invoke_ollama_model(
@@ -288,7 +297,8 @@ class OllamaProvider:
         model_name: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1500,
-        task_name: Optional[str] = None
+        task_name: Optional[str] = None,
+        json_mode: bool = False
     ) -> Optional[str]:
         effective_model_name = model_name or self.model
         return invoke_ollama_model(
@@ -296,7 +306,8 @@ class OllamaProvider:
             model_name=effective_model_name,
             temperature=temperature,
             max_tokens=max_tokens,
-            task_name=task_name
+            task_name=task_name,
+            json_mode=json_mode
         )
 
     async def list_models_async(self) -> List[Dict[str, Any]]:

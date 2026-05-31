@@ -312,7 +312,15 @@ class DynamicOrchestrator:
         # Define persona guidance based on context_source
         persona_guide = ""
         if context_source == "SYSTEM":
-            persona_guide = "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. Be technical, concise, and results-oriented. If you finish, output the status/log as the FINAL ANSWER."
+            persona_guide = (
+                "MODE: SYSTEM TASK. You are running as a background process. Do NOT be conversational. "
+                "Be technical, concise, and results-oriented. For a final answer, include params.outcome "
+                "as either completed or failed. Use failed when the requested work was not completed. "
+                "Treat each assigned mission as one-shot work. Do not claim continuous monitoring, "
+                "scheduled work, or an ongoing search unless a durable scheduler was actually configured. "
+                "For research tasks, report useful verified partial results and identify missing details. "
+                "Do not fail a research task solely because some requested fields could not be verified."
+            )
         else:
             persona_guide = (
                 "MODE: USER CHAT. You are 'Weebo', a personal AI assistant (inspired by Flubber). "
@@ -320,7 +328,9 @@ class DynamicOrchestrator:
                 "Avoid generic AI phrases like 'I understand' or 'As an AI'.\n"
                 "CORE DIRECTIVE: When asked to perform ongoing tracking, heavy data processing, or deep code auditing, "
                 "do NOT execute it directly. Instead, automatically spawn a user-scoped persistent agent to handle "
-                "the task in the background, and report back to the user when you have received their payload. Check your roster first using list_active_agents."
+                "the task in the background, and report back to the user when you have received their payload. Check your roster first using list_active_agents. "
+                "A roster workspace marked available is NOT an active task. Never say an agent is working unless a tool result includes a queued or running durable goal. "
+                "To assign an available persistent workspace, call wake_agent. To create a new background goal, call spawn_background_agent."
             )
 
         # Create ephemeral task for UI feedback
@@ -412,7 +422,7 @@ Schema:
   "thought": "Brief reason for the action, one sentence max",
   "type": "tool_call" OR "final_answer",
   "name": "tool_name_if_tool_call",
-  "params": {{ ... arguments for the tool or {{"message": "final answer"}} }}
+  "params": {{ ... arguments for the tool or {{"message": "final answer", "outcome": "completed_or_failed_for_SYSTEM_TASK"}} }}
 }}
 
 Examples:
@@ -435,6 +445,7 @@ Rules:
 2. If tool results in Execution History answer the request, return a final answer.
 3. If a previous tool failed, choose a different viable tool or explain the blockage.
 4. For tools that use args/kwargs, you may return params as {{"args": [...], "kwargs": {{...}}}}.
+5. For SYSTEM TASK final answers, params.outcome is required and must be exactly "completed" or "failed".
 """
                 total_tokens = estimate_tokens(action_prompt)
                 if total_tokens > MAX_ACTION_PROMPT_TOKENS:
@@ -489,7 +500,11 @@ Return STRICT JSON only using the schema described earlier.
                         else:
                             final_answer = str(params)
 
-                        success = True
+                        success = not (
+                            context_source == "SYSTEM"
+                            and isinstance(params, dict)
+                            and params.get("outcome") != "completed"
+                        )
 
                         # Context-Aware Exit Logic
                         if context_source == "SYSTEM":
@@ -558,6 +573,9 @@ Return STRICT JSON only using the schema described earlier.
                     else:
                         for attempt in range(max_retries + 1):
                             try:
+                                if tool_name in {"spawn_background_agent", "wake_agent"} and session_id and "session_id" not in kwargs:
+                                    kwargs["session_id"] = session_id
+
                                 # `execute_tool` now returns a validated dictionary based on BaseActionResponse
                                 tool_response = await tool_system_instance.execute_tool(
                                     tool_name,
@@ -660,6 +678,10 @@ Return STRICT JSON only using the schema described earlier.
                         "tool": tool_name,
                         "result": result_str
                     })
+                    if execution_success and tool_name in {"spawn_background_agent", "wake_agent"}:
+                        final_answer = result_str
+                        success = True
+                        break
                     continue
 
                 # The model did not use a tool or final-answer schema. Treat as conversational response or retry if it looks like broken JSON.
@@ -719,6 +741,7 @@ Return STRICT JSON only using the schema described earlier.
                     self.task_manager.update_task_status(
                         current_ui_task.task_id,
                         ActiveTaskStatus.COMPLETED_SUCCESSFULLY if success else ActiveTaskStatus.FAILED_UNKNOWN,
+                        reason=None if success else final_answer[:500],
                         step_desc="Response ready."
                     )
                  except Exception:

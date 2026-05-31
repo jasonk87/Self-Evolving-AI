@@ -110,6 +110,22 @@ class ToolSystem:
         new_tools_registered_in_this_module = False
         if is_debug_mode():
             print(f'ToolSystem: Discovering custom tools from module: {module_path_str}')
+        discoverable_names = {
+            name for name, func_object in inspect.getmembers(module_to_inspect, inspect.isfunction)
+            if not name.startswith('_')
+            and (
+                func_object.__module__ == module_to_inspect.__name__
+                or func_object.__module__.startswith(module_to_inspect.__name__ + '.')
+            )
+        }
+        for registered_name, entry in list(self._tool_registry.items()):
+            if (
+                entry.get("module_path") == module_path_str
+                and registered_name not in discoverable_names
+            ):
+                del self._tool_registry[registered_name]
+                new_tools_registered_in_this_module = True
+
         for name, func_object in inspect.getmembers(module_to_inspect, inspect.isfunction):
             if name.startswith('_'):
                 continue

@@ -365,47 +365,112 @@ const missionControl = {
                 : [];
             const templateBadges = templates.length
                 ? templates.map(t => `<span class="mission-kv-pill">${this.escapeHtml(t)}</span>`).join('')
-                : '<span class="mission-kv-pill">No template recommendation</span>';
+                : '';
 
             return `
-                <div class="reflection-suggestion" data-insight-id="${this.escapeHtml(item.insight_id || '')}">
+                <div class="reflection-suggestion" data-insight-id="${this.escapeHtml(item.insight_id || item.suggestion_id || '')}">
                     <div class="mission-audit-row">
-                        <span>${this.escapeHtml((item.insight_id || '').toString().substring(0, 12) || 'insight')}</span>
+                        <span>${this.escapeHtml((item.insight_id || item.suggestion_id || '').toString().substring(0, 12) || 'insight')}</span>
                         <strong>${this.escapeHtml(item.type || 'UNKNOWN')}</strong>
-                        <span>${this.escapeHtml(item.status || 'UNKNOWN')}</span>
+                        <span class="status-${this.escapeHtml(item.status || 'UNKNOWN')}">${this.escapeHtml(item.status || 'UNKNOWN')}</span>
                     </div>
                     <div class="mission-audit-detail">${this.escapeHtml(item.description || '')}</div>
-                    <div class="mission-kv-pills">${templateBadges}</div>
-                    <div class="reflection-actions">
-                        <button class="btn-control assistant-action" data-reflection-action="approve">Approve</button>
-                        <button class="btn-control assistant-action" data-reflection-action="reject">Reject</button>
-                        <button class="btn-control assistant-action" data-reflection-action="spawn" ${templates.length ? '' : 'disabled title="No recommended template available"'}>Spawn Specialist</button>
-                    </div>
+                    ${templateBadges ? `<div class="mission-kv-pills">${templateBadges}</div>` : ''}
                 </div>
             `;
         }).join('');
 
         this.reflectionPanel.innerHTML = `
             <div class="mission-status-header-row">
-                <div class="mission-status-header">Reflection & Specialist Management</div>
-                <div class="mission-status-freshness">Pending ${Array.isArray(items) ? items.length : 0}</div>
+                <div class="mission-status-header">Recent Autonomous Insights</div>
+                <div class="mission-status-freshness">Monitoring ${Array.isArray(items) ? items.length : 0} items</div>
             </div>
-            <div class="mission-audit-list">${rows || '<div class="mission-audit-detail">No pending reflection suggestions.</div>'}</div>
+            <div class="mission-audit-list">${rows || '<div class="mission-audit-detail">No recent insights monitored.</div>'}</div>
             <div class="mission-status-meta">${generatedAtIso ? `Generated: ${this.escapeHtml(generatedAtIso)}` : 'Generated: n/a'}</div>
         `;
+    },
 
-        this.reflectionPanel.querySelectorAll('[data-reflection-action]').forEach(btn => {
-            btn.addEventListener('click', async (event) => {
-                const action = event.currentTarget.getAttribute('data-reflection-action');
-                const card = event.currentTarget.closest('.reflection-suggestion');
-                const insightId = card ? card.getAttribute('data-insight-id') : '';
-                const item = (items || []).find(i => String(i.insight_id || '') === String(insightId || ''));
-                if (!item) return;
-                await this.handleReflectionAction(item, action);
-            });
+
+    showPrompt: function(title, message, placeholder) {
+        return new Promise(resolve => {
+            let modal = document.getElementById('mc-prompt-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'mc-prompt-modal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal-content" style="max-width: 400px; background: rgba(10, 15, 30, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 20px;">
+                        <div class="modal-header" id="mc-prompt-title" style="font-size: 16px; margin-bottom: 15px; color: var(--accent-cyan);">Title</div>
+                        <div class="modal-body">
+                            <div id="mc-prompt-message" style="margin-bottom:10px; font-size: 14px;"></div>
+                            <input type="text" id="mc-prompt-input" style="width:100%; padding:10px; border-radius:4px; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.2); color:#eee; box-sizing: border-box;">
+                        </div>
+                        <div class="modal-buttons" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                            <button class="btn-modal cancel" id="mc-prompt-cancel" style="padding:8px 16px; background:rgba(255,255,255,0.1); border:none; border-radius:4px; color:white; cursor:pointer;">Cancel</button>
+                            <button class="btn-modal confirm" id="mc-prompt-confirm" style="padding:8px 16px; background:var(--accent-cyan); border:none; border-radius:4px; color:black; font-weight:bold; cursor:pointer;">Confirm</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('mc-prompt-title').textContent = title;
+            document.getElementById('mc-prompt-message').textContent = message;
+            const input = document.getElementById('mc-prompt-input');
+            input.placeholder = placeholder || '';
+            input.value = '';
+            
+            const cancelBtn = document.getElementById('mc-prompt-cancel');
+            const confirmBtn = document.getElementById('mc-prompt-confirm');
+            
+            const cleanup = () => {
+                modal.classList.remove('active');
+                cancelBtn.onclick = null;
+                confirmBtn.onclick = null;
+            };
+            
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+            confirmBtn.onclick = () => {
+                cleanup();
+                resolve(input.value);
+            };
+            
+            modal.classList.add('active');
+            input.focus();
         });
     },
 
+    showAlert: function(title, message) {
+        return new Promise(resolve => {
+            let modal = document.getElementById('mc-alert-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'mc-alert-modal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal-content" style="max-width: 400px; background: rgba(10, 15, 30, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 20px;">
+                        <div class="modal-header" id="mc-alert-title" style="font-size: 16px; margin-bottom: 15px; color: var(--accent-cyan);">Title</div>
+                        <div class="modal-body" id="mc-alert-message" style="margin-bottom:20px; font-size: 14px; line-height: 1.5;"></div>
+                        <div class="modal-buttons" style="display:flex; justify-content:flex-end;">
+                            <button class="btn-modal confirm" id="mc-alert-confirm" style="padding:8px 16px; background:var(--accent-cyan); border:none; border-radius:4px; color:black; font-weight:bold; cursor:pointer;">OK</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('mc-alert-title').textContent = title;
+            document.getElementById('mc-alert-message').textContent = message;
+            const confirmBtn = document.getElementById('mc-alert-confirm');
+            
+            confirmBtn.onclick = () => {
+                modal.classList.remove('active');
+                resolve();
+            };
+            modal.classList.add('active');
+        });
+    },
 
     handleReflectionAction: async function (item, action) {
         if (!item || !item.actions) return;
@@ -415,18 +480,20 @@ const missionControl = {
 
         if (action === 'approve') {
             endpoint = item.actions.approve;
-            const feedback = prompt('Optional approval feedback:', '');
+            const feedback = await this.showPrompt('Approve Action', 'Optional approval feedback:', '');
+            if (feedback === null) return;
             if (feedback) payload.feedback = feedback;
         } else if (action === 'reject') {
             endpoint = item.actions.reject;
-            const feedback = prompt('Optional rejection reason:', '');
+            const feedback = await this.showPrompt('Reject Action', 'Optional rejection reason:', '');
+            if (feedback === null) return;
             if (feedback) payload.feedback = feedback;
         } else if (action === 'spawn') {
             endpoint = item.actions.spawn_specialist;
             const templates = Array.isArray(item.recommended_specialist_templates) ? item.recommended_specialist_templates : [];
             const templateId = templates.length ? String(templates[0] || '').trim() : '';
             if (!templateId) {
-                alert('No recommended specialist template is available for this suggestion.');
+                await this.showAlert('Error', 'No recommended specialist template is available for this suggestion.');
                 return;
             }
             payload = {
@@ -445,21 +512,21 @@ const missionControl = {
             });
             const data = await res.json();
             if (!data.success) {
-                alert(data.error || 'Reflection action failed.');
+                await this.showAlert('Action Failed', data.error || 'Reflection action failed.');
                 return;
             }
 
             const successMsg = action === 'spawn'
                 ? `Specialist spawned: ${(data.task_id || '').toString().substring(0, 12)}`
                 : `Suggestion ${(item.insight_id || '').toString().substring(0, 12)} ${action}d.`;
-            alert(successMsg);
+            await this.showAlert('Success', successMsg);
 
             this.fetchReflectionSuggestions();
             this.fetchTasks();
             this.fetchStatusSnapshot();
         } catch (e) {
             console.error('Reflection action error:', e);
-            alert(`Reflection action failed: ${e.message}`);
+            await this.showAlert('Error', `Reflection action failed: ${e.message}`);
         }
     },
 

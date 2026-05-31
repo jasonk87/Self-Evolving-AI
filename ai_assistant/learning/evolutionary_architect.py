@@ -118,7 +118,7 @@ async def generate_evolution_proposal(filepath: str, content: str, analysis_resu
     
     for attempt in range(max_retries):
         try:
-            response = await invoke_ollama_model_async(current_prompt, model_name=model)
+            response = await invoke_ollama_model_async(current_prompt, model_name=model, json_mode=True)
 
             if not response:
                 logger.warning(f"EvolutionaryArchitect: No response received from LLM (Attempt {attempt+1}/{max_retries}). Aborting.")

@@ -2,12 +2,17 @@
 import datetime
 import re
 import json # For the simplistic check in to_serializable_dict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import List, Dict, Any, Optional
 import traceback # For serializing exception tracebacks
 import uuid
 import os # For os.path.exists and os.path.getsize
 from ai_assistant.config import is_debug_mode
+from ai_assistant.core.failure_freshness import (
+    annotate_failure_metadata,
+    get_runtime_revision_timestamp,
+    is_failure_stale,
+)
 
 # Import the new functions and filepath from persistent_memory
 from ai_assistant.memory.persistent_memory import (
@@ -37,6 +42,7 @@ class ReflectionLogEntry:
     post_modification_test_passed: Optional[bool] = None
     post_modification_test_details: Optional[Dict[str, Any]] = None # E.g., {"passed": True/False, "stdout": ..., "stderr": ..., "notes": ...}
     commit_info: Optional[Dict[str, Any]] = None # E.g., {"commit_message": ..., "commit_hash": ...}
+    runtime_revision_at_failure: Optional[float] = None
 
 
     def to_serializable_dict(self) -> Dict[str, Any]:
@@ -78,6 +84,7 @@ class ReflectionLogEntry:
             "post_modification_test_passed": self.post_modification_test_passed,
             "post_modification_test_details": self.post_modification_test_details,
             "commit_info": self.commit_info,
+            "runtime_revision_at_failure": self.runtime_revision_at_failure,
         }
 
     @classmethod
@@ -113,6 +120,7 @@ class ReflectionLogEntry:
             post_modification_test_passed=data.get("post_modification_test_passed"),
             post_modification_test_details=data.get("post_modification_test_details"),
             commit_info=data.get("commit_info"),
+            runtime_revision_at_failure=data.get("runtime_revision_at_failure"),
         )
 
     def to_formatted_string(self) -> str:
@@ -240,7 +248,7 @@ class ReflectionLog:
         self.log_entries = temp_entries
         if is_debug_mode():
             print(f"ReflectionLog: Loaded {len(self.log_entries)} entries from '{self.filepath}'.")
-        if not self.log_entries and os.path.exists(self.filepath) and os.path.getsize(self.filepath) > 0:
+        if loaded_entry_dicts and not self.log_entries:
              print(f"ReflectionLog: Warning - File '{self.filepath}' exists and is not empty, but no valid log entries were loaded. The file might be corrupted or in an old format.")
 
     def save_log(self):
@@ -356,6 +364,8 @@ class ReflectionLog:
             post_modification_test_details=post_modification_test_details,
             commit_info=commit_info
         )
+        if current_status in {"FAILURE", "PARTIAL_SUCCESS", "EMPTY_FAILURE"}:
+            entry.runtime_revision_at_failure = get_runtime_revision_timestamp()
         self.add_entry(entry)
         return entry # Return the created entry
 
@@ -410,6 +420,11 @@ def analyze_last_failure(tool_registry: Dict[str, str], ollama_model_name: Optio
     if not global_reflection_log.log_entries:
         return "No actions logged yet to analyze."
     last_entry = global_reflection_log.log_entries[-1]
+    if is_failure_stale(
+        {"runtime_revision_at_failure": last_entry.runtime_revision_at_failure},
+        failure_observed_at=last_entry.timestamp,
+    ):
+        return "The last failure predates a source or configuration update and is historical. Reproduce it before analyzing or retrying a repair."
 
     is_truly_failed_for_analysis = False
     if last_entry.status != "SUCCESS" and last_entry.error_type:
@@ -504,6 +519,11 @@ def get_learnings_from_reflections(max_entries: int = 50) -> List[str]:
             learning_points.append(learning)
 
         elif entry.status != "SUCCESS" and entry.error_type:
+            if is_failure_stale(
+                {"runtime_revision_at_failure": entry.runtime_revision_at_failure},
+                failure_observed_at=entry.timestamp,
+            ):
+                continue
             first_failed_tool_name: Optional[str] = None
             specific_error_message_for_learning: str = entry.error_message or entry.error_type or "Unknown error"
 
@@ -583,6 +603,8 @@ class ActionableInsight:
         if not self.insight_id:
             # Generate a new UUID-based insight_id if not provided or empty
             self.insight_id = f"{self.type.name}_{uuid.uuid4().hex[:8]}"
+        if self.type in {InsightType.TOOL_BUG_SUSPECTED, InsightType.SELF_CORRECTION_FAILURE}:
+            annotate_failure_metadata(self.metadata, self.creation_timestamp)
             
     def to_dict(self) -> Dict[str, Any]:
          return asdict(self)

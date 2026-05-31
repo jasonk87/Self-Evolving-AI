@@ -17,7 +17,9 @@ import asyncio # For running the async review process
 from unittest.mock import patch, AsyncMock # For __main__ block mocking
 from typing import Optional, Dict, Any # Ensure Optional, Dict, Any are imported for type hints
 from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
-
+from .sandbox import SandboxManager # Added SandboxManager
+from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
+from ai_assistant.config import get_model_for_task
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -367,6 +369,29 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
             _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, reason="Code identical, no changes applied.", step_desc="Diff generation found no changes")
             return f"No changes detected for function '{function_name}' in module '{module_path}'. Code is identical."
 
+        async def _generate_sandbox_test(module_path: str, function_name: str, new_code: str, requirements: str) -> str:
+            prompt = f"""You are an expert Python SDET. Write a pytest script to validate a newly modified function.
+Requirements for the function:
+{requirements}
+
+The function '{function_name}' has been modified. Here is the full code of the module it belongs to:
+```python
+{new_code}
+```
+
+Write a complete, self-contained `pytest` script. 
+CRITICAL RULES:
+1. You MUST import the function using its fully qualified path: `from {module_path} import {function_name}`.
+2. Write edge case tests based on the requirements.
+3. Provide ONLY the Python code. No markdown formatting, no explanations.
+"""
+            model = get_model_for_task("code_generation")
+            response = await invoke_ollama_model_async(prompt, model_name=model, temperature=0.2)
+            import re
+            cleaned_code = re.sub(r"^\s*```python\s*\n?", "", response, flags=re.IGNORECASE | re.MULTILINE)
+            cleaned_code = re.sub(r"\n?\s*```\s*$", "", cleaned_code, flags=re.IGNORECASE | re.MULTILINE).strip()
+            return cleaned_code
+
         # --- Critical Review Loop with Refinement ---
         critic = ReviewerAgent()
         coordinator = CriticalReviewCoordinator(critic)
@@ -436,11 +461,28 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
                     return err_msg
 
             if is_approved:
-                logger.info(f"Change to function '{function_name}' approved by critical review.")
-                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Critical review approved")
-                break # Proceed to apply changes
-
-            # If not approved, check if we can refine
+                # --- SANDBOX CONTINUOUS EVOLUTION LOOP ---
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Generating unit test for sandbox validation")
+                test_script = await _generate_sandbox_test(module_path, function_name, full_file_content_for_review, change_description)
+                
+                sandbox = SandboxManager(project_root_path)
+                logger.info("Executing sandbox validation...")
+                success, stdout, stderr = sandbox.execute_test(module_path, full_file_content_for_review, test_script)
+                
+                if success:
+                    logger.info(f"Change to function '{function_name}' approved by critical review and PASSED sandbox tests.")
+                    _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Sandbox tests passed")
+                    break # Proceed to apply changes
+                else:
+                    logger.warning(f"Sandbox tests failed. Output: {stdout}\nErrors: {stderr}")
+                    is_approved = False
+                    reviews = [{
+                        "status": "requires_changes",
+                        "comments": f"Sandbox Test Execution Failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
+                        "suggestions": "Please fix the code so it passes the generated unit tests."
+                    }]
+            
+            # If not approved (either by static analysis, critic, or sandbox), check if we can refine
             if attempt < max_refinement_attempts:
                 logger.info(f"Change to '{function_name}' NOT approved. Attempting refinement ({attempt+1})...")
 
@@ -636,6 +678,18 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
         
         success_step_desc = f"Code for '{function_name}' in '{module_path}' successfully written to disk."
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=success_step_desc)
+
+        # ZERO-DOWNTIME HOT RELOADING
+        _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Hot reloading module")
+        try:
+            if module_path in sys.modules:
+                importlib.reload(sys.modules[module_path])
+                logger.info(f"Successfully hot-reloaded module: {module_path}")
+            else:
+                importlib.import_module(module_path)
+                logger.info(f"Imported newly created module: {module_path}")
+        except Exception as e_reload:
+            logger.error(f"Hot-reload failed for {module_path}: {e_reload}")
 
         logger.info(f"Successfully modified function '{function_name}' (replaced with '{new_function_node.name}') in module '{module_path}' (file '{file_path}').")
         return f"Function '{function_name}' (replaced with '{new_function_node.name}') in module '{module_path}' updated successfully."

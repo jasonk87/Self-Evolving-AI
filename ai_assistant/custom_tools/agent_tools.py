@@ -189,8 +189,32 @@ SCHEMA = {
             "required": ["task_description"]
         }
     },
+    "list_pending_background_goals": {
+        "description": "Lists background goals that are waiting for explicit approval.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    "approve_background_goal": {
+        "description": "Approves a pending background goal so the background worker can execute it.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal_id": {"type": "string", "description": "The pending background goal ID."}
+            },
+            "required": ["goal_id"]
+        }
+    },
+    "list_pending_source_change_proposals": {
+        "description": "Lists architect source-change proposals waiting for explicit user approval.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
     "list_active_agents": {
-        "description": "Scans the temp_agents directory to return a list of currently active sub-agents and their metadata.",
+        "description": "Lists durable agent workspaces and clearly distinguishes available workers from agents with queued or running goals.",
         "parameters": {
             "type": "object",
             "properties": {}
@@ -202,7 +226,8 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "agent_id": {"type": "string", "description": "The ID of the existing persistent agent."},
-                "new_task": {"type": "string", "description": "The new task description for the agent to execute."}
+                "new_task": {"type": "string", "description": "The new task description for the agent to execute."},
+                "session_id": {"type": "string", "description": "Optional originating chat session ID for completion delivery."}
             },
             "required": ["agent_id", "new_task"]
         }
@@ -211,15 +236,27 @@ SCHEMA = {
 
 def list_active_agents() -> str:
     """
-    Scans the temp_agents directory to find and list all active agent workspaces.
-    Returns their metadata configuration to help Weebo know its "Swarm Roster".
+    Lists agent workspaces and their durable queued or running goal state.
+    A workspace alone is available capacity, not evidence of active work.
     """
     base_path = agent_manager.base_path
     if not os.path.exists(base_path):
         return "No active agents found. The temp_agents directory does not exist."
 
-    agents = []
     try:
+        removed_agent_ids = agent_manager.cleanup_stale_session_agents()
+        from ai_assistant.goals.goal_management import list_goals
+
+        active_goals_by_agent = {}
+        for goal in list_goals():
+            if goal.get("status") not in {"pending", "in_progress"}:
+                continue
+            routed_agent_id = goal.get("metadata", {}).get("routed_agent_id")
+            if routed_agent_id:
+                active_goals_by_agent[routed_agent_id] = goal
+
+        running_agents = []
+        available_agents = []
         for entry in os.listdir(base_path):
             agent_path = os.path.join(base_path, entry)
             if os.path.isdir(agent_path):
@@ -228,21 +265,39 @@ def list_active_agents() -> str:
                     try:
                         with open(meta_file, 'r') as f:
                             meta = json.load(f)
-                            agents.append(f"- ID: {entry} | Scope: {meta.get('scope_type', 'unknown')} | Purpose: {meta.get('purpose', 'unknown')}")
+                            line = f"- ID: {entry} | Scope: {meta.get('scope_type', 'unknown')} | Purpose: {meta.get('purpose', 'unknown')}"
+                            goal = active_goals_by_agent.get(entry)
+                            if goal:
+                                running_agents.append(f"{line} | Goal status: {goal.get('status')} | Goal ID: {goal.get('id')}")
+                            else:
+                                available_agents.append(f"{line} | Goal status: available")
                     except json.JSONDecodeError:
-                        agents.append(f"- ID: {entry} | Error reading metadata.")
+                        available_agents.append(f"- ID: {entry} | Error reading metadata.")
                 else:
                     # Legacy or missing metadata
-                    agents.append(f"- ID: {entry} | No metadata available.")
+                    available_agents.append(f"- ID: {entry} | No metadata available.")
 
-        if not agents:
-            return "No active agents found in the roster."
+        if not running_agents and not available_agents:
+            result = "No agent workspaces are available and no agents are currently running a task."
+            if removed_agent_ids:
+                result += f" Removed {len(removed_agent_ids)} stale session workspace(s)."
+            return result
 
-        return "Currently Active Agents:\n" + "\n".join(agents)
+        sections = []
+        if running_agents:
+            sections.append("Agents with queued or running goals:\n" + "\n".join(running_agents))
+        else:
+            sections.append("No agents are currently running or queued for a task.")
+        if available_agents:
+            sections.append("Available agent workspaces (not currently working):\n" + "\n".join(available_agents))
+        result = "\n".join(sections)
+        if removed_agent_ids:
+            result += f"\nRemoved {len(removed_agent_ids)} stale session workspace(s)."
+        return result
     except Exception as e:
         return f"Failed to list active agents: {e}"
 
-def wake_agent(agent_id: str, new_task: str) -> str:
+def wake_agent(agent_id: str, new_task: str, session_id: str = None) -> str:
     """
     Wakes up an existing persistent agent by creating a background goal routed directly to it.
     """
@@ -255,17 +310,20 @@ def wake_agent(agent_id: str, new_task: str) -> str:
     metadata = {
         "type": "background_agent",
         "routed_agent_id": agent_id,
-        "created_at": time.time()
+        "source_session_id": session_id,
+        "created_at": time.time(),
+        "execution_mode": "one_shot",
     }
 
     goal_id = create_goal(
         title=f"Routed Task for {agent_id}: {new_task[:30]}...",
         description=new_task,
         priority="high",
+        status="pending",
         metadata=metadata
     )
 
-    return f"Successfully woke agent '{agent_id}' and assigned the task. Goal ID: {goal_id}. It will run in the background."
+    return f"Successfully assigned agent '{agent_id}' a background goal. Goal ID: {goal_id['id']}. Status: {goal_id['status']}. It is queued for execution."
 
 def spawn_background_agent(task_description: str, session_id: str = None) -> str:
     """
@@ -281,23 +339,104 @@ def spawn_background_agent(task_description: str, session_id: str = None) -> str
         str: A confirmation message with the Goal ID.
     """
     # 1. Create a Goal
-    from ai_assistant.goals.goal_management import create_goal
+    from ai_assistant.goals.goal_management import create_goal, list_goals
+
+    normalized_description = task_description.strip().casefold()
+    for existing_goal in list_goals():
+        if (
+            str(existing_goal.get("description", "")).strip().casefold() == normalized_description
+            and existing_goal.get("status") in {"PENDING_APPROVAL", "pending", "in_progress"}
+        ):
+            return (
+                f"Background task already exists. Goal ID: {existing_goal.get('id')}\n"
+                f"Status: {existing_goal.get('status')}"
+            )
     
     # Identify source
     metadata = {
         "type": "background_agent",
         "source_session_id": session_id,
-        "created_at": time.time()
+        "created_at": time.time(),
+        "execution_mode": "one_shot",
     }
     
     goal_id = create_goal(
         title=f"Background Agent: {task_description[:50]}...",
         description=task_description,
         priority="high", # Prioritize agent requests
+        status="pending",
         metadata=metadata
     )
     
     # 2. Trigger Background Service (Optional - it polls)
     # But for responsiveness, maybe we should indicate it will be picked up.
     
-    return f"Background Agent assigned to task: '{task_description}'.\nGoal ID: {goal_id}\nI will notify you in this chat when the agent completes the work."
+    return f"Background Agent assigned to task: '{task_description}'.\nGoal ID: {goal_id['id']}\nStatus: {goal_id['status']}\nQueued for execution."
+
+def list_pending_background_goals() -> str:
+    """Lists background goals that still need a green light."""
+    from ai_assistant.goals.goal_management import list_goals
+
+    goals = [
+        goal for goal in list_goals(status="PENDING_APPROVAL")
+        if goal.get("metadata", {}).get("type") == "background_agent"
+    ]
+    if not goals:
+        return "No background goals are waiting for approval."
+
+    lines = [
+        f"- ID: {goal.get('id')} | Priority: {goal.get('priority')} | Task: {goal.get('description') or goal.get('title')}"
+        for goal in goals
+    ]
+    return "Background Goals Waiting for Approval:\n" + "\n".join(lines)
+
+def approve_background_goal(goal_id: str) -> str:
+    """Approves one pending background goal and moves it into the worker queue."""
+    from ai_assistant.goals.goal_management import approve_goal, get_goal
+
+    goal = get_goal(goal_id)
+    if not goal:
+        return f"Error: Background goal '{goal_id}' was not found."
+    if goal.get("status") != "PENDING_APPROVAL":
+        return f"Background goal '{goal_id}' is already in status '{goal.get('status')}'."
+    if goal.get("metadata", {}).get("type") != "background_agent":
+        return (
+            f"Error: Goal '{goal_id}' is not a background-agent launch. "
+            "Architect source changes require approval from the Approvals UI."
+        )
+    if approve_goal(goal_id):
+        return f"Approved background goal '{goal_id}'. It is queued for execution."
+    return f"Error: Failed to approve background goal '{goal_id}'."
+
+def list_pending_source_change_proposals() -> str:
+    """Lists architect source-change proposals waiting for explicit user approval."""
+    from ai_assistant.goals.goal_management import list_goals
+
+    goals = [
+        goal for goal in list_goals(status="PENDING_APPROVAL")
+        if goal.get("metadata", {}).get("type") == "architect_source_change"
+        or not goal.get("metadata")
+    ]
+    if not goals:
+        return "No source-change proposals are waiting for approval."
+
+    lines = [
+        f"- ID: {goal.get('id')} | Priority: {goal.get('priority')} | Proposal: {goal.get('description') or goal.get('title')}"
+        for goal in goals
+    ]
+    return "Source-Change Proposals Waiting for Approval:\n" + "\n".join(lines)
+
+def _approve_source_change_proposal_from_ui(goal_id: str) -> str:
+    """Releases one architect source-change proposal after a human UI action."""
+    from ai_assistant.goals.goal_management import approve_goal, get_goal
+
+    goal = get_goal(goal_id)
+    if not goal:
+        return f"Error: Source-change proposal '{goal_id}' was not found."
+    if goal.get("status") != "PENDING_APPROVAL":
+        return f"Source-change proposal '{goal_id}' is already in status '{goal.get('status')}'."
+    if goal.get("metadata", {}).get("type") != "architect_source_change":
+        return f"Error: Goal '{goal_id}' is not an architect source-change proposal."
+    if approve_goal(goal_id):
+        return f"Approved source-change proposal '{goal_id}'. It is queued for execution."
+    return f"Error: Failed to approve source-change proposal '{goal_id}'."

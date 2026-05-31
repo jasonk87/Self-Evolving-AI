@@ -7,7 +7,7 @@ import os
 import uuid
 import logging
 
-from ai_assistant.config import DEFAULT_MODEL, is_debug_mode
+from ai_assistant.config import DEFAULT_MODEL, get_data_dir, is_debug_mode
 from ai_assistant.core import self_modification
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
@@ -166,7 +166,7 @@ class ActionExecutor:
                 "target_path": target_path,
                 "actor": details.get("actor", "autonomous_executor"),
                 "rationale": details.get("rationale", f"Preflight check for {action_type}"),
-                "requested_at": details.get("requested_at", datetime.now(timezone.utc).isoformat()),
+                "requested_at": details.get("requested_at", datetime.datetime.now(timezone.utc).isoformat()),
             }
 
             evaluation = approvals_routes._evaluate_execution_preflight(payload)
@@ -1002,6 +1002,40 @@ class ActionExecutor:
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Exception during swarm execution")
                 return False
 
+        elif action_type == "ADD_PLANNING_HEURISTIC":
+            heuristic = str(details.get("heuristic") or "").strip()
+            if not heuristic:
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="Missing heuristic text.", step_desc="Validation failed")
+                return False
+
+            heuristics_path = os.path.join(get_data_dir(), "planning_heuristics.json")
+            try:
+                heuristics = []
+                if os.path.exists(heuristics_path):
+                    with open(heuristics_path, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        heuristics = loaded
+
+                normalized = heuristic.casefold()
+                if not any(str(entry.get("heuristic", "")).casefold() == normalized for entry in heuristics if isinstance(entry, dict)):
+                    heuristics.append({
+                        "heuristic": heuristic,
+                        "trigger_context": details.get("trigger_context", "general_planning"),
+                        "source": details.get("source", f"Insight {source_insight_id}"),
+                        "created_at": datetime.datetime.now(timezone.utc).isoformat(),
+                    })
+                    os.makedirs(os.path.dirname(heuristics_path), exist_ok=True)
+                    with open(heuristics_path, "w", encoding="utf-8") as f:
+                        json.dump(heuristics, f, indent=2, ensure_ascii=False)
+
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Planning heuristic saved.")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to save planning heuristic: {e}", exc_info=True)
+                self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_UNKNOWN, reason=str(e), step_desc="Failed to save planning heuristic")
+                return False
+
         elif action_type == "ADD_LEARNED_FACT":
             fact_to_learn = details.get("fact_to_learn")
             if not fact_to_learn:
@@ -1044,8 +1078,8 @@ class ActionExecutor:
                     "category": determined_category,
                     "source": details.get("source", f"Insight {source_insight_id}" if source_insight_id else "Unknown"),
                     "permanence": details.get("permanence", "permanent"), # Capture permanence
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "created_at": datetime.datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.datetime.now(timezone.utc).isoformat()
                 }
                 current_facts.append(new_fact_entry)
 
@@ -1244,7 +1278,7 @@ if __name__ == '__main__': # pragma: no cover
 
     if not os.path.exists(LEARNED_FACTS_FILEPATH):
         print(f"[ActionExecutor Test Setup] Attempting to create dummy learned facts at: {LEARNED_FACTS_FILEPATH}")
-        save_learned_facts([{"text": "Initial dummy fact from action_executor test setup (should be in data dir).", "fact_id": "fact_test_init", "category": "test", "source": "init", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()}]) # Updated to new fact structure
+        save_learned_facts([{"text": "Initial dummy fact from action_executor test setup (should be in data dir).", "fact_id": "fact_test_init", "category": "test", "source": "init", "created_at": datetime.datetime.now(timezone.utc).isoformat(), "updated_at": datetime.datetime.now(timezone.utc).isoformat()}]) # Updated to new fact structure
     else:
         print(f"[ActionExecutor Test Setup] Learned facts file already exists at: {LEARNED_FACTS_FILEPATH}")
 
@@ -1253,7 +1287,7 @@ if __name__ == '__main__': # pragma: no cover
         entry_id: str = field(default_factory=lambda: str(uuid.uuid4()))
         goal_description: str = "Mock Goal"
         plan: Optional[List[Dict[str, Any]]] = None
-        timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+        timestamp: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(timezone.utc))
 
 
     async def main_test():

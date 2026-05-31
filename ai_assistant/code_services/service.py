@@ -892,6 +892,20 @@ class CodeService:
                 )
                 logs.append(f"Using GRANULAR_CODE_REFACTOR. Target: {module_path}.{function_name}, Section: '{section_to_modify[:50]}...'")
 
+            elif context == "ARCHITECT_EVOLUTION":
+                if actual_existing_code is None:
+                    logs.append("Original file content is missing for ARCHITECT_EVOLUTION.")
+                    result = {"status": "ERROR_NO_ORIGINAL_CODE", "modified_code_string": None, "logs": logs, "error": "Original file content missing."}
+                    self._update_task(task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=result.get("error"), step_desc=result.get("status"))
+                    return result
+                prompt = (
+                    "You are modifying a complete Python source file as part of an architecture improvement.\n"
+                    f"Instruction:\n{modification_instruction}\n\n"
+                    f"Existing file content:\n```python\n{actual_existing_code}\n```\n\n"
+                    "Return only the complete updated Python file content."
+                )
+                logs.append("Using ARCHITECT_EVOLUTION whole-file modification context.")
+
             else:
                 logs.append(f"Context '{context}' not supported for modify_code.")
                 result = {"status": "ERROR_UNSUPPORTED_CONTEXT", "modified_code_string": None, "logs": logs, "error": "Unsupported context"}

@@ -8,6 +8,7 @@ from ai_assistant.memory.vector_store import VectorStore
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
 
 from ai_assistant.config import get_data_dir, DEFAULT_MODEL
+from ai_assistant.core.failure_freshness import annotate_failure_metadata, is_failure_stale
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class EpisodicMemoryManager:
             warnings = []
             for fail in results:
                 metadata = fail.get("metadata", {})
+                if is_failure_stale(metadata, metadata.get("timestamp")):
+                    continue
                 date = metadata.get("timestamp", "Unknown Date")
                 lesson = metadata.get("lesson", "No specific lesson recorded.")
                 warnings.append(f"- [Date: {date}] Lesson: {lesson}")
@@ -90,6 +93,8 @@ class EpisodicMemoryManager:
                 "tools_used": ", ".join(tools_used),
                 "lesson": lesson
             }
+            if outcome == "FAILURE":
+                annotate_failure_metadata(metadata, metadata["timestamp"])
 
             # Save to VectorStore
             self.vector_store.add_documents([document_text], [embedding], [metadata])

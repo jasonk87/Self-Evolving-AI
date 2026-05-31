@@ -59,7 +59,7 @@ async def google_custom_search(query: str, num_results: int = 5) -> Dict[str, An
         print(f"An error occurred during Google Custom Search: {e}")
         return {"results": [], "images": images, "error": str(e)}
 
-def execute_deep_research(query: str) -> str:
+async def execute_deep_research(query: str) -> str:
     """
     Performs 'Deep Research' by searching Google, visiting the top results, reading their content,
     and synthesizing a comprehensive answer. Use this for complex coding questions, API documentation lookups,
@@ -76,40 +76,8 @@ def execute_deep_research(query: str) -> str:
 
     researcher = DeepResearcher()
 
-    # Run the async method in a synchronous wrapper (assuming this tool is called synchronously)
-    # If the tool execution environment supports async, this should be awaited directly.
-    # Given the context, we'll use asyncio.run or ensure a loop exists.
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_running():
-        # If we are already in an event loop (likely, given this is an async app),
-        # we might need to handle this differently if tools are awaited.
-        # But if tools are run in a thread or executor, we can use run_coroutine_threadsafe.
-        # However, looking at the codebase, tools seem to be just functions.
-        # Assuming the caller can handle async if the tool is async?
-        # Standard synchronous tools usually block.
-        # If this is called from an async context, we cannot use asyncio.run().
-        # We'll try to return a coroutine if the caller expects it, but standard tools are usually sync.
-        # SAFE APPROACH: Use a nest_asyncio pattern or run in a separate thread if needed.
-        # For now, let's assume we can use a fresh runner or the existing loop logic.
-
-        # NOTE: If the caller is the Orchestrator running an async loop, calling this blocking function
-        # which tries to run another loop will fail.
-        # Ideally, this tool function should be async.
-        # Let's check if other tools are async.
-        # search_tools.py functions are sync.
-
-        # We will wrap it in a way that works.
-        import nest_asyncio
-        nest_asyncio.apply()
-        return loop.run_until_complete(researcher.perform_deep_research(query))["summary"]
-    else:
-        return asyncio.run(researcher.perform_deep_research(query))["summary"]
+    result = await researcher.perform_deep_research(query)
+    return result["summary"]
 
 import requests
 import os

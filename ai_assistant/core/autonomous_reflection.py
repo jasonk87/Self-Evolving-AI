@@ -31,6 +31,7 @@ from ..memory.event_logger import log_event
 from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
 from ai_assistant.memory.persistent_memory import load_actionable_insights
+from ai_assistant.core.failure_freshness import is_failure_stale
 from datetime import datetime, timezone, timedelta 
 from .notification_manager import NotificationManager
 
@@ -266,6 +267,11 @@ def get_reflection_log_summary_for_analysis(
     relevant_entry_count = 0
 
     for i, entry in enumerate(entries): 
+        if entry.status in {"FAILURE", "PARTIAL_SUCCESS", "EMPTY_FAILURE"} and is_failure_stale(
+            {"runtime_revision_at_failure": entry.runtime_revision_at_failure},
+            failure_observed_at=entry.timestamp,
+        ):
+            continue
         entry_details = []
         entry_details.append(f"Entry {relevant_entry_count + 1} (Timestamp: {entry.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')})")
         entry_details.append(f"  Goal: {entry.goal_description}")
@@ -703,7 +709,11 @@ def run_self_reflection_cycle(
     all_insights = load_actionable_insights()
     
     rejected_insights = [i for i in all_insights if i.get("status") in ["REJECTED_BY_USER", "BLOCKED_BY_COUNCIL"]]
-    failed_insights = [i for i in all_insights if i.get("status") in ["SELF_HEALING_FAILED", "ACTION_FAILED"]]
+    failed_insights = [
+        i for i in all_insights
+        if i.get("status") in ["SELF_HEALING_FAILED", "ACTION_FAILED"]
+        and not is_failure_stale(i.get("metadata"), i.get("creation_timestamp"))
+    ]
 
     # Sort by recent first
     rejected_insights.sort(key=lambda x: x.get("creation_timestamp", ""), reverse=True)

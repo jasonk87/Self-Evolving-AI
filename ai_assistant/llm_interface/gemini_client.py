@@ -44,6 +44,21 @@ def _apply_thinking_config(payload: Dict[str, Any], model_name: str) -> Optional
     payload.setdefault("generationConfig", {})["thinkingConfig"] = {
         "thinkingBudget": thinking_budget
     }
+    
+    # Determine the token budget to add to maxOutputTokens
+    added_budget = 0
+    if thinking_budget == -1:
+        # Dynamic thinking budget: allocate a generous token buffer for thinking (e.g., 4096 tokens)
+        added_budget = 4096
+    elif thinking_budget > 0:
+        # Manual thinking budget: add the exact budget amount
+        added_budget = thinking_budget
+
+    if added_budget > 0:
+        gen_config = payload.setdefault("generationConfig", {})
+        if "maxOutputTokens" in gen_config:
+            gen_config["maxOutputTokens"] = min(65536, gen_config["maxOutputTokens"] + added_budget)
+            
     return thinking_budget
 
 def _split_response_parts(candidate: Dict[str, Any]) -> Tuple[str, str]:

@@ -85,7 +85,7 @@ class ConversationalAnalyst:
         prompt = ANALYSIS_PROMPT_TEMPLATE.format(transcript=transcript)
         
         try:
-            response = await invoke_ollama_model_async(prompt, model_name=self.model)
+            response = await invoke_ollama_model_async(prompt, model_name=self.model, json_mode=True)
             if not response:
                 return []
             
