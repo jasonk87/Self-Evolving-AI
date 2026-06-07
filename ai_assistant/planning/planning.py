@@ -5,6 +5,9 @@ import json # For parsing LLM plan string
 from ai_assistant.planning.llm_argument_parser import populate_tool_arguments_with_llm
 from ai_assistant.config import get_model_for_task
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # For re-planning
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
 
 if TYPE_CHECKING:
     from ai_assistant.core.memory_manager import MemoryManager
@@ -88,6 +91,18 @@ class PlannerAgent:
         Creates a plan to achieve the goal_description using an LLM to generate the plan steps.
         Optionally includes project context if provided.
         """
+        with tracer.start_as_current_span("planner.create_plan_with_llm"):
+            return await self._create_plan_with_llm_internal(goal_description, available_tools, project_context_summary, project_name_for_context, conversation_history, last_action_report)
+
+    async def _create_plan_with_llm_internal(
+        self,
+        goal_description: str,
+        available_tools: Dict[str, str],
+        project_context_summary: Optional[str] = None,
+        project_name_for_context: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        last_action_report: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         import json 
 
         MAX_CORRECTION_ATTEMPTS = 1

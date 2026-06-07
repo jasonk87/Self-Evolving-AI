@@ -53,32 +53,35 @@ class SystemController:
         )
 
         # Inject the correlation ID from the ExecutionState into the ContextVar
-        correlation_id_var.set(state.correlation_id)
+        token = correlation_id_var.set(state.correlation_id)
 
-        state.current_status = "planning"
+        try:
+            state.current_status = "planning"
 
-        with tracer.start_as_current_span("handle_user_request") as span:
-            span.set_attribute("correlation_id", state.correlation_id)
-            if session_id:
-                span.set_attribute("session_id", session_id)
+            with tracer.start_as_current_span("handle_user_request") as span:
+                span.set_attribute("correlation_id", state.correlation_id)
+                if session_id:
+                    span.set_attribute("session_id", session_id)
 
-            try:
-                logger.info(f"SystemController: Routing request for session {session_id}")
+                try:
+                    logger.info(f"SystemController: Routing request for session {session_id}")
 
-                # 2. Delegate to the Orchestrator
-                # The orchestrator accepts and directly mutates the ExecutionState object.
-                state = await self.orchestrator.process_prompt(
-                    state=state,
-                    conversation_history=conversation_history,
-                    session_id=session_id,
-                    images=images,
-                    context_source=context_source
-                )
+                    # 2. Delegate to the Orchestrator
+                    # The orchestrator accepts and directly mutates the ExecutionState object.
+                    state = await self.orchestrator.process_prompt(
+                        state=state,
+                        conversation_history=conversation_history,
+                        session_id=session_id,
+                        images=images,
+                        context_source=context_source
+                    )
 
-            except Exception as e:
-                logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)
-                span.record_exception(e)
-                state.current_status = "failed"
-                state.errors.append(f"Critical System Error: {str(e)}")
+                except Exception as e:
+                    logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)
+                    span.record_exception(e)
+                    state.current_status = "failed"
+                    state.errors.append(f"Critical System Error: {str(e)}")
 
-        return state
+            return state
+        finally:
+            correlation_id_var.reset(token)
