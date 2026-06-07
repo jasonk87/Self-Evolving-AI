@@ -52,6 +52,9 @@ def test_reflection_to_specialist_handoff_lifecycle_integration(monkeypatch):
     monkeypatch.setattr(app_globals, "orchestrator", orchestrator)
     monkeypatch.setattr(app_globals, "task_manager", orchestrator.task_manager, raising=False)
 
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
+
     with app.test_client() as client:
         suggestions = client.get('/api/status/reflection-suggestions')
         assert suggestions.status_code == 200

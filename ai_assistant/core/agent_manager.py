@@ -66,7 +66,9 @@ class AgentManager:
         """
         Returns the absolute path to that agent's folder.
         """
-        workspace_path = os.path.abspath(os.path.join(self.base_path, agent_id))
+        # Normalize Windows-style separators for cross-platform checking
+        normalized_agent_id = agent_id.replace('\\', '/')
+        workspace_path = os.path.abspath(os.path.join(self.base_path, normalized_agent_id))
         base_path = os.path.abspath(self.base_path)
         if os.path.commonpath([base_path, workspace_path]) != base_path:
             raise ValueError(f"Agent workspace '{agent_id}' resolves outside the configured base directory.")

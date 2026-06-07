@@ -137,6 +137,7 @@ class TestReflectionLog(unittest.TestCase):
         # For these tests, we'll use an in-memory ReflectionLog
         # by not providing a filepath or mocking persistence functions.
         self.reflection_log = ReflectionLog(filepath=":memory:") # Use a special value or mock load/save
+        self.reflection_log.log_entries = [] # Clear entries before each test
 
     def test_log_execution_with_self_modification_params(self):
         goal = "Test self-mod logging in ReflectionLog"

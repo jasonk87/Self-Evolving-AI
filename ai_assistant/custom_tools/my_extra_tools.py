@@ -107,7 +107,7 @@ async def search_duckduckgo(*args, **kwargs) -> str:
         str: A JSON string representing a list of search results.
     """
     import json
-    from ddgs import DDGS
+    from duckduckgo_search import DDGS
     from ai_assistant.custom_tools.my_extra_tools import search_google_custom_search
     query: Optional[str] = None
     if 'query' in kwargs:
