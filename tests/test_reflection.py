@@ -136,8 +136,16 @@ class TestReflectionLog(unittest.TestCase):
     def setUp(self):
         # For these tests, we'll use an in-memory ReflectionLog
         # by not providing a filepath or mocking persistence functions.
-        self.reflection_log = ReflectionLog(filepath=":memory:") # Use a special value or mock load/save
+        import tempfile
+        import os
+
+        self.test_dir = tempfile.TemporaryDirectory()
+        self.test_filepath = os.path.join(self.test_dir.name, "test_reflection_log.json")
+        self.reflection_log = ReflectionLog(filepath=self.test_filepath)
         self.reflection_log.log_entries = [] # Clear entries before each test
+
+    def tearDown(self):
+        self.test_dir.cleanup()
 
     def test_log_execution_with_self_modification_params(self):
         goal = "Test self-mod logging in ReflectionLog"
