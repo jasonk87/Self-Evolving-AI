@@ -76,7 +76,7 @@ def test_search_duckduckgo_uses_date_enriched_day_limited_query(monkeypatch):
 
     monkeypatch.setattr(config, "AUTO_WEB_PIP", False, raising=False)
     monkeypatch.setattr(config, "GHOST_MODE", False, raising=False)
-    monkeypatch.setattr("ddgs.DDGS", FakeDDGS)
+    monkeypatch.setattr("duckduckgo_search.DDGS", FakeDDGS)
     monkeypatch.setattr(my_extra_tools, "_format_search_date", lambda value=None: "May 21, 2026")
 
     result = asyncio.run(my_extra_tools.search_duckduckgo(query="top news today"))

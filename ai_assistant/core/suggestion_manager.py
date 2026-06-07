@@ -13,10 +13,12 @@ SUGGESTIONS_FILE_NAME = "suggestions.json"
 def get_suggestions_file_path() -> str:
     return os.path.join(get_data_dir(), SUGGESTIONS_FILE_NAME)
 
-def _load_suggestions() -> List[Dict[str, Any]]:
+def _load_suggestions(create_dummy: bool = True) -> List[Dict[str, Any]]:
     """Loads suggestions from the JSON file."""
     filepath = get_suggestions_file_path()
     if not os.path.exists(filepath):
+        if not create_dummy:
+            return []
         # Create a dummy suggestions file if it doesn't exist for demo purposes
         print(color_text(f"Suggestions file not found at {filepath}. Creating a dummy file.", CLIColors.SYSTEM_MESSAGE))
         dummy_suggestions = [
@@ -63,9 +65,9 @@ def _save_suggestions(suggestions: List[Dict[str, Any]]) -> bool:
         print(color_text(f"Error saving suggestions: {e}", CLIColors.ERROR_MESSAGE))
         return False
 
-def list_suggestions() -> List[Dict[str, Any]]:
+def list_suggestions(create_dummy: bool = True) -> List[Dict[str, Any]]:
     """Returns a list of all suggestions."""
-    return _load_suggestions()
+    return _load_suggestions(create_dummy=create_dummy)
 
 def find_suggestion(suggestion_id: str) -> Optional[Dict[str, Any]]:
     """Finds a suggestion by its ID."""

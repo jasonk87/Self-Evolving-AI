@@ -57,6 +57,9 @@ def test_mission_control_operator_smoke_snapshot_and_specialist_actions(monkeypa
         },
     )
 
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
+
     with app.test_client() as client:
         snapshot = client.get('/api/status/snapshot?summary_only=1')
         assert snapshot.status_code == 200

@@ -648,6 +648,9 @@ def test_reflection_suggestions_endpoint_returns_all_items(monkeypatch):
     fake_orchestrator = SimpleNamespace(learning_agent=SimpleNamespace(insights=insights))
     monkeypatch.setattr(app_globals, "orchestrator", fake_orchestrator)
 
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
+
     with app.test_client() as client:
         response = client.get('/api/status/reflection-suggestions?limit=2')
 
@@ -663,6 +666,28 @@ def test_reflection_suggestions_endpoint_returns_all_items(monkeypatch):
 def test_reflection_suggestions_endpoint_returns_empty_when_unavailable(monkeypatch):
     app = _build_test_app()
     monkeypatch.setattr(app_globals, "orchestrator", None)
+
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
+
+    with app.test_client() as client:
+        response = client.get('/api/status/reflection-suggestions')
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["count"] == 0
+    assert payload["items"] == []
+
+
+def test_reflection_suggestions_returns_stable_counts_when_no_suggestions_exist(monkeypatch):
+    app = _build_test_app()
+    # Provide an orchestrator but with empty insights
+    fake_orchestrator = SimpleNamespace(learning_agent=SimpleNamespace(insights=[]))
+    monkeypatch.setattr(app_globals, "orchestrator", fake_orchestrator)
+
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
 
     with app.test_client() as client:
         response = client.get('/api/status/reflection-suggestions')
@@ -692,6 +717,9 @@ def test_reflection_suggestions_include_spawn_action_and_recommendations(monkeyp
         ),
     ]
     monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(learning_agent=SimpleNamespace(insights=insights)))
+
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
 
     with app.test_client() as client:
         response = client.get('/api/status/reflection-suggestions')
@@ -781,6 +809,9 @@ def test_reflection_suggestions_include_action_links(monkeypatch):
         learning_agent=SimpleNamespace(insights=insights)
     )
     monkeypatch.setattr(app_globals, "orchestrator", fake_orchestrator)
+
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
 
     with app.test_client() as client:
         response = client.get('/api/status/reflection-suggestions')
@@ -1769,6 +1800,9 @@ def test_reflection_suggestions_skips_items_without_insight_id(monkeypatch):
     ]
 
     monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(learning_agent=SimpleNamespace(insights=insights)))
+
+    import ai_assistant.core.suggestion_manager as sm
+    monkeypatch.setattr(sm, "list_suggestions", lambda create_dummy=True: [])
 
     with app.test_client() as client:
         response = client.get('/api/status/reflection-suggestions')

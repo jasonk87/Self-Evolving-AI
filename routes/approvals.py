@@ -1219,7 +1219,7 @@ def _collect_reflection_suggestions(limit: int = 20) -> list:
     try:
         from ai_assistant.core.suggestion_manager import list_suggestions
         from datetime import datetime
-        for sugg in list_suggestions():
+        for sugg in list_suggestions(create_dummy=False):
             created_iso = sugg.get("created_at")
             created_ts = 0.0
             if created_iso:
@@ -1228,16 +1228,26 @@ def _collect_reflection_suggestions(limit: int = 20) -> list:
                 except Exception:
                     pass
             
-            items.append({
-                "insight_id": sugg.get("suggestion_id", ""),
-                "type": sugg.get("type", "UNKNOWN"),
-                "status": sugg.get("status", "UNKNOWN"),
-                "description": sugg.get("description", ""),
-                "created_at": created_ts,
-                "created_at_ts": created_ts,
-                "recommended_specialist_templates": [],
-                "actions": {}
-            })
+            insight_id = sugg.get("suggestion_id", "")
+            if not insight_id:
+                continue
+
+            # Avoid appending if already exists
+            if not any(item["insight_id"] == insight_id for item in items):
+                items.append({
+                    "insight_id": insight_id,
+                    "type": sugg.get("type", "UNKNOWN"),
+                    "status": sugg.get("status", "UNKNOWN"),
+                    "description": sugg.get("description", ""),
+                    "created_at": created_ts,
+                    "created_at_ts": created_ts,
+                    "recommended_specialist_templates": [],
+                    "actions": {
+                        "approve": f"/api/status/reflection-suggestions/{insight_id}/approve",
+                        "reject": f"/api/status/reflection-suggestions/{insight_id}/reject",
+                        "spawn_specialist": f"/api/status/reflection-suggestions/{insight_id}/spawn-specialist",
+                    }
+                })
     except Exception as e:
         logger.error(f"Error loading suggestions for mission control: {e}")
 
