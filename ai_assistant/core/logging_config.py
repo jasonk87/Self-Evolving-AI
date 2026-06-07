@@ -5,7 +5,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter, BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from ai_assistant.config import ENABLE_TRACING, OTEL_EXPORTER_OTLP_ENDPOINT
+import ai_assistant.config as config
 
 # ContextVar to store the correlation ID across async calls
 correlation_id_var = contextvars.ContextVar('correlation_id', default=None)
@@ -32,26 +32,28 @@ class CorrelationFilter(logging.Filter):
 def setup_logging_and_tracing():
     """
     Configures standard structured logging and sets up OpenTelemetry tracer.
-    Respects ENABLE_TRACING config. Does not destructively clear all handlers.
+    Respects config.ENABLE_TRACING config. Does not destructively clear all handlers.
     """
-    if not ENABLE_TRACING:
+    if not config.ENABLE_TRACING:
         # Fallback to standard logging if tracing is disabled
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         return trace.get_tracer(__name__)
 
-    if ENABLE_TRACING:
+    if config.ENABLE_TRACING:
         # 1. Setup OpenTelemetry
-        provider = TracerProvider()
+        # Only set the provider if it's not already a TracerProvider (avoid warning logs on multiple calls)
+        if not isinstance(trace.get_tracer_provider(), TracerProvider):
+            provider = TracerProvider()
 
-        if OTEL_EXPORTER_OTLP_ENDPOINT:
-            exporter = OTLPSpanExporter(endpoint=OTEL_EXPORTER_OTLP_ENDPOINT)
-            processor = BatchSpanProcessor(exporter)
-        else:
-            exporter = ConsoleSpanExporter()
-            processor = SimpleSpanProcessor(exporter)
+            if config.OTEL_EXPORTER_OTLP_ENDPOINT:
+                exporter = OTLPSpanExporter(endpoint=config.OTEL_EXPORTER_OTLP_ENDPOINT)
+                processor = BatchSpanProcessor(exporter)
+            else:
+                exporter = ConsoleSpanExporter()
+                processor = SimpleSpanProcessor(exporter)
 
-        provider.add_span_processor(processor)
-        trace.set_tracer_provider(provider)
+            provider.add_span_processor(processor)
+            trace.set_tracer_provider(provider)
 
         # 2. Setup Structured JSON Logging
         formatter = jsonlogger.JsonFormatter(
