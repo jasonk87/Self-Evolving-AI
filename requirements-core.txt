@@ -12,3 +12,6 @@ pillow
 nest_asyncio
 tiktoken
 pydantic
+python-json-logger
+opentelemetry-api
+opentelemetry-sdk

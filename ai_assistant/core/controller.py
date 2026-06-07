@@ -2,10 +2,13 @@ import logging
 from typing import Dict, Any, Optional, Tuple, List
 import asyncio
 
+from opentelemetry import trace
 from ai_assistant.core.models.state import ExecutionState
 from ai_assistant.core.orchestrator import DynamicOrchestrator
+from ai_assistant.core.logging_config import correlation_id_var
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 class SystemController:
     """
@@ -49,24 +52,33 @@ class SystemController:
             context_limits={"max_tokens": getattr(self.orchestrator, 'MAX_ACTION_PROMPT_TOKENS', 120000)}
         )
 
+        # Inject the correlation ID from the ExecutionState into the ContextVar
+        correlation_id_var.set(state.correlation_id)
+
         state.current_status = "planning"
 
-        try:
-            logger.info(f"SystemController: Routing request for session {session_id}")
+        with tracer.start_as_current_span("handle_user_request") as span:
+            span.set_attribute("correlation_id", state.correlation_id)
+            if session_id:
+                span.set_attribute("session_id", session_id)
 
-            # 2. Delegate to the Orchestrator
-            # The orchestrator accepts and directly mutates the ExecutionState object.
-            state = await self.orchestrator.process_prompt(
-                state=state,
-                conversation_history=conversation_history,
-                session_id=session_id,
-                images=images,
-                context_source=context_source
-            )
+            try:
+                logger.info(f"SystemController: Routing request for session {session_id}")
 
-        except Exception as e:
-            logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)
-            state.current_status = "failed"
-            state.errors.append(f"Critical System Error: {str(e)}")
+                # 2. Delegate to the Orchestrator
+                # The orchestrator accepts and directly mutates the ExecutionState object.
+                state = await self.orchestrator.process_prompt(
+                    state=state,
+                    conversation_history=conversation_history,
+                    session_id=session_id,
+                    images=images,
+                    context_source=context_source
+                )
+
+            except Exception as e:
+                logger.error(f"SystemController: Critical failure during execution: {e}", exc_info=True)
+                span.record_exception(e)
+                state.current_status = "failed"
+                state.errors.append(f"Critical System Error: {str(e)}")
 
         return state

@@ -60,7 +60,8 @@ from socket_events import register_socket_events, watch_telemetry
 from ai_assistant.core.telemetry import telemetry_tracker
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from ai_assistant.core.logging_config import setup_logging_and_tracing
+tracer = setup_logging_and_tracing()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
