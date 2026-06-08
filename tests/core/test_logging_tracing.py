@@ -13,17 +13,15 @@ def test_tracing_disabled():
     orig_tracing = config.ENABLE_TRACING
     config.ENABLE_TRACING = False
 
+    root_logger = logging.getLogger()
+    log_stream = StringIO()
+    test_handler = logging.StreamHandler(log_stream)
+
     try:
-        root_logger = logging.getLogger()
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
+        root_logger.addHandler(test_handler)
+        root_logger.setLevel(logging.INFO)
 
         setup_logging_and_tracing()
-
-        log_stream = StringIO()
-        handler = logging.StreamHandler(log_stream)
-        root_logger.addHandler(handler)
-        root_logger.setLevel(logging.INFO)
 
         logger = logging.getLogger("test_logger")
         logger.setLevel(logging.INFO)
@@ -33,28 +31,21 @@ def test_tracing_disabled():
         assert "Test disabled tracing" in log_output
         assert not log_output.strip().startswith("{")
     finally:
+        root_logger.removeHandler(test_handler)
         config.ENABLE_TRACING = orig_tracing
 
 def test_tracing_enabled_json_logs():
     orig_tracing = config.ENABLE_TRACING
     config.ENABLE_TRACING = True
 
-    try:
-        root_logger = logging.getLogger()
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
+    root_logger = logging.getLogger()
+    log_stream = StringIO()
+    test_handler = logging.StreamHandler(log_stream)
 
-        log_stream = StringIO()
-        test_handler = logging.StreamHandler(log_stream)
-        # Manually force the formatter since setup_logging might not catch this specific test setup
-        from ai_assistant.core.logging_config import CorrelationFilter
-        formatter = jsonlogger.JsonFormatter(
-            '%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(trace_id)s %(span_id)s %(message)s'
-        )
-        test_handler.setFormatter(formatter)
-        test_handler.addFilter(CorrelationFilter())
+    try:
         root_logger.addHandler(test_handler)
 
+        # Calling setup will dynamically convert StreamHandlers to JSON + attach filters
         setup_logging_and_tracing()
 
         root_logger.setLevel(logging.INFO)
@@ -86,4 +77,5 @@ def test_tracing_enabled_json_logs():
         assert log_json["message"] == "Test enabled tracing"
 
     finally:
+        root_logger.removeHandler(test_handler)
         config.ENABLE_TRACING = orig_tracing
