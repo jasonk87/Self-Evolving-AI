@@ -92,6 +92,11 @@ FACT_CURATION_INTERVAL_SECONDS = 21600  # 6 hours
 # Enable or disable the AI's ability to autonomously learn facts from conversation.
 AUTONOMOUS_LEARNING_ENABLED = True # MODIFIED FOR SCENARIO 5
 
+# --- Observability Configuration ---
+# Enable or disable OpenTelemetry distributed tracing and structured JSON logging.
+ENABLE_TRACING = _env_flag("ENABLE_TRACING", default=False)
+OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+
 # --- Token Governance ---
 # Maximum total tokens (input + output) allowed per 24 hours.
 DAILY_TOKEN_BUDGET = 2_000_000

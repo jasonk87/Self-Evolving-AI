@@ -25,7 +25,10 @@ from datetime import timezone # Ensure timezone is available
 if TYPE_CHECKING:
     from ai_assistant.learning.learning import LearningAgent # For type hinting only
 
+from opentelemetry import trace
+
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 LLM_FACT_ASSESSMENT_AND_CATEGORIZATION_PROMPT_TEMPLATE = """
 You are an AI assistant's knowledge curator and categorizer. Your task is to assess if a given fact is valuable to learn, and if so, categorize it.
@@ -715,6 +718,12 @@ class ActionExecutor:
             return False, f"Unexpected error: {e}", "none"
 
     async def execute_action(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
+        with tracer.start_as_current_span("executor.execute_action") as span:
+            action_type = proposed_action.get("action_type")
+            span.set_attribute("action_type", str(action_type))
+            return await self._execute_action_internal(proposed_action, session_id)
+
+    async def _execute_action_internal(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
         action_type = proposed_action.get("action_type")
         details = proposed_action.get("details", {})
         source_insight_id = proposed_action.get("source_insight_id", f"action_{uuid.uuid4().hex[:8]}")

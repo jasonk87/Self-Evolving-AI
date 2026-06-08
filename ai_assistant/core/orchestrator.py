@@ -37,8 +37,10 @@ from ..planning.hierarchical_planner import HierarchicalPlanner
 from ..utils.conversational_helpers import summarize_tool_result_conversationally
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 from ai_assistant.utils.token_counter import estimate_tokens, truncate_to_token_limit
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # Constants
 MAX_REACT_STEPS = 10
@@ -122,6 +124,11 @@ class DynamicOrchestrator:
         Process a user prompt using the direct ReAct architecture.
         Accepts and mutates an ExecutionState object.
         """
+        with tracer.start_as_current_span("orchestrator.process_prompt") as span:
+            span.set_attribute("original_prompt_length", len(state.original_user_prompt))
+            return await self._process_prompt_internal(state, conversation_history, session_id, images, context_source)
+
+    async def _process_prompt_internal(self, state: ExecutionState, conversation_history: Optional[List[Dict[str, str]]], session_id: Optional[str], images: Optional[List[str]], context_source: str) -> ExecutionState:
         try:
             self.current_goal = state.original_user_prompt
             
@@ -294,6 +301,10 @@ class DynamicOrchestrator:
         Direct ReAct cycle: one model call chooses the next tool call or final answer.
         Mutates ExecutionState.
         """
+        with tracer.start_as_current_span("orchestrator._execute_universal_cycle"):
+            await self._execute_universal_cycle_internal(state, prompt, context, history, session_id, context_source, initial_images)
+
+    async def _execute_universal_cycle_internal(self, state: ExecutionState, prompt: str, context: str, history: Optional[List[Dict[str, str]]], session_id: Optional[str], context_source: str, initial_images: Optional[List[str]]) -> None:
         # Step A: Recall Failures
         failure_warning = await self.episodic_manager.recall_failures(state.original_user_prompt)
         if failure_warning:

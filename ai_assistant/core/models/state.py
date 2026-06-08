@@ -1,3 +1,4 @@
+import uuid
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
@@ -35,4 +36,9 @@ class ExecutionState(BaseModel):
     context_limits: Dict[str, int] = Field(
         default_factory=dict,
         description="Tracks current context or memory limits (e.g., max tokens, available memory) to guide agent outputs.",
+    )
+
+    correlation_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        description="A unique identifier for tracking this execution flow across systems.",
     )
