@@ -18,6 +18,7 @@ class AgentState(Enum):
     TESTS_FAILED = "tests_failed"
     COMPLETED = "completed"
     ERROR = "error"
+    QUARANTINED = "quarantined"
 
 class AgentRole(Enum):
     COORDINATOR = "coordinator"
@@ -61,19 +62,55 @@ class BaseSwarmAgent(abc.ABC):
         self.states = [state.value for state in AgentState]
         self.machine = Machine(model=self, states=self.states, initial=AgentState.INITIALIZED.value, model_attribute="status")
 
-        # Add basic transitions that most agents will need
-        self.machine.add_transition(trigger='start_working', source='*', dest=AgentState.WORKING.value)
-        self.machine.add_transition(trigger='mark_completed', source='*', dest=AgentState.COMPLETED.value)
-        self.machine.add_transition(trigger='report_critical_error', source='*', dest=AgentState.ERROR.value)
+        # Define state groupings
+        terminal_states = [AgentState.COMPLETED.value, AgentState.ERROR.value, AgentState.QUARANTINED.value]
+        all_states = [state.value for state in AgentState]
 
-        # Specific transitions
-        self.machine.add_transition(trigger='wait_for_tests', source='*', dest=AgentState.WAITING_FOR_TESTS.value)
-        self.machine.add_transition(trigger='wait_for_implementation', source='*', dest=AgentState.WAITING_FOR_IMPLEMENTATION.value)
-        self.machine.add_transition(trigger='start_revising', source='*', dest=AgentState.REVISING.value)
-        self.machine.add_transition(trigger='start_reviewing', source='*', dest=AgentState.REVIEWING.value)
-        self.machine.add_transition(trigger='execute_tests', source='*', dest=AgentState.EXECUTING_TESTS.value)
-        self.machine.add_transition(trigger='tests_passed', source='*', dest=AgentState.TESTS_PASSED.value)
-        self.machine.add_transition(trigger='tests_failed', source='*', dest=AgentState.TESTS_FAILED.value)
+        # Core Lifecycle Transitions
+        self.machine.add_transition(trigger='start_working',
+                                  source=[AgentState.INITIALIZED.value, AgentState.WAITING_FOR_IMPLEMENTATION.value],
+                                  dest=AgentState.WORKING.value)
+
+        # Allow moving to terminal states from active states AND INITIALIZED
+        non_terminal_states = [s for s in all_states if s not in terminal_states]
+        active_states_only = [s for s in non_terminal_states if s != AgentState.INITIALIZED.value]
+
+        self.machine.add_transition(trigger='mark_completed', source=active_states_only, dest=AgentState.COMPLETED.value)
+        self.machine.add_transition(trigger='report_critical_error', source=non_terminal_states, dest=AgentState.ERROR.value)
+        self.machine.add_transition(trigger='quarantine', source=non_terminal_states, dest=AgentState.QUARANTINED.value)
+
+        # Specific Workflow Transitions
+        self.machine.add_transition(trigger='wait_for_tests',
+                                  source=[AgentState.INITIALIZED.value, AgentState.WORKING.value, AgentState.REVISING.value, AgentState.REVIEWING.value],
+                                  dest=AgentState.WAITING_FOR_TESTS.value)
+
+        self.machine.add_transition(trigger='wait_for_implementation',
+                                  source=[AgentState.WORKING.value, AgentState.TESTS_FAILED.value, AgentState.TESTS_PASSED.value],
+                                  dest=AgentState.WAITING_FOR_IMPLEMENTATION.value)
+
+        self.machine.add_transition(trigger='start_revising',
+                                  source=AgentState.WAITING_FOR_TESTS.value,
+                                  dest=AgentState.REVISING.value)
+
+        self.machine.add_transition(trigger='start_reviewing',
+                                  source=[AgentState.WAITING_FOR_TESTS.value, AgentState.WORKING.value],
+                                  dest=AgentState.REVIEWING.value)
+
+        self.machine.add_transition(trigger='execute_tests',
+                                  source=[AgentState.WAITING_FOR_IMPLEMENTATION.value, AgentState.WORKING.value, AgentState.TESTS_PASSED.value, AgentState.TESTS_FAILED.value],
+                                  dest=AgentState.EXECUTING_TESTS.value)
+
+        self.machine.add_transition(trigger='tests_passed',
+                                  source=AgentState.EXECUTING_TESTS.value,
+                                  dest=AgentState.TESTS_PASSED.value)
+
+        self.machine.add_transition(trigger='tests_failed',
+                                  source=AgentState.EXECUTING_TESTS.value,
+                                  dest=AgentState.TESTS_FAILED.value)
+
+        # Recovery/Reset Transitions (Explicit opt-in to leave terminal states)
+        self.machine.add_transition(trigger='reset', source=terminal_states, dest=AgentState.INITIALIZED.value)
+        self.machine.add_transition(trigger='recover', source=[AgentState.ERROR.value, AgentState.QUARANTINED.value], dest=AgentState.WORKING.value)
 
         # Initialize event subscriptions specific to the agent's role
         self.setup_subscriptions()
