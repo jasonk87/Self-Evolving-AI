@@ -22,7 +22,7 @@ class ReviewerAgent(BaseSwarmAgent):
         self.blackboard.subscribe("test_results_passed", self.handle_tests_passed)
 
     async def run(self):
-        self.status = "waiting_for_tests"
+        self.wait_for_tests()
         await self.report_progress("Waiting for tests to pass before reviewing code.")
 
         # The Reviewer idles until 'test_results_passed' wakes it up.
@@ -32,7 +32,7 @@ class ReviewerAgent(BaseSwarmAgent):
         impl_filename = event.data.get("filename")
         test_filename = event.data.get("test_file")
 
-        self.status = "reviewing"
+        self.start_reviewing()
         await self.report_progress(f"Reviewing {impl_filename} and {test_filename} for style and docs.")
 
         # Retrieve the latest code from the shared state
@@ -47,7 +47,7 @@ class ReviewerAgent(BaseSwarmAgent):
         if test_filename and test_code:
             await self._review_file(test_filename, test_code)
 
-        self.status = "waiting_for_tests"
+        self.wait_for_tests()
 
     async def _review_file(self, filename: str, code: str):
         """Uses LLM (or static analysis tools like `ruff`) to clean up the code."""

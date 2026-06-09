@@ -23,19 +23,19 @@ class TesterAgent(BaseSwarmAgent):
         self.blackboard.subscribe("code_drafted", self.handle_code_drafted)
 
     async def run(self):
-        self.status = "working"
+        self.start_working()
         await self.report_progress("Drafting unit tests based on interfaces concurrently.")
 
         # 1. Draft the unit tests based solely on the interface definition
         if not self.test_files:
             await self.report_progress("No test files to generate in contract.")
-            self.status = "completed"
+            self.mark_completed()
             return
 
         for file in self.test_files:
             await self.generate_test_draft(file)
 
-        self.status = "waiting_for_implementation"
+        self.wait_for_implementation()
         await self.report_progress("Test drafts completed. Waiting for code implementation to execute them.")
 
         # 2. Wait for the 'code_drafted' event which will trigger execution.
@@ -108,7 +108,7 @@ class TesterAgent(BaseSwarmAgent):
                 await self.report_error(RuntimeError(f"Tester timed out waiting to draft {test_filename}."), "Code drafted callback")
                 return
 
-        self.status = "executing_tests"
+        self.execute_tests()
         await self.report_progress(f"Executing '{test_filename}' against new '{impl_filename}' draft.")
 
         # 2. Extract our drafted tests for this file
@@ -118,7 +118,7 @@ class TesterAgent(BaseSwarmAgent):
         passed, logs = await self._execute_tests(impl_filename, impl_code, test_filename, test_code)
 
         if passed:
-            self.status = "tests_passed"
+            self.tests_passed()
             await self.report_progress(f"Tests passed for {impl_filename}!")
             await self.blackboard.publish(
                 topic="test_results_passed",
@@ -126,7 +126,7 @@ class TesterAgent(BaseSwarmAgent):
                 data={"filename": impl_filename, "test_file": test_filename, "logs": logs}
             )
         else:
-            self.status = "tests_failed"
+            self.tests_failed()
             await self.report_progress(f"Tests FAILED for {impl_filename}. Sending feedback to Coder.")
             await self.blackboard.publish(
                 topic="test_results_failed",

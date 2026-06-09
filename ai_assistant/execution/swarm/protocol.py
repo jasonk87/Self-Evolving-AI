@@ -2,8 +2,22 @@ import abc
 from enum import Enum
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, model_validator
+from transitions import Machine
 
 from .blackboard import Blackboard, BlackboardEvent
+
+class AgentState(Enum):
+    INITIALIZED = "initialized"
+    WORKING = "working"
+    WAITING_FOR_TESTS = "waiting_for_tests"
+    WAITING_FOR_IMPLEMENTATION = "waiting_for_implementation"
+    REVISING = "revising"
+    REVIEWING = "reviewing"
+    EXECUTING_TESTS = "executing_tests"
+    TESTS_PASSED = "tests_passed"
+    TESTS_FAILED = "tests_failed"
+    COMPLETED = "completed"
+    ERROR = "error"
 
 class AgentRole(Enum):
     COORDINATOR = "coordinator"
@@ -42,7 +56,24 @@ class BaseSwarmAgent(abc.ABC):
         self.contract = contract
         self.blackboard = blackboard
         self.llm_provider = llm_provider
-        self.status = "initialized"
+
+        # State machine setup
+        self.states = [state.value for state in AgentState]
+        self.machine = Machine(model=self, states=self.states, initial=AgentState.INITIALIZED.value, model_attribute="status")
+
+        # Add basic transitions that most agents will need
+        self.machine.add_transition(trigger='start_working', source='*', dest=AgentState.WORKING.value)
+        self.machine.add_transition(trigger='mark_completed', source='*', dest=AgentState.COMPLETED.value)
+        self.machine.add_transition(trigger='report_critical_error', source='*', dest=AgentState.ERROR.value)
+
+        # Specific transitions
+        self.machine.add_transition(trigger='wait_for_tests', source='*', dest=AgentState.WAITING_FOR_TESTS.value)
+        self.machine.add_transition(trigger='wait_for_implementation', source='*', dest=AgentState.WAITING_FOR_IMPLEMENTATION.value)
+        self.machine.add_transition(trigger='start_revising', source='*', dest=AgentState.REVISING.value)
+        self.machine.add_transition(trigger='start_reviewing', source='*', dest=AgentState.REVIEWING.value)
+        self.machine.add_transition(trigger='execute_tests', source='*', dest=AgentState.EXECUTING_TESTS.value)
+        self.machine.add_transition(trigger='tests_passed', source='*', dest=AgentState.TESTS_PASSED.value)
+        self.machine.add_transition(trigger='tests_failed', source='*', dest=AgentState.TESTS_FAILED.value)
 
         # Initialize event subscriptions specific to the agent's role
         self.setup_subscriptions()
@@ -70,7 +101,7 @@ class BaseSwarmAgent(abc.ABC):
 
     async def report_error(self, error: Exception, context: str):
         """Utility to report critical failures."""
-        self.status = "error"
+        self.report_critical_error()
         await self.blackboard.publish(
             topic="agent_error",
             source_agent=self.name,
