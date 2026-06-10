@@ -1,6 +1,7 @@
 import logging
 import asyncio
 from typing import Dict, Any, Optional
+import pathlib
 
 from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract
 from ..blackboard import Blackboard, BlackboardEvent
@@ -52,7 +53,8 @@ class CoderAgent(BaseSwarmAgent):
             "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", "pdm.lock",
             "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"
         }
-        return filename in dependency_files
+        name = pathlib.Path(filename).name
+        return name in dependency_files
 
     async def generate_draft(self, filename: str, previous_error: Optional[str] = None):
         """Generates code for a specific file and publishes it to the blackboard."""
@@ -102,6 +104,8 @@ class CoderAgent(BaseSwarmAgent):
             )
             await self.report_progress(f"Draft completed for {filename}.")
 
+        except PermissionError:
+            raise
         except Exception as e:
             await self.report_error(e, f"Generating draft for {filename}")
 

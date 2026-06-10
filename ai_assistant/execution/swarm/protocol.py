@@ -54,7 +54,8 @@ class CapabilityRegistry:
         AgentRole.REVIEWER: {
             "can_read_files",
             "can_approve_changes",
-            "can_access_memory"
+            "can_access_memory",
+            "can_finalize_artifacts"
         }
     }
 

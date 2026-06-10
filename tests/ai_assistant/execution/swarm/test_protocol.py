@@ -170,26 +170,45 @@ async def test_real_paths_enforcement(contract, blackboard):
     except Exception as e:
         assert not isinstance(e, PermissionError)
 
-    # Coder trying to execute tests
-    coder = CoderAgent("coder", contract, blackboard, MockProvider())
+    # Fake Coder trying to execute tests (Coder has no can_run_tests)
+    class FakeCoderAsTester(TesterAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.role = AgentRole.CODER
+
+    fake_coder_tester = FakeCoderAsTester("fake", contract, blackboard, MockProvider())
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_run_tests'"):
-        await TesterAgent._execute_tests(coder, "impl.py", "impl_code", "test.py", "test_code")
+        await fake_coder_tester._execute_tests("impl.py", "impl_code", "test.py", "test_code")
 
-    # Reviewer trying to edit files
-    reviewer = ReviewerAgent("reviewer", contract, blackboard, MockProvider())
+    # Fake Reviewer trying to edit files
+    class FakeReviewerAsTester(TesterAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.role = AgentRole.REVIEWER
+
+    fake_reviewer_tester = FakeReviewerAsTester("fake", contract, blackboard, MockProvider())
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_edit_files'"):
-        await TesterAgent.generate_test_draft(reviewer, "test_x.py")
+        await fake_reviewer_tester.generate_test_draft("test_x.py")
 
-    # Coder trying to review a file
+    # Fake Coder trying to review a file
+    class FakeCoderAsReviewer(ReviewerAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.role = AgentRole.CODER
+
+    fake_coder_reviewer = FakeCoderAsReviewer("fake", contract, blackboard, MockProvider())
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_approve_changes'"):
-        await ReviewerAgent._review_file(coder, "x.py", "code")
+        await fake_coder_reviewer._review_file("x.py", "code")
 
-    # Coordinator does not have `can_edit_files`
-    from ai_assistant.execution.swarm.agents.coder import CoderAgent
-    from ai_assistant.execution.swarm.protocol import AgentRole
-    coordinator_agent = DummyAgent("coord", AgentRole.COORDINATOR, contract, blackboard, MockProvider())
+    # Fake Coordinator trying to draft code
+    class FakeCoordinatorAsCoder(CoderAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.role = AgentRole.COORDINATOR
+
+    fake_coordinator_coder = FakeCoordinatorAsCoder("fake", contract, blackboard, MockProvider())
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_edit_files'"):
-        await CoderAgent.generate_draft(coordinator_agent, "impl.py")
+        await fake_coordinator_coder.generate_draft("impl.py")
 
 @pytest.mark.asyncio
 async def test_dependency_modification_capabilities(contract, blackboard):
@@ -203,18 +222,20 @@ async def test_dependency_modification_capabilities(contract, blackboard):
     # Provide a mock llm provider so generate_draft does not crash on None
     coder = CoderAgent("coder", contract, blackboard, MockLLMProvider())
 
-    # Verify the internal static method matches all expanded target dependencies
+    # Verify the internal static method matches all expanded target dependencies and nested paths
     dependency_files = [
         "requirements.txt", "requirements-core.txt", "requirements-dev.txt",
         "requirements.lock", "pyproject.toml", "setup.py", "setup.cfg",
         "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", "pdm.lock",
-        "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"
+        "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+        "backend/requirements.txt", "frontend/package.json"
     ]
     for dep_file in dependency_files:
         assert CoderAgent._is_dependency_file(dep_file)
 
     assert not CoderAgent._is_dependency_file("main.py")
     assert not CoderAgent._is_dependency_file("index.js")
+    assert not CoderAgent._is_dependency_file("backend/main.py")
 
     # Coder can modify dependencies, so drafting 'package.json' should not raise PermissionError.
     try:
@@ -230,18 +251,23 @@ async def test_dependency_modification_capabilities(contract, blackboard):
 
     # A Tester, however, should not be able to generate a draft of a dependency file
     # if it doesn't have the can_modify_dependencies capability.
-    # Tester doesn't have 'can_modify_dependencies'. We use Coder's method, bounding it to a Tester
-    tester = TesterAgent("tester", contract, blackboard, MockLLMProvider())
+    # Tester doesn't have 'can_modify_dependencies'. We use Coder's logic via a fake agent
+    class FakeTesterAsCoder(CoderAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.role = AgentRole.TESTER
 
-    # But wait, Tester DOES have can_edit_files. If it tries to run Coder's generate_draft on "package.json",
+    fake_tester_coder = FakeTesterAsCoder("fake", contract, blackboard, MockLLMProvider())
+
+    # Tester DOES have can_edit_files. If it tries to run generate_draft on "package.json",
     # it will pass can_edit_files, but fail on can_modify_dependencies.
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_modify_dependencies'"):
-        await CoderAgent.generate_draft(tester, "package.json")
+        await fake_tester_coder.generate_draft("package.json")
 
-    # If the Tester tries to run Coder's generate_draft on "main.py",
+    # If the Tester tries to run generate_draft on "main.py",
     # it passes can_edit_files, skips can_modify_dependencies, and might fail somewhere else or pass.
     # The key point is it doesn't fail on a PermissionError for capabilities it has.
     try:
-        await CoderAgent.generate_draft(tester, "main.py")
+        await fake_tester_coder.generate_draft("main.py")
     except Exception as e:
         assert not isinstance(e, PermissionError)

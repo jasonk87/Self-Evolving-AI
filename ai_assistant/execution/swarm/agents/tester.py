@@ -73,6 +73,8 @@ class TesterAgent(BaseSwarmAgent):
             # Note: We do NOT publish a general event for test draft completion unless
             # another agent (like Reviewer) needs to see the un-executed test code.
 
+        except PermissionError:
+            raise
         except Exception as e:
             await self.report_error(e, f"Generating test draft for {filename}")
 

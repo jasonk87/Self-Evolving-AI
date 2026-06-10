@@ -68,7 +68,6 @@ class SubSwarmCoordinator:
         Starts the swarm and returns the finalized artifacts when done.
         """
         logger.info(f"[Coordinator {self.swarm_id}] Starting sub-swarm for contract: {self.contract.task_id}")
-        self.contract.validate()
 
         self.setup_coordinator_subscriptions()
 

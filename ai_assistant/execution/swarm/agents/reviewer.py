@@ -74,6 +74,7 @@ class ReviewerAgent(BaseSwarmAgent):
             cleaned_code = polished_code.replace("```python", "").replace("```", "").strip()
 
             # Update the finalized artifact in the state
+            self.require_capability("can_finalize_artifacts")
             self.require_capability("can_access_memory")
             await self.blackboard.update_state(f"artifact_{filename}", cleaned_code, self.name)
             self.approved_files.add(filename)
@@ -94,5 +95,7 @@ class ReviewerAgent(BaseSwarmAgent):
                     data={"message": "All files approved by Reviewer."}
                 )
 
+        except PermissionError:
+            raise
         except Exception as e:
             await self.report_error(e, f"Reviewing {filename}")
