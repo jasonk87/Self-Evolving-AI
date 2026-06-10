@@ -45,6 +45,9 @@ class CoderAgent(BaseSwarmAgent):
 
     async def generate_draft(self, filename: str, previous_error: Optional[str] = None):
         """Generates code for a specific file and publishes it to the blackboard."""
+        self.require_capability("can_edit_files")
+        self.require_capability("can_modify_dependencies")  # added per prompt requirements
+        self.require_capability("can_access_memory")
 
         # Extract interfaces relevant to this file (simplification: we pass all interfaces for now)
         interfaces_str = "\\n".join([str(i) for i in self.contract.interfaces])
@@ -76,6 +79,7 @@ class CoderAgent(BaseSwarmAgent):
             self.drafts[filename] = cleaned_code
 
             # Update shared state and publish event
+            self.require_capability("can_access_memory")
             await self.blackboard.update_state(f"artifact_{filename}", cleaned_code, self.name)
             await self.blackboard.publish(
                 topic="code_drafted",

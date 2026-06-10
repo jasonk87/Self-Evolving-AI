@@ -93,7 +93,11 @@ class SubSwarmCoordinator:
                     task.cancel()
 
         # 4. Extract final artifacts from the Blackboard
+        # We need a coordinator agent instance to query the state if we wanted to be strict,
+        # but the coordinator runs this directly. Let's create a dummy coordinator agent or skip checks here.
+        # Actually, let's just query blackboard directly. Blackboard itself doesn't enforce, the agent does.
         final_artifacts = {}
+        # No agent validation here, but ideally we should abstract this
         for filename in self.contract.deliverables:
             code = await self.blackboard.get_state(f"artifact_{filename}")
             if code:

@@ -36,6 +36,8 @@ class ReviewerAgent(BaseSwarmAgent):
         await self.report_progress(f"Reviewing {impl_filename} and {test_filename} for style and docs.")
 
         # Retrieve the latest code from the shared state
+        self.require_capability("can_access_memory")
+        self.require_capability("can_read_files")
         impl_code = await self.blackboard.get_state(f"artifact_{impl_filename}")
         test_code = await self.blackboard.get_state(f"artifact_{test_filename}")
 
@@ -51,6 +53,7 @@ class ReviewerAgent(BaseSwarmAgent):
 
     async def _review_file(self, filename: str, code: str):
         """Uses LLM (or static analysis tools like `ruff`) to clean up the code."""
+        self.require_capability("can_approve_changes")
         prompt = f"""
         You are the 'Reviewer' in a Multi-Agent Swarm. The code for '{filename}' has passed all unit tests.
         Your ONLY job is to add missing docstrings, enforce PEP8 style (like a linter), and add type hints if missing.
@@ -71,6 +74,7 @@ class ReviewerAgent(BaseSwarmAgent):
             cleaned_code = polished_code.replace("```python", "").replace("```", "").strip()
 
             # Update the finalized artifact in the state
+            self.require_capability("can_access_memory")
             await self.blackboard.update_state(f"artifact_{filename}", cleaned_code, self.name)
             self.approved_files.add(filename)
 

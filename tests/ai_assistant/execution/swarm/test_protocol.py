@@ -143,3 +143,40 @@ def test_require_capability_enforcement(agent):
     # Agent is a CODER, they cannot approve changes
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_approve_changes'"):
         agent.require_capability("can_approve_changes")
+
+@pytest.mark.asyncio
+async def test_real_paths_enforcement(contract, blackboard):
+    from ai_assistant.execution.swarm.agents.tester import TesterAgent
+    from ai_assistant.execution.swarm.agents.coder import CoderAgent
+    from ai_assistant.execution.swarm.agents.reviewer import ReviewerAgent
+
+    # Tester checking capabilities
+    tester = TesterAgent("tester", contract, blackboard, MockProvider())
+
+    # Tester has run tests capability, this should not throw PermissionError
+    # (We catch whatever other error might happen because we are unit testing without mock data)
+    try:
+        await tester._execute_tests("impl.py", "impl_code", "test.py", "test_code")
+    except Exception as e:
+        assert not isinstance(e, PermissionError)
+
+    # Coder trying to execute tests
+    coder = CoderAgent("coder", contract, blackboard, MockProvider())
+    with pytest.raises(PermissionError, match=r"lacks required capability: 'can_run_tests'"):
+        await TesterAgent._execute_tests(coder, "impl.py", "impl_code", "test.py", "test_code")
+
+    # Reviewer trying to edit files
+    reviewer = ReviewerAgent("reviewer", contract, blackboard, MockProvider())
+    with pytest.raises(PermissionError, match=r"lacks required capability: 'can_edit_files'"):
+        await TesterAgent.generate_test_draft(reviewer, "test_x.py")
+
+    # Coder trying to review a file
+    with pytest.raises(PermissionError, match=r"lacks required capability: 'can_approve_changes'"):
+        await ReviewerAgent._review_file(coder, "x.py", "code")
+
+    # Coordinator does not have `can_edit_files`
+    from ai_assistant.execution.swarm.agents.coder import CoderAgent
+    from ai_assistant.execution.swarm.protocol import AgentRole
+    coordinator_agent = DummyAgent("coord", AgentRole.COORDINATOR, contract, blackboard, MockProvider())
+    with pytest.raises(PermissionError, match=r"lacks required capability: 'can_edit_files'"):
+        await CoderAgent.generate_draft(coordinator_agent, "impl.py")
