@@ -93,11 +93,30 @@ class SubSwarmCoordinator:
                     task.cancel()
 
         # 4. Extract final artifacts from the Blackboard
-        # We need a coordinator agent instance to query the state if we wanted to be strict,
-        # but the coordinator runs this directly. Let's create a dummy coordinator agent or skip checks here.
-        # Actually, let's just query blackboard directly. Blackboard itself doesn't enforce, the agent does.
+        final_artifacts = await self._retrieve_final_artifacts()
+
+        return {
+            "status": "success",
+            "artifacts": final_artifacts,
+            "logs": [e for e in self.blackboard.history]
+        }
+
+    async def _retrieve_final_artifacts(self) -> Dict[str, Any]:
+        """
+        Helper method to retrieve final artifacts using a Dummy Coordinator agent
+        to strictly enforce memory access capabilities.
+        """
+        from .protocol import BaseSwarmAgent
+
+        class DummyCoordinator(BaseSwarmAgent):
+            def setup_subscriptions(self): pass
+            async def run(self): pass
+
+        # Create a transient agent to fetch data, proving the coordinator has access
+        coord_agent = DummyCoordinator(f"CoordReader_{self.swarm_id}", AgentRole.COORDINATOR, self.contract, self.blackboard, self.llm_provider)
+        coord_agent.require_capability("can_access_memory")
+
         final_artifacts = {}
-        # No agent validation here, but ideally we should abstract this
         for filename in self.contract.deliverables:
             code = await self.blackboard.get_state(f"artifact_{filename}")
             if code:
@@ -105,8 +124,4 @@ class SubSwarmCoordinator:
             else:
                 logger.warning(f"[Coordinator {self.swarm_id}] Missing final artifact for {filename}")
 
-        return {
-            "status": "success",
-            "artifacts": final_artifacts,
-            "logs": [e for e in self.blackboard.history]
-        }
+        return final_artifacts

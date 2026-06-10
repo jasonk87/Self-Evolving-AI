@@ -180,3 +180,45 @@ async def test_real_paths_enforcement(contract, blackboard):
     coordinator_agent = DummyAgent("coord", AgentRole.COORDINATOR, contract, blackboard, MockProvider())
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_edit_files'"):
         await CoderAgent.generate_draft(coordinator_agent, "impl.py")
+
+@pytest.mark.asyncio
+async def test_dependency_modification_capabilities(contract, blackboard):
+    from ai_assistant.execution.swarm.agents.coder import CoderAgent
+    from ai_assistant.execution.swarm.agents.tester import TesterAgent
+
+    class MockLLMProvider:
+        async def invoke_ollama_model_async(self, *args, **kwargs):
+            return "dummy_code"
+
+    # Provide a mock llm provider so generate_draft does not crash on None
+    coder = CoderAgent("coder", contract, blackboard, MockLLMProvider())
+
+    # Coder can modify dependencies, so drafting 'requirements.txt' should not raise PermissionError.
+    try:
+        await coder.generate_draft("requirements.txt")
+    except Exception as e:
+        assert not isinstance(e, PermissionError)
+
+    # Drafting a normal python file 'main.py' should also not raise PermissionError
+    try:
+        await coder.generate_draft("main.py")
+    except Exception as e:
+        assert not isinstance(e, PermissionError)
+
+    # A Tester, however, should not be able to generate a draft of a dependency file
+    # if it doesn't have the can_modify_dependencies capability.
+    # Tester doesn't have 'can_modify_dependencies'. We use Coder's method, bounding it to a Tester
+    tester = TesterAgent("tester", contract, blackboard, MockLLMProvider())
+
+    # But wait, Tester DOES have can_edit_files. If it tries to run Coder's generate_draft on "requirements.txt",
+    # it will pass can_edit_files, but fail on can_modify_dependencies.
+    with pytest.raises(PermissionError, match=r"lacks required capability: 'can_modify_dependencies'"):
+        await CoderAgent.generate_draft(tester, "requirements.txt")
+
+    # If the Tester tries to run Coder's generate_draft on "main.py",
+    # it passes can_edit_files, skips can_modify_dependencies, and might fail somewhere else or pass.
+    # The key point is it doesn't fail on a PermissionError for capabilities it has.
+    try:
+        await CoderAgent.generate_draft(tester, "main.py")
+    except Exception as e:
+        assert not isinstance(e, PermissionError)

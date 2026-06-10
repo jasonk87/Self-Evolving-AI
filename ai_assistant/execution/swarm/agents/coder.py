@@ -46,7 +46,15 @@ class CoderAgent(BaseSwarmAgent):
     async def generate_draft(self, filename: str, previous_error: Optional[str] = None):
         """Generates code for a specific file and publishes it to the blackboard."""
         self.require_capability("can_edit_files")
-        self.require_capability("can_modify_dependencies")  # added per prompt requirements
+
+        # Only require can_modify_dependencies for known dependency/config files
+        dependency_files = {
+            "requirements.txt", "requirements-core.txt", "requirements-dev.txt",
+            "pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "poetry.lock"
+        }
+        if filename in dependency_files:
+            self.require_capability("can_modify_dependencies")
+
         self.require_capability("can_access_memory")
 
         # Extract interfaces relevant to this file (simplification: we pass all interfaces for now)
