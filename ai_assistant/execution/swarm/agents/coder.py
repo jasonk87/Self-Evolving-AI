@@ -21,7 +21,7 @@ class CoderAgent(BaseSwarmAgent):
         self.blackboard.subscribe("test_results_failed", self.handle_test_failure)
 
     async def run(self):
-        self.status = "working"
+        self.start_working()
         await self.report_progress("Starting code generation for contract deliverables.")
 
         # 1. Identify which deliverables are implementation files (not test files)
@@ -29,14 +29,14 @@ class CoderAgent(BaseSwarmAgent):
 
         if not impl_files:
             await self.report_progress("No implementation files to generate in contract.")
-            self.status = "completed"
+            self.mark_completed()
             return
 
         # 2. Generate initial drafts for each file based on the interface definitions
         for file in impl_files:
             await self.generate_draft(file)
 
-        self.status = "waiting_for_tests"
+        self.wait_for_tests()
         await self.report_progress("Finished initial drafts. Waiting for tester feedback.")
 
         # 3. The Coder now idles. It will be woken up by 'test_results_failed' events
@@ -93,7 +93,7 @@ class CoderAgent(BaseSwarmAgent):
         error_logs = event.data.get("logs")
 
         if filename in self.drafts:
-            self.status = "revising"
+            self.start_revising()
             await self.report_progress(f"Received test failure for {filename}. Revising code.")
             await self.generate_draft(filename, previous_error=error_logs)
-            self.status = "waiting_for_tests"
+            self.wait_for_tests()

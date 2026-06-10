@@ -5,16 +5,16 @@ LANE=${1:-unit}
 
 case "$LANE" in
   unit)
-    pytest -q -m "not integration and not smoke"
+    PYTHONPATH=. pytest -q -m "not integration and not smoke"
     ;;
   integration)
-    pytest -q -m "integration"
+    PYTHONPATH=. pytest -q -m "integration"
     ;;
   smoke)
-    pytest -q -m "smoke"
+    PYTHONPATH=. pytest -q -m "smoke"
     ;;
   all)
-    pytest -q
+    PYTHONPATH=. pytest -q
     ;;
   *)
     echo "Unknown lane: $LANE"
