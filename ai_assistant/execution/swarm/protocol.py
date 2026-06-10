@@ -62,6 +62,11 @@ class CapabilityRegistry:
     def get_capabilities(cls, role: AgentRole) -> set[str]:
         return cls.ROLE_CAPABILITIES.get(role, set())
 
+    @classmethod
+    def require_role_capability(cls, role: AgentRole, capability: str) -> None:
+        if capability not in cls.get_capabilities(role):
+            raise PermissionError(f"Role '{role.value}' lacks required capability: '{capability}'")
+
 
 class SwarmContract(BaseModel):
     """

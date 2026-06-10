@@ -144,6 +144,16 @@ def test_require_capability_enforcement(agent):
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_approve_changes'"):
         agent.require_capability("can_approve_changes")
 
+def test_require_role_capability_enforcement():
+    from ai_assistant.execution.swarm.protocol import CapabilityRegistry
+
+    # Coordinator has can_access_memory
+    CapabilityRegistry.require_role_capability(AgentRole.COORDINATOR, "can_access_memory")
+
+    # Reviewer does not have can_edit_files
+    with pytest.raises(PermissionError, match=r"Role 'reviewer' lacks required capability: 'can_edit_files'"):
+        CapabilityRegistry.require_role_capability(AgentRole.REVIEWER, "can_edit_files")
+
 @pytest.mark.asyncio
 async def test_real_paths_enforcement(contract, blackboard):
     from ai_assistant.execution.swarm.agents.tester import TesterAgent
@@ -193,9 +203,22 @@ async def test_dependency_modification_capabilities(contract, blackboard):
     # Provide a mock llm provider so generate_draft does not crash on None
     coder = CoderAgent("coder", contract, blackboard, MockLLMProvider())
 
-    # Coder can modify dependencies, so drafting 'requirements.txt' should not raise PermissionError.
+    # Verify the internal static method matches all expanded target dependencies
+    dependency_files = [
+        "requirements.txt", "requirements-core.txt", "requirements-dev.txt",
+        "requirements.lock", "pyproject.toml", "setup.py", "setup.cfg",
+        "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", "pdm.lock",
+        "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"
+    ]
+    for dep_file in dependency_files:
+        assert CoderAgent._is_dependency_file(dep_file)
+
+    assert not CoderAgent._is_dependency_file("main.py")
+    assert not CoderAgent._is_dependency_file("index.js")
+
+    # Coder can modify dependencies, so drafting 'package.json' should not raise PermissionError.
     try:
-        await coder.generate_draft("requirements.txt")
+        await coder.generate_draft("package.json")
     except Exception as e:
         assert not isinstance(e, PermissionError)
 
@@ -210,10 +233,10 @@ async def test_dependency_modification_capabilities(contract, blackboard):
     # Tester doesn't have 'can_modify_dependencies'. We use Coder's method, bounding it to a Tester
     tester = TesterAgent("tester", contract, blackboard, MockLLMProvider())
 
-    # But wait, Tester DOES have can_edit_files. If it tries to run Coder's generate_draft on "requirements.txt",
+    # But wait, Tester DOES have can_edit_files. If it tries to run Coder's generate_draft on "package.json",
     # it will pass can_edit_files, but fail on can_modify_dependencies.
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_modify_dependencies'"):
-        await CoderAgent.generate_draft(tester, "requirements.txt")
+        await CoderAgent.generate_draft(tester, "package.json")
 
     # If the Tester tries to run Coder's generate_draft on "main.py",
     # it passes can_edit_files, skips can_modify_dependencies, and might fail somewhere else or pass.

@@ -103,18 +103,12 @@ class SubSwarmCoordinator:
 
     async def _retrieve_final_artifacts(self) -> Dict[str, Any]:
         """
-        Helper method to retrieve final artifacts using a Dummy Coordinator agent
-        to strictly enforce memory access capabilities.
+        Helper method to retrieve final artifacts from the blackboard.
         """
-        from .protocol import BaseSwarmAgent
+        from .protocol import CapabilityRegistry
 
-        class DummyCoordinator(BaseSwarmAgent):
-            def setup_subscriptions(self): pass
-            async def run(self): pass
-
-        # Create a transient agent to fetch data, proving the coordinator has access
-        coord_agent = DummyCoordinator(f"CoordReader_{self.swarm_id}", AgentRole.COORDINATOR, self.contract, self.blackboard, self.llm_provider)
-        coord_agent.require_capability("can_access_memory")
+        # Enforce memory access capabilities for the coordinator role natively via the registry
+        CapabilityRegistry.require_role_capability(AgentRole.COORDINATOR, "can_access_memory")
 
         final_artifacts = {}
         for filename in self.contract.deliverables:
