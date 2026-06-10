@@ -27,6 +27,48 @@ class AgentRole(Enum):
     REVIEWER = "reviewer"
 
 
+class CapabilityRegistry:
+    """
+    Central registry that maps AgentRole values to explicit permissions.
+    """
+    ROLE_CAPABILITIES = {
+        AgentRole.COORDINATOR: {
+            "can_read_files",
+            "can_create_pr",
+            "can_access_memory"
+        },
+        AgentRole.CODER: {
+            "can_read_files",
+            "can_edit_files",
+            "can_modify_dependencies",
+            "can_execute_code",
+            "can_access_memory"
+        },
+        AgentRole.TESTER: {
+            "can_read_files",
+            "can_edit_files",
+            "can_run_tests",
+            "can_execute_code",
+            "can_access_memory"
+        },
+        AgentRole.REVIEWER: {
+            "can_read_files",
+            "can_approve_changes",
+            "can_access_memory",
+            "can_finalize_artifacts"
+        }
+    }
+
+    @classmethod
+    def get_capabilities(cls, role: AgentRole) -> set[str]:
+        return cls.ROLE_CAPABILITIES.get(role, set())
+
+    @classmethod
+    def require_role_capability(cls, role: AgentRole, capability: str) -> None:
+        if capability not in cls.get_capabilities(role):
+            raise PermissionError(f"Role '{role.value}' lacks required capability: '{capability}'")
+
+
 class SwarmContract(BaseModel):
     """
     Defines the exact requirements and deliverables for a sub-swarm task.
@@ -114,6 +156,15 @@ class BaseSwarmAgent(abc.ABC):
 
         # Initialize event subscriptions specific to the agent's role
         self.setup_subscriptions()
+
+    def has_capability(self, capability: str) -> bool:
+        """Check if the agent has a specific capability."""
+        return capability in CapabilityRegistry.get_capabilities(self.role)
+
+    def require_capability(self, capability: str) -> None:
+        """Ensure the agent has a specific capability, raise PermissionError otherwise."""
+        if not self.has_capability(capability):
+            raise PermissionError(f"Agent '{self.name}' with role '{self.role.value}' lacks required capability: '{capability}'")
 
     @abc.abstractmethod
     def setup_subscriptions(self):

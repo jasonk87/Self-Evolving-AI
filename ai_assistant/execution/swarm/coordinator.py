@@ -68,7 +68,6 @@ class SubSwarmCoordinator:
         Starts the swarm and returns the finalized artifacts when done.
         """
         logger.info(f"[Coordinator {self.swarm_id}] Starting sub-swarm for contract: {self.contract.task_id}")
-        self.contract.validate()
 
         self.setup_coordinator_subscriptions()
 
@@ -93,6 +92,23 @@ class SubSwarmCoordinator:
                     task.cancel()
 
         # 4. Extract final artifacts from the Blackboard
+        final_artifacts = await self._retrieve_final_artifacts()
+
+        return {
+            "status": "success",
+            "artifacts": final_artifacts,
+            "logs": [e for e in self.blackboard.history]
+        }
+
+    async def _retrieve_final_artifacts(self) -> Dict[str, Any]:
+        """
+        Helper method to retrieve final artifacts from the blackboard.
+        """
+        from .protocol import CapabilityRegistry
+
+        # Enforce memory access capabilities for the coordinator role natively via the registry
+        CapabilityRegistry.require_role_capability(AgentRole.COORDINATOR, "can_access_memory")
+
         final_artifacts = {}
         for filename in self.contract.deliverables:
             code = await self.blackboard.get_state(f"artifact_{filename}")
@@ -101,8 +117,4 @@ class SubSwarmCoordinator:
             else:
                 logger.warning(f"[Coordinator {self.swarm_id}] Missing final artifact for {filename}")
 
-        return {
-            "status": "success",
-            "artifacts": final_artifacts,
-            "logs": [e for e in self.blackboard.history]
-        }
+        return final_artifacts

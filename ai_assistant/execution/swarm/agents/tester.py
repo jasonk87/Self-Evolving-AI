@@ -42,6 +42,8 @@ class TesterAgent(BaseSwarmAgent):
 
     async def generate_test_draft(self, filename: str):
         """Generates unit tests based solely on the contract interface."""
+        self.require_capability("can_edit_files")
+        self.require_capability("can_access_memory")
         interfaces_str = "\\n".join([str(i) for i in self.contract.interfaces])
 
         prompt = f"""
@@ -64,12 +66,15 @@ class TesterAgent(BaseSwarmAgent):
             cleaned_code = code.replace("```python", "").replace("```", "").strip()
             self.drafts[filename] = cleaned_code
 
+            self.require_capability("can_access_memory")
             await self.blackboard.update_state(f"artifact_{filename}", cleaned_code, self.name)
             await self.report_progress(f"Test draft completed for {filename}.")
 
             # Note: We do NOT publish a general event for test draft completion unless
             # another agent (like Reviewer) needs to see the un-executed test code.
 
+        except PermissionError:
+            raise
         except Exception as e:
             await self.report_error(e, f"Generating test draft for {filename}")
 
@@ -139,6 +144,9 @@ class TesterAgent(BaseSwarmAgent):
         Writes the implementation and test files to a temporary directory and executes pytest.
         Returns a tuple of (passed_boolean, logs_string).
         """
+        self.require_capability("can_run_tests")
+        self.require_capability("can_read_files")
+        self.require_capability("can_execute_code")
         import os
         import tempfile
         import asyncio

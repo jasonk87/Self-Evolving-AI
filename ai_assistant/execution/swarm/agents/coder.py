@@ -1,6 +1,7 @@
 import logging
 import asyncio
 from typing import Dict, Any, Optional
+import pathlib
 
 from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract
 from ..blackboard import Blackboard, BlackboardEvent
@@ -43,8 +44,26 @@ class CoderAgent(BaseSwarmAgent):
         # via the callback `handle_test_failure`. If the coordinator publishes 'swarm_complete',
         # the task will be cancelled by the coordinator.
 
+    @staticmethod
+    def _is_dependency_file(filename: str) -> bool:
+        """Helper to determine if a file is a recognized dependency or configuration file."""
+        dependency_files = {
+            "requirements.txt", "requirements-core.txt", "requirements-dev.txt",
+            "requirements.lock", "pyproject.toml", "setup.py", "setup.cfg",
+            "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", "pdm.lock",
+            "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"
+        }
+        name = pathlib.Path(filename).name
+        return name in dependency_files
+
     async def generate_draft(self, filename: str, previous_error: Optional[str] = None):
         """Generates code for a specific file and publishes it to the blackboard."""
+        self.require_capability("can_edit_files")
+
+        if CoderAgent._is_dependency_file(filename):
+            self.require_capability("can_modify_dependencies")
+
+        self.require_capability("can_access_memory")
 
         # Extract interfaces relevant to this file (simplification: we pass all interfaces for now)
         interfaces_str = "\\n".join([str(i) for i in self.contract.interfaces])
@@ -76,6 +95,7 @@ class CoderAgent(BaseSwarmAgent):
             self.drafts[filename] = cleaned_code
 
             # Update shared state and publish event
+            self.require_capability("can_access_memory")
             await self.blackboard.update_state(f"artifact_{filename}", cleaned_code, self.name)
             await self.blackboard.publish(
                 topic="code_drafted",
@@ -84,6 +104,8 @@ class CoderAgent(BaseSwarmAgent):
             )
             await self.report_progress(f"Draft completed for {filename}.")
 
+        except PermissionError:
+            raise
         except Exception as e:
             await self.report_error(e, f"Generating draft for {filename}")
 
