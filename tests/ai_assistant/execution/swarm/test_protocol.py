@@ -263,10 +263,48 @@ async def test_dependency_failure_uses_dependency_repair_route(blackboard):
     await coder.handle_test_failure(_failure_event("main.py", classification))
 
     assert provider.prompts
-    assert "Dependency repair route" in provider.prompts[-1]
+    assert any("Dependency repair route" in prompt for prompt in provider.prompts)
     assert "Fix the implementation." not in provider.prompts[-1]
     assert "requirements-core.txt" in coder.drafts
     assert CoderAgent._is_dependency_file("requirements-core.txt")
+
+
+@pytest.mark.asyncio
+async def test_dependency_failure_defaults_to_manifest_when_contract_has_only_main():
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    main_only_contract = SwarmContract(
+        task_id="main_only_dependency_task",
+        description="A dependency repair task with no dependency deliverable.",
+        deliverables=["main.py"],
+    )
+    provider = RecordingProvider("requests")
+    coordinator = SubSwarmCoordinator(main_only_contract, provider)
+    coder = coordinator.agents[0]
+    coder.drafts["main.py"] = "old_code"
+    coder.start_working()
+    coder.wait_for_tests()
+    coordinator.agents[2].wait_for_tests()
+    classification = classify_failure("ModuleNotFoundError: No module named 'requests'")
+
+    await coordinator.blackboard.publish(
+        topic="test_results_failed",
+        source_agent="tester",
+        data={
+            "filename": "main.py",
+            "test_file": "test_main.py",
+            "logs": "ModuleNotFoundError: No module named 'requests'",
+            "failure_classification": classification.model_dump(),
+        },
+    )
+    scorecard = coordinator._build_scorecard(accepted=False)
+
+    assert any("Dependency repair route" in prompt for prompt in provider.prompts)
+    assert "requirements-core.txt" in coder.drafts
+    assert "requirements-core.txt" in scorecard.files_touched
+    assert scorecard.tests_run == 2
+    assert scorecard.tests_passed == 1
+    assert scorecard.failure_reason.failure_class == FailureClass.DEPENDENCY_MISSING
 
 
 @pytest.mark.asyncio

@@ -185,7 +185,14 @@ class CoderAgent(BaseSwarmAgent):
             for deliverable in self.contract.deliverables:
                 if CoderAgent._is_dependency_file(deliverable):
                     return deliverable
+            return self._default_dependency_target()
         return str(filename) if filename else None
+
+    @staticmethod
+    def _default_dependency_target() -> str:
+        if pathlib.Path("requirements-core.txt").exists():
+            return "requirements-core.txt"
+        return "requirements.txt"
 
     @staticmethod
     def _build_repair_guidance(failure_class: FailureClass) -> str:
