@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, List, Optional
 import uuid
 
-from .protocol import SwarmContract, AgentRole
+from .protocol import SwarmContract, AgentRole, ExperimentScorecard, FailureClassification
 from .blackboard import Blackboard, BlackboardEvent
 from .agents.coder import CoderAgent
 from .agents.tester import TesterAgent
@@ -81,10 +81,16 @@ class SubSwarmCoordinator:
 
         except asyncio.TimeoutError:
             logger.warning(f"[Coordinator {self.swarm_id}] Swarm timed out after {self.timeout}s.")
-            return {"status": "error", "message": f"Swarm timed out after {self.timeout}s."}
+            scorecard = self._build_scorecard(accepted=False)
+            return {
+                "status": "error",
+                "message": f"Swarm timed out after {self.timeout}s.",
+                "scorecard": scorecard.model_dump(),
+            }
         except Exception as e:
             logger.error(f"[Coordinator {self.swarm_id}] Swarm failed: {e}")
-            return {"status": "error", "message": str(e)}
+            scorecard = self._build_scorecard(accepted=False)
+            return {"status": "error", "message": str(e), "scorecard": scorecard.model_dump()}
         finally:
             # 3. Clean up agent background tasks
             for task in agent_tasks:
@@ -97,8 +103,58 @@ class SubSwarmCoordinator:
         return {
             "status": "success",
             "artifacts": final_artifacts,
+            "scorecard": self._build_scorecard(accepted=True).model_dump(),
             "logs": [e for e in self.blackboard.history]
         }
+
+    def _build_scorecard(self, accepted: bool) -> ExperimentScorecard:
+        """
+        Build a deterministic scorecard from blackboard events and capability checks.
+        """
+        passed_events = [event for event in self.blackboard.history if event.topic == "test_results_passed"]
+        failed_events = [event for event in self.blackboard.history if event.topic == "test_results_failed"]
+        tests_run = len(passed_events) + len(failed_events)
+
+        failure_reason = None
+        if failed_events:
+            raw_failure = failed_events[-1].data.get("failure_classification")
+            if isinstance(raw_failure, FailureClassification):
+                failure_reason = raw_failure
+            elif isinstance(raw_failure, dict):
+                failure_reason = FailureClassification(**raw_failure)
+
+        capability_entries: List[Dict[str, Any]] = []
+        for agent in self.agents:
+            capability_entries.extend(agent.get_capability_audit_log())
+
+        files_touched = sorted({
+            str(event.data.get("filename"))
+            for event in self.blackboard.history
+            if event.data.get("filename")
+        } | set(self.contract.deliverables))
+
+        risk_level = self._estimate_risk_level(files_touched, bool(failed_events))
+
+        return ExperimentScorecard(
+            task_id=self.contract.task_id,
+            tests_run=tests_run,
+            tests_passed=len(passed_events),
+            risk_level=risk_level,
+            files_touched=files_touched,
+            capabilities_used=capability_entries,
+            failure_reason=failure_reason,
+            accepted=accepted and not failed_events,
+        )
+
+    @staticmethod
+    def _estimate_risk_level(files_touched: List[str], had_failures: bool) -> str:
+        if had_failures:
+            return "high"
+        if any(path.endswith((".lock", ".toml")) or "requirements" in path for path in files_touched):
+            return "medium"
+        if len(files_touched) > 4:
+            return "medium"
+        return "low"
 
     async def _retrieve_final_artifacts(self) -> Dict[str, Any]:
         """

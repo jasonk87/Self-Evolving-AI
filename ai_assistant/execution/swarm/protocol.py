@@ -1,4 +1,5 @@
 import abc
+import re
 from enum import Enum
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, model_validator
@@ -25,6 +26,102 @@ class AgentRole(Enum):
     CODER = "coder"
     TESTER = "tester"
     REVIEWER = "reviewer"
+
+
+class FailureClass(str, Enum):
+    DEPENDENCY_MISSING = "dependency_missing"
+    IMPORT_PATH_ISSUE = "import_path_issue"
+    TEST_ASSERTION_MISMATCH = "test_assertion_mismatch"
+    REAL_LOGIC_BUG = "real_logic_bug"
+    STATE_MACHINE_VIOLATION = "state_machine_violation"
+    CAPABILITY_VIOLATION = "capability_violation"
+    ENVIRONMENT_CI_ISSUE = "environment_ci_issue"
+    FLAKY_LLM_ISSUE = "flaky_llm_issue"
+    UNKNOWN = "unknown"
+
+
+class FailureClassification(BaseModel):
+    failure_class: FailureClass
+    reason: str
+    suggested_route: str
+
+
+class ExperimentScorecard(BaseModel):
+    task_id: str
+    tests_run: int = 0
+    tests_passed: int = 0
+    risk_level: str = "low"
+    files_touched: List[str] = Field(default_factory=list)
+    capabilities_used: List[Dict[str, Any]] = Field(default_factory=list)
+    failure_reason: Optional[FailureClassification] = None
+    accepted: bool = False
+
+
+def classify_failure(logs: str) -> FailureClassification:
+    """Classify common execution failures without requiring another LLM call."""
+    text = str(logs or "")
+    lowered = text.lower()
+
+    if "permissionerror" in lowered and "lacks required capability" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.CAPABILITY_VIOLATION,
+            reason="An agent attempted an action outside its registered capabilities.",
+            suggested_route="route_to_capability_policy_review",
+        )
+    if "machineerror" in lowered or "can't trigger event" in lowered or "cannot trigger event" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.STATE_MACHINE_VIOLATION,
+            reason="An agent attempted an invalid lifecycle transition.",
+            suggested_route="route_to_state_machine_fix",
+        )
+    if "modulenotfounderror" in lowered or "no module named" in lowered:
+        missing_module_match = re.search(r"no module named ['\"]([^'\"]+)['\"]", lowered)
+        missing_module = missing_module_match.group(1) if missing_module_match else ""
+        project_prefixes = ("ai_assistant", "tests", "routes", ".")
+        if missing_module.startswith(project_prefixes) or "attempted relative import" in lowered:
+            route = "route_to_import_path_fix"
+            klass = FailureClass.IMPORT_PATH_ISSUE
+            reason = "Python could not resolve a project import path."
+        else:
+            route = "route_to_dependency_fix"
+            klass = FailureClass.DEPENDENCY_MISSING
+            reason = "A required package appears to be missing from the execution environment."
+        return FailureClassification(failure_class=klass, reason=reason, suggested_route=route)
+    if "importerror" in lowered or "attempted relative import" in lowered or "cannot import name" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.IMPORT_PATH_ISSUE,
+            reason="The failure points to a broken import boundary or module name.",
+            suggested_route="route_to_import_path_fix",
+        )
+    if "assertionerror" in lowered or "assert " in lowered or "expected" in lowered and "actual" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.TEST_ASSERTION_MISMATCH,
+            reason="A test assertion failed against the produced behavior.",
+            suggested_route="route_to_test_or_behavior_review",
+        )
+    if "syntaxerror" in lowered or "indentationerror" in lowered or "nameerror" in lowered or "typeerror" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.REAL_LOGIC_BUG,
+            reason="The generated code failed at parse time or runtime.",
+            suggested_route="route_to_coder_fix",
+        )
+    if "connection refused" in lowered or "timed out" in lowered or "exit code 5" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.ENVIRONMENT_CI_ISSUE,
+            reason="The failure looks tied to process execution or environment availability.",
+            suggested_route="route_to_environment_fix",
+        )
+    if "empty response" in lowered or "invalid json" in lowered or "hallucinated" in lowered:
+        return FailureClassification(
+            failure_class=FailureClass.FLAKY_LLM_ISSUE,
+            reason="The model output was missing, malformed, or inconsistent.",
+            suggested_route="route_to_llm_retry_or_prompt_fix",
+        )
+    return FailureClassification(
+        failure_class=FailureClass.UNKNOWN,
+        reason="No known failure signature matched the logs.",
+        suggested_route="route_to_human_review",
+    )
 
 
 class CapabilityRegistry:
@@ -99,6 +196,7 @@ class BaseSwarmAgent(abc.ABC):
         self.contract = contract
         self.blackboard = blackboard
         self.llm_provider = llm_provider
+        self.capability_audit_log: List[Dict[str, Any]] = []
 
         # State machine setup
         self.states = [state.value for state in AgentState]
@@ -163,8 +261,20 @@ class BaseSwarmAgent(abc.ABC):
 
     def require_capability(self, capability: str) -> None:
         """Ensure the agent has a specific capability, raise PermissionError otherwise."""
+        allowed = self.has_capability(capability)
+        self.capability_audit_log.append({
+            "agent": self.name,
+            "role": self.role.value,
+            "capability": capability,
+            "allowed": allowed,
+            "task_id": self.contract.task_id,
+        })
         if not self.has_capability(capability):
             raise PermissionError(f"Agent '{self.name}' with role '{self.role.value}' lacks required capability: '{capability}'")
+
+    def get_capability_audit_log(self) -> List[Dict[str, Any]]:
+        """Return capability checks performed by this agent during the swarm run."""
+        return list(self.capability_audit_log)
 
     @abc.abstractmethod
     def setup_subscriptions(self):

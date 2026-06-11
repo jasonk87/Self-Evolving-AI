@@ -2,7 +2,14 @@ import pytest
 from transitions import MachineError
 
 from typing import Any
-from ai_assistant.execution.swarm.protocol import SwarmContract, AgentRole, BaseSwarmAgent, AgentState
+from ai_assistant.execution.swarm.protocol import (
+    AgentRole,
+    AgentState,
+    BaseSwarmAgent,
+    FailureClass,
+    SwarmContract,
+    classify_failure,
+)
 from ai_assistant.execution.swarm.blackboard import Blackboard
 
 class MockProvider:
@@ -143,6 +150,66 @@ def test_require_capability_enforcement(agent):
     # Agent is a CODER, they cannot approve changes
     with pytest.raises(PermissionError, match=r"lacks required capability: 'can_approve_changes'"):
         agent.require_capability("can_approve_changes")
+
+    audit_log = agent.get_capability_audit_log()
+    assert audit_log[-2]["capability"] == "can_edit_files"
+    assert audit_log[-2]["allowed"] is True
+    assert audit_log[-1]["capability"] == "can_approve_changes"
+    assert audit_log[-1]["allowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("logs", "expected_class", "expected_route"),
+    [
+        ("ModuleNotFoundError: No module named 'requests'", FailureClass.DEPENDENCY_MISSING, "route_to_dependency_fix"),
+        ("ModuleNotFoundError: No module named 'ai_assistant.core'", FailureClass.IMPORT_PATH_ISSUE, "route_to_import_path_fix"),
+        ("pytest failed: No module named pytest. Try pip install pytest", FailureClass.DEPENDENCY_MISSING, "route_to_dependency_fix"),
+        ("AssertionError: expected 2 actual 3", FailureClass.TEST_ASSERTION_MISMATCH, "route_to_test_or_behavior_review"),
+        ("PermissionError: Agent lacks required capability: can_run_tests", FailureClass.CAPABILITY_VIOLATION, "route_to_capability_policy_review"),
+        ("MachineError: Cannot trigger event start_working", FailureClass.STATE_MACHINE_VIOLATION, "route_to_state_machine_fix"),
+        ("SyntaxError: invalid syntax", FailureClass.REAL_LOGIC_BUG, "route_to_coder_fix"),
+        ("connection refused while starting service", FailureClass.ENVIRONMENT_CI_ISSUE, "route_to_environment_fix"),
+        ("empty response from LLM", FailureClass.FLAKY_LLM_ISSUE, "route_to_llm_retry_or_prompt_fix"),
+    ],
+)
+def test_failure_classifier_routes_known_failures(logs, expected_class, expected_route):
+    classification = classify_failure(logs)
+
+    assert classification.failure_class == expected_class
+    assert classification.suggested_route == expected_route
+
+
+@pytest.mark.asyncio
+async def test_experiment_scorecard_tracks_tests_failures_and_capabilities(contract):
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    coordinator = SubSwarmCoordinator(contract, MockProvider())
+    coordinator.agents[0].require_capability("can_edit_files")
+    await coordinator.blackboard.publish(
+        topic="test_results_passed",
+        source_agent="Tester_test_swarm",
+        data={"filename": "main.py", "test_file": "test_main.py", "logs": "passed"},
+    )
+    await coordinator.blackboard.publish(
+        topic="test_results_failed",
+        source_agent="Tester_test_swarm",
+        data={
+            "filename": "main.py",
+            "test_file": "test_main.py",
+            "logs": "AssertionError: expected 1 actual 2",
+            "failure_classification": classify_failure("AssertionError: expected 1 actual 2").model_dump(),
+        },
+    )
+
+    scorecard = coordinator._build_scorecard(accepted=True)
+
+    assert scorecard.tests_run == 2
+    assert scorecard.tests_passed == 1
+    assert scorecard.accepted is False
+    assert scorecard.risk_level == "high"
+    assert scorecard.files_touched == ["main.py"]
+    assert scorecard.failure_reason.failure_class == FailureClass.TEST_ASSERTION_MISMATCH
+    assert scorecard.capabilities_used[0]["capability"] == "can_edit_files"
 
 def test_require_role_capability_enforcement():
     from ai_assistant.execution.swarm.protocol import CapabilityRegistry

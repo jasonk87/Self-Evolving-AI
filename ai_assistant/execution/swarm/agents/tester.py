@@ -2,7 +2,7 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional
 
-from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract
+from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract, classify_failure
 from ..blackboard import Blackboard, BlackboardEvent
 
 logger = logging.getLogger(__name__)
@@ -132,11 +132,17 @@ class TesterAgent(BaseSwarmAgent):
             )
         else:
             self.tests_failed()
+            failure_classification = classify_failure(logs).model_dump()
             await self.report_progress(f"Tests FAILED for {impl_filename}. Sending feedback to Coder.")
             await self.blackboard.publish(
                 topic="test_results_failed",
                 source_agent=self.name,
-                data={"filename": impl_filename, "test_file": test_filename, "logs": logs}
+                data={
+                    "filename": impl_filename,
+                    "test_file": test_filename,
+                    "logs": logs,
+                    "failure_classification": failure_classification,
+                }
             )
 
     async def _execute_tests(self, impl_file: str, impl_code: str, test_file: str, test_code: str):
