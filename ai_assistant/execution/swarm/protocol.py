@@ -55,6 +55,8 @@ class ExperimentScorecard(BaseModel):
     capabilities_used: List[Dict[str, Any]] = Field(default_factory=list)
     failure_reason: Optional[FailureClassification] = None
     accepted: bool = False
+    blocked: bool = False
+    suggested_route: Optional[str] = None
 
 
 def classify_failure(logs: str) -> FailureClassification:
@@ -122,6 +124,15 @@ def classify_failure(logs: str) -> FailureClassification:
         reason="No known failure signature matched the logs.",
         suggested_route="route_to_human_review",
     )
+
+
+def coerce_failure_classification(value: Any, fallback_logs: str = "") -> FailureClassification:
+    """Normalize event payload failure data into a FailureClassification."""
+    if isinstance(value, FailureClassification):
+        return value
+    if isinstance(value, dict):
+        return FailureClassification(**value)
+    return classify_failure(fallback_logs)
 
 
 class CapabilityRegistry:

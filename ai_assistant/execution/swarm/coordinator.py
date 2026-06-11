@@ -3,7 +3,14 @@ import logging
 from typing import Dict, Any, List, Optional
 import uuid
 
-from .protocol import SwarmContract, AgentRole, ExperimentScorecard, FailureClassification
+from .protocol import (
+    SwarmContract,
+    AgentRole,
+    ExperimentScorecard,
+    FailureClass,
+    FailureClassification,
+    coerce_failure_classification,
+)
 from .blackboard import Blackboard, BlackboardEvent
 from .agents.coder import CoderAgent
 from .agents.tester import TesterAgent
@@ -35,12 +42,15 @@ class SubSwarmCoordinator:
 
         # Future to signal when the swarm is done
         self.completion_future = asyncio.Future()
+        self.blocked_classification: Optional[FailureClassification] = None
+        self.flaky_failure_count = 0
 
     def setup_coordinator_subscriptions(self):
         """The Coordinator listens for critical lifecycle events."""
         self.blackboard.subscribe("swarm_complete", self._handle_swarm_complete)
         self.blackboard.subscribe("agent_error", self._handle_agent_error)
         self.blackboard.subscribe("agent_progress", self._handle_progress_update)
+        self.blackboard.subscribe("test_results_failed", self._handle_test_failure)
 
     async def _handle_swarm_complete(self, event: BlackboardEvent):
         """When the Reviewer approves all files, the swarm is done."""
@@ -63,6 +73,28 @@ class SubSwarmCoordinator:
         logger.info(f"[Coordinator {self.swarm_id}] {role.upper()}: {msg}")
         # In a full integration, we would update `TaskManager` here.
 
+    async def _handle_test_failure(self, event: BlackboardEvent):
+        """Block the swarm for failure classes that should not trigger more rewrites."""
+        classification = coerce_failure_classification(
+            event.data.get("failure_classification"),
+            str(event.data.get("logs") or ""),
+        )
+        blocking_classes = {
+            FailureClass.STATE_MACHINE_VIOLATION,
+            FailureClass.CAPABILITY_VIOLATION,
+            FailureClass.ENVIRONMENT_CI_ISSUE,
+            FailureClass.UNKNOWN,
+        }
+
+        should_block = classification.failure_class in blocking_classes
+        if classification.failure_class == FailureClass.FLAKY_LLM_ISSUE:
+            self.flaky_failure_count += 1
+            should_block = self.flaky_failure_count > 1
+
+        if should_block and not self.completion_future.done():
+            self.blocked_classification = classification
+            self.completion_future.set_result(False)
+
     async def execute_swarm(self) -> Dict[str, Any]:
         """
         Starts the swarm and returns the finalized artifacts when done.
@@ -76,12 +108,20 @@ class SubSwarmCoordinator:
 
         try:
             # 2. Wait for the completion signal (or timeout)
-            await asyncio.wait_for(self.completion_future, timeout=self.timeout)
+            completed = await asyncio.wait_for(self.completion_future, timeout=self.timeout)
+            if completed is False:
+                logger.warning(f"[Coordinator {self.swarm_id}] Swarm blocked by failure classification.")
+                scorecard = self._build_scorecard(accepted=False, blocked=True)
+                return {
+                    "status": "error",
+                    "message": f"Swarm blocked: {scorecard.suggested_route}",
+                    "scorecard": scorecard.model_dump(),
+                }
             logger.info(f"[Coordinator {self.swarm_id}] Swarm execution successful.")
 
         except asyncio.TimeoutError:
             logger.warning(f"[Coordinator {self.swarm_id}] Swarm timed out after {self.timeout}s.")
-            scorecard = self._build_scorecard(accepted=False)
+            scorecard = self._build_scorecard(accepted=False, blocked=True)
             return {
                 "status": "error",
                 "message": f"Swarm timed out after {self.timeout}s.",
@@ -89,7 +129,7 @@ class SubSwarmCoordinator:
             }
         except Exception as e:
             logger.error(f"[Coordinator {self.swarm_id}] Swarm failed: {e}")
-            scorecard = self._build_scorecard(accepted=False)
+            scorecard = self._build_scorecard(accepted=False, blocked=True)
             return {"status": "error", "message": str(e), "scorecard": scorecard.model_dump()}
         finally:
             # 3. Clean up agent background tasks
@@ -103,11 +143,11 @@ class SubSwarmCoordinator:
         return {
             "status": "success",
             "artifacts": final_artifacts,
-            "scorecard": self._build_scorecard(accepted=True).model_dump(),
+            "scorecard": self._build_scorecard(accepted=True, blocked=False).model_dump(),
             "logs": [e for e in self.blackboard.history]
         }
 
-    def _build_scorecard(self, accepted: bool) -> ExperimentScorecard:
+    def _build_scorecard(self, accepted: bool, blocked: bool = False) -> ExperimentScorecard:
         """
         Build a deterministic scorecard from blackboard events and capability checks.
         """
@@ -116,12 +156,11 @@ class SubSwarmCoordinator:
         tests_run = len(passed_events) + len(failed_events)
 
         failure_reason = None
-        if failed_events:
+        if self.blocked_classification is not None:
+            failure_reason = self.blocked_classification
+        elif failed_events:
             raw_failure = failed_events[-1].data.get("failure_classification")
-            if isinstance(raw_failure, FailureClassification):
-                failure_reason = raw_failure
-            elif isinstance(raw_failure, dict):
-                failure_reason = FailureClassification(**raw_failure)
+            failure_reason = coerce_failure_classification(raw_failure, str(failed_events[-1].data.get("logs") or ""))
 
         capability_entries: List[Dict[str, Any]] = []
         for agent in self.agents:
@@ -144,6 +183,8 @@ class SubSwarmCoordinator:
             capabilities_used=capability_entries,
             failure_reason=failure_reason,
             accepted=accepted and not failed_events,
+            blocked=blocked,
+            suggested_route=failure_reason.suggested_route if failure_reason else None,
         )
 
     @staticmethod

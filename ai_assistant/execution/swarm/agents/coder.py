@@ -3,7 +3,13 @@ import asyncio
 from typing import Dict, Any, Optional
 import pathlib
 
-from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract
+from ..protocol import (
+    BaseSwarmAgent,
+    AgentRole,
+    FailureClass,
+    SwarmContract,
+    coerce_failure_classification,
+)
 from ..blackboard import Blackboard, BlackboardEvent
 
 logger = logging.getLogger(__name__)
@@ -16,6 +22,7 @@ class CoderAgent(BaseSwarmAgent):
     def __init__(self, name: str, contract: SwarmContract, blackboard: Blackboard, llm_provider: Any):
         super().__init__(name, AgentRole.CODER, contract, blackboard, llm_provider)
         self.drafts = {} # filename -> code string
+        self.flaky_retry_counts: Dict[str, int] = {}
 
     def setup_subscriptions(self):
         # The Coder listens for test failures from the Tester to revise its code
@@ -56,7 +63,12 @@ class CoderAgent(BaseSwarmAgent):
         name = pathlib.Path(filename).name
         return name in dependency_files
 
-    async def generate_draft(self, filename: str, previous_error: Optional[str] = None):
+    async def generate_draft(
+        self,
+        filename: str,
+        previous_error: Optional[str] = None,
+        repair_guidance: Optional[str] = None,
+    ):
         """Generates code for a specific file and publishes it to the blackboard."""
         self.require_capability("can_edit_files")
 
@@ -82,7 +94,13 @@ class CoderAgent(BaseSwarmAgent):
         """
 
         if previous_error:
-            prompt += f"\\n\\nPREVIOUS TESTS FAILED WITH THE FOLLOWING ERROR:\\n{previous_error}\\nFix the implementation."
+            if repair_guidance:
+                prompt += (
+                    f"\\n\\nCLASSIFICATION-DRIVEN REPAIR ROUTE:\\n{repair_guidance}"
+                    f"\\n\\nFAILURE DETAILS:\\n{previous_error}"
+                )
+            else:
+                prompt += f"\\n\\nPREVIOUS TESTS FAILED WITH THE FOLLOWING ERROR:\\n{previous_error}\\nFix the implementation."
 
         prompt += "\\n\\nOutput ONLY the raw Python code for the file. Do not include markdown or explanations."
 
@@ -110,12 +128,86 @@ class CoderAgent(BaseSwarmAgent):
             await self.report_error(e, f"Generating draft for {filename}")
 
     async def handle_test_failure(self, event: BlackboardEvent):
-        """Callback: Wakes up the coder to fix bugs found by the Tester."""
+        """Callback: route tester failures by classification before revising code."""
         filename = event.data.get("filename") # The implementation file that failed
         error_logs = event.data.get("logs")
+        classification = coerce_failure_classification(
+            event.data.get("failure_classification"),
+            str(error_logs or ""),
+        )
 
-        if filename in self.drafts:
-            self.start_revising()
-            await self.report_progress(f"Received test failure for {filename}. Revising code.")
-            await self.generate_draft(filename, previous_error=error_logs)
-            self.wait_for_tests()
+        route = classification.suggested_route
+        blocking_classes = {
+            FailureClass.STATE_MACHINE_VIOLATION,
+            FailureClass.CAPABILITY_VIOLATION,
+            FailureClass.ENVIRONMENT_CI_ISSUE,
+            FailureClass.UNKNOWN,
+        }
+        if classification.failure_class in blocking_classes:
+            await self.report_progress(
+                f"Failure classified as {classification.failure_class.value}; blocking coder rewrite.",
+                {"suggested_route": route},
+            )
+            return
+
+        if classification.failure_class == FailureClass.FLAKY_LLM_ISSUE:
+            retry_count = self.flaky_retry_counts.get(str(filename), 0)
+            if retry_count >= 1:
+                await self.report_progress(
+                    f"Repeated flaky LLM failure for {filename}; blocking further retries.",
+                    {"suggested_route": route},
+                )
+                return
+            self.flaky_retry_counts[str(filename)] = retry_count + 1
+
+        target_filename = self._select_repair_target(filename, classification.failure_class)
+        if not target_filename:
+            return
+
+        if target_filename not in self.drafts and not CoderAgent._is_dependency_file(target_filename):
+            return
+
+        self.start_revising()
+        guidance = self._build_repair_guidance(classification.failure_class)
+        await self.report_progress(
+            f"Routing {classification.failure_class.value} for {target_filename}.",
+            {"suggested_route": route},
+        )
+        await self.generate_draft(
+            target_filename,
+            previous_error=error_logs,
+            repair_guidance=guidance,
+        )
+        self.wait_for_tests()
+
+    def _select_repair_target(self, filename: Optional[str], failure_class: FailureClass) -> Optional[str]:
+        if failure_class == FailureClass.DEPENDENCY_MISSING:
+            for deliverable in self.contract.deliverables:
+                if CoderAgent._is_dependency_file(deliverable):
+                    return deliverable
+        return str(filename) if filename else None
+
+    @staticmethod
+    def _build_repair_guidance(failure_class: FailureClass) -> str:
+        guidance = {
+            FailureClass.DEPENDENCY_MISSING: (
+                "Dependency repair route: identify the missing external package and update the dependency "
+                "manifest or dependency-facing code. Do not make an unrelated implementation retry."
+            ),
+            FailureClass.IMPORT_PATH_ISSUE: (
+                "Import/path repair route: fix module names, package boundaries, or relative imports while "
+                "preserving behavior."
+            ),
+            FailureClass.TEST_ASSERTION_MISMATCH: (
+                "Test-or-behavior review route: compare the asserted contract with the implementation and "
+                "adjust only the side that contradicts the task contract."
+            ),
+            FailureClass.REAL_LOGIC_BUG: (
+                "Logic bug repair route: fix the implementation defect indicated by the failing tests."
+            ),
+            FailureClass.FLAKY_LLM_ISSUE: (
+                "Flaky LLM retry route: produce a complete, deterministic raw code response with no markdown, "
+                "no placeholders, and no omitted imports."
+            ),
+        }
+        return guidance.get(failure_class, "Route to human review; do not perform a blind rewrite.")

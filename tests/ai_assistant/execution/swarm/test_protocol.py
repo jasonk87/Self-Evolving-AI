@@ -15,6 +15,15 @@ from ai_assistant.execution.swarm.blackboard import Blackboard
 class MockProvider:
     pass
 
+class RecordingProvider:
+    def __init__(self, response: str = "repaired_code"):
+        self.response = response
+        self.prompts = []
+
+    async def invoke_ollama_model_async(self, prompt, *args, **kwargs):
+        self.prompts.append(prompt)
+        return self.response
+
 class DummyAgent(BaseSwarmAgent):
     def __init__(self, name: str, role: AgentRole, contract: SwarmContract, blackboard: Blackboard, llm_provider: Any):
         super().__init__(name, role, contract, blackboard, llm_provider)
@@ -210,6 +219,160 @@ async def test_experiment_scorecard_tracks_tests_failures_and_capabilities(contr
     assert scorecard.files_touched == ["main.py"]
     assert scorecard.failure_reason.failure_class == FailureClass.TEST_ASSERTION_MISMATCH
     assert scorecard.capabilities_used[0]["capability"] == "can_edit_files"
+    assert scorecard.suggested_route == "route_to_test_or_behavior_review"
+
+
+def _failure_event(filename, classification, logs="failure logs"):
+    from ai_assistant.execution.swarm.blackboard import BlackboardEvent
+
+    return BlackboardEvent(
+        topic="test_results_failed",
+        source_agent="tester",
+        data={
+            "filename": filename,
+            "test_file": f"test_{filename}",
+            "logs": logs,
+            "failure_classification": classification.model_dump(),
+        },
+    )
+
+
+def _ready_coder(contract, blackboard, provider):
+    from ai_assistant.execution.swarm.agents.coder import CoderAgent
+
+    coder = CoderAgent("coder", contract, blackboard, provider)
+    coder.drafts["main.py"] = "old_code"
+    coder.start_working()
+    coder.wait_for_tests()
+    return coder
+
+
+@pytest.mark.asyncio
+async def test_dependency_failure_uses_dependency_repair_route(blackboard):
+    from ai_assistant.execution.swarm.agents.coder import CoderAgent
+
+    dependency_contract = SwarmContract(
+        task_id="dependency_task",
+        description="A dependency repair task.",
+        deliverables=["main.py", "requirements-core.txt"],
+    )
+    provider = RecordingProvider("requests")
+    coder = _ready_coder(dependency_contract, blackboard, provider)
+    classification = classify_failure("ModuleNotFoundError: No module named 'requests'")
+
+    await coder.handle_test_failure(_failure_event("main.py", classification))
+
+    assert provider.prompts
+    assert "Dependency repair route" in provider.prompts[-1]
+    assert "Fix the implementation." not in provider.prompts[-1]
+    assert "requirements-core.txt" in coder.drafts
+    assert CoderAgent._is_dependency_file("requirements-core.txt")
+
+
+@pytest.mark.asyncio
+async def test_logic_bug_routes_back_to_coder(contract, blackboard):
+    provider = RecordingProvider("fixed_logic")
+    coder = _ready_coder(contract, blackboard, provider)
+    classification = classify_failure("TypeError: unsupported operand")
+
+    await coder.handle_test_failure(_failure_event("main.py", classification))
+
+    assert len(provider.prompts) == 1
+    assert "Logic bug repair route" in provider.prompts[-1]
+    assert coder.drafts["main.py"] == "fixed_logic"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "classification",
+    [
+        classify_failure("PermissionError: Agent lacks required capability: can_run_tests"),
+        classify_failure("MachineError: Cannot trigger event start_working"),
+    ],
+)
+async def test_policy_and_state_machine_failures_block_swarm(contract, classification):
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    coordinator = SubSwarmCoordinator(contract, MockProvider())
+    await coordinator._handle_test_failure(_failure_event("main.py", classification))
+    scorecard = coordinator._build_scorecard(accepted=False, blocked=True)
+
+    assert coordinator.completion_future.done()
+    assert scorecard.blocked is True
+    assert scorecard.accepted is False
+    assert scorecard.failure_reason.failure_class == classification.failure_class
+    assert scorecard.suggested_route == classification.suggested_route
+
+
+@pytest.mark.asyncio
+async def test_environment_failure_blocks_without_code_rewrite(contract, blackboard):
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    provider = RecordingProvider("should_not_be_used")
+    coder = _ready_coder(contract, blackboard, provider)
+    classification = classify_failure("connection refused while starting service")
+
+    await coder.handle_test_failure(_failure_event("main.py", classification))
+
+    coordinator = SubSwarmCoordinator(contract, MockProvider())
+    await coordinator._handle_test_failure(_failure_event("main.py", classification))
+
+    assert provider.prompts == []
+    assert coordinator.completion_future.done()
+    assert coordinator._build_scorecard(accepted=False, blocked=True).blocked is True
+
+
+@pytest.mark.asyncio
+async def test_flaky_llm_retries_once_then_blocks(contract, blackboard):
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    provider = RecordingProvider("fixed_after_flake")
+    coder = _ready_coder(contract, blackboard, provider)
+    classification = classify_failure("empty response from LLM")
+    event = _failure_event("main.py", classification)
+
+    await coder.handle_test_failure(event)
+    await coder.handle_test_failure(event)
+
+    coordinator = SubSwarmCoordinator(contract, MockProvider())
+    await coordinator._handle_test_failure(event)
+    assert not coordinator.completion_future.done()
+    await coordinator._handle_test_failure(event)
+
+    assert len(provider.prompts) == 1
+    assert "Flaky LLM retry route" in provider.prompts[0]
+    assert coordinator.completion_future.done()
+    scorecard = coordinator._build_scorecard(accepted=False, blocked=True)
+    assert scorecard.blocked is True
+    assert scorecard.failure_reason.failure_class == FailureClass.FLAKY_LLM_ISSUE
+
+
+@pytest.mark.asyncio
+async def test_blocked_scorecard_includes_classification_and_capability_audit(contract):
+    from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator
+
+    coordinator = SubSwarmCoordinator(contract, MockProvider())
+    coordinator.agents[0].require_capability("can_edit_files")
+    classification = classify_failure("PermissionError: Agent lacks required capability: can_run_tests")
+    await coordinator.blackboard.publish(
+        topic="test_results_failed",
+        source_agent="tester",
+        data={
+            "filename": "main.py",
+            "test_file": "test_main.py",
+            "logs": "PermissionError: Agent lacks required capability: can_run_tests",
+            "failure_classification": classification.model_dump(),
+        },
+    )
+
+    scorecard = coordinator._build_scorecard(accepted=False, blocked=True)
+
+    assert scorecard.tests_run == 1
+    assert scorecard.tests_passed == 0
+    assert scorecard.files_touched == ["main.py"]
+    assert scorecard.failure_reason.failure_class == FailureClass.CAPABILITY_VIOLATION
+    assert scorecard.capabilities_used[0]["capability"] == "can_edit_files"
+    assert scorecard.blocked is True
 
 def test_require_role_capability_enforcement():
     from ai_assistant.execution.swarm.protocol import CapabilityRegistry
