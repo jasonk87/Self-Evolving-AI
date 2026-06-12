@@ -4,6 +4,7 @@ import subprocess
 import time
 import json
 from typing import List, Dict, Optional
+from ai_assistant.core.change_policy import GovernanceTier, decide_governance
 from ai_assistant.core.agent_manager import AgentManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
 agent_manager = AgentManager()
@@ -109,6 +110,10 @@ def create_dynamic_specialist(name: str, description: str, logic_code: str, reti
 
     filename = f"dynamic_specialist_{name.lower().replace(' ', '_')}.py"
     filepath = os.path.join(tool_dir, filename)
+
+    governance = decide_governance(filepath, action="create", project_root=app_root)
+    if governance.tier != GovernanceTier.AUTONOMOUS:
+        return f"Error: Dynamic specialist creation blocked by governance policy: {governance.reason}"
 
     # Save the governance logic to a metadata log
     metadata_path = os.path.join(get_data_dir(), "specialist_governance.log")

@@ -8,6 +8,7 @@ import logging
 import sys
 import subprocess
 from .diff_utils import generate_diff
+from .change_policy import GovernanceTier, decide_governance
 from .critical_reviewer import CriticalReviewCoordinator
 from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
 from .refinement import RefinementAgent # Added import for refinement
@@ -298,7 +299,16 @@ def _update_parent_task(tm: Optional[TaskManager], p_task_id: Optional[str], sta
     if tm and p_task_id:
         tm.update_task_status(p_task_id, status, reason=reason, step_desc=actual_step_desc)
 
-async def edit_function_source_code(module_path: str, function_name: str, new_code_string: str, project_root_path: str, change_description: str, task_manager: Optional[TaskManager] = None, parent_task_id: Optional[str] = None) -> str:
+async def edit_function_source_code(
+    module_path: str,
+    function_name: str,
+    new_code_string: str,
+    project_root_path: str,
+    change_description: str,
+    task_manager: Optional[TaskManager] = None,
+    parent_task_id: Optional[str] = None,
+    human_approved_source_change: bool = False,
+) -> str:
     """
     Edits the source code of a specified function within a given module file using AST,
     after critical review. Updates status of a parent_task_id via task_manager if provided.
@@ -332,6 +342,40 @@ async def edit_function_source_code(module_path: str, function_name: str, new_co
              logger.error(f"Could not resolve file path for '{module_path}.{function_name}'.")
              _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="File path resolution failed", step="Path resolution")
              return "Error: Could not resolve file path."
+
+        governance = decide_governance(file_path, project_root=project_root_path)
+        if (
+            governance.tier == GovernanceTier.HUMAN_REQUIRED
+            and not human_approved_source_change
+        ):
+            err_msg = (
+                "Human approval required before modifying "
+                f"{governance.zone.value}: {file_path}. {governance.reason}"
+            )
+            logger.warning(err_msg)
+            _update_parent_task(
+                task_manager,
+                parent_task_id,
+                ActiveTaskStatus.FAILED_PRE_REVIEW,
+                reason=err_msg,
+                step_desc="Governance policy blocked source modification",
+            )
+            return err_msg
+
+        if governance.tier == GovernanceTier.BLOCKED:
+            err_msg = (
+                "Governance policy blocked modification "
+                f"for {file_path}: {governance.reason}"
+            )
+            logger.warning(err_msg)
+            _update_parent_task(
+                task_manager,
+                parent_task_id,
+                ActiveTaskStatus.FAILED_PRE_REVIEW,
+                reason=err_msg,
+                step_desc="Governance policy blocked modification",
+            )
+            return err_msg
         
         # Read the original file content immediately
         try:

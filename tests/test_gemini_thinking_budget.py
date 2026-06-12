@@ -4,14 +4,16 @@ from ai_assistant.core.telemetry import TokenUsageTracker
 from ai_assistant.llm_interface import gemini_client
 
 
-def test_gemini_25_payload_gets_thinking_budget(monkeypatch):
-    monkeypatch.setattr(config_module, "GEMINI_THINKING_BUDGET", 2048)
+def test_gemini_25_payload_gets_thinking_budget():
+    expected_budget = getattr(config_module, "GEMINI_THINKING_BUDGET", 24576)
     payload = {"generationConfig": {"temperature": 0.2}}
 
     budget = gemini_client._apply_thinking_config(payload, "gemini-2.5-flash-lite")
 
-    assert budget == 2048
-    assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 2048}
+    assert budget == expected_budget
+    assert payload["generationConfig"]["thinkingConfig"] == {
+        "thinkingBudget": expected_budget
+    }
 
 
 def test_non_25_model_does_not_get_thinking_budget(monkeypatch):

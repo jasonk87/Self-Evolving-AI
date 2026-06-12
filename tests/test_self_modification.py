@@ -15,11 +15,14 @@ except ImportError: # pragma: no cover
 
 class TestSelfModificationWithReview(unittest.TestCase):
     def setUp(self):
-        self.module_path = "ai_assistant.dummy_module"
+        self.module_path = "ai_assistant.custom_tools.dummy_module"
         self.function_name = "dummy_function"
         self.new_code_string = "def dummy_function():\n    print('new version')"
         self.project_root_path = os.path.abspath("/fake/project/root")
-        self.file_path = os.path.join(self.project_root_path, *self.module_path.split('.'), ".py")
+        self.file_path = os.path.join(
+            self.project_root_path,
+            *self.module_path.split('.'),
+        ) + ".py"
         self.change_description = "Test change: Updated print statement."
         self.original_code = "def dummy_function():\n    print('old version')"
         self.full_original_file_content = f"{self.original_code}\n\ndef another_function():\n    pass"
@@ -149,6 +152,29 @@ class TestSelfModificationWithReview(unittest.TestCase):
         ))
         self.assertIn("could not retrieve original source code", result.lower())
         mock_get_func_code.assert_called_once_with(self.module_path, "non_existent_function")
+
+    @patch('ai_assistant.core.self_modification._resolve_file_path_robust')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_core_source_requires_human_approval(self, mock_file_open, mock_resolve_file_path):
+        core_module = "ai_assistant.core.self_modification"
+        core_file = os.path.join(
+            self.project_root_path,
+            "ai_assistant",
+            "core",
+            "self_modification.py",
+        )
+        mock_resolve_file_path.return_value = core_file
+
+        result = asyncio.run(edit_function_source_code(
+            core_module,
+            "edit_function_source_code",
+            "def edit_function_source_code():\n    pass",
+            self.project_root_path,
+            "Autonomous core source change should be blocked.",
+        ))
+
+        self.assertIn("human approval required", result.lower())
+        mock_file_open.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

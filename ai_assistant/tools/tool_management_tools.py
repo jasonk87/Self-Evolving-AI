@@ -8,6 +8,7 @@ from typing import Dict, Any
 from ai_assistant.code_services.service import CodeService
 from ai_assistant.llm_interface import ollama_client as default_llm_provider
 from ai_assistant.core import self_modification as default_self_modification_service
+from ai_assistant.core.change_policy import GovernanceTier, decide_governance
 from ai_assistant.core.fs_utils import write_to_file
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.core.reflection import global_reflection_log
@@ -67,8 +68,18 @@ async def generate_and_register_tool_backend(tool_description: str) -> Dict[str,
     safe_tool_name_base = re.sub(r'[^\w_]', '', tool_name_from_meta.lower())
     if not safe_tool_name_base: safe_tool_name_base = "custom_generated_tool"
     filename = f"{safe_tool_name_base}.py"
-    filepath_to_save = os.path.join("ai_assistant", "custom_tools", filename)
-    module_path_for_registration = f"ai_assistant.custom_tools.{safe_tool_name_base}"
+    filepath_to_save = os.path.join("ai_assistant", "custom_tools", "generated", filename)
+    module_path_for_registration = f"ai_assistant.custom_tools.generated.{safe_tool_name_base}"
+
+    governance = decide_governance(filepath_to_save, action="create")
+    if governance.tier != GovernanceTier.AUTONOMOUS:
+        return {
+            "status": "error",
+            "message": (
+                "Generated tool creation was blocked by governance policy: "
+                f"{governance.reason}"
+            ),
+        }
 
     if not write_to_file(filepath_to_save, cleaned_code):
         return {"status": "error", "message": f"Failed to save generated code to {filepath_to_save}."}
