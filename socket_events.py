@@ -40,7 +40,7 @@ def register_socket_events(socketio):
 
         message = data.get('message')
         session_id = data.get('session_id')
-        context = data.get('context', {})
+        _context = data.get('context', {})
 
         if not message:
             return

@@ -505,16 +505,16 @@ class HierarchicalPlanner:
                 print(f"  - Step {issue['step_id']}: [{issue['risk_level']}] {issue['reason']}")
 
             if attempt < max_retries:
-                print(f"[HP] Attempting Autonomous Plan Repair...")
+                print("[HP] Attempting Autonomous Plan Repair...")
                 repaired_plan = await self._repair_plan_with_llm(current_plan, sim_report['issues'], user_goal)
                 if repaired_plan:
                     current_plan = repaired_plan
                     continue
                 else:
-                    print(f"[HP] Plan repair failed to generate a valid JSON. Retrying original plan (likely to fail again, but exiting loop).")
+                    print("[HP] Plan repair failed to generate a valid JSON. Retrying original plan (likely to fail again, but exiting loop).")
                     break
             else:
-                 print(f"[HP] Max repair attempts reached. Falling back to warning injection.")
+                 print("[HP] Max repair attempts reached. Falling back to warning injection.")
 
         # If we exit the loop with failure, inject the warning
         warning_step = {

@@ -144,7 +144,7 @@ If it was a SUCCESS, summarize the key action that worked.
                 if ts:
                     try:
                         return datetime.datetime.fromisoformat(ts).timestamp()
-                    except:
+                    except Exception:
                         pass
                 return 0 # Fallback 
 

@@ -166,9 +166,9 @@ class LearningAgent:
             insights_as_dicts.append(insight_dict)
 
         if save_actionable_insights(insights_as_dicts, filepath=self.insights_filepath):
-            print(f"LearningAgent: Successfully saved insights.")
+            print("LearningAgent: Successfully saved insights.")
         else: # pragma: no cover
-            print(f"LearningAgent: Failed to save insights.")
+            print("LearningAgent: Failed to save insights.")
 
     def add_insight(self, insight: ActionableInsight) -> bool:
         """Adds and persists an insight if it is not already present."""
@@ -965,7 +965,7 @@ Example:
                     data = json.loads(json_str)
                     facts = data.get("facts", [])
                 except json.JSONDecodeError:
-                    print(f"LearningAgent: JSON decode failed for fact extraction.")
+                    print("LearningAgent: JSON decode failed for fact extraction.")
             
             saved_count = 0
             if self.memory_manager and facts:

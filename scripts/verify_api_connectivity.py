@@ -25,7 +25,7 @@ def list_available_models():
                 print(f"- {m['name']} ({'Embed' if 'embedContent' in m.get('supportedGenerationMethods', []) else 'Generate'})")
                 # Check for specific embedding support
                 if "embedContent" in m.get('supportedGenerationMethods', []):
-                     print(f"  > SUPPORTED: Embedding")
+                     print("  > SUPPORTED: Embedding")
         else:
             print(f"[FAILURE] List Models Failed: {response.status_code}")
             print(response.text)

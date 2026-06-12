@@ -34,9 +34,9 @@ def test_learning_and_reflection_smoke():
     with patch("ai_assistant.learning.autonomous_learning.invoke_ollama_model_async", new_callable=AsyncMock) as mock_learn_llm, \
          patch("ai_assistant.learning.autonomous_learning._curate_and_update_fact_store", new_callable=AsyncMock) as mock_curate, \
          patch("ai_assistant.core.autonomous_reflection.get_reflection_log_summary_for_analysis") as mock_summary, \
-         patch("ai_assistant.core.autonomous_reflection.invoke_ollama_model", side_effect=mock_invoke_ollama_model) as mock_reflect_llm, \
-         patch("ai_assistant.core.autonomous_reflection.load_actionable_insights", return_value=[]) as mock_load_insights, \
-         patch("time.sleep") as mock_sleep:
+         patch("ai_assistant.core.autonomous_reflection.invoke_ollama_model", side_effect=mock_invoke_ollama_model) as _mock_reflect_llm, \
+         patch("ai_assistant.core.autonomous_reflection.load_actionable_insights", return_value=[]) as _mock_load_insights, \
+         patch("time.sleep") as _mock_sleep:
 
         mock_learn_llm.return_value = '{"facts": ["Rayleigh scattering causes the sky to appear blue during the day."]}'
         mock_curate.return_value = True

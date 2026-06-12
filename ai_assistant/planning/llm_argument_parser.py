@@ -103,7 +103,7 @@ if __name__ == '__main__':
     original_invoke_ollama = invoke_ollama_model
     
     def mock_invoke_ollama(prompt: str, model_name: str, **kwargs) -> Optional[str]:
-        print(f"\n--- MOCK OLLAMA CALL ---")
+        print("\n--- MOCK OLLAMA CALL ---")
         print(f"Model: {model_name}")
         print(f"Prompt (first 150 chars for test): {prompt[:150]}...")
         

@@ -218,7 +218,7 @@ class ExecutionAgent:
 
             # Reconstruct list shapes up to the failure point for logging parity
             if step_failed or global_pause_flag:
-                stop_idx = critical_error_idx if step_failed else len(current_plan)
+                _stop_idx = critical_error_idx if step_failed else len(current_plan)
                 plan_results = [r for r in plan_results if r is not None]
                 plan_step_notes = [n for n in plan_step_notes if n]
                 i = critical_error_idx
@@ -229,7 +229,7 @@ class ExecutionAgent:
                      plan=current_plan[:len(plan_results)],
                      execution_results=plan_results,
                      overall_success=True,
-                     notes=f"Plan execution paused.",
+                     notes="Plan execution paused.",
                      status_override="PAUSED"
                  )
                  return current_plan[:len(plan_results)], plan_results
@@ -515,7 +515,7 @@ if __name__ == '__main__':
             ollama_model_name=mock_ollama_model)
         print(f"Test 1 Results: {results1}")
         assert mock_planner_test1.replan_calls == 0
-        assert any(isinstance(r, Exception) for r in results1) == False # Should be all success
+        assert any(isinstance(r, Exception) for r in results1) is False # Should be all success
         mock_ts_test1.tools_called = []; mock_ts_test1.call_counts = {}
 
         # Test 2: Plan fails, re-planning provides a successful new plan

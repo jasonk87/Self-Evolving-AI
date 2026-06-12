@@ -25,7 +25,7 @@ Hope you like it!
 
 async def test_dreamer_parsing():
     print("Testing DreamerAgent parsing...")
-    dreamer = DreamerAgent()
+    _dreamer = DreamerAgent()
     
     # We need to mock invoke_gemini_model_async or just test the parsing logic if it was exposed.
     # The parsing logic is inside propose_dream_scenario.
@@ -62,7 +62,7 @@ def test_ghost_tool():
         print("Available tools:", list(tools.keys()))
         
     if 'update_system_config' in tools:
-        print(f"Update Config Tool: FOUND")
+        print("Update Config Tool: FOUND")
     else:
          print("Update Config Tool: NOT FOUND")
 

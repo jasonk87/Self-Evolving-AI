@@ -171,7 +171,7 @@ def inspect_memory_stats() -> str:
         insights = mm.get_all_insights()
         episodes = mm.get_all_episodes()
         
-        stats = f"Memory Statistics:\n"
+        stats = "Memory Statistics:\n"
         stats += f"- Total Learned Facts: {len(facts)}\n"
         stats += f"- Total Insights: {len(insights)}\n"
         stats += f"- Total Episodes: {len(episodes)}\n\n"

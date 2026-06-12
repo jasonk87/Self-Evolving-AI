@@ -19,7 +19,7 @@ def schedule_notification(reminder_message: str, delay_minutes: int) -> str:
     try:
         delay_seconds = delay_minutes * 60
         future_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
-        timestamp = future_time.timestamp()
+        _timestamp = future_time.timestamp()
         system = platform.system()
         if system == 'Darwin':
             script = f'''\n            osascript -e 'display notification "{reminder_message}" with title "Reminder" sound name "default"'\n            '''

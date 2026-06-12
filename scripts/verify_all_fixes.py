@@ -83,7 +83,7 @@ async def async_test_tool_deduction_blacklist():
     mock_nm = MagicMock()
     agent = LearningAgent(task_manager=mock_tm, notification_manager=mock_nm)
     
-    mock_llm = MagicMock()
+    _mock_llm = MagicMock()
     async def mock_invoke(*args, **kwargs):
         return '{"tool_name": "PROPOSE_TOOL_MODIFICATION"}'
     

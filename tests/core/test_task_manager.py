@@ -265,7 +265,7 @@ if __name__ == '__main__': # pragma: no cover
         mock_print.reset_mock()
         # Missing 'user_goal'
         details_missing_goal = {"project_plan": self._get_sample_project_plan(1)}
-        task2 = tm.add_task(ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION, "Missing Goal", details=details_missing_goal)
+        _task2 = tm.add_task(ActiveTaskType.HIERARCHICAL_PROJECT_EXECUTION, "Missing Goal", details=details_missing_goal)
         self.assertTrue(any("without 'project_plan' or 'user_goal'" in str(call_args) for call_args in mock_print.call_args_list))
 
     @patch('builtins.print')

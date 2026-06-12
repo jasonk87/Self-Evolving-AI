@@ -627,7 +627,7 @@ def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Op
                "confidence_score" not in data or not isinstance(data["confidence_score"], float):
                 return None
             return data
-        except Exception as e2:
+        except Exception:
              logger.error(f"Error decoding JSON (even after repair) from suggestion review LLM: {e}. Raw response snippet:\n---\n{llm_response_str[:1000]}...\n---")
              return None
     except Exception as e:
@@ -1055,7 +1055,7 @@ if __name__ == '__main__':
                 "commit_outcome": {"status": True, "commit_message_generated": "Mock commit"}
             }
             # The following lines were mis-indented
-            test_logger = logging.getLogger('ai_assistant.core.autonomous_reflection')
+            _test_logger = logging.getLogger('ai_assistant.core.autonomous_reflection')
             # If using Python 3.10+, can use assertLogs context manager more easily.
             # For now, simple check of called_once_with for apply_code_modification
             selected_mtc = await select_suggestion_for_autonomous_action(

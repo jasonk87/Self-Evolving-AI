@@ -155,7 +155,7 @@ class TokenUsageTracker:
             task = entry.get("task", "unknown")
             # Determine prefix, e.g. "ollama_async_cot_research" -> "research"
             parts = task.split('_')
-            prefix = parts[-1] if parts else task
+            _prefix = parts[-1] if parts else task
 
             # For generic tasks, let's look at the first part, or some heuristics
             if "research" in task: category = "research"

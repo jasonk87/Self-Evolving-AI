@@ -163,13 +163,13 @@ if __name__ == '__main__':
     print("\nTesting 'add_all' (make all non-system tools require confirmation) and 'remove_all' (make all tools auto-approved):")
     print(f"Add 'search_duckduckgo' to require confirmation: {manage_tool_confirmation_settings(action='add', tool_name='search_duckduckgo')}")
     print(f"Current list: {manage_tool_confirmation_settings(action='list')}")
-    print(f"\n'add_all' action (make all non-system tools require confirmation):")
+    print("\n'add_all' action (make all non-system tools require confirmation):")
     print(manage_tool_confirmation_settings(action='add_all'))
     list_after_add_all = _load_requires_confirmation_list()
     print(f"List after 'add_all': {manage_tool_confirmation_settings(action='list')}")
     assert len(list_after_add_all) == 4
     assert 'system_update_tool_metadata' not in list_after_add_all
-    print(f"\n'remove_all' action (make all tools auto-approved):")
+    print("\n'remove_all' action (make all tools auto-approved):")
     print(manage_tool_confirmation_settings(action='remove_all'))
     print(f"List after 'remove_all': {manage_tool_confirmation_settings(action='list')}")
     assert not _load_requires_confirmation_list()

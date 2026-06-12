@@ -183,7 +183,7 @@ class ApprovalManager:
             logger.info(f"Marking request {req_id} as manually resolved/patched")
 
             # Logic to handle side-effects (like updating insights) if needed
-            req_data = self.pending_requests[req_id]
+            _req_data = self.pending_requests[req_id]
 
             # If we need to notify the source (like LearningAgent), we might need a separate callback or event.
             # For now, we assume the caller handles the insight update, or we add a 'on_resolve' callback support later.

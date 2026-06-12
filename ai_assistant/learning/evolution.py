@@ -254,9 +254,9 @@ async def apply_code_modification(suggestion: Dict[str, Any]) -> Dict[str, Any]:
     suggestion_id = suggestion.get("suggestion_id")
 
     type_error_msg = ""
-    if not isinstance(module_path, str): type_error_msg += f"'module_path' must be a string. "
-    if not isinstance(function_name, str): type_error_msg += f"'function_name' must be a string. "
-    if not isinstance(new_code_string, str): type_error_msg += f"'suggested_code_change' must be a string."
+    if not isinstance(module_path, str): type_error_msg += "'module_path' must be a string. "
+    if not isinstance(function_name, str): type_error_msg += "'function_name' must be a string. "
+    if not isinstance(new_code_string, str): type_error_msg += "'suggested_code_change' must be a string."
     if type_error_msg:
         logger.error(f"Type errors in suggestion: {type_error_msg.strip()}")
         result["overall_message"] = f"Type errors in suggestion: {type_error_msg.strip()}"
@@ -418,7 +418,7 @@ if __name__ == '__main__':
             logger.info("--- Test 1: Successful modification, sandbox, and commit (with body) ---")
             with patch('subprocess.run') as mock_subprocess_run_t1, \
                  patch('shutil.which', MagicMock(return_value="/usr/bin/git")) as mock_which_t1, \
-                 patch('os.path.isdir', MagicMock(return_value=True)) as mock_isdir_t1, \
+                 patch('os.path.isdir', MagicMock(return_value=True)) as _mock_isdir_t1, \
                  patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Successfully updated function.") as mock_edit_t1:
 
                 mock_subprocess_run_t1.side_effect = [
@@ -455,9 +455,9 @@ if __name__ == '__main__':
             os.chdir(TEST_PROJECT_ROOT_FOR_DUMMY)
 
             with patch('subprocess.run') as mock_subprocess_run_t2, \
-                 patch('shutil.which', MagicMock(return_value="/usr/bin/git")) as mock_which_t2, \
-                 patch('os.path.isdir', MagicMock(return_value=True)) as mock_isdir_t2, \
-                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Successfully updated function.") as mock_edit_t2:
+                 patch('shutil.which', MagicMock(return_value="/usr/bin/git")) as _mock_which_t2, \
+                 patch('os.path.isdir', MagicMock(return_value=True)) as _mock_isdir_t2, \
+                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Successfully updated function.") as _mock_edit_t2:
 
                 mock_subprocess_run_t2.side_effect = [
                     subprocess.CompletedProcess(args=[sys.executable, ANY], returncode=0, stdout="Sandbox OK"),
@@ -475,10 +475,10 @@ if __name__ == '__main__':
             os.chdir(original_cwd)
             setup_test_environment()
             os.chdir(TEST_PROJECT_ROOT_FOR_DUMMY)
-            with patch('subprocess.run', MagicMock(return_value=subprocess.CompletedProcess(args=[], returncode=1, stderr="Sandbox script error"))) as mock_subprocess_run_t3, \
+            with patch('subprocess.run', MagicMock(return_value=subprocess.CompletedProcess(args=[], returncode=1, stderr="Sandbox script error"))) as _mock_subprocess_run_t3, \
                  patch('shutil.which', MagicMock(return_value="/usr/bin/git")), \
                  patch('os.path.isdir', MagicMock(return_value=True)), \
-                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Successfully updated function.") as mock_edit_t3, \
+                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Successfully updated function.") as _mock_edit_t3, \
                  patch('shutil.move') as mock_shutil_move_t3:
 
                 suggestion_t3 = { "suggestion_id": "SUG003_T3", "module_path": dummy_module_py_path, "function_name": "sample_tool_function_no_args", "suggested_code_change": "def f(): pass" }
@@ -496,7 +496,7 @@ if __name__ == '__main__':
             with patch('subprocess.run'), \
                  patch('shutil.which', MagicMock(return_value="/usr/bin/git")), \
                  patch('os.path.isdir', MagicMock(return_value=True)), \
-                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Error: Function not found.") as mock_edit_t4:
+                 patch('ai_assistant.core.self_modification.edit_function_source_code', new_callable=AsyncMock, return_value="Error: Function not found.") as _mock_edit_t4:
 
                 suggestion_t4 = {"suggestion_id": "SUG004_T4", "module_path": dummy_module_py_path, "function_name": "non_existent", "suggested_code_change": "def f(): pass"}
                 result_t4 = await apply_code_modification(suggestion_t4)

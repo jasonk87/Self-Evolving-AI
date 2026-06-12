@@ -10,8 +10,8 @@ def mock_notification_deps():
     mock_winsound = MagicMock()
     mock_win10toast = MagicMock()
     with patch.dict("sys.modules", {"winsound": mock_winsound, "win10toast": mock_win10toast}), \
-         patch("ai_assistant.custom_tools.generated.notification_scheduler.time.sleep") as mock_sched_sleep, \
-         patch("time.sleep") as mock_test_sleep:
+         patch("ai_assistant.custom_tools.generated.notification_scheduler.time.sleep") as _mock_sched_sleep, \
+         patch("time.sleep") as _mock_test_sleep:
         yield mock_winsound, mock_win10toast
 
 def is_command_available(command):

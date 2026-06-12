@@ -131,7 +131,7 @@ class AgentManager:
                         meta = json.load(f)
                         if meta.get("scope_type") == "user":
                             is_persistent = True
-                except:
+                except Exception:
                     pass
 
             if is_persistent and not force:

@@ -140,7 +140,7 @@ def play_game():
         board.display()
         if current_player == human:
             try:
-                position = int(input(f"Enter your move (0-8): "))
+                position = int(input("Enter your move (0-8): "))
                 if not (0 <= position <= 8):
                     print("Invalid position. Please enter a number between 0 and 8.")
                     continue

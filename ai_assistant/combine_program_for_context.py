@@ -37,7 +37,7 @@ def generate_project_structure_string(project_dir_abs_path: str, files_to_skip: 
     # Tree structure will be built based on depth.
     paths_to_display.sort(key=lambda item: item[3].lower()) # Sort by full relative path
     
-    current_path_parts = []
+    _current_path_parts = []
     for depth, name, is_dir, relative_path in paths_to_display:
         # This simplified indentation doesn't draw perfect tree lines but is readable.
         indent = "  " * depth
@@ -62,7 +62,7 @@ def generate_consolidated_file(project_dir, output_filename_abs, script_basename
 
     if not os.path.isdir(abs_project_dir):
         print(f"Error: Hardcoded Project directory '{project_dir}' (resolved to '{abs_project_dir}') not found or is not a directory.")
-        print(f"Please check the 'HARDCODED_PROJECT_ROOT_DIR' variable in the script.")
+        print("Please check the 'HARDCODED_PROJECT_ROOT_DIR' variable in the script.")
         return
 
     print(f"Scanning project directory: {abs_project_dir}")
@@ -194,11 +194,11 @@ if __name__ == "__main__":
 
     generate_consolidated_file(project_to_scan_dir, output_file_abs_path, current_script_basename)
 
-    print(f"\n--- Instructions for use with AI ---")
+    print("\n--- Instructions for use with AI ---")
     print(f"1. Open the generated file: '{output_file_abs_path}'")
-    print(f"2. Review its contents (project structure at top, then code blocks).")
-    print(f"3. Copy its entire content.")
-    print(f"4. Paste it into your conversation with the AI for full project context.")
-    print(f"5. Remind the AI about the structure section and the START/END FILE markers.")
-    print(f"6. Remember this file is NOT MEANT TO BE EXECUTED.")
+    print("2. Review its contents (project structure at top, then code blocks).")
+    print("3. Copy its entire content.")
+    print("4. Paste it into your conversation with the AI for full project context.")
+    print("5. Remind the AI about the structure section and the START/END FILE markers.")
+    print("6. Remember this file is NOT MEANT TO BE EXECUTED.")
     print("---")

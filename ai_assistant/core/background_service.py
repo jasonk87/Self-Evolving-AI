@@ -183,7 +183,7 @@ async def broadcast_agent_message(session_id: str, message: str, title: str = "A
 
 def get_service_status():
     """Returns the current status of the background service."""
-    uptime_seconds = 0
+    _uptime_seconds = 0
     if _background_service_active: # We don't track start time explicitly yet, but could.
         # Estimate from loop
         pass
@@ -1022,7 +1022,7 @@ async def _background_loop_async():
                                 except Exception as e_proj_scan: # pragma: no cover
                                     logger.error(f"BackgroundService: Error processing project {project_sanitized_name}: {e_proj_scan}", exc_info=True)
                 if projects_worked_on_this_cycle == 0 and is_debug_mode(): # pragma: no cover
-                    logger.debug(f"[DEBUG BACKGROUND_SERVICE] No projects found with pending tasks in this scan.")
+                    logger.debug("[DEBUG BACKGROUND_SERVICE] No projects found with pending tasks in this scan.")
 
             except Exception as e: # pragma: no cover
                 logger.error(f"BackgroundService: Error during autonomous project execution scan: {e}", exc_info=True)
@@ -1055,7 +1055,7 @@ async def _background_loop_async():
 
         # --- Evolutionary Architect Audit Task (Heavy) ---
         if user_is_idle and current_loop_time >= next_architect_audit_run_time:
-             logger.info(f"BackgroundService: Running Evolutionary Architect Audit...")
+             logger.info("BackgroundService: Running Evolutionary Architect Audit...")
              try:
                  proposal = await perform_architectural_audit()
                  if proposal and learning_agent and learning_agent.notification_manager:
@@ -1134,7 +1134,7 @@ async def _background_loop_async():
                         
                         # Cleanup
                         try: os.unlink(tmp_script_path)
-                        except: pass
+                        except Exception: pass
                         
                         # Analyze Result
                         if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
@@ -1199,7 +1199,7 @@ async def _background_loop_async():
                                             stdout_str_v = stdout_v.decode().strip()
 
                                             try: os.unlink(tmp_verify_path)
-                                            except: pass
+                                            except Exception: pass
 
                                             # Revert Code immediately
                                             await self_modification.edit_function_source_code(
@@ -1244,7 +1244,7 @@ async def _background_loop_async():
                                                      })
                                                  )
                                             else:
-                                                 logger.warning(f"BackgroundService: Immune Response failed verification. Fix did not survive dream.")
+                                                 logger.warning("BackgroundService: Immune Response failed verification. Fix did not survive dream.")
                                         else:
                                              logger.error(f"BackgroundService: Failed to apply temporary fix: {apply_msg}")
                                     else:

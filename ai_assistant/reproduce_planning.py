@@ -35,7 +35,7 @@ async def run_test():
         print(f"DEBUG: Planning failed with exception: {e}")
         with open("status.txt", "w") as f:
              f.write(f"FAILURE: {e}")
-        logger.error(f"Planning failed", exc_info=True)
+        logger.error("Planning failed", exc_info=True)
 
 
 

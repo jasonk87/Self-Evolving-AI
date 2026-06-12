@@ -456,7 +456,7 @@ class ToolSystem:
             try:
                 self.register_tool(tool_name=tool_data.get('tool_name', tool_name), description=tool_data['description'], module_path=tool_data['module_path'], function_name_in_module=tool_data['function_name'], tool_type=tool_data.get('type', 'dynamic'), func_callable=None, schema_details=tool_data.get('schema_details'))
                 loaded_count += 1
-            except ToolAlreadyRegisteredError as e:
+            except ToolAlreadyRegisteredError:
                 pass
             except Exception as e:
                 print(f"ToolSystem: Error loading persisted tool '{tool_name}': {e}. Skipping.")
@@ -481,7 +481,7 @@ class ToolSystem:
             except Exception as e:
                 print(f'ToolSystem: Error registering example tool {tool_name}: {e}')
         if is_debug_mode():
-            print(f'ToolSystem: Example tools registration attempt finished.')
+            print('ToolSystem: Example tools registration attempt finished.')
 
 def _tool_view_function_code(module_path: str, function_name: str) -> str:
     try:

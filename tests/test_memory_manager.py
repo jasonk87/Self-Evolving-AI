@@ -56,8 +56,8 @@ class TestMemoryManager(unittest.TestCase):
              def mock_save_facts(facts, filepath=None):
                  return real_save(facts, filepath=self.facts_file)
 
-             with patch('ai_assistant.core.memory_manager.load_learned_facts', side_effect=mock_load_facts) as mock_load, \
-                  patch('ai_assistant.core.memory_manager.save_learned_facts', side_effect=mock_save_facts) as mock_save:
+             with patch('ai_assistant.core.memory_manager.load_learned_facts', side_effect=mock_load_facts) as _mock_load, \
+                  patch('ai_assistant.core.memory_manager.save_learned_facts', side_effect=mock_save_facts) as _mock_save:
 
                 fact = self.manager.add_fact("The sky is blue.")
                 self.assertIsNotNone(fact)

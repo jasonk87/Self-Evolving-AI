@@ -61,7 +61,7 @@ def _run_pylint_check(code_str: str) -> Optional[str]:
         try:
             if 'tmp_path' in locals():
                 os.remove(tmp_path)
-        except:
+        except Exception:
             pass
 
 def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> list[str]:
@@ -75,7 +75,7 @@ def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> lis
     for node in new_imports:
         try:
             # Determine the module name to check
-            module_name = None
+            _module_name = None
             if isinstance(node, ast.Import):
                 # For `import foo, bar`, check all names
                 for alias in node.names:
@@ -218,7 +218,7 @@ def resolve_function_file_path(module_path: str, function_name: str) -> Optional
         function_obj = getattr(module, function_name)
         file_path = inspect.getfile(function_obj)
         return os.path.abspath(file_path)
-    except Exception as e:
+    except Exception:
         # Don't log error yet, allow caller to handle or fallback
         return None
 
@@ -460,7 +460,7 @@ CRITICAL RULES:
 
             if is_approved:
                 # --- SANDBOX CONTINUOUS EVOLUTION LOOP ---
-                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=f"Generating unit test for sandbox validation")
+                _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Generating unit test for sandbox validation")
                 test_script = await _generate_sandbox_test(module_path, function_name, full_file_content_for_review, change_description)
                 
                 sandbox = SandboxManager(project_root_path)
@@ -1295,7 +1295,7 @@ async def insert_code_block(
         return f"Error reading file: {e}"
 
     if anchor_code not in content:
-        return f"Error: Anchor code not found in file."
+        return "Error: Anchor code not found in file."
 
     if position == 'after':
         new_content = content.replace(anchor_code, anchor_code + "\n" + new_code)
@@ -1380,7 +1380,7 @@ async def surgical_edit_function(
                             new_body.extend(replacement_ast_body)
                         else:
                             new_body.append(self.visit(child))
-                    except Exception as e:
+                    except Exception:
                         new_body.append(child)
                 node.body = new_body
             return node
@@ -1479,7 +1479,7 @@ if __name__ == '__main__': # pragma: no cover
 
         with patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review',
                    new_callable=AsyncMock,
-                   return_value=(True, mock_reviews_main_test_main)) as mock_review_call_main_again:
+                   return_value=(True, mock_reviews_main_test_main)) as _mock_review_call_main_again:
             result_e1_main = await edit_function_source_code(
                 module_path=module_path_core_main,
                 function_name="core_function_one",
@@ -1538,7 +1538,7 @@ if __name__ == '__main__': # pragma: no cover
         if retrieved_backup_code:
             with patch('ai_assistant.core.self_modification.CriticalReviewCoordinator.request_critical_review',
                        new_callable=AsyncMock,
-                       return_value=(True, mock_reviews_main_test_main)) as mock_restore_review_call:
+                       return_value=(True, mock_reviews_main_test_main)) as _mock_restore_review_call:
                 restore_result = await edit_function_source_code(
                     module_path_core_main,
                     "core_function_one",

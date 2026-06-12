@@ -77,7 +77,7 @@ class SocketIOLogHandler(logging.Handler):
             if record.name in ['werkzeug', 'engineio.server', 'socketio.server', 'urllib3.connectionpool']:
                 return
 
-            log_entry = self.format(record)
+            _log_entry = self.format(record)
             
             # Send structured data for better UI handling
             app_globals.socketio.emit('log_event', {

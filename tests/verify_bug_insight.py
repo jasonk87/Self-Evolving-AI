@@ -36,9 +36,9 @@ async def verify_bug_insight():
         if len(insights) == 1:
             insight = insights[0]
             if insight.type == InsightType.TOOL_BUG_SUSPECTED:
-                print(f"PASS: Correctly parsed TOOL_BUG_SUSPECTED insight.")
+                print("PASS: Correctly parsed TOOL_BUG_SUSPECTED insight.")
                 if "ISSUE DETECTED:" in insight.description:
-                     print(f"PASS: Description correctly prefixed with 'ISSUE DETECTED:'.")
+                     print("PASS: Description correctly prefixed with 'ISSUE DETECTED:'.")
                      print(f"Description: {insight.description}")
                 else:
                      print(f"FAIL: Description missing prefix. Got: {insight.description}")

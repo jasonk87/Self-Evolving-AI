@@ -65,5 +65,5 @@ Output ONLY mode name."""
             return f"Error: Template {template_name} not found."
         try:
             return template.format(**kwargs)
-        except KeyError as e:
+        except KeyError:
             return template  # Return raw if keys missing (fallback)

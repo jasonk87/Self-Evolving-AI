@@ -310,7 +310,7 @@ async def _invoke_raw_gemini_async(
         print(color_text(f">>> [Gemini Async] Requesting ({model_name})...", CLIColors.OKBLUE))
 
     async with aiohttp.ClientSession() as session:
-        retries = 3
+        _retries = 3
         base_delay = 2
         attempt = 0
         while True:

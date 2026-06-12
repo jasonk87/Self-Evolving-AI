@@ -38,7 +38,7 @@ async def test_parsing():
         insights = await analyst.analyze_session_transcript(session_data)
         
         if len(insights) == 1:
-            print(f"Success: Found 1 insight.")
+            print("Success: Found 1 insight.")
             print(f"Type: {insights[0].type.name}")
             print(f"Related Tool Name: {insights[0].related_tool_name}")
             if insights[0].related_tool_name == "get_weather":

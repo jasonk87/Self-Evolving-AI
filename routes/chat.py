@@ -883,7 +883,7 @@ def chat():
                  proj = find_project(project_name)
                  if proj and proj.get('root_path'):
                      system_context += f"Project Root Path: {proj.get('root_path')}\n"
-                     system_context += f"NOTE: When reading files, prepend the Project Root Path if the file is not found in the root workspace.\n"
+                     system_context += "NOTE: When reading files, prepend the Project Root Path if the file is not found in the root workspace.\n"
              except Exception as e:
                  logger.error(f"Failed to resolve project root for context: {e}")
 

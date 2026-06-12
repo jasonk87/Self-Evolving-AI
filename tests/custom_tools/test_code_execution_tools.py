@@ -136,7 +136,7 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['output_files']['output_file1.txt'], "Content of output_file1.txt")
 
         # Check that open was called for the expected output file path
-        expected_output_file_path = os.path.join(mock_temp_dir_path, "output_file1.txt")
+        _expected_output_file_path = os.path.join(mock_temp_dir_path, "output_file1.txt")
         # This assertion needs to be more robust if other open calls happen (e.g. for the script itself)
         # For simplicity here, we assume it's one of the calls.
         # mock_file_open.assert_any_call(expected_output_file_path, 'r', encoding='utf-8')

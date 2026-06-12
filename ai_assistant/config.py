@@ -242,7 +242,7 @@ if __name__ == '__main__':
 
     # Test new config value for clearing knowledge
     print(f"Clear existing knowledge on startup: {CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP} (Expected: False)")
-    assert CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP == False # Assuming default is False
+    assert CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP is False # Assuming default is False
 
 
     # Test 4: Task where model is explicitly None in TASK_MODELS (should fallback to DEFAULT_MODEL)

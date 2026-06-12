@@ -194,7 +194,7 @@ class TesterAgent(BaseSwarmAgent):
                 passed = process.returncode == 0
                 return passed, logs
 
-        except Exception as e:
+        except Exception:
             error_log = f"Failed to execute tests due to exception:\n{traceback.format_exc()}"
             logger.error(f"[Tester] {error_log}")
             return False, error_log

@@ -449,7 +449,7 @@ if __name__ == '__main__':
 
     print(f"\nAttempting to save {len(sample_insights_data)} sample insights to {TEST_INSIGHTS_FILE}...")
     assert save_actionable_insights(sample_insights_data, TEST_INSIGHTS_FILE), "save_actionable_insights failed."
-    print(f"Save operation for insights successful.")
+    print("Save operation for insights successful.")
     assert os.path.exists(TEST_INSIGHTS_FILE), f"{TEST_INSIGHTS_FILE} was not created."
 
     print(f"\nAttempting to load insights from {TEST_INSIGHTS_FILE}...")

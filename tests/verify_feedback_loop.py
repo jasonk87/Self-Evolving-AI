@@ -74,7 +74,7 @@ async def test_council_rejection_learning():
             saved_facts_store.extend(facts)
             return True
 
-        with patch("ai_assistant.memory.persistent_memory.load_learned_facts", side_effect=fake_load_facts) as mock_load, \
+        with patch("ai_assistant.memory.persistent_memory.load_learned_facts", side_effect=fake_load_facts) as _mock_load, \
              patch("ai_assistant.memory.persistent_memory.save_learned_facts", side_effect=fake_save_facts) as mock_save:
             
             agent = MagicMock()
@@ -113,7 +113,7 @@ async def test_council_rejection_learning():
                 if found_reason and found_council:
                     print("SUCCESS: Fact content verification passed.")
                 else:
-                    print(f"FAILURE: Fact content mismatch.")
+                    print("FAILURE: Fact content mismatch.")
                     raise Exception("Fact verification failed")
             else:
                 print("FAILURE: save_learned_facts was NOT called.")
@@ -129,7 +129,7 @@ async def main():
         await test_user_approval_bypass_staging()
         await test_council_rejection_learning()
         print("\nALL TESTS PASSED")
-    except Exception as e:
+    except Exception:
         print("\nTESTS FAILED")
         sys.exit(1)
 

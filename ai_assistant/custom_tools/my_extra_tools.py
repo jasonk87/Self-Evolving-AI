@@ -347,7 +347,7 @@ def process_search_results(search_query: str, search_results_json: Union[str, Di
     Processes JSON search results based on a specified instruction to generate a response using Gemini.
     """
     if processing_instruction == 'answer_query' and 'instruction' in kwargs:
-        print(f"process_search_results: Warning - 'instruction' argument used instead of 'processing_instruction'. Adapting...")
+        print("process_search_results: Warning - 'instruction' argument used instead of 'processing_instruction'. Adapting...")
         processing_instruction = kwargs['instruction']
     
     # Prompt Templates

@@ -230,7 +230,7 @@ if __name__ == '__main__': # pragma: no cover
     assert len(manager.get_notifications(status_filter=None)) == 3
 
     unread = manager.get_notifications(status_filter=NotificationStatus.UNREAD)
-    print(f"Unread notifications (should be 3, newest first):")
+    print("Unread notifications (should be 3, newest first):")
     for n in unread: print(f"  ID: {n.notification_id}, Type: {n.event_type.name}, Msg: {n.summary_message}, Status: {n.status.name}")
     assert len(unread) == 3
     assert unread[0].notification_id == n3.notification_id

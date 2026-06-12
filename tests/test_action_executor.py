@@ -147,7 +147,7 @@ class TestExecutionAgentFlows(unittest.IsolatedAsyncioTestCase): # Use IsolatedA
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0], clarification_response) # Result of first step
         # The result of the second step would be the mock output for "some_other_tool"
-        self.assertEqual(results[1], f"Mock success for some_other_tool")
+        self.assertEqual(results[1], "Mock success for some_other_tool")
 
         # Ensure the final plan matches the initial plan if no re-planning occurred
         self.assertEqual(final_plan, test_plan)

@@ -25,7 +25,7 @@ def generate_self_signed_cert():
     hostname = socket.gethostname()
     try:
         local_ip = socket.gethostbyname(hostname)
-    except:
+    except Exception:
         local_ip = "127.0.0.1"
 
     subject = issuer = x509.Name([

@@ -32,7 +32,7 @@ class MockOrchestrator:
                         if balance == 0:
                             candidate_json = text[start_index:i+1]
                             return json.loads(candidate_json)
-        except Exception as e:
+        except Exception:
             pass
         return None
 

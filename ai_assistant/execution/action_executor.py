@@ -343,7 +343,7 @@ class ActionExecutor:
                     goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
                     plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": function_name}}],
                     execution_results=["Skipped: Proposed code is identical to existing code."], overall_success=False,
-                    notes=f"Aborted no-op modification.",
+                    notes="Aborted no-op modification.",
                     is_self_modification_attempt=True, source_suggestion_id=source_insight_id
                 )
                 return False, "Aborted no-op modification.", "NO_OP"
@@ -371,7 +371,7 @@ class ActionExecutor:
                 else:
                     logger.warning(f"The Council REJECTED the modification for {function_name} on attempt {attempt+1}. Reasoning: {reasoning}")
                     if attempt < MAX_COUNCIL_RETRIES:
-                        logger.info(f"Iterative Refinement: Asking CodeService to fix based on Council's critique...")
+                        logger.info("Iterative Refinement: Asking CodeService to fix based on Council's critique...")
                         if self.task_manager and action_task_id:
                             self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc=f"Refining code based on Council feedback (Attempt {attempt+1})")
 
@@ -393,7 +393,7 @@ class ActionExecutor:
                             logger.error(f"Failed to generate refined code during Council debate: {fix_result.get('error')}")
                             break
                     else:
-                        logger.warning(f"Max Council retries reached. Abandoning modification.")
+                        logger.warning("Max Council retries reached. Abandoning modification.")
                         break
 
             if not is_approved:
@@ -405,7 +405,7 @@ class ActionExecutor:
                     goal_description=f"Self-modification ({source_of_code}) for insight {source_insight_id}",
                     plan=[{"action_type": "PROPOSE_TOOL_MODIFICATION", "details": {"tool_name": function_name, "module_path": module_path}}],
                     execution_results=[f"Council Rejection after {attempt} retries: {reasoning}"], overall_success=False,
-                    notes=f"The Council blocked this change.",
+                    notes="The Council blocked this change.",
                     is_self_modification_attempt=True, source_suggestion_id=source_insight_id
                 )
 
@@ -506,7 +506,7 @@ class ActionExecutor:
 
                         logger.warning(f"ActionExecutor: Test failed for {tool_name} on attempt {test_attempt+1}. Notes: {test_run_notes}")
                         if test_attempt < MAX_TEST_RETRIES and not staging_mode:
-                            logger.info(f"Iterative Auto-Healing: Asking CodeService to fix test failures...")
+                            logger.info("Iterative Auto-Healing: Asking CodeService to fix test failures...")
                             if self.task_manager and action_task_id:
                                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.GENERATING_CODE, step_desc=f"Fixing test failures (Attempt {test_attempt+1})")
 

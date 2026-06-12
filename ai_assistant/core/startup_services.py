@@ -124,7 +124,7 @@ if __name__ == '__main__': # pragma: no cover
 
         # Assertions
         # update_task_status should be called for non-terminal tasks
-        expected_update_calls = [
+        _expected_update_calls = [
             MagicMock(
                 task_id=task1_planning.task_id,
                 new_status=ActiveTaskStatus.FAILED_INTERRUPTED,

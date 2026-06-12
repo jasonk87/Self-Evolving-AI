@@ -99,7 +99,7 @@ def invoke_ollama_model(
         if is_debug_mode() and e.response is not None:
             print(f"[DEBUG] Status code: {e.response.status_code}")
             try: print(f"[DEBUG] Response body: {e.response.json()}")
-            except Exception: print(f"[DEBUG] Response body could not be parsed as JSON.")
+            except Exception: print("[DEBUG] Response body could not be parsed as JSON.")
         return None
     except requests.exceptions.RequestException as e:
         print(f"Error invoking Ollama model '{model_name}': {e}")
@@ -344,7 +344,7 @@ async def main_async_test():
         response = await provider.invoke_ollama_model_async(test_prompt)
         
         if response:
-            print(f"\n--- Ollama Response (async) ---")
+            print("\n--- Ollama Response (async) ---")
             print(response)
             print("-----------------------------")
         else:

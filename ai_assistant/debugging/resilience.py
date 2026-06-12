@@ -188,7 +188,7 @@ if __name__ == '__main__':
 
         print("\n--- Testing log_critical_error ---")
         try:
-            x = 1 / 0
+            _x = 1 / 0
         except ZeroDivisionError as e:
             log_critical_error(
                 e,

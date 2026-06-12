@@ -402,7 +402,7 @@ if __name__ == '__main__':
     no_tm_for_task_result = get_item_details_by_id('any_task_id', 'task', task_manager=None)
     print(f'Details for task with no TM: {no_tm_for_task_result}')
     assert no_tm_for_task_result and no_tm_for_task_result.get('error')
-    print(f'\n--- Testing get_item_details_by_id (notification) ---')
+    print('\n--- Testing get_item_details_by_id (notification) ---')
     if nm.notifications:
         first_notif = nm.notifications[0]
         notif_details = get_item_details_by_id(first_notif.notification_id, 'notification', notification_manager=nm)

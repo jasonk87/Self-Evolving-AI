@@ -23,7 +23,7 @@ def parse_with_stack(text):
                     candidate_json = text[start_index:i+1]
                     try:
                         return json.loads(candidate_json)
-                    except:
+                    except Exception:
                         pass # Continue finding?
     return None
 

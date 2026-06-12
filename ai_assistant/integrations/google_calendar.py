@@ -214,7 +214,7 @@ class CalendarManager:
 
             # Fetch primary calendar timezone to construct correct timeMin/timeMax
             calendar = self.service.calendars().get(calendarId='primary').execute()
-            calendar_tz_str = calendar.get('timeZone', 'UTC')
+            _calendar_tz_str = calendar.get('timeZone', 'UTC')
 
             # We need timezone aware datetimes for the API query
             # But python's datetime.combine creates naive datetimes by default.

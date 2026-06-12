@@ -73,7 +73,7 @@ def submit_agent_report(agent_id: str, report_content: str, notification_manager
     Returns:
         str: Confirmation message.
     """
-    message = f'Agent {agent_id} Report:\n{report_content}'
+    _message = f'Agent {agent_id} Report:\n{report_content}'
     if notification_manager:
         notification_manager.add_notification(event_type=NotificationType.TASK_COMPLETED_SUCCESSFULLY, summary_message=f'Ephemeral Agent {agent_id} finished.', details_payload={'report': report_content})
     else:

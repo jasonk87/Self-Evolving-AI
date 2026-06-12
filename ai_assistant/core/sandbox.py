@@ -84,7 +84,7 @@ class SandboxManager:
             success = process.returncode == 0
             return success, process.stdout, process.stderr
             
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired:
             err_msg = f"Sandbox execution timed out after {timeout} seconds."
             logger.error(err_msg)
             return False, "", err_msg

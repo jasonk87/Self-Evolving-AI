@@ -208,7 +208,7 @@ async def generate_code_for_project_file(project_name: str, filename: str=None, 
             if manifest_available:
                 try:
                     write_text_to_file(manifest_filepath, json.dumps(manifest_instance.to_json_dict(), indent=4))
-                except:
+                except Exception:
                     pass
         return err_msg
     code_content = generated_code.strip()
@@ -556,16 +556,16 @@ if __name__ == '__main__':
                 _original_builtin_print(f'Result Prop1 (Success): {result_prop1_main}')
                 mock_epf_success_main.assert_called_once_with(absolute_file_path=test_file_path_for_propose_main, new_content='new content for propose', change_description='User requested update for propose', task_manager=mock_tm_instance_for_propose_main, parent_task_id='task_prop_123')
                 assert result_prop1_main['status'] == 'success'
-            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value=f"Change to project file '{test_file_path_for_propose_main}' rejected by critical review.") as mock_epf_rejected_main:
+            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value=f"Change to project file '{test_file_path_for_propose_main}' rejected by critical review.") as _mock_epf_rejected_main:
                 result_prop2_main = await propose_project_file_update(test_file_path_for_propose_main, 'other content for propose', 'Another update for propose', task_manager=None)
                 _original_builtin_print(f'Result Prop2 (Rejected): {result_prop2_main}')
                 assert result_prop2_main['status'] == 'rejected_by_review'
-            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value='Error: Some internal failure in edit_project_file.') as mock_epf_error_main:
+            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value='Error: Some internal failure in edit_project_file.') as _mock_epf_error_main:
                 result_prop3_main = await propose_project_file_update(test_file_path_for_propose_main, 'error content for propose', 'Error test for propose', task_manager=None)
                 _original_builtin_print(f'Result Prop3 (Error): {result_prop3_main}')
                 assert result_prop3_main['status'] == 'error'
                 assert 'Some internal failure' in result_prop3_main['message']
-            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value=f"Proposed content for '{test_file_path_for_propose_main}' is identical to current. No changes made.") as mock_epf_identical_main:
+            with patch('ai_assistant.custom_tools.project_management_tools.edit_project_file', new_callable=AsyncMock, return_value=f"Proposed content for '{test_file_path_for_propose_main}' is identical to current. No changes made.") as _mock_epf_identical_main:
                 result_prop4_main = await propose_project_file_update(test_file_path_for_propose_main, 'identical content for propose', 'Identical test for propose', task_manager=None)
                 _original_builtin_print(f'Result Prop4 (Identical): {result_prop4_main}')
                 assert result_prop4_main['status'] == 'success_no_change'

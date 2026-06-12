@@ -135,7 +135,7 @@ class DynamicOrchestrator:
             full_context_str, context_metadata = await self._gather_context(prompt_with_context)
 
             logger.info(f"DynamicOrchestrator: Starting direct ReAct cycle for prompt: {state.original_user_prompt[:50]}...")
-            print(color_text(f"--> Strategy: Direct ReAct", CLIColors.SYSTEM_MESSAGE))
+            print(color_text("--> Strategy: Direct ReAct", CLIColors.SYSTEM_MESSAGE))
 
             # 3. Execute direct ReAct cycle
             await self._execute_universal_cycle(state, prompt_with_context, full_context_str, conversation_history, session_id, context_source, images)
@@ -699,7 +699,7 @@ Return STRICT JSON only using the schema described earlier.
                                      '"type":' in action_response
 
                 if is_suspicious_json:
-                     print(color_text(f"⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
+                     print(color_text("⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
                      state.errors.append(f"Cycle {step_i+1}: Action output invalid JSON")
                      execution_history += f"Cycle {step_i+1}: Action output invalid JSON. Retrying.\n"
                      # Continue loop (retry)
@@ -793,7 +793,7 @@ Return STRICT JSON only using the schema described earlier.
                                 except Exception:
                                     pass
                             break # Stop after first candidate
-        except Exception as e:
+        except Exception:
             pass
         return None
 

@@ -44,7 +44,7 @@ def set_reminder(reminder_time: str, reminder_message: str) -> str:
         return f"Reminder set for {reminder_time} with message: {reminder_message}"
     except ValueError as e:
         logger.error(f"Invalid reminder time format: {e}")
-        return f"Error: Invalid reminder time format. Please use ISO 8601 format (e.g., 2024-01-01T12:00:00Z)."
+        return "Error: Invalid reminder time format. Please use ISO 8601 format (e.g., 2024-01-01T12:00:00Z)."
     except Exception as e:
         logger.error(f"Could not set reminder: {e}")
         return f"Error: Could not set reminder. {e}"

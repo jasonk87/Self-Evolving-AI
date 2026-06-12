@@ -21,11 +21,11 @@ async def test_memory_integration():
             return [{"text": "User Location: Smiths Grove, KY", "metadata": {"category": "fact"}, "score": 0.95}]
 
     memory_manager = MockMemoryManager()
-    planner = PlannerAgent(memory_manager=memory_manager)
+    _planner = PlannerAgent(memory_manager=memory_manager)
     
     # Test Planning with Implicit Context
     print("\n[Test 1] Planning with Implicit Context (Location)")
-    tools = {"get_weather": {"description": "Gets weather for a location. Args: location (str)"}}
+    _tools = {"get_weather": {"description": "Gets weather for a location. Args: location (str)"}}
     
     # Using the planning method directly to inspect the prompt generation (simulated)
     # Since we can't easily inspect the internal prompt variable without modifying code, 
@@ -55,7 +55,7 @@ async def test_memory_integration():
     with open("test_output.txt", "w") as f:
         f.write(summary)
     
-    print(f"\nFull Generated Summary written to test_output.txt")
+    print("\nFull Generated Summary written to test_output.txt")
     
     if "[temperature]" in summary or "[description]" in summary:
         print("FAIL: Summary contains placeholders!")

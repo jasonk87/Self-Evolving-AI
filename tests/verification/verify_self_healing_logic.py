@@ -79,7 +79,7 @@ async def test_noop_prevention():
     
     with patch("ai_assistant.core.self_modification.get_function_source_code", return_value=original_code), \
          patch("ai_assistant.core.self_modification.get_backup_function_source_code", return_value=original_code), \
-         patch("ai_assistant.execution.action_executor.global_reflection_log") as mock_log:
+         patch("ai_assistant.execution.action_executor.global_reflection_log") as _mock_log:
              
         success = await executor._apply_test_and_revert_code(
             module_path=module_path,

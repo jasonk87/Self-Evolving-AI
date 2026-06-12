@@ -262,7 +262,7 @@ if __name__ == '__main__': # pragma: no cover
             global _mock_captured_code_gen_prompt_main
             logger.info(f"\n--- Mock LLM Prompt (Model: {model_name}, Temp: {temperature}) ---")
             logger.info(prompt)
-            logger.info(f"--- End Mock LLM Prompt ---")
+            logger.info("--- End Mock LLM Prompt ---")
 
             if "Actions and Results:" in prompt:
                 _mock_captured_code_gen_prompt_main = prompt

@@ -149,7 +149,7 @@ async def _handle_code_generation_and_registration(
         notification_manager=notification_manager
     )
 
-    print(color_text(f"Requesting CodeService to generate new tool (context='NEW_TOOL')...", CLIColors.DEBUG_MESSAGE))
+    print(color_text("Requesting CodeService to generate new tool (context='NEW_TOOL')...", CLIColors.DEBUG_MESSAGE))
 
     generation_result = await code_service.generate_code(
         context="NEW_TOOL",
@@ -1215,7 +1215,7 @@ class WeeboTUI:
             f" Git Branch: {branch}",
             f" Learned Facts: {facts_count}",
             f" Blocked Tools: {blocked_tools}",
-            f" Ollama: Online" if self.orchestrator and getattr(self.orchestrator, "planner", None) else " Ollama: Offline",
+            " Ollama: Online" if self.orchestrator and getattr(self.orchestrator, "planner", None) else " Ollama: Offline",
             f" Debug Mode: {is_debug_mode()}"
         ]
         self.panes["system_status"].text = "\n".join(status_lines) + "\n"
@@ -1228,7 +1228,7 @@ class WeeboTUI:
                 sel_idx = self.selected_indices.get(mapped_key, 0)
                 lines_list = pane.text.split('\n')
                 if sel_idx < len(lines_list):
-                    pos = sum(len(l) + 1 for l in lines_list[:sel_idx])
+                    pos = sum(len(line) + 1 for line in lines_list[:sel_idx])
                     pane.buffer.cursor_position = min(pos, len(pane.text))
                 else:
                     pane.buffer.cursor_position = 0

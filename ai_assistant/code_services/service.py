@@ -1231,7 +1231,7 @@ class CodeService:
                             func_docstring_lines.append(f"    {line.strip()}")
                     func_docstring_lines.append("    \"\"\"")
                     code_parts.extend(func_docstring_lines)
-                    code_parts.append(f"    raise NotImplementedError(\"TODO: Implement\")")
+                    code_parts.append("    raise NotImplementedError(\"TODO: Implement\")")
                 code_parts.append("\n\n")
 
             elif component_type == "class":
@@ -1288,7 +1288,7 @@ class CodeService:
                                 docstring_lines.append(f"        {line.strip()}")
                         docstring_lines.append("        \"\"\"")
                         code_parts.extend(docstring_lines)
-                        code_parts.append(f"        raise NotImplementedError(\"TODO: Implement\")")
+                        code_parts.append("        raise NotImplementedError(\"TODO: Implement\")")
                     code_parts.append("")
 
                 if code_parts and code_parts[-1] == "":

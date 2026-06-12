@@ -428,7 +428,7 @@ def find_agent_tool_source(tool_name: str) -> Optional[Dict[str, str]]:
                             except ValueError:
                                 module_path_parts = [os.path.basename(tool_dir_abs_path)]
                             full_module_name_for_spec = '.'.join(module_path_parts + [filename.replace('.py', '')])
-                            source_match = re.search('def\\s+' + tool_name + '\\s*\\(.*?(?=\\n\\S|\\Z)', content, re.DOTALL)
+                            _source_match = re.search('def\\s+' + tool_name + '\\s*\\(.*?(?=\\n\\S|\\Z)', content, re.DOTALL)
                             try:
                                 module_spec = importlib.util.spec_from_file_location(full_module_name_for_spec, file_path)
                                 if module_spec and module_spec.loader:

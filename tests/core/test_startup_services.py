@@ -49,13 +49,13 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
         # Check update_task_status calls
         expected_update_calls = [
             call(task1_planning.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
-                 reason=f"Task was interrupted by restart while in state 'PLANNING'. Retry explicitly if the work is still needed.",
+                 reason="Task was interrupted by restart while in state 'PLANNING'. Retry explicitly if the work is still needed.",
                  step_desc="Task marked interrupted on agent startup."),
             call(task2_generating.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
-                 reason=f"Task was interrupted by restart while in state 'GENERATING_CODE'. Retry explicitly if the work is still needed.",
+                 reason="Task was interrupted by restart while in state 'GENERATING_CODE'. Retry explicitly if the work is still needed.",
                  step_desc="Task marked interrupted on agent startup."),
             call(task3_review_approved.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
-                 reason=f"Task was interrupted by restart while in state 'CRITIC_REVIEW_APPROVED'. Retry explicitly if the work is still needed.",
+                 reason="Task was interrupted by restart while in state 'CRITIC_REVIEW_APPROVED'. Retry explicitly if the work is still needed.",
                  step_desc="Task marked interrupted on agent startup.")
         ]
         self.mock_task_manager.update_task_status.assert_has_calls(expected_update_calls, any_order=True)
@@ -109,7 +109,7 @@ class TestStartupServices(unittest.IsolatedAsyncioTestCase):
         # update_task_status should still be called
         self.mock_task_manager.update_task_status.assert_called_once_with(
             task_initializing.task_id, ActiveTaskStatus.FAILED_INTERRUPTED,
-            reason=f"Task was interrupted by restart while in state 'INITIALIZING'. Retry explicitly if the work is still needed.",
+            reason="Task was interrupted by restart while in state 'INITIALIZING'. Retry explicitly if the work is still needed.",
             step_desc="Task marked interrupted on agent startup."
         )
         # add_notification should NOT be called

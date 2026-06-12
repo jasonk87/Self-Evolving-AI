@@ -94,7 +94,7 @@ async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool
                     current_facts_list.append(merged_fact)
                     facts_changed = True
                 else:
-                    logger.warning(f'UPDATE decision missing target_id or merged_fact. Discarding update.')
+                    logger.warning('UPDATE decision missing target_id or merged_fact. Discarding update.')
             elif decision == 'DISCARD':
                 logger.info(f'Decision DISCARD: {new_fact}')
         except json.JSONDecodeError:
@@ -118,7 +118,7 @@ async def learn_fact(fact: str) -> str:
     if success:
         return f"Okay, I've processed the information: '{fact}'."
     else:
-        return f'Sorry, I could not process the fact.'
+        return 'Sorry, I could not process the fact.'
 
 def recall_facts(query: Optional[str]=None) -> List[str]:
     """

@@ -143,7 +143,7 @@ async def detect_missed_tool_opportunity(
     """
     if not user_statement or not available_tools:
         if is_debug_mode(): # pragma: no cover
-            print(f"[DEBUG CONV_INTEL] detect_missed_tool_opportunity returning None due to empty user_statement or available_tools.")
+            print("[DEBUG CONV_INTEL] detect_missed_tool_opportunity returning None due to empty user_statement or available_tools.")
         return None
 
     # --- Evolutionary Architect Welcome Back Hook ---
@@ -272,7 +272,7 @@ async def detect_missed_tool_opportunity(
 
     if llm_response == "NO_TOOL_RELEVANT":
         if is_debug_mode(): # pragma: no cover
-            print(f"[DEBUG CONV_INTEL] LLM determined NO_TOOL_RELEVANT.")
+            print("[DEBUG CONV_INTEL] LLM determined NO_TOOL_RELEVANT.")
         return None
 
     if llm_response.startswith("```json"):
@@ -537,7 +537,7 @@ async def formulate_tool_description_from_conversation(user_raw_request: str, ll
     """
     if not user_raw_request: # pragma: no cover
         if is_debug_mode():
-            print(f"[DEBUG CONV_INTEL] formulate_tool_description_from_conversation returning None due to empty user_raw_request.")
+            print("[DEBUG CONV_INTEL] formulate_tool_description_from_conversation returning None due to empty user_raw_request.")
         return None
     prompt = FORMULATE_TOOL_DESCRIPTION_PROMPT_TEMPLATE.format(user_raw_request=user_raw_request)
     if is_debug_mode(): # pragma: no cover
@@ -594,7 +594,7 @@ async def generate_conversational_response(user_input: str, conversation_history
     """
     if not user_input: # pragma: no cover
         if is_debug_mode():
-            print(f"[DEBUG CONV_INTEL] generate_conversational_response received empty user_input. Returning default.")
+            print("[DEBUG CONV_INTEL] generate_conversational_response received empty user_input. Returning default.")
         return "Is there something specific you'd like to talk about?"
 
     user_name = "User" 
@@ -616,7 +616,7 @@ async def generate_conversational_response(user_input: str, conversation_history
             if is_debug_mode(): # pragma: no cover
                 print(f"[DEBUG CONV_INTEL] Recalled user name: {user_name}")
         elif is_debug_mode(): # pragma: no cover
-            print(f"[DEBUG CONV_INTEL] No specific 'user's name is' fact found in recalled facts.")
+            print("[DEBUG CONV_INTEL] No specific 'user's name is' fact found in recalled facts.")
         retrieved_facts_str = "\n".join([f"- {fact}" for fact in other_facts_for_prompt[:5]])
         if not retrieved_facts_str:
             retrieved_facts_str = "No specific relevant facts known at this moment."

@@ -258,7 +258,7 @@ if __name__ == "__main__": # pragma: no cover
     elif sugg1_dup:
         print(f"Error: Sugg1 exact duplicate was added as new! New ID: {sugg1_dup['suggestion_id']}")
     else:
-        print(f"Error: Sugg1 exact duplicate check returned None unexpectedly.")
+        print("Error: Sugg1 exact duplicate check returned None unexpectedly.")
 
 
     # Try adding sugg2 again (case and whitespace difference)
@@ -269,7 +269,7 @@ if __name__ == "__main__": # pragma: no cover
     elif sugg2_dup:
         print(f"Error: Sugg2 variant duplicate was added as new! New ID: {sugg2_dup['suggestion_id']}")
     else:
-        print(f"Error: Sugg2 variant duplicate check returned None unexpectedly.")
+        print("Error: Sugg2 variant duplicate check returned None unexpectedly.")
 
 
     print("\n--- Listing Suggestions (After Adds & Deduplication Tests) ---")
