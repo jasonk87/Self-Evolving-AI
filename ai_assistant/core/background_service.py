@@ -10,6 +10,8 @@ import re
 import logging
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle
 from ai_assistant.core.reflection import global_reflection_log # Import global log for timestamp check
 from ai_assistant.tools import tool_system # To get available tools
@@ -43,9 +45,6 @@ except ImportError:
     check_due_reminders = None
     logger.warning("BackgroundService: Could not import reminder_tool.")
 
-# Configure logger for this module
-logger = logging.getLogger(__name__)
-
 # Import for project execution task
 try:
     from ai_assistant.custom_tools.file_system_tools import BASE_PROJECTS_DIR
@@ -56,8 +55,6 @@ except ImportError as e: # pragma: no cover
     PROJECT_TOOLS_AVAILABLE = False
     # Define placeholders if imports fail, so the rest of the module doesn't break
     BASE_PROJECTS_DIR = "ai_generated_projects" 
-    def read_text_from_file(filepath: str) -> str: return f"Error: Tool not available due to import failure for {filepath}"
-    def sanitize_project_name(name: str) -> str: return name
     async def execute_project_coding_plan(project_name: str, base_projects_dir_override: Optional[str] = None) -> str:
         return "Error: execute_project_coding_plan tool not available due to import failure."
 
@@ -74,6 +71,7 @@ _background_task: Optional[asyncio.Task] = None
 _polling_interval_seconds = 3600  # Self-reflection: 1 hour
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0
+_last_reflection_analyzed_timestamp: float = 0.0
 _last_self_healing_time: float = 0.0
 _self_healing_interval_seconds = 3600 # Self-healing: 1 hour (was 10 mins)
 _last_architect_audit_timestamp: float = 0.0

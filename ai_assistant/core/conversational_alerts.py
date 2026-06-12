@@ -155,6 +155,7 @@ def emit_startup_interrupted_tasks_digest(tasks: List["ActiveTask"]) -> Optional
 
     extra = len(task_items) - sample_count
     extra_line = f"\n...and {extra} more interrupted tasks." if extra > 0 else ""
+    sample_text = "\n".join(sample_lines)
 
     first_task = task_items[0]
     session_id = _resolve_session_id(first_task)
@@ -163,7 +164,7 @@ def emit_startup_interrupted_tasks_digest(tasks: List["ActiveTask"]) -> Optional
         f"I found {len(task_items)} task(s) interrupted by the last shutdown and marked them as `FAILED_INTERRUPTED`.\n"
         "This is expected after a restart and not necessarily a new failure.\n\n"
         "Sample interrupted tasks:\n"
-        f"{"\n".join(sample_lines)}"
+        f"{sample_text}"
         f"{extra_line}\n\n"
         "When ready, you can retry selectively with `/task-action <task_id> retry` or ask me to summarize one first."
     )

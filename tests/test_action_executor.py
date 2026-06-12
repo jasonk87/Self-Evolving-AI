@@ -46,7 +46,7 @@ class MockReflectionLogEntryForTest:
     post_modification_test_details: Optional[Dict[str, Any]] = None
     commit_info: Optional[Dict[str, Any]] = None
 
-class TestActionExecutor(unittest.TestCase):
+class ActionExecutorStateMixin(unittest.TestCase):
 
     def setUp(self):
         self.executor = ActionExecutor()

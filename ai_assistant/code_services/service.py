@@ -1319,6 +1319,7 @@ if __name__ == '__main__': # pragma: no cover
     import asyncio
     import tempfile
     import shutil
+    from ..core.notification_manager import NotificationManager
 
     class MockLLMProvider:
         async def invoke_ollama_model_async(self, prompt: str, model_name: str, temperature: float, max_tokens: int) -> str:

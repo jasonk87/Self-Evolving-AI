@@ -2,6 +2,7 @@ import os
 import time
 import logging
 from ai_assistant.config import get_data_dir
+from ai_assistant.core.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
 

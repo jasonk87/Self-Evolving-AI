@@ -577,7 +577,6 @@ class HierarchicalPlanner:
 
 if __name__ == '__main__': # pragma: no cover
     import asyncio
-    import json # For printing dicts nicely in main
 
     # Mock LLMProvider for the __main__ example
     class MockLLMProvider(LLMProvider):

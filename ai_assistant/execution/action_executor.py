@@ -1261,7 +1261,6 @@ class ActionExecutor:
 
 if __name__ == '__main__': # pragma: no cover
     from dataclasses import dataclass, field
-    from ai_assistant.config import get_data_dir
     # from ..core.task_manager import TaskManager # Already imported at top
 
     CUSTOM_TOOLS_DIR = os.path.join("ai_assistant", "custom_tools")

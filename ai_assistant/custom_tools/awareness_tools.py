@@ -270,7 +270,7 @@ if __name__ == '__main__':
     from unittest.mock import patch
     import json
     import os
-    from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus
+    from ai_assistant.core.notification_manager import NotificationManager, NotificationType
     from ai_assistant.config import get_data_dir
 
     class MockInsightType(Enum):
