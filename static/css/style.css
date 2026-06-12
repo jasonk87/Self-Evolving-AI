@@ -394,7 +394,8 @@ body {
 }
 
 .toolbar-item:active,
-.toolbar-item.active {
+.toolbar-item.active,
+.mobile-settings-btn.active {
     color: var(--accent-cyan);
     background: rgba(6, 182, 212, 0.15);
     border-color: rgba(6, 182, 212, 0.3);
@@ -2399,6 +2400,41 @@ body {
         z-index: 50;
     }
 
+    .mobile-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .mobile-actions .btn-icon,
+    .mobile-settings-btn {
+        width: 36px;
+        height: 36px;
+        margin: 0 !important;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        line-height: 1;
+        flex: 0 0 36px;
+        transform: none;
+    }
+
+    .mobile-actions .btn-icon:hover,
+    .mobile-settings-btn:hover {
+        transform: none;
+    }
+
+    .mobile-actions svg,
+    .mobile-settings-btn svg {
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+    }
+
     /* Mobile Sidebar Switcher styling */
     .mobile-sidebar-tabs {
         display: flex !important;
@@ -2477,10 +2513,59 @@ body {
 
     .main-tabs-header {
         display: flex;
-        overflow-x: auto;
+        overflow: hidden;
         scrollbar-width: none;
+        min-width: 0;
     }
     .main-tabs-header::-webkit-scrollbar {
+        display: none;
+    }
+
+    .main-tabs-header .main-tab {
+        min-width: 96px;
+        max-width: 132px;
+        padding: 0 16px;
+        flex: 0 0 auto;
+    }
+
+    .main-tabs-header .header-toolbar {
+        margin-left: auto !important;
+        padding-right: 6px !important;
+        gap: 2px !important;
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+
+    .main-tabs-header .toolbar-item {
+        width: 34px;
+        height: 34px;
+        margin-left: 0;
+        border-radius: 8px;
+        flex: 0 0 34px;
+    }
+
+    .main-tabs-header .token-badge {
+        width: auto !important;
+        max-width: 150px;
+        min-width: 78px;
+        flex: 1 1 auto;
+        padding: 0 8px !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        justify-content: flex-start;
+    }
+
+    .main-tabs-header .toolbar-item::after {
+        display: none;
+    }
+
+    .main-tabs-header .toolbar-item svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .main-tabs-header .item-shutdown {
         display: none;
     }
 

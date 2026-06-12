@@ -131,6 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Layout State Management ---
     const Layout = {
+        currentMainView: 'view-chat',
+
         openSidebarView: (viewId) => {
             // 1. Show Panel
             sidebarPanel.classList.remove('collapsed');
@@ -173,6 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         openMainView: (viewId, tabLabel = "View") => {
+            Layout.currentMainView = viewId;
+
             // 1. Switch View Container with Fade
             mainViews.forEach(v => {
                 if (v.id !== viewId) {
@@ -193,6 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 2. Update Tabs
             Layout.updateMainTabs(viewId, tabLabel);
+            Layout.syncMainNavigation(viewId);
 
             // 3. Special Handling
             if (viewId === 'view-chat' && chatInput) chatInput.focus();
@@ -216,18 +221,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetTab.className = 'main-tab active';
                 targetTab.dataset.target = activeViewId;
                 targetTab.innerHTML = `<span>${label}</span><span class="close-tab">×</span>`;
-                targetTab.onclick = (e) => {
-                    if (e.target.classList.contains('close-tab')) {
-                        // Close logic
-                        targetTab.remove();
-                        Layout.openMainView('view-chat', 'Chat');
-                        return;
-                    }
-                    Layout.openMainView(activeViewId, label);
-                };
                 mainTabsHeader.appendChild(targetTab);
             }
             targetTab.classList.add('active');
+        },
+
+        syncMainNavigation: (activeViewId) => {
+            document.querySelectorAll('.toolbar-item[data-target], .mobile-settings-btn[data-target]').forEach(item => {
+                item.classList.toggle('active', item.dataset.target === activeViewId);
+            });
+
+            document.querySelectorAll('.mobile-nav-item[data-target]').forEach(item => {
+                item.classList.toggle('active', item.dataset.target === activeViewId);
+            });
         },
 
         toggleBottomPanel: (forceState = null) => {
@@ -291,21 +297,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.querySelectorAll('.toolbar-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const targetId = item.dataset.target;
-            if (item.classList.contains('item-shutdown')) return;
-
-            if (targetId) {
-                Layout.openMainView(targetId, item.title || 'View');
-                if (targetId === 'view-settings') {
-                    Settings.loadConfig();
-                }
-            }
-        });
-    });
-
-
     // --- Event Listeners ---
 
     // 1. Navigation (Activity Bar)
@@ -330,16 +321,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 1b. Toolbar Navigation (Top Right)
-    document.querySelectorAll('.toolbar-item').forEach(item => {
+    document.querySelectorAll('.toolbar-item[data-target], .mobile-settings-btn[data-target]').forEach(item => {
         item.addEventListener('click', () => {
             const target = item.dataset.target;
             const label = item.getAttribute('title');
             if (target) {
-                Layout.openMainView(target, label);
+                const nextTarget = Layout.currentMainView === target && target !== 'view-chat'
+                    ? 'view-chat'
+                    : target;
+                const nextLabel = nextTarget === 'view-chat' ? 'Chat' : label;
+
+                Layout.openMainView(nextTarget, nextLabel);
+
+                if (nextTarget === 'view-settings') {
+                    Settings.loadConfig();
+                }
             }
         });
     });
 
+
+    if (mainTabsHeader) {
+        mainTabsHeader.addEventListener('click', (event) => {
+            const tab = event.target.closest('.main-tab[data-target]');
+            if (!tab) return;
+
+            if (event.target.classList.contains('close-tab')) {
+                tab.remove();
+                Layout.openMainView('view-chat', 'Chat');
+                return;
+            }
+
+            const target = tab.dataset.target;
+            const label = tab.querySelector('span')?.textContent || 'View';
+            if (target) {
+                Layout.openMainView(target, label);
+            }
+        });
+    }
 
 
     // 1c. Mobile Chat/Home Button
@@ -384,9 +403,6 @@ document.addEventListener('DOMContentLoaded', () => {
         item.addEventListener('click', () => {
             const targetId = item.dataset.target;
             const label = item.querySelector('span')?.textContent || 'View';
-
-            document.querySelectorAll('.mobile-nav-item').forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
 
             if (targetId) {
                 Layout.openMainView(targetId, label);
