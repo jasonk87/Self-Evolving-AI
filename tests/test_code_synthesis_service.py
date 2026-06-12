@@ -1,21 +1,17 @@
 import unittest
 from unittest import mock
-import asyncio
 import os
 import sys
-import uuid
-import datetime
-from dataclasses import field
 
 try:
-    from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult
+    pass
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 from enum import Enum
 from unittest.mock import patch, AsyncMock
-from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus, CodeTaskResult
+from ai_assistant.code_synthesis import CodeSynthesisService, CodeTaskRequest, CodeTaskType, CodeTaskStatus
 
 class TestCodeSynthesisService(unittest.IsolatedAsyncioTestCase): # Use IsolatedAsyncioTestCase for async tests
 

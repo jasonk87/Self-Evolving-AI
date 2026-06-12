@@ -4,11 +4,10 @@ import asyncio
 import sys
 import os
 import json
-import uuid # For mocking
 
 # Ensure ai_assistant module can be imported
 try:
-    from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
+    from ai_assistant.core.suggestion_processor import SuggestionProcessor
     from ai_assistant.execution.action_executor import ActionExecutor
     from ai_assistant.code_services.service import CodeService
     # from ai_assistant.llm_interface.ollama_client import OllamaProvider # If needed for type hinting mock
@@ -17,7 +16,7 @@ except ImportError as e: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.core.suggestion_processor import SuggestionProcessor, LLM_TARGET_IDENTIFICATION_PROMPT_TEMPLATE
+    from ai_assistant.core.suggestion_processor import SuggestionProcessor
     from ai_assistant.execution.action_executor import ActionExecutor
     from ai_assistant.code_services.service import CodeService
     # from ai_assistant.llm_interface.ollama_client import OllamaProvider

@@ -1,7 +1,7 @@
 # ai_assistant/core/startup_services.py
 import asyncio
 import logging # For logging in the future, using print for now
-from typing import List, Optional
+from typing import Optional
 
 from .task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
 from .notification_manager import NotificationManager, NotificationType
@@ -99,7 +99,7 @@ async def resume_interrupted_tasks(
 
 if __name__ == '__main__': # pragma: no cover
     # Basic test for resume_interrupted_tasks
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import MagicMock
 
     async def main_test():
         print("--- Testing resume_interrupted_tasks ---")

@@ -2,8 +2,6 @@ import pytest
 import time
 import platform
 import subprocess
-import datetime
-import sys
 from unittest.mock import patch, MagicMock
 from ai_assistant.custom_tools.generated.notification_scheduler import schedule_notification
 

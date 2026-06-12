@@ -1,7 +1,5 @@
-import json
 import random
 from abc import ABC, abstractmethod
-from board import Board
 
 class Player(ABC):
     def __init__(self, name, color):

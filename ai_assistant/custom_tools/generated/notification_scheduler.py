@@ -2,7 +2,6 @@ import time
 import datetime
 import platform
 import subprocess
-from typing import Optional
 
 def schedule_notification(reminder_message: str, delay_minutes: int) -> str:
     """Schedules a desktop notification to be displayed after a specified delay.

@@ -3,7 +3,6 @@ from unittest import mock
 import asyncio
 import os # For path manipulation if needed in tests
 import sys
-import json # For json.dumps in test data if needed, and for CodeService metadata
 
 # Add project root to sys.path to allow importing ai_assistant modules
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

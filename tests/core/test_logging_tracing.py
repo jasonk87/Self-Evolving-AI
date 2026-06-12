@@ -1,4 +1,3 @@
-import pytest
 import logging
 from io import StringIO
 import json
@@ -7,7 +6,6 @@ import uuid
 from opentelemetry import trace
 from ai_assistant.core.logging_config import setup_logging_and_tracing, correlation_id_var
 import ai_assistant.config as config
-from pythonjsonlogger import jsonlogger
 
 def test_tracing_disabled():
     orig_tracing = config.ENABLE_TRACING

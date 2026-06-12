@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional
 from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 

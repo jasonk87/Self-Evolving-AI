@@ -48,7 +48,6 @@ def manage_suggestion_status(
 
 if __name__ == '__main__': # pragma: no cover
     from unittest.mock import patch
-    import uuid
     from ai_assistant.core.notification_manager import NotificationManager
 
 

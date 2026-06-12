@@ -3,7 +3,6 @@ import os
 import json
 import shutil
 import tempfile
-import datetime
 from unittest.mock import patch, MagicMock
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
 from ai_assistant.core.llm.gemini_provider import GeminiProvider

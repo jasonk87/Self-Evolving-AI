@@ -1,7 +1,6 @@
 
-import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Optional
 
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager

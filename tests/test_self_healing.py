@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
-import asyncio
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core.models.state import ExecutionState
 from ai_assistant.core.reflection import InsightType

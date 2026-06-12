@@ -30,7 +30,7 @@ def _load_env_file(path: str) -> None:
         load_dotenv(path)
 
 _load_env_file(env_path)
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 # Runtime environment profile
 APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()

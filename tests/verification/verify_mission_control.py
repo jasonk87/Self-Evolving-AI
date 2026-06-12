@@ -1,6 +1,5 @@
 
 import asyncio
-import json
 import logging
 import sys
 import os
@@ -10,7 +9,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from web_app import app, init_orchestrator, orchestrator
+from web_app import app, init_orchestrator
 from ai_assistant.core.task_manager import ActiveTaskType, ActiveTaskStatus
 
 # Configure logging to see what's happening

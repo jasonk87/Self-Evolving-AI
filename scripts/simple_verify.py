@@ -1,7 +1,4 @@
-import sys
-import os
 import requests
-import json
 from ai_assistant import config
 
 def main():

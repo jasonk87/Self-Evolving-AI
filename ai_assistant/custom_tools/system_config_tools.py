@@ -1,5 +1,4 @@
 from typing import Any, Dict, Optional, Union
-import logging
 from ai_assistant.core.config_manager import ConfigManager
 
 # Initialize ConfigManager instance

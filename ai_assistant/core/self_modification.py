@@ -1,22 +1,20 @@
 # Code for the AI assistant's self-modification capabilities.
 import importlib
 import inspect
-from typing import Optional
 import ast
 import os
 import shutil
 import logging
 import sys
 import subprocess
-import tempfile
 from .diff_utils import generate_diff
 from .critical_reviewer import CriticalReviewCoordinator
 from .reviewer import ReviewerAgent # Needed to instantiate default reviewers
 from .refinement import RefinementAgent # Added import for refinement
 import asyncio # For running the async review process
 from unittest.mock import patch, AsyncMock # For __main__ block mocking
-from typing import Optional, Dict, Any # Ensure Optional, Dict, Any are imported for type hints
-from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
+from typing import Optional # Ensure Optional, Dict, Any are imported for type hints
+from .task_manager import TaskManager, ActiveTaskStatus
 from .sandbox import SandboxManager # Added SandboxManager
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task

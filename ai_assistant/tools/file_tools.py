@@ -1,6 +1,6 @@
 import os
 from ai_assistant.core.safety.judge import judge
-from ai_assistant.custom_tools.file_system_tools import write_text_to_file as custom_write_text, sanitize_project_name
+from ai_assistant.custom_tools.file_system_tools import write_text_to_file as custom_write_text
 
 class SecurityViolationError(Exception):
     """Raised when an action is blocked by the Constitutional Judge."""

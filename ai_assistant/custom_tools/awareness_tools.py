@@ -1,16 +1,15 @@
-import json
-from typing import Optional, Any
-from ai_assistant.core.task_manager import TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType
-from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification
+from ai_assistant.core.task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
+from ai_assistant.core.notification_manager import (
+    NotificationManager,
+    NotificationStatus,  # noqa: F401 - used by get_system_status_summary at runtime
+)
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from enum import Enum, auto
 from dataclasses import asdict
-from ai_assistant.core.suggestion_manager import find_suggestion, list_suggestions
+from ai_assistant.core.suggestion_manager import find_suggestion
 from ai_assistant.core.project_manager import find_project
 from ai_assistant.memory.persistent_memory import load_learned_facts
-import os
-import glob
 
 def get_system_status_summary(task_manager: Optional[TaskManager]=None, notification_manager: Optional[NotificationManager]=None, active_limit: int=5, archived_limit: int=3, unread_notifications_limit: int=3) -> str:
     """
@@ -271,7 +270,7 @@ if __name__ == '__main__':
     from unittest.mock import patch
     import json
     import os
-    from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus, Notification
+    from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus
     from ai_assistant.config import get_data_dir
 
     class MockInsightType(Enum):

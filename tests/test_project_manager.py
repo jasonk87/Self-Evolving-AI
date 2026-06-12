@@ -1,8 +1,7 @@
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open
 import os
 import sys
-import json
 from datetime import datetime, timezone, timedelta
 
 # Ensure ai_assistant module can be imported

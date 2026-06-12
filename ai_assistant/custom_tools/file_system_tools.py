@@ -1,20 +1,9 @@
 import os
-import os
-from typing import Dict, Any
-import os
-from typing import Dict, Any, Optional
-import os
-from typing import Dict, Any, Optional
-import os
-import os
-from typing import Dict, Any
-import os
 import re
-from typing import Union, Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import aiofiles
 import asyncio
 import functools
-from ..config import get_data_dir
 ai_assistant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BASE_PROJECTS_DIR = os.path.join(ai_assistant_dir, 'ai_generated_projects')
 

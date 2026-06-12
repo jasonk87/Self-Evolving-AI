@@ -1,13 +1,12 @@
 # ai_assistant/execution/action_executor.py
 from typing import Dict, Any, Optional, Tuple, List, TYPE_CHECKING
 import datetime 
-import re
 import asyncio
 import os
 import uuid
 import logging
 
-from ai_assistant.config import DEFAULT_MODEL, get_data_dir, is_debug_mode
+from ai_assistant.config import DEFAULT_MODEL, get_data_dir, is_debug_mode  # noqa: F401
 from ai_assistant.core import self_modification
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
@@ -16,7 +15,6 @@ import json # Added for parsing LLM response in _is_fact_valuable
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.code_services.service import CodeService # Added
-from ai_assistant.core.task_manager import ActiveTaskStatus
 from ..core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added for TaskManager
 from ..core.notification_manager import NotificationManager, NotificationType # Added
 from ai_assistant.custom_tools.agent_tools import spawn_ephemeral_agent, run_agent_code, submit_agent_report

@@ -2,7 +2,6 @@
 import asyncio
 import sys
 import os
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 # Add project root to sys.path

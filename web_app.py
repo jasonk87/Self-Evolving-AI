@@ -1,4 +1,3 @@
-from typing import Dict, Any
 # Removed nest_asyncio, enforcing proper async loop bounds
 
 
@@ -17,14 +16,10 @@ if sys.stderr is not None and hasattr(sys.stderr, 'reconfigure'):
     except Exception:
         pass
 
-import json
 import asyncio
 import logging
 import threading
-import signal
-from datetime import datetime
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
+from flask import Flask, jsonify
 from flask_login import LoginManager, UserMixin
 
 # Add the project root to sys.path

@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
-import os
+from typing import Optional
 
 from ai_assistant.core.safety.constitution import SYSTEM_DIRECTIVES
 from ai_assistant.config import DEFAULT_MODEL

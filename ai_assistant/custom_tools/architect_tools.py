@@ -1,5 +1,4 @@
 from ai_assistant.core.agency.architect import SystemArchitect
-import asyncio
 
 # Create a tool-compatible wrapper
 async def run_architect_cycle() -> str:

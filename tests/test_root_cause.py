@@ -1,7 +1,6 @@
 
 import pytest
-import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 from ai_assistant.learning.learning import LearningAgent, InsightType
 from ai_assistant.core.reflection import ReflectionLogEntry
 

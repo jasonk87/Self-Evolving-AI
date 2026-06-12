@@ -4,8 +4,6 @@ after user approval.
 """
 import logging
 import os
-import shutil
-import subprocess
 from typing import Optional
 
 # Configure logger for this module

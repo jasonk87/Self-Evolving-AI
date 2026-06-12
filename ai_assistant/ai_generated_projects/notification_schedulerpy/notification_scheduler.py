@@ -2,7 +2,6 @@ import schedule
 import time
 import json
 import threading
-import os
 
 TELEMETRY_FILE = "telemetry.json"
 

@@ -1,9 +1,8 @@
 import unittest
 import os
-import json
 import shutil
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from ai_assistant.core import suggestion_manager
 from ai_assistant.custom_tools import awareness_tools
 

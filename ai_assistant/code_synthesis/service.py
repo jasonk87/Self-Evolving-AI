@@ -1,10 +1,8 @@
 # ai_assistant/code_synthesis/service.py
 from .data_structures import CodeTaskRequest, CodeTaskResult, CodeTaskType, CodeTaskStatus
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 import re
-import os
 import json
-import sys
 
 from ai_assistant.core import self_modification
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async # Already imported

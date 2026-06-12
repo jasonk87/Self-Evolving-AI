@@ -1,14 +1,12 @@
-from typing import Any
 import importlib
 import os
 import sys
 import json
 import inspect
 import asyncio
-from typing import Callable, Dict, Any, Optional, Tuple, List, TYPE_CHECKING
+from typing import Callable, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from pydantic import ValidationError
 from ai_assistant.config import is_debug_mode, get_data_dir
-from ai_assistant.core.self_modification import get_function_source_code
 from ai_assistant.core.models.base_tool import BaseActionRequest, BaseActionResponse
 if TYPE_CHECKING:
     from ..core.task_manager import TaskManager

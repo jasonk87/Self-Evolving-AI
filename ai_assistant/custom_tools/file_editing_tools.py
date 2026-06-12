@@ -1,18 +1,11 @@
 
 import os
-import ast
-import json
 import logging
-import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Any
 from ai_assistant.core.self_modification import (
     edit_function_source_code,
-    edit_class_method,
-    upsert_import,
-    insert_code_block,
-    surgical_edit_function
+    edit_class_method
 )
-from ai_assistant.custom_tools.file_system_tools import read_text_from_file, write_text_to_file
 from ai_assistant.core.task_manager import TaskManager
 import shutil
 import datetime

@@ -1,5 +1,4 @@
 import difflib
-from typing import List
 
 def generate_diff(old_code: str, new_code: str, file_name: str = "code") -> str:
     """

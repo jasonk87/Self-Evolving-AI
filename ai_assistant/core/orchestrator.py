@@ -10,18 +10,15 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import asyncio
-import uuid
 import json
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 
-from ai_assistant.core.enums import ExecutionMode
 from ai_assistant.core.router import TaskRouter
 import ai_assistant.config as config
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
-from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.events import EventEmitter
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
 from ai_assistant.core.models.state import ExecutionState
@@ -34,7 +31,6 @@ from ..execution.action_executor import ActionExecutor
 from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
 from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
-from ..utils.conversational_helpers import summarize_tool_result_conversationally
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 from ai_assistant.utils.token_counter import estimate_tokens, truncate_to_token_limit
 from opentelemetry import trace
@@ -855,7 +851,6 @@ Return STRICT JSON only using the schema described earlier.
 
         if file_mentions:
             context_parts.append("Potential File Context:")
-            from ai_assistant.core.self_modification import _resolve_file_path_robust
             from ai_assistant.custom_tools.file_system_tools import read_text_from_file
 
             for fname in file_mentions:

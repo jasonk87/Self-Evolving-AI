@@ -4,9 +4,7 @@ import re
 import logging
 import time
 import ast
-from typing import TYPE_CHECKING, Optional, Dict, List, Any
-import importlib.util
-import inspect
+from typing import TYPE_CHECKING, Optional
 import asyncio
 from ai_assistant.config import get_model_for_task
 if TYPE_CHECKING:
@@ -345,7 +343,7 @@ async def _generate_test_for_tool(tool_name: str, tool_filename: str, tool_code:
         return f'Error: {e}'
 import importlib.util
 import inspect
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 try:
     from ai_assistant.core.tool_creator import get_generated_tools_dir
 except ImportError:

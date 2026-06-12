@@ -1,22 +1,17 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
-import json
-from typing import List, Dict, Any, Optional
-import asyncio # Required for running async tests if not using IsolatedAsyncioTestCase in some environments
+from unittest.mock import AsyncMock, patch
 
 try:
-    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
-    from ai_assistant.config import get_model_for_task
 except ImportError: # pragma: no cover
     import sys
     import os
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally, LLM_CONVERSATIONAL_SUMMARY_PROMPT_TEMPLATE, LLM_REPHRASE_ERROR_PROMPT_TEMPLATE
+    from ai_assistant.utils.conversational_helpers import summarize_tool_result_conversationally, rephrase_error_message_conversationally
     from ai_assistant.llm_interface.ollama_client import OllamaProvider
-    from ai_assistant.config import get_model_for_task
 
 
 class TestConversationalHelpers(unittest.IsolatedAsyncioTestCase):

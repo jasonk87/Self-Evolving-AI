@@ -1,7 +1,7 @@
 # ai_assistant/code_synthesis/linting.py
 import ast
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 

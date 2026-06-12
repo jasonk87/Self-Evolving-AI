@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 
 try:
     from ai_assistant.execution.action_executor import ActionExecutor
-    from ai_assistant.core.reflection import ReflectionLogEntry, global_reflection_log as core_global_reflection_log
+    from ai_assistant.core.reflection import global_reflection_log as core_global_reflection_log
     from ai_assistant.planning.execution import ExecutionAgent
     from ai_assistant.planning.planning import PlannerAgent
     from ai_assistant.code_services.service import CodeService # Added for mocking
@@ -20,7 +20,7 @@ except ImportError: # pragma: no cover
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     from ai_assistant.execution.action_executor import ActionExecutor
-    from ai_assistant.core.reflection import ReflectionLogEntry, global_reflection_log as core_global_reflection_log
+    from ai_assistant.core.reflection import global_reflection_log as core_global_reflection_log
     from ai_assistant.planning.execution import ExecutionAgent
     from ai_assistant.planning.planning import PlannerAgent
     from ai_assistant.code_services.service import CodeService

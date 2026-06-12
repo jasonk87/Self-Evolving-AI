@@ -3,7 +3,7 @@ import sys
 import subprocess
 import time
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from ai_assistant.core.agent_manager import AgentManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
 agent_manager = AgentManager()

@@ -1,4 +1,3 @@
-from typing import Optional
 import os
 from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:

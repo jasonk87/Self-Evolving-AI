@@ -1,6 +1,6 @@
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import json
 import re
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async

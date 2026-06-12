@@ -1,7 +1,6 @@
 import time
 import threading
 import datetime
-from typing import Callable
 
 def set_reminder(time_str: str, message: str) -> str:
     """Schedules a reminder to print a message at a specified time.

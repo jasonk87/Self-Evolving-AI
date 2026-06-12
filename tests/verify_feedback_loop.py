@@ -3,7 +3,6 @@ import os
 import sys
 import logging
 from unittest.mock import MagicMock, patch, AsyncMock
-import json
 import traceback
 
 # Add project root to path
@@ -14,7 +13,6 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 try:
     from ai_assistant.learning.learning import LearningAgent
     from ai_assistant.core.reflection import ActionableInsight, InsightType
-    import ai_assistant.memory.persistent_memory as pm
     from ai_assistant.execution.action_executor import ActionExecutor
 except Exception as e:
     print(f"Import Error: {e}")

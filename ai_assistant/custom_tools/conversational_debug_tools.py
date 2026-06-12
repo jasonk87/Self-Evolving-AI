@@ -3,8 +3,8 @@ import os
 import uuid
 import json
 import logging
-from typing import Optional, Dict, List, Any
-from ai_assistant.core.reflection import ReflectionLogEntry, ActionableInsight, InsightType
+from typing import Optional
+from ai_assistant.core.reflection import InsightType
 from ai_assistant.memory.persistent_memory import ACTIONABLE_INSIGHTS_FILEPATH
 
 logger = logging.getLogger(__name__)

@@ -1,15 +1,12 @@
 
-import os
 import base64
 import asyncio
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import pyautogui
 from io import BytesIO
-from PIL import Image
 
 from ai_assistant.core.vision_service import VisionService
-from ai_assistant import config
 
 logger = logging.getLogger(__name__)
 

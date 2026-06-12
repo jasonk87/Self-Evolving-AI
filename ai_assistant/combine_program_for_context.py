@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback # Added for better error reporting in generate_consolidated_file
 
 def generate_project_structure_string(project_dir_abs_path: str, files_to_skip: set) -> str:

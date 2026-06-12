@@ -2,9 +2,8 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 import aiofiles
-import asyncio
 
 from ai_assistant.config import get_data_dir, get_projects_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text

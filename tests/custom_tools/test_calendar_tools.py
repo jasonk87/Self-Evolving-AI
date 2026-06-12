@@ -1,7 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import os
-import datetime
 from ai_assistant.integrations.google_calendar import CalendarManager
 
 class TestCalendarManager(unittest.TestCase):

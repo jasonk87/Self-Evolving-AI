@@ -1,19 +1,16 @@
 import unittest
 from unittest import mock # Ensure mock is imported
-import asyncio
 import os
 import datetime
 import tempfile
 import json
 import uuid # Added for generating entry_ids
 from typing import List, Dict, Any, Optional
-from dataclasses import field # Ensure field is imported for dataclasses
 
 # Attempt to import from the ai_assistant package.
 try:
     from ai_assistant.learning.learning import LearningAgent, ActionableInsight, InsightType
     from ai_assistant.core.reflection import ReflectionLogEntry
-    from ai_assistant.execution.action_executor import ActionExecutor # Needed for patching target
 except ImportError: # pragma: no cover
     import sys
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -21,7 +18,6 @@ except ImportError: # pragma: no cover
         sys.path.insert(0, project_root)
     from ai_assistant.learning.learning import LearningAgent, ActionableInsight, InsightType
     from ai_assistant.core.reflection import ReflectionLogEntry
-    from ai_assistant.execution.action_executor import ActionExecutor
 
 
 class TestActionableInsight(unittest.TestCase):

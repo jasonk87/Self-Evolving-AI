@@ -1,10 +1,7 @@
 
-import pytest
-import asyncio
 from ai_assistant.core.approval_manager import ApprovalManager
 from ai_assistant.execution.action_executor import ActionExecutor
-from ai_assistant.learning.learning import LearningAgent
-from ai_assistant.code_synthesis.linting import CodeLinter, LintingError
+from ai_assistant.code_synthesis.linting import CodeLinter
 
 def test_approval_manager_manual_resolution():
     am = ApprovalManager()

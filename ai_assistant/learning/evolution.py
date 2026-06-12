@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 from typing import Dict, Any, Optional
-from unittest.mock import patch, MagicMock, ANY, AsyncMock # Added AsyncMock
+from unittest.mock import patch, ANY # Added AsyncMock
 
 from ai_assistant.core.self_modification import edit_function_source_code
 import asyncio
@@ -364,8 +364,7 @@ async def apply_code_modification(suggestion: Dict[str, Any]) -> Dict[str, Any]:
         return result
 
 if __name__ == '__main__':
-    from unittest.mock import MagicMock, call, AsyncMock # Ensure AsyncMock is imported
-    from subprocess import CompletedProcess
+    from unittest.mock import MagicMock, AsyncMock # Ensure AsyncMock is imported
 
     async def main_tests_evolution():
         TEST_WORKSPACE_PARENT_DIR = "temp_evolution_test_sandbox"

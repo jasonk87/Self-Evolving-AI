@@ -1,7 +1,5 @@
 from playwright.sync_api import sync_playwright
 import time
-import socketio
-import threading
 import sys
 import subprocess
 import os

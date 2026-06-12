@@ -1,18 +1,14 @@
 import json
-import os
-import shutil
-import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 
 from ai_assistant.memory.persistent_memory import (
-    load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH,
-    load_actionable_insights, save_actionable_insights
+    load_learned_facts, save_learned_facts, load_actionable_insights, save_actionable_insights
 )
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import DEFAULT_MODEL, get_data_dir
+from ai_assistant.config import DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 

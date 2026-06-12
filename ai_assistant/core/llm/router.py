@@ -1,4 +1,4 @@
-from typing import Dict, Any, Tuple
+from typing import Dict, Tuple
 from ai_assistant import config
 from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.core.llm.gemini_provider import GeminiProvider

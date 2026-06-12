@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import time
 from typing import Callable, Coroutine
 
 async def remind_at_3_40(callback: Callable[[], Coroutine[None, None, None]]) -> None:

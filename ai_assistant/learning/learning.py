@@ -37,8 +37,7 @@ import os
 import asyncio
 import uuid # Added for entry_id in MockReflectionLogEntry
 from typing import Optional, Dict, Any, List, Tuple # TYPE_CHECKING removed
-from enum import Enum, auto
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from ..core.task_manager import TaskManager
 from ..core.notification_manager import NotificationManager # Made unconditional
 
@@ -47,7 +46,6 @@ from ai_assistant.memory.persistent_memory import save_actionable_insights, load
 from ai_assistant.execution.action_executor import ActionExecutor
 from ai_assistant.tools.tool_system import get_tool
 from ai_assistant.core.chat_manager import ChatSessionManager
-from ai_assistant.config import get_projects_dir, get_data_dir # Assuming chat sessions are in data dir or similar
 from ai_assistant.core import self_modification # For code reading
 from ai_assistant.core.failure_freshness import (
     SUPERSEDED_FAILURE_STATUS,

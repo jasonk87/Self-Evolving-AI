@@ -1,5 +1,4 @@
 import json
-import random
 
 class GameBoard:
     def __init__(self):

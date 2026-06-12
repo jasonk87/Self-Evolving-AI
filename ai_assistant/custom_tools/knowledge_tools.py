@@ -1,14 +1,10 @@
-from typing import List, Optional
-from typing import List, Optional
 
 import json
 import logging
-import asyncio
-from typing import Optional, List, Dict
+from typing import Optional, List
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_model_for_task, is_debug_mode
-from ai_assistant.core.memory_manager import MemoryManager
+from ai_assistant.config import get_model_for_task
 logger = logging.getLogger(__name__)
 FACT_DECISION_PROMPT_TEMPLATE = '\nYou are an AI Knowledge Base Curator. I want to add a new fact to my memory.\nCheck against the similar existing facts provided below and decide what to do.\n\nNEW FACT: "{new_fact}"\n\nSIMILAR EXISTING FACTS:\n{similar_facts_list}\n\nOPTIONS:\nA) ADD: The new fact is unique and contains new information not present in the existing facts.\nB) UPDATE: The new fact updates, corrects, or adds significant detail to an existing fact. (Specify which existing fact to replace).\nC) DISCARD: The new fact is already covered by the existing facts (duplicate) or is not worth saving (trivial/transient).\n\nResponse format:\nJSON object with keys:\n- "decision": "ADD", "UPDATE", or "DISCARD"\n- "reason": "Explanation..."\n- "target_id": "ID of the fact to update/replace" (Only for UPDATE, otherwise null)\n- "merged_fact": "The new merged text" (Only for UPDATE, otherwise null)\n\nRespond ONLY with the JSON object.\n'
 _rag_system_cache = None

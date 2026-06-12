@@ -1,7 +1,7 @@
 # ai_assistant/llm_interface/ollama_client.py
 import requests
 import json
-from typing import Optional, Dict, Union, Tuple, Any, List
+from typing import Optional, Dict, Tuple, Any, List
 import asyncio
 import aiohttp
 import os # Added import os

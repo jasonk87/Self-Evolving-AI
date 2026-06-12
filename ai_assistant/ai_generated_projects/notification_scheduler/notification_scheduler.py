@@ -2,7 +2,6 @@ import schedule
 import time
 import logging
 import json
-import os
 
 # Configure logging
 logging.basicConfig(filename='notification_scheduler.log', level=logging.INFO,

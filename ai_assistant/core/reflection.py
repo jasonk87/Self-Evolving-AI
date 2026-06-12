@@ -4,9 +4,7 @@ import re
 import json # For the simplistic check in to_serializable_dict
 from dataclasses import asdict, dataclass, field
 from typing import List, Dict, Any, Optional
-import traceback # For serializing exception tracebacks
 import uuid
-import os # For os.path.exists and os.path.getsize
 from ai_assistant.config import is_debug_mode
 from ai_assistant.core.failure_freshness import (
     annotate_failure_metadata,

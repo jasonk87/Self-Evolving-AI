@@ -1,18 +1,16 @@
 
 import unittest
-import json
 import os
-import shutil
 import tempfile
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Add project root to sys.path
 import sys
 sys.path.append(r"c:\Users\Jason\Desktop\Self Evolving AI")
 
 from ai_assistant.core.reviewer import ReviewerAgent
-from ai_assistant.core.self_modification import resolve_function_file_path, edit_function_source_code, _run_pylint_check
+from ai_assistant.core.self_modification import _run_pylint_check
 
 class TestInfrastructureFixes(unittest.TestCase):
 

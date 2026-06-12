@@ -8,7 +8,7 @@ import sys # Added for subprocess execution
 
 import re
 import logging
-from typing import Optional, List
+from typing import Optional
 
 from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle
 from ai_assistant.core.reflection import global_reflection_log # Import global log for timestamp check
@@ -21,9 +21,8 @@ import ai_assistant.config as runtime_config
 # Added for self-healing
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.core.task_manager import TaskManager
-from ai_assistant.core.notification_manager import NotificationManager, NotificationType
+from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.core.approval_manager import approval_manager
-from ai_assistant.learning.learning import InsightType
 from ai_assistant.core.memory_maintenance_service import MemoryMaintenanceService # Added
 
 

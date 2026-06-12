@@ -1,20 +1,17 @@
 import unittest
-from unittest.mock import patch, mock_open, MagicMock, AsyncMock
+from unittest.mock import patch, mock_open, AsyncMock
 import asyncio
 import os
 import sys
-import ast
 
 # Ensure the 'ai_assistant' module can be imported
 try:
-    from ai_assistant.core.self_modification import edit_function_source_code, get_function_source_code
-    from ai_assistant.core.self_modification import _resolve_file_path_robust
+    from ai_assistant.core.self_modification import edit_function_source_code
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.core.self_modification import edit_function_source_code, get_function_source_code
-    from ai_assistant.core.self_modification import _resolve_file_path_robust
+    from ai_assistant.core.self_modification import edit_function_source_code
 
 class TestSelfModificationWithReview(unittest.TestCase):
     def setUp(self):

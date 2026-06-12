@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 import asyncio
 from ai_assistant.core.critical_reviewer import CriticalReviewCoordinator
 from ai_assistant.core.reviewer import ReviewerAgent

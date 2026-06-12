@@ -6,7 +6,6 @@ import sys
 sys.path.insert(0, os.path.abspath("C:/Users/Jason/Desktop/Self Evolving AI"))
 
 from ai_assistant.learning.conversation_analyst import ConversationalAnalyst
-from ai_assistant.learning.learning import InsightType
 
 # Mock the LLM Response to test parsing logic without hitting the actual LLM (which is hard to deterministic)
 # Or we can subclass/patch invoke_ollama_model_async

@@ -1,10 +1,8 @@
 
 import asyncio
-import os
-import sys
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 from ai_assistant.learning.learning import LearningAgent
-from ai_assistant.core.reflection import ReflectionLogEntry, ActionableInsight, InsightType
+from ai_assistant.core.reflection import ActionableInsight, InsightType
 from ai_assistant.execution.action_executor import ActionExecutor
 
 # Mock dependencies

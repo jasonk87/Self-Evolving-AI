@@ -6,7 +6,7 @@ import os
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, GLOBAL_CONCURRENCY_LIMITER, GLOBAL_RATE_LIMITER
+from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async, GLOBAL_CONCURRENCY_LIMITER
 from ai_assistant.utils.display_utils import CLIColors, color_text
 
 async def spam_requests(num_requests=10):

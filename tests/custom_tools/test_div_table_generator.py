@@ -1,4 +1,3 @@
-import pytest
 from ai_assistant.custom_tools.generated.div_table_generator import generate_div_table_html
 
 def test_generate_div_table_html_normal_operation():

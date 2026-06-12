@@ -1,9 +1,6 @@
 import board
 import rules
-import player
-import random
 import copy
-import json
 
 def evaluate_board(board_state, ai_player_color):
     """

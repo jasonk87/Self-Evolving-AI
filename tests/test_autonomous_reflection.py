@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch
 import json
 
 # Assuming the module structure allows this import path
@@ -8,13 +8,12 @@ from ai_assistant.core.autonomous_reflection import (
     run_self_reflection_cycle,
     select_suggestion_for_autonomous_action,
     get_reflection_log_summary_for_analysis, # Added for potential use in run_self_reflection_cycle tests
-    _invoke_pattern_identification_llm # Added for potential use in run_self_reflection_cycle tests
+     # Added for potential use in run_self_reflection_cycle tests
 )
 import datetime # Added for ReflectionLogEntry timestamp
 
 # Assuming the module structure allows this import path
-from ai_assistant.core.reflection import ReflectionLogEntry, global_reflection_log # Added
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model # Added for mocking
+from ai_assistant.core.reflection import ReflectionLogEntry # Added
 
 # If DEFAULT_OLLAMA_MODEL is a global constant in autonomous_reflection.py that needs to be defined for tests:
 # from ai_assistant.core.autonomous_reflection import DEFAULT_OLLAMA_MODEL # Or define a mock one here

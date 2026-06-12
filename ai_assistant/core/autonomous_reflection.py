@@ -22,8 +22,7 @@ from typing import List, Dict, Any, Optional
 import re
 import logging
 import asyncio # Ensure asyncio is imported for __main__
-import uuid # Added missing import
-from unittest.mock import patch, AsyncMock, MagicMock # Ensure these are imported for __main__
+from unittest.mock import patch, AsyncMock # Ensure these are imported for __main__
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model 
 from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry 
@@ -32,7 +31,6 @@ from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
 from ai_assistant.memory.persistent_memory import load_actionable_insights
 from ai_assistant.core.failure_freshness import is_failure_stale
-from datetime import datetime, timezone, timedelta 
 from .notification_manager import NotificationManager
 
 logger = logging.getLogger(__name__)

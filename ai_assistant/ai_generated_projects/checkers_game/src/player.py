@@ -1,4 +1,3 @@
-import json
 from board import Board
 
 class Player:

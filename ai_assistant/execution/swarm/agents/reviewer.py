@@ -1,6 +1,5 @@
 import logging
-import asyncio
-from typing import Dict, Any, Optional
+from typing import Any
 
 from ..protocol import BaseSwarmAgent, AgentRole, SwarmContract
 from ..blackboard import Blackboard, BlackboardEvent

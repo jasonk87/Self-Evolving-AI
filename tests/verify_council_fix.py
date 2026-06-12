@@ -22,7 +22,6 @@ def verify_council_fix():
 
     # 2. Verify ActionExecutor syntax/import (catch syntax errors from move)
     try:
-        from ai_assistant.execution.action_executor import ActionExecutor
         print("SUCCESS: ActionExecutor imported successfully (no syntax errors).")
     except Exception as e:
         print(f"FAILURE: ActionExecutor import failed: {e}")

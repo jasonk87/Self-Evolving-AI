@@ -481,7 +481,6 @@ async def test_real_paths_enforcement(contract, blackboard):
 @pytest.mark.asyncio
 async def test_dependency_modification_capabilities(contract, blackboard):
     from ai_assistant.execution.swarm.agents.coder import CoderAgent
-    from ai_assistant.execution.swarm.agents.tester import TesterAgent
 
     class MockLLMProvider:
         async def invoke_ollama_model_async(self, *args, **kwargs):

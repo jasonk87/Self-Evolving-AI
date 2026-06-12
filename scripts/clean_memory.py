@@ -1,8 +1,6 @@
 import os
-import json
 import asyncio
 import logging
-from typing import List, Dict, Any
 
 # Adjust path to import ai_assistant modules
 import sys

@@ -1,5 +1,4 @@
 from ai_assistant.tools.base import ToolBase
-from ai_assistant.core.events import EventEmitter
 # ToolConfig is not used in this codebase's ToolBase, it seems tools are registered via tool_system.
 
 class NavigateInterface(ToolBase):

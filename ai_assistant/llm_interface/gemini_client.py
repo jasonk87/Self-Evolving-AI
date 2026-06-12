@@ -1,7 +1,6 @@
 # ai_assistant/llm_interface/gemini_client.py
 import os
 import requests
-import json
 import logging
 import aiohttp
 import asyncio

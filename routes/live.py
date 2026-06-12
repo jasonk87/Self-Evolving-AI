@@ -1,6 +1,5 @@
 
 from flask import request, jsonify
-from . import api_bp # Or a separate blueprint? api_bp is fine for /get_live_status, but /toggle_live_mode was root.
 # For consistency, let's put them on a new blueprint or just use api_bp but note the path change if any.
 # Previous: /toggle_live_mode, /get_live_status
 # I'll keep them on root keys via a new Blueprint if needed, or simply map them.

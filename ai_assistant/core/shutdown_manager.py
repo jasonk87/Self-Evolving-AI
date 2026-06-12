@@ -2,8 +2,6 @@
 import threading
 import signal
 import logging
-import sys
-import time
 
 logger = logging.getLogger(__name__)
 

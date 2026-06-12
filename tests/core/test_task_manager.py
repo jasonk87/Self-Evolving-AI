@@ -1,9 +1,8 @@
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import os
 import sys
 import json
-import uuid
 from datetime import datetime, timezone, timedelta
 import tempfile
 
@@ -14,7 +13,7 @@ if project_root not in sys.path: # pragma: no cover
 
 from ai_assistant.core.task_manager import (
     TaskManager, ActiveTask, ActiveTaskStatus, ActiveTaskType,
-    ACTIVE_TASKS_FILE_NAME, get_data_dir # Import get_data_dir to patch it
+    ACTIVE_TASKS_FILE_NAME # Import get_data_dir to patch it
 )
 from ai_assistant.core.notification_manager import NotificationManager # For mocking
 

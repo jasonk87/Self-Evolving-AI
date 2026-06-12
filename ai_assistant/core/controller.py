@@ -1,6 +1,5 @@
 import logging
-from typing import Dict, Any, Optional, Tuple, List
-import asyncio
+from typing import Dict, Optional, List
 
 from opentelemetry import trace
 from ai_assistant.core.models.state import ExecutionState

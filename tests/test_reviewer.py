@@ -6,12 +6,12 @@ import os
 import json
 
 try:
-    from ai_assistant.core.reviewer import ReviewerAgent, REVIEW_CODE_PROMPT_TEMPLATE
+    from ai_assistant.core.reviewer import ReviewerAgent
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.core.reviewer import ReviewerAgent, REVIEW_CODE_PROMPT_TEMPLATE
+    from ai_assistant.core.reviewer import ReviewerAgent
 
 class TestReviewerAgent(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

@@ -1,5 +1,4 @@
 import os
-import re
 
 GENERATED_TOOLS_DIR = r"c:\Users\Jason\Desktop\Self Evolving AI\ai_assistant\custom_tools\generated"
 

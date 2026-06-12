@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch
 from ai_assistant.custom_tools.generated.location_utils import get_location_by_ip, get_location_by_gps, get_user_location
 import requests

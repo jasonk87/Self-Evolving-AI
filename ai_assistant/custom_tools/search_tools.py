@@ -1,9 +1,8 @@
 # ai_assistant/custom_tools/search_tools.py
-import json
 from googleapiclient.discovery import build
 from ai_assistant.config import GOOGLE_API_KEY, GOOGLE_CSE_ID
 import ai_assistant.config as config
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 import asyncio
 import urllib.parse
 

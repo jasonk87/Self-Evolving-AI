@@ -1,9 +1,7 @@
 
-import ast
 import logging
 import os
 import asyncio
-import shutil
 import sys
 from ai_assistant.core.self_modification import upsert_import
 

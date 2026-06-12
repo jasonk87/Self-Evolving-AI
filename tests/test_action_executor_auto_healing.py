@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
-import asyncio
 from ai_assistant.execution.action_executor import ActionExecutor
 
 class TestActionExecutorAutoHealing(unittest.IsolatedAsyncioTestCase):

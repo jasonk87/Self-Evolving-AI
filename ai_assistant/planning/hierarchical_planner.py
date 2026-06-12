@@ -1,6 +1,6 @@
 # ai_assistant/planning/hierarchical_planner.py
+import json  # noqa: F401 - used by planner JSON parsing methods at runtime
 import re
-import json # Added for __main__ printing
 from typing import List, Any, Optional, Dict # Added Dict
 import os
 # Assuming a generic LLM service interface or a specific one like OllamaProvider

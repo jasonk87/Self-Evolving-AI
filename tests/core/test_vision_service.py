@@ -1,7 +1,6 @@
 
 import pytest
-import asyncio
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch, AsyncMock
 import sys
 
 # We need to mock VisionService dependencies that might cause issues in test environment

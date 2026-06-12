@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from transitions import Machine
 
-from .blackboard import Blackboard, BlackboardEvent
+from .blackboard import Blackboard
 
 class AgentState(Enum):
     INITIALIZED = "initialized"

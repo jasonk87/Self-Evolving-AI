@@ -1,6 +1,4 @@
-import pytest
 from ai_assistant.custom_tools.generated.generate_safe_html import generate_safe_html
-import bleach
 
 def test_generate_safe_html_normal_operation():
     """Test with normal HTML content."""

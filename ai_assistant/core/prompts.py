@@ -1,6 +1,5 @@
 # ai_assistant/core/prompts.py
 
-from typing import Dict, Any
 
 class PromptManager:
     """Central repository for all system prompts."""

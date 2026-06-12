@@ -5,7 +5,6 @@ from typing import List, Optional
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task, is_debug_mode
-import re # For cleaning LLM response
 
 # Import the LLM-powered curation function from knowledge_tools
 from ai_assistant.custom_tools.knowledge_tools import _curate_and_update_fact_store

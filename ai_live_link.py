@@ -6,7 +6,6 @@ import base64
 import logging
 import threading
 import traceback
-import time
 import sys
 
 # Configure standard streams to avoid UnicodeEncodeError on Windows
@@ -33,7 +32,6 @@ import pyaudio
 import mss
 from PIL import Image
 import io
-import aiohttp
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)

@@ -1,7 +1,6 @@
 import os
 import datetime
 import logging
-import asyncio
 from typing import List, Dict, Any, Optional
 
 from ai_assistant.memory.vector_store import VectorStore

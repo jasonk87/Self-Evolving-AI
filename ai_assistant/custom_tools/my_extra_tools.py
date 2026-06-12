@@ -1,12 +1,8 @@
 from datetime import date, datetime
 import re
-from typing import Any
-from typing import Union
 import json
 from typing import Optional, Union, List, Dict, Any
 
-from ai_assistant.config import get_model_for_task, GOOGLE_API_KEY as CFG_GOOGLE_API_KEY, GOOGLE_CSE_ID as CFG_GOOGLE_CSE_ID
-import os
 
 CURRENT_NEWS_TERMS = (
     "today",

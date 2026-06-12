@@ -2,7 +2,6 @@ import os
 import datetime
 import pickle
 import logging
-from typing import List, Dict, Optional, Union
 try:
     from googleapiclient.discovery import build
 except ImportError:

@@ -1,6 +1,6 @@
 import json
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from ..config import get_data_dir
 TOOL_CONFIRMATION_CONFIG_PATH = os.path.join(get_data_dir(), 'tool_confirmation_config.json')
 

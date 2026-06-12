@@ -1,5 +1,5 @@
 
-from flask import Blueprint, render_template, current_app
+from flask import render_template, current_app
 from . import views_bp
 
 @views_bp.route('/')

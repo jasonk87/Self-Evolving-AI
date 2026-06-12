@@ -1,4 +1,3 @@
-import os
 
 def core_function_one():
     print('This is core_function_one original')

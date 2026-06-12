@@ -1,13 +1,9 @@
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open
 import os
 import sys
 import json
-import uuid
 from datetime import datetime, timezone, timedelta
-from enum import Enum
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional
 
 # Adjust path to import from the ai_assistant directory
 # This assumes 'tests' is at the same level as 'ai_assistant'

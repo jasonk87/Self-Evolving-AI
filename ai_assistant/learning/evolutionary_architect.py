@@ -3,11 +3,10 @@ import ast
 import random
 import json
 import logging
-import asyncio
 import re
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_model_for_task, is_debug_mode
+from ai_assistant.config import get_model_for_task
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +275,6 @@ def _robust_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
     # 3. Regex Extraction: Find the largest outer {} block
     # This handles cases where the LLM puts text before or after the JSON, 
     # or if the markdown stripping failed.
-    import re
     try:
         # Find the first '{' and the last '}'
         start_idx = json_str.find('{')

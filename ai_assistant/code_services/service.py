@@ -3,7 +3,6 @@ import logging
 from typing import Dict, Any, Optional, Tuple, List
 import re
 import json # For parsing metadata
-import asyncio
 
 # Assuming these imports are relative to the ai_assistant package root
 from ..config import get_model_for_task, is_debug_mode

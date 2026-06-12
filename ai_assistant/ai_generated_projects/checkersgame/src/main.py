@@ -1,6 +1,5 @@
-import json
 from board import Board
-from player import Player, HumanPlayer
+from player import HumanPlayer
 from rules import Rules
 from telemetry import Telemetry
 

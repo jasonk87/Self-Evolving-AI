@@ -7,5 +7,4 @@ views_bp = Blueprint('views', __name__)
 
 # Import routes to register them with blueprints
 
-from . import files, projects, chat, memory, system, views, approvals, live
-
+from . import files, projects, chat, memory, system, views, approvals, live  # noqa: F401

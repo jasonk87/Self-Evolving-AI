@@ -2,11 +2,10 @@ import json
 import os
 import logging
 import asyncio
-from typing import List, Dict, Optional
-import uuid
+from typing import List, Dict
 import time
 
-from ai_assistant.core.safety.judge import judge, SafetyVerdict
+from ai_assistant.core.safety.judge import judge
 from ai_assistant.goals.goal_management import create_goal, save_current_goals
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager

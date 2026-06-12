@@ -1,5 +1,4 @@
 from ai_assistant.integrations.google_calendar import CalendarManager
-from typing import Optional
 
 # Global instance
 _calendar_manager = None

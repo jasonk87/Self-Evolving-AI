@@ -1,7 +1,6 @@
 # ai_assistant/core/tool_designer.py
 import json
 import logging
-from typing import Dict, Any, List
 
 from ai_assistant.core.tool_creator import create_new_tool
 from ai_assistant.llm_interface.ollama_client import get_ollama_response_async # Assuming async is fine, or adapt if sync needed

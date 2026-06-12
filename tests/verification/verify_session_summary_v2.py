@@ -1,4 +1,3 @@
-import os
 
 def check_session_summary_logic():
     print("Static Verification of Session Summary Logic...")

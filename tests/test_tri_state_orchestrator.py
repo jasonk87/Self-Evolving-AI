@@ -1,9 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
-import asyncio
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core.enums import ExecutionMode
-from ai_assistant.config import DEFAULT_EXECUTION_MODE
 
 class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

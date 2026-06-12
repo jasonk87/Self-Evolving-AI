@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 import asyncio
 from ai_assistant.planning.plan_simulator import PlanSimulator
 

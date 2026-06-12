@@ -1,16 +1,13 @@
 ### START FILE: ai_assistant/core/conversation_intelligence.py ###
 # ai_assistant/core/conversation_intelligence.py
 import json
-import asyncio
 import os
-import re
 from typing import Dict, Optional, List, Any
 
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task, CONVERSATION_HISTORY_TURNS, is_debug_mode, get_data_dir
 from ai_assistant.planning.execution import ExecutionAgent # Assuming ExecutionAgent is the correct type
 from ai_assistant.tools.tool_system import ToolSystem # Assuming ToolSystem is the correct type
-from .reflection import global_reflection_log
 from ai_assistant.memory.event_logger import log_event, get_recent_events
 from ai_assistant.custom_tools.knowledge_tools import recall_facts # Added import
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType, NotificationStatus # Added for Evolutionary Architect

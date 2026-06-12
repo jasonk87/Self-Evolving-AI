@@ -10,7 +10,6 @@ if project_root not in sys.path:
 
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.tools.tool_system import tool_system_instance
-from ai_assistant.config import get_model_for_task
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

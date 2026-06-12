@@ -1,5 +1,3 @@
-from typing import Any
-from typing import Optional
 import ai_assistant.config as config
 
 def toggle_ghost_mode(enabled: bool) -> str:

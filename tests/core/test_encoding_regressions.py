@@ -1,5 +1,4 @@
 import sys
-import io
 
 def test_stdout_stderr_utf8_reconfiguration():
     # Verify sys.stdout and sys.stderr are not None

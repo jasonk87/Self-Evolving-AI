@@ -30,29 +30,23 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from prompt_toolkit.formatted_text import ANSI
-from ai_assistant.goals import goal_management
 from ai_assistant.tools import tool_system # Direct import for tool_system_instance
 from ai_assistant.planning.planning import PlannerAgent
 from ai_assistant.planning.execution import ExecutionAgent
-from ai_assistant.core.reflection import global_reflection_log, analyze_last_failure, get_learnings_from_reflections
-from ai_assistant.core import self_modification
-from ai_assistant.memory.awareness import get_tool_associations
-from ai_assistant.core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus, FAILED_TASK_STATUSES # Added ActiveTaskType
-from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, NotificationType, Notification # Added NotificationType and Notification
+from ai_assistant.core.reflection import global_reflection_log
+from ai_assistant.core.task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added ActiveTaskType
+from ai_assistant.core.notification_manager import NotificationManager, NotificationStatus, Notification # Added NotificationType and Notification
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.execution.action_executor import ActionExecutor
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_model_for_task, is_debug_mode
+from ai_assistant.config import is_debug_mode
 from typing import Tuple, List, Dict, Any, Optional
-from ai_assistant.core.conversation_intelligence import detect_missed_tool_opportunity, formulate_tool_description_from_conversation, generate_conversational_response
-from ai_assistant.memory.event_logger import log_event, get_recent_events
+from ai_assistant.memory.event_logger import log_event
 from ai_assistant.core.autonomous_reflection import run_self_reflection_cycle, select_suggestion_for_autonomous_action
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.learning.autonomous_learning import learn_facts_from_interaction
-from ai_assistant.config import AUTONOMOUS_LEARNING_ENABLED, CONVERSATION_HISTORY_TURNS
+from ai_assistant.config import AUTONOMOUS_LEARNING_ENABLED
 from ai_assistant.utils.display_utils import (
     CLIColors, color_text, format_header, format_message,
-    format_input_prompt, format_thinking, format_tool_execution,
     format_status, draw_separator
 )
 from ai_assistant.core.refinement import RefinementAgent
@@ -65,9 +59,8 @@ from ai_assistant.core import status_reporting
 from ai_assistant.utils.conversational_helpers import rephrase_error_message_conversationally # Added
 from ai_assistant.llm_interface.ollama_client import OllamaProvider # Added
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner # Added
-from prompt_toolkit import PromptSession, print_formatted_text
-from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.application import Application, run_in_terminal
+from prompt_toolkit import print_formatted_text
+from prompt_toolkit.application import Application
 from prompt_toolkit.output.defaults import create_output
 from prompt_toolkit.layout.containers import HSplit, VSplit, Window
 from prompt_toolkit.layout.layout import Layout

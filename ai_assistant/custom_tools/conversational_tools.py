@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional
 from ai_assistant.core.chat_manager import ChatSessionManager
 import ai_assistant.config as config
 

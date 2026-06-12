@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional
 from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 

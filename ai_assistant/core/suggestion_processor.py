@@ -1,16 +1,14 @@
 # ai_assistant/core/suggestion_processor.py
 import asyncio
-import uuid
 import json
-from typing import List, Dict, Any, Optional, Tuple
+import uuid  # noqa: F401 - tests patch uuid.uuid4 through this module
+from typing import Dict, Optional
 
 # Assuming these modules are in ai_assistant.core or ai_assistant.custom_tools
 try:
-    from .suggestion_manager import list_suggestions, mark_suggestion_implemented
+    from .suggestion_manager import list_suggestions
     from ..execution.action_executor import ActionExecutor
     from ..code_services.service import CodeService
-    from ..custom_tools.meta_programming_tools import find_agent_tool_source # Used if LLM fails or for verification
-    from ..llm_interface.ollama_client import invoke_ollama_model_async # For direct LLM call
     from ..tools.tool_system import tool_system_instance # To get list of available tools
     from ..config import get_model_for_task # To get appropriate model
     from .task_manager import TaskManager, ActiveTaskType, ActiveTaskStatus # Added
@@ -247,7 +245,6 @@ class SuggestionProcessor:
 # Example of how this might be run (e.g., by a background service or scheduled task)
 if __name__ == '__main__': # pragma: no cover
     from ai_assistant.core.learning import LearningAgent # For example instantiation
-    from ai_assistant.llm_interface.ollama_client import OllamaProvider # For example instantiation
     from .notification_manager import NotificationManager # For test
 
     async def main_suggestion_processor_test():

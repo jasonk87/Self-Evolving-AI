@@ -1,7 +1,7 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional # For type hints if needed inside test functions
+from typing import Optional # For type hints if needed inside test functions
 
 # Attempt to import from the project structure
 try:

@@ -1,9 +1,7 @@
 import unittest
-from unittest.mock import MagicMock, AsyncMock, call # Import call for checking multiple calls
-import asyncio
+from unittest.mock import MagicMock, call # Import call for checking multiple calls
 import os
 import sys
-from datetime import datetime, timezone
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

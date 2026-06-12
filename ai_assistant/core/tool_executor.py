@@ -5,7 +5,7 @@ import sys
 import io
 import logging
 import traceback
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from ai_assistant.core.tool_creator import get_generated_tools_dir
 

@@ -1,7 +1,6 @@
 import unittest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch, AsyncMock
 import json
-import os
 
 from ai_assistant.core.agency.architect import SystemArchitect
 from ai_assistant.core.safety.judge import SafetyVerdict
