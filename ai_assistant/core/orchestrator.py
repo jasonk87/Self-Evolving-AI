@@ -12,6 +12,7 @@ if project_root not in sys.path:
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any, Tuple
 
 from ai_assistant.core.router import TaskRouter
@@ -42,6 +43,132 @@ tracer = trace.get_tracer(__name__)
 # Constants
 MAX_REACT_STEPS = 10
 MAX_ACTION_PROMPT_TOKENS = 120000  # Conservative limit, Gemini handles more but optimizing costs
+
+
+@dataclass
+class AnswerQualityGateResult:
+    accepted: bool
+    reason: str
+    retry_observation: Optional[str] = None
+    answered_request: bool = True
+    used_available_context: bool = True
+    unresolved_uncertainty: bool = False
+    should_retrieve_more_context: bool = False
+    too_generic: bool = False
+
+
+class AnswerQualityGate:
+    """Deterministic first-pass quality gate for final answers in the ReAct loop."""
+
+    _EVIDENCE_SEEKING_TERMS = {
+        "check", "look", "find", "search", "read", "list", "run", "open",
+        "inspect", "verify", "current", "latest", "today", "status", "health",
+        "file", "files", "project", "github", "branch", "test", "tests",
+        "image", "photo", "screenshot", "screen", "why", "what happened",
+        "what is going on", "how many",
+    }
+    _UNCERTAINTY_TERMS = {
+        "i don't know", "i do not know", "not sure", "maybe", "probably",
+        "i can't tell", "cannot tell", "don't have enough", "do not have enough",
+    }
+    _GENERIC_ANSWERS = {
+        "ok", "okay", "sure", "done", "got it", "working on it", "i'll check",
+        "i will check", "i'll look into it", "i will look into it", "sounds good",
+        "task completed", "completed",
+    }
+
+    def evaluate(
+        self,
+        *,
+        user_prompt: str,
+        answer: str,
+        context: str,
+        execution_history: str,
+        remaining_cycles: int,
+    ) -> AnswerQualityGateResult:
+        prompt_text = self._normalize(user_prompt)
+        answer_text = self._normalize(answer)
+        has_context = bool(str(context or "").strip())
+        has_tool_observation = "result:" in self._normalize(execution_history)
+        has_evidence = has_context or has_tool_observation
+        needs_evidence = any(term in prompt_text for term in self._EVIDENCE_SEEKING_TERMS)
+        unresolved = any(term in answer_text for term in self._UNCERTAINTY_TERMS)
+        word_count = len(answer_text.split())
+        too_generic = (
+            answer_text in self._GENERIC_ANSWERS
+            or (word_count <= 3 and needs_evidence and not has_evidence)
+            or any(answer_text.startswith(term) for term in self._GENERIC_ANSWERS if len(term.split()) > 1)
+        )
+
+        if not answer_text:
+            return self._reject("empty_final_answer", "Final answer was empty.")
+
+        if needs_evidence and not has_evidence:
+            return self._reject(
+                "context_or_tool_needed",
+                "The user request appears to require tool/context evidence before answering.",
+                answered_request=not too_generic,
+                used_available_context=False,
+                should_retrieve_more_context=True,
+                too_generic=too_generic,
+            )
+
+        if unresolved and needs_evidence and remaining_cycles > 0:
+            return self._reject(
+                "unresolved_uncertainty",
+                "The answer still contains unresolved uncertainty and more cycles are available.",
+                unresolved_uncertainty=True,
+                should_retrieve_more_context=True,
+                too_generic=too_generic,
+            )
+
+        if too_generic and not has_evidence:
+            return self._reject(
+                "too_generic",
+                "The answer is too generic for the user's request.",
+                answered_request=False,
+                used_available_context=has_context,
+                too_generic=True,
+            )
+
+        return AnswerQualityGateResult(
+            accepted=True,
+            reason="accepted",
+            answered_request=True,
+            used_available_context=has_evidence or not needs_evidence,
+            unresolved_uncertainty=unresolved,
+            should_retrieve_more_context=False,
+            too_generic=too_generic,
+        )
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        return " ".join(str(text or "").casefold().strip().split())
+
+    @staticmethod
+    def _reject(
+        reason: str,
+        observation: str,
+        *,
+        answered_request: bool = False,
+        used_available_context: bool = False,
+        unresolved_uncertainty: bool = False,
+        should_retrieve_more_context: bool = False,
+        too_generic: bool = False,
+    ) -> AnswerQualityGateResult:
+        return AnswerQualityGateResult(
+            accepted=False,
+            reason=reason,
+            retry_observation=(
+                f"AnswerQualityGate rejected the final answer: {observation} "
+                "Continue the ReAct loop. Use an appropriate tool or available context before finalizing."
+            ),
+            answered_request=answered_request,
+            used_available_context=used_available_context,
+            unresolved_uncertainty=unresolved_uncertainty,
+            should_retrieve_more_context=should_retrieve_more_context,
+            too_generic=too_generic,
+        )
 
 class DynamicOrchestrator:
     """
@@ -349,6 +476,8 @@ class DynamicOrchestrator:
         execution_history = ""
         final_answer = ""
         success = False
+        answer_quality_gate = AnswerQualityGate()
+        cycle_metadata: List[Dict[str, Any]] = []
 
         # Define persona guidance based on context_source
         persona_guide = ""
@@ -529,9 +658,19 @@ Return STRICT JSON only using the schema described earlier.
 
                 # Normalize the new schema to the old internal variables
                 tool_call = None
+                cycle_record: Dict[str, Any] = {
+                    "cycle": step_i + 1,
+                    "selected_type": None,
+                    "tool_name": None,
+                    "thought": "",
+                    "quality_gate_result": None,
+                    "retry_reason": None,
+                }
 
                 if parsed_response:
                     resp_type = parsed_response.get("type")
+                    cycle_record["selected_type"] = resp_type
+                    cycle_record["thought"] = str(parsed_response.get("thought") or "")
 
                     if resp_type == "final_answer":
                         # Extract message
@@ -547,9 +686,35 @@ Return STRICT JSON only using the schema described earlier.
                             and params.get("outcome") != "completed"
                         )
 
+                        quality_result = answer_quality_gate.evaluate(
+                            user_prompt=state.original_user_prompt,
+                            answer=final_answer,
+                            context=context,
+                            execution_history=execution_history,
+                            remaining_cycles=max_steps - step_i - 1,
+                        )
+                        cycle_record["quality_gate_result"] = asdict(quality_result)
+                        if not quality_result.accepted and step_i < max_steps - 1:
+                            cycle_record["retry_reason"] = quality_result.reason
+                            cycle_metadata.append(cycle_record)
+                            execution_history += (
+                                f"Cycle {step_i+1}:\n"
+                                f"Proposed Final Answer: {final_answer[:500]}\n"
+                                f"Quality Gate: rejected ({quality_result.reason}). "
+                                f"{quality_result.retry_observation}\n"
+                            )
+                            final_answer = ""
+                            success = False
+                            continue
+                        if not quality_result.accepted:
+                            state.errors.append(
+                                f"Answer quality gate rejected final answer but max cycles were reached: {quality_result.reason}"
+                            )
+
                         # Context-Aware Exit Logic
                         if context_source == "SYSTEM":
                             logger.info(f"System Task Completed. Output: {final_answer[:100]}...")
+                        cycle_metadata.append(cycle_record)
                         break
 
                     elif resp_type == "tool_call":
@@ -560,6 +725,7 @@ Return STRICT JSON only using the schema described earlier.
                             # Handle params mapping to args/kwargs
                         }
                         params = parsed_response.get("params", {})
+                        cycle_record["tool_name"] = tool_call.get("action")
 
                         # Support explicit args/kwargs structure if LLM used it
                         if "args" in params and isinstance(params["args"], list):
@@ -573,6 +739,9 @@ Return STRICT JSON only using the schema described earlier.
                     # Support legacy fallback if LLM ignored strict instructions (Re-Act style)
                     elif "action" in parsed_response:
                          tool_call = parsed_response
+                         cycle_record["selected_type"] = "tool_call"
+                         cycle_record["tool_name"] = parsed_response.get("action")
+                         cycle_record["thought"] = str(parsed_response.get("thought") or parsed_response.get("reason") or "")
 
                 if tool_call:
                     # Execute Tool
@@ -580,6 +749,9 @@ Return STRICT JSON only using the schema described earlier.
                     args = tool_call.get("args", [])
                     kwargs = tool_call.get("kwargs", {})
                     thought = tool_call.get("thought", "")
+                    cycle_record["selected_type"] = "tool_call"
+                    cycle_record["tool_name"] = tool_name
+                    cycle_record["thought"] = thought
 
                     # Emit action event for UI
                     action_node_id = f"thought_action_{uuid.uuid4().hex[:8]}"
@@ -720,6 +892,7 @@ Return STRICT JSON only using the schema described earlier.
                         "tool": tool_name,
                         "result": result_str
                     })
+                    cycle_metadata.append(cycle_record)
                     if execution_success and tool_name in {"spawn_background_agent", "wake_agent"}:
                         final_answer = result_str
                         success = True
@@ -737,6 +910,9 @@ Return STRICT JSON only using the schema described earlier.
                      print(color_text("⚠️ Invalid JSON detected. Forcing retry.", CLIColors.WARNING))
                      state.errors.append(f"Cycle {step_i+1}: Action output invalid JSON")
                      execution_history += f"Cycle {step_i+1}: Action output invalid JSON. Retrying.\n"
+                     cycle_record["selected_type"] = "invalid_json"
+                     cycle_record["retry_reason"] = "invalid_json"
+                     cycle_metadata.append(cycle_record)
                      # Continue loop (retry)
                      continue
 
@@ -747,6 +923,32 @@ Return STRICT JSON only using the schema described earlier.
                     final_answer = "Task Completed. (No text response generated)"
                 else:
                     final_answer = action_response
+                cycle_record["selected_type"] = "final_answer"
+                cycle_record["thought"] = "Model returned plain text final answer."
+                quality_result = answer_quality_gate.evaluate(
+                    user_prompt=state.original_user_prompt,
+                    answer=final_answer,
+                    context=context,
+                    execution_history=execution_history,
+                    remaining_cycles=max_steps - step_i - 1,
+                )
+                cycle_record["quality_gate_result"] = asdict(quality_result)
+                if not quality_result.accepted and step_i < max_steps - 1:
+                    cycle_record["retry_reason"] = quality_result.reason
+                    cycle_metadata.append(cycle_record)
+                    execution_history += (
+                        f"Cycle {step_i+1}:\n"
+                        f"Proposed Final Answer: {final_answer[:500]}\n"
+                        f"Quality Gate: rejected ({quality_result.reason}). "
+                        f"{quality_result.retry_observation}\n"
+                    )
+                    final_answer = ""
+                    continue
+                if not quality_result.accepted:
+                    state.errors.append(
+                        f"Answer quality gate rejected final answer but max cycles were reached: {quality_result.reason}"
+                    )
+                cycle_metadata.append(cycle_record)
                 success = True
                 break
 
@@ -768,8 +970,10 @@ Return STRICT JSON only using the schema described earlier.
                 "action_name": "orchestrator_final_answer",
                 "success": success,
                 "result": final_answer,
-                "collected_images": collected_images
+                "collected_images": collected_images,
+                "react_cycle_metadata": cycle_metadata,
             })
+            state.context_limits["react_cycle_metadata"] = cycle_metadata
 
             if success:
                 state.current_status = "completed"
