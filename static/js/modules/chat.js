@@ -66,6 +66,19 @@ function confirmTaskActionFromChip(command, onConfirm) {
     onConfirm();
 }
 
+function normalizeMessageImage(image) {
+    if (image && typeof image === 'object') {
+        return {
+            src: image.src || image.data || image.url || '',
+            label: image.label || image.source || 'Tool Image'
+        };
+    }
+    return {
+        src: image || '',
+        label: 'Tool Image'
+    };
+}
+
 async function runTaskActionFromChip(command, container) {
     appendMessage(container, 'user', command);
     showTypingIndicator(container, 'Applying action...');
@@ -179,17 +192,20 @@ export function appendMessage(container, role, text, images = null) {
 
     let imagesHtml = '';
     if (images && images.length > 0) {
-        images.forEach((imgB64, index) => {
-            let src = imgB64;
+        images.forEach((image, index) => {
+            const normalizedImage = normalizeMessageImage(image);
+            let src = normalizedImage.src;
+            if (!src) return;
             if (!src.startsWith('data:image')) {
-                src = `data:image/png;base64,${imgB64}`;
+                src = `data:image/png;base64,${src}`;
             }
 
             if (role === 'assistant') {
+                const label = escapeHtml(normalizedImage.label || 'Tool Image');
                 imagesHtml += `
                     <div class="assistant-live-feed-card ${index === 0 ? 'primary' : ''}">
-                        <div class="assistant-live-feed-label">Live Web Step</div>
-                        <img src="${src}" class="assistant-live-feed-image" alt="Live web step preview">
+                        <div class="assistant-live-feed-label">${label}</div>
+                        <img src="${src}" class="assistant-live-feed-image" alt="${label} preview">
                     </div>
                 `;
             } else {

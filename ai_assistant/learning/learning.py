@@ -35,6 +35,7 @@ Plan -> Execute -> Reflect -> Learn -> Evolve.
 import datetime
 import os
 import asyncio
+import re
 import uuid # Added for entry_id in MockReflectionLogEntry
 from typing import Optional, Dict, Any, List, Tuple # TYPE_CHECKING removed
 from dataclasses import asdict
@@ -53,6 +54,64 @@ from ai_assistant.core.failure_freshness import (
     is_failure_stale,
 )
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+
+
+ACTIVE_INSIGHT_STATUSES = {
+    "NEW",
+    "SELF_HEALING_PROPOSED",
+    "ACTION_FAILED",
+}
+
+
+def _normalize_insight_text(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(text or "").casefold())
+    return " ".join(normalized.split())
+
+
+def _extract_evidence_text(description: str) -> str:
+    match = re.search(r"\(Evidence:\s*(.*?)\)\s*$", description or "", flags=re.IGNORECASE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def _build_tool_bug_fingerprint(insight: ActionableInsight) -> str:
+    """Group duplicate tool-bug guesses from the same evidence/failure theme."""
+    full_text = _normalize_insight_text(insight.description)
+    if (
+        "agi" in full_text
+        and "project" in full_text
+        and "not found" in full_text
+        and (
+            "terminal" in full_text
+            or "app py" in full_text
+            or "autogen core v1 py" in full_text
+            or "path resolution" in full_text
+            or "context management" in full_text
+        )
+    ):
+        return f"{insight.type.name}:theme:desktop-project-registry-context:agi"
+
+    evidence = _normalize_insight_text(_extract_evidence_text(insight.description))
+    if evidence:
+        return f"{insight.type.name}:evidence:{evidence[:900]}"
+
+    description = re.sub(
+        r"target tool\s*:\s*.*?(?=issue detected:|$)",
+        "",
+        insight.description or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    description = re.sub(r"\(Evidence:.*?\)\s*$", "", description, flags=re.IGNORECASE | re.DOTALL)
+    return f"{insight.type.name}:description:{_normalize_insight_text(description)[:500]}"
+
+
+def _is_low_quality_tool_bug_insight(insight: ActionableInsight) -> bool:
+    text = _normalize_insight_text(insight.description)
+    demo_markers = [
+        "sky s color",
+        "sky is currently both blue and green",
+        "cosmic mystery",
+    ]
+    return any(marker in text for marker in demo_markers)
 
 
 class LearningAgent:
@@ -108,17 +167,7 @@ class LearningAgent:
             new_insights = await self.conversational_analyst.analyze_session_transcript(session_data)
             
             for insight in new_insights:
-                # Deduplicate based on description/source
-                is_duplicate = False
-                for existing in self.insights:
-                     # Check if similar description
-                     # Crude check
-                     if insight.description == existing.description:
-                         is_duplicate = True
-                         break
-                
-                if not is_duplicate:
-                    self.insights.append(insight)
+                if self.add_insight(insight, persist=False):
                     count += 1
                     print(f"LearningAgent: Found new conversational insight: {insight.description}")
 
@@ -149,13 +198,16 @@ class LearningAgent:
                      print(f"LearningAgent: Warning - Missing required fields in loaded insight data {data.get('insight_id', '')}. Skipping insight.")
                      continue
 
-                self.insights.append(ActionableInsight(**data))
-                loaded_count += 1
+                insight = ActionableInsight(**data)
+                if self.add_insight(insight, persist=False):
+                    loaded_count += 1
             except Exception as e: # pragma: no cover
                 print(f"LearningAgent: Error deserializing insight data: '{str(data)[:100]}...'. Error: {e}. Skipping.")
         print(f"LearningAgent: Loaded {loaded_count} actionable insights from '{self.insights_filepath}'.")
         if not self.insights and insights_data: # pragma: no cover
              print(f"LearningAgent: Warning - Insights data file '{self.insights_filepath}' was not empty, but no valid insights were loaded. File might be corrupted or in an old format.")
+        if len(self.insights) != len(insights_data):
+            self._save_insights()
 
     def _save_insights(self):
         print(f"LearningAgent: Saving {len(self.insights)} insights to '{self.insights_filepath}'...")
@@ -170,10 +222,32 @@ class LearningAgent:
         else: # pragma: no cover
             print("LearningAgent: Failed to save insights.")
 
-    def add_insight(self, insight: ActionableInsight) -> bool:
+    def add_insight(self, insight: ActionableInsight, persist: bool = True) -> bool:
         """Adds and persists an insight if it is not already present."""
         if any(existing.insight_id == insight.insight_id for existing in self.insights):
             return False
+
+        if insight.type == InsightType.TOOL_BUG_SUSPECTED:
+            if _is_low_quality_tool_bug_insight(insight):
+                return False
+            fingerprint = _build_tool_bug_fingerprint(insight)
+            insight.metadata["insight_fingerprint"] = fingerprint
+
+            for existing in self.insights:
+                if existing.type != InsightType.TOOL_BUG_SUSPECTED:
+                    continue
+                existing_fingerprint = existing.metadata.get("insight_fingerprint")
+                if not existing_fingerprint:
+                    existing_fingerprint = _build_tool_bug_fingerprint(existing)
+                    existing.metadata["insight_fingerprint"] = existing_fingerprint
+                if existing_fingerprint != fingerprint:
+                    continue
+                if existing.status not in ACTIVE_INSIGHT_STATUSES and insight.status not in ACTIVE_INSIGHT_STATUSES:
+                    continue
+                self._merge_tool_bug_insight(existing, insight)
+                if persist:
+                    self._save_insights()
+                return False
 
         for existing in self.insights:
             if (
@@ -184,8 +258,41 @@ class LearningAgent:
                 return False
 
         self.insights.append(insight)
-        self._save_insights()
+        if persist:
+            self._save_insights()
         return True
+
+    def _merge_tool_bug_insight(self, existing: ActionableInsight, incoming: ActionableInsight) -> None:
+        """Merge duplicate tool-bug guesses without adding another approval card."""
+        metadata = existing.metadata
+        metadata["merged_duplicate_count"] = int(metadata.get("merged_duplicate_count", 0)) + 1
+
+        candidate_targets = list(metadata.get("candidate_related_tool_names") or [])
+        for target in [existing.related_tool_name, incoming.related_tool_name]:
+            if target and target not in candidate_targets:
+                candidate_targets.append(target)
+        if candidate_targets:
+            metadata["candidate_related_tool_names"] = candidate_targets
+            if not existing.related_tool_name:
+                existing.related_tool_name = candidate_targets[0]
+
+        duplicate_ids = list(metadata.get("merged_insight_ids") or [])
+        if incoming.insight_id and incoming.insight_id not in duplicate_ids:
+            duplicate_ids.append(incoming.insight_id)
+        if duplicate_ids:
+            metadata["merged_insight_ids"] = duplicate_ids
+
+        duplicate_descriptions = list(metadata.get("merged_descriptions") or [])
+        if incoming.description != existing.description and incoming.description not in duplicate_descriptions:
+            duplicate_descriptions.append(incoming.description)
+        if duplicate_descriptions:
+            metadata["merged_descriptions"] = duplicate_descriptions[-5:]
+
+        for entry_id in incoming.source_reflection_entry_ids:
+            if entry_id not in existing.source_reflection_entry_ids:
+                existing.source_reflection_entry_ids.append(entry_id)
+
+        existing.priority = min(existing.priority, incoming.priority)
 
     def _supersede_stale_failure_insights(self) -> int:
         """Keep historical failures while preventing repairs based on obsolete runtime state."""

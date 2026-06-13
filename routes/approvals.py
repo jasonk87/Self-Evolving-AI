@@ -32,6 +32,98 @@ logger = logging.getLogger(__name__)
 def _run_async(coro):
     return asyncio.run(coro)
 
+
+def _queue_insight_execution(insight: ActionableInsight) -> dict:
+    """Record approval quickly and run expensive insight execution on the AI loop."""
+    if not app_globals.orchestrator or not app_globals.orchestrator.learning_agent:
+        return {"success": False, "error": "Learning agent is unavailable."}
+    if not app_globals.ai_loop:
+        return {"success": False, "error": "AI event loop is unavailable."}
+
+    learning_agent = app_globals.orchestrator.learning_agent
+    task_manager = app_globals.task_manager or getattr(app_globals.orchestrator, "task_manager", None)
+    task = None
+
+    insight.status = "APPROVED_QUEUED"
+    insight.metadata = dict(insight.metadata or {})
+    insight.metadata["approved_at"] = datetime.now(timezone.utc).isoformat()
+    insight.metadata["approval_execution_mode"] = "background"
+
+    if task_manager:
+        task = task_manager.add_task(
+            description=f"Execute approved insight: {insight.description[:120]}",
+            task_type=ActiveTaskType.AGENT_TOOL_EXECUTION,
+            related_item_id=insight.insight_id,
+            details={
+                "source": "approval_queue",
+                "insight_id": insight.insight_id,
+                "insight_type": insight.type.name,
+                "related_tool_name": insight.related_tool_name,
+            },
+        )
+        insight.metadata["approval_task_id"] = task.task_id
+        task_manager.update_task_status(
+            task.task_id,
+            ActiveTaskStatus.RUNNING,
+            step_desc="Queued approved insight execution.",
+        )
+
+    learning_agent._save_insights()
+
+    async def _run_approved_insight():
+        try:
+            if task_manager and task:
+                task_manager.update_task_status(
+                    task.task_id,
+                    ActiveTaskStatus.RUNNING,
+                    step_desc="Executing approved insight.",
+                )
+            success = await learning_agent.execute_self_healing_for_insight(
+                insight,
+                apply_immediately=True,
+            )
+            if success:
+                insight.status = "ACTION_SUCCESSFUL"
+                insight.metadata["approval_completed_at"] = datetime.now(timezone.utc).isoformat()
+                if task_manager and task:
+                    task_manager.update_task_status(
+                        task.task_id,
+                        ActiveTaskStatus.COMPLETED_SUCCESSFULLY,
+                        reason="Approved insight execution completed.",
+                        step_desc="Approved insight execution completed.",
+                    )
+            else:
+                insight.status = "ACTION_FAILED"
+                insight.metadata["approval_failed_at"] = datetime.now(timezone.utc).isoformat()
+                if task_manager and task:
+                    task_manager.update_task_status(
+                        task.task_id,
+                        ActiveTaskStatus.FAILED_UNKNOWN,
+                        reason="Approved insight execution failed.",
+                        step_desc="Approved insight execution failed.",
+                    )
+            learning_agent._save_insights()
+        except Exception as exc:
+            logger.exception("Background approval execution failed for %s", insight.insight_id)
+            insight.status = "ACTION_FAILED"
+            insight.metadata["approval_failed_at"] = datetime.now(timezone.utc).isoformat()
+            insight.metadata["approval_error"] = str(exc)
+            learning_agent._save_insights()
+            if task_manager and task:
+                task_manager.update_task_status(
+                    task.task_id,
+                    ActiveTaskStatus.FAILED_UNKNOWN,
+                    reason=str(exc),
+                    step_desc="Approved insight execution errored.",
+                )
+
+    asyncio.run_coroutine_threadsafe(_run_approved_insight(), app_globals.ai_loop)
+    return {
+        "success": True,
+        "task_id": task.task_id if task else None,
+        "message": "Insight approval queued for background execution.",
+    }
+
 DEFAULT_NOTICE_SCOPE = "local_default"
 MAX_IDENTITY_COMPONENT_LENGTH = 256
 MAX_IDENTITY_KEY_LENGTH = 512
@@ -2589,12 +2681,10 @@ def approve_request(req_id):
                     app_globals.memory_manager.add_fact(f"User Approved Insight {req_id} with feedback: {feedback}")
 
                 if insight.type in [InsightType.TOOL_BUG_SUSPECTED, InsightType.TOOL_ENHANCEMENT_SUGGESTED]:
-                     success = _run_async(
-                         app_globals.orchestrator.learning_agent.execute_self_healing_for_insight(
-                             insight,
-                             apply_immediately=True,
-                         )
-                     )
+                     queue_result = _queue_insight_execution(insight)
+                     if queue_result.get("success"):
+                         return jsonify(queue_result), 202
+                     return jsonify(queue_result), 503
                 else:
                     app_globals.orchestrator.learning_agent._save_insights()
                     success = True # Just mark as saved/approved for now

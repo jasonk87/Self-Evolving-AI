@@ -141,6 +141,65 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(saved_data), 1)
                 self.assertEqual(saved_data[0]['insight_id'], insight.insight_id)
 
+    def test_add_insight_merges_duplicate_tool_bug_guesses_from_same_evidence(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        evidence = (
+            "ASSISTANT: listed the agi project with terminal access. "
+            "ASSISTANT: background task failed because project agi was not found."
+        )
+        first = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The AI had inconsistent agi project context. "
+                f"(Evidence: {evidence})"
+            ),
+            source_reflection_entry_ids=[],
+            related_tool_name="Internal Agent Orchestration / Context Management",
+        )
+        second = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The file reader may be involved in the agi failure. "
+                "(Evidence: ASSISTANT: agi project files included app.py and "
+                "autogen_core_v1.py. ASSISTANT: project agi was not found when "
+                "the background agent tried to read those files.)"
+            ),
+            source_reflection_entry_ids=[],
+            related_tool_name="read_text_from_file",
+        )
+
+        self.assertTrue(agent.add_insight(first))
+        self.assertFalse(agent.add_insight(second))
+        self.assertEqual(len(agent.insights), 1)
+        self.assertEqual(
+            agent.insights[0].metadata["candidate_related_tool_names"],
+            [
+                "Internal Agent Orchestration / Context Management",
+                "read_text_from_file",
+            ],
+        )
+        self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
+
+    def test_add_insight_rejects_demo_tool_bug_evidence(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        junk = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The AI made a demonstrably false statement about "
+                "the sky's color. (Evidence: apparently, the sky is currently "
+                "both blue and green (quite the cosmic mystery!))"
+            ),
+            source_reflection_entry_ids=[],
+            related_tool_name="reasoning",
+        )
+
+        self.assertFalse(agent.add_insight(junk))
+        self.assertEqual(agent.insights, [])
+
     async def test_review_and_propose_next_action_selects_highest_priority(self):
         # Instantiate agent here to allow easier mocking of its action_executor
         agent = LearningAgent(insights_filepath=self.temp_insights_filepath)

@@ -183,7 +183,31 @@ class DynamicOrchestrator:
             "retention_policy": "keep_summary_only",
             "worker_profile": "ops_assistant_worker",
             "source": "ui_feedback",
+            "execution_surface": "chat_tool_cycle",
         }
+
+    def _build_collected_image(self, image: Any, source_tool: str) -> Dict[str, Any]:
+        """Attach provenance to images returned by tools before they reach chat."""
+        if isinstance(image, dict):
+            normalized = dict(image)
+            normalized.setdefault("source", source_tool)
+            normalized.setdefault("label", self._image_label_for_source(source_tool))
+            return normalized
+        return {
+            "src": image,
+            "source": source_tool,
+            "label": self._image_label_for_source(source_tool),
+        }
+
+    @staticmethod
+    def _image_label_for_source(source_tool: str) -> str:
+        if source_tool in {"take_screenshot", "analyze_visuals"}:
+            return "Visual Capture"
+        if source_tool in {"search_web", "search_google_first", "google_search", "search_duckduckgo", "web_search"}:
+            return "Search Capture"
+        if source_tool in {"web_search_images"}:
+            return "Image Result"
+        return "Tool Image"
 
     def _build_tool_failure_signature(self, tool_name: str, error: Exception) -> str:
         """Build a compact signature for repetitive tool failures in a single cycle run."""
@@ -316,7 +340,10 @@ class DynamicOrchestrator:
 
         current_steps = []
         max_steps = MAX_REACT_STEPS
-        collected_images = initial_images or []
+        # Tool-returned images are assistant artifacts. User-supplied initial images
+        # are already stored on the user message and should not be echoed back as a
+        # misleading assistant "live step".
+        collected_images = []
         tools_desc = tool_system_instance.get_tools_description()
 
         execution_history = ""
@@ -354,7 +381,7 @@ class DynamicOrchestrator:
                 # Use EPHEMERAL_AGENT_TASK or relevant type
                 current_ui_task = self.task_manager.add_task(
                     description=prompt[:100], # Short desc
-                    task_type=ActiveTaskType.EPHEMERAL_AGENT_TASK,
+                    task_type=ActiveTaskType.AGENT_TOOL_EXECUTION,
                     details=self._build_ui_feedback_task_details(),
                     session_id=session_id
                 )
@@ -571,7 +598,7 @@ Return STRICT JSON only using the schema described earlier.
                     if current_ui_task:
                         self.task_manager.update_task_status(
                             current_ui_task.task_id,
-                            ActiveTaskStatus.GENERATING_CODE, # Mapped roughly to execution
+                            ActiveTaskStatus.RUNNING,
                             step_desc=f"{tool_name}: {thought[:40]}..."
                         )
 
@@ -609,8 +636,9 @@ Return STRICT JSON only using the schema described earlier.
                                     new_images = result.get('images', [])
                                     if new_images:
                                         for img in new_images:
-                                            if img not in collected_images:
-                                                collected_images.append(img)
+                                            collected_image = self._build_collected_image(img, tool_name)
+                                            if collected_image not in collected_images:
+                                                collected_images.append(collected_image)
 
                                     # Omit large image strings from the LLM execution history
                                     result_for_llm = dict(result)

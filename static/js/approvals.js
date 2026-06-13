@@ -100,7 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleAction(id, action, feedback) {
         const btn = document.querySelector(`button[data-id="${id}"].btn-${action}`);
-        if (btn) btn.disabled = true;
+        const originalText = btn ? btn.textContent : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = action === 'approve' ? 'Queuing...' : 'Denying...';
+        }
 
         try {
             const res = await fetch(`/api/approvals/${id}/${action}`, {
@@ -110,14 +114,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             if (data.success) {
+                if (btn) {
+                    btn.textContent = data.task_id ? 'Queued' : 'Done';
+                }
                 fetchApprovals();
             } else {
                 window.showAlert("Error", "Action failed: " + (data.error || "Unknown error"));
-                if (btn) btn.disabled = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
             }
         } catch (e) {
             console.error(e);
-            if (btn) btn.disabled = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
             window.showAlert("Error", "An unexpected error occurred.");
         }
     }
