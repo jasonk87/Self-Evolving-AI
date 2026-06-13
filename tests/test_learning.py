@@ -200,6 +200,66 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(agent.add_insight(junk))
         self.assertEqual(agent.insights, [])
 
+    def test_add_insight_does_not_merge_new_failure_into_completed_tool_bug(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        completed = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The agi desktop project was listed through terminal "
+                "but later reported as not found."
+            ),
+            source_reflection_entry_ids=["old_entry"],
+            related_tool_name="read_text_from_file",
+            status="ACTION_SUCCESSFUL",
+        )
+        new_failure = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The agi project context failed again because the "
+                "background agent reported project agi was not found after terminal access."
+            ),
+            source_reflection_entry_ids=["new_entry"],
+            related_tool_name="Internal Agent Orchestration / Context Management",
+            status="NEW",
+        )
+
+        self.assertTrue(agent.add_insight(completed))
+        self.assertTrue(agent.add_insight(new_failure))
+        self.assertEqual(len(agent.insights), 2)
+        self.assertNotIn("merged_duplicate_count", agent.insights[0].metadata)
+
+    def test_add_insight_merges_duplicate_into_queued_tool_bug(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        queued = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The agi desktop project was listed through terminal "
+                "but later reported as not found."
+            ),
+            source_reflection_entry_ids=["queued_entry"],
+            related_tool_name="read_text_from_file",
+            status="APPROVED_QUEUED",
+        )
+        duplicate = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The agi project context failed again because the "
+                "background agent reported project agi was not found after terminal access."
+            ),
+            source_reflection_entry_ids=["dup_entry"],
+            related_tool_name="Internal Agent Orchestration / Context Management",
+            status="NEW",
+        )
+
+        self.assertTrue(agent.add_insight(queued))
+        self.assertFalse(agent.add_insight(duplicate))
+        self.assertEqual(len(agent.insights), 1)
+        self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
+
     async def test_review_and_propose_next_action_selects_highest_priority(self):
         # Instantiate agent here to allow easier mocking of its action_executor
         agent = LearningAgent(insights_filepath=self.temp_insights_filepath)

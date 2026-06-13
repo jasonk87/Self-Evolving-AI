@@ -43,6 +43,15 @@ def _queue_insight_execution(insight: ActionableInsight) -> dict:
     learning_agent = app_globals.orchestrator.learning_agent
     task_manager = app_globals.task_manager or getattr(app_globals.orchestrator, "task_manager", None)
     task = None
+    existing_status = str(getattr(insight, "status", "") or "")
+    existing_task_id = (insight.metadata or {}).get("approval_task_id")
+
+    if existing_status == "APPROVED_QUEUED":
+        return {
+            "success": True,
+            "task_id": existing_task_id,
+            "message": "Insight approval is already queued for background execution.",
+        }
 
     insight.status = "APPROVED_QUEUED"
     insight.metadata = dict(insight.metadata or {})
@@ -117,7 +126,29 @@ def _queue_insight_execution(insight: ActionableInsight) -> dict:
                     step_desc="Approved insight execution errored.",
                 )
 
-    asyncio.run_coroutine_threadsafe(_run_approved_insight(), app_globals.ai_loop)
+    coroutine = _run_approved_insight()
+    try:
+        asyncio.run_coroutine_threadsafe(coroutine, app_globals.ai_loop)
+    except Exception as exc:
+        coroutine.close()
+        logger.exception("Failed to schedule approval execution for %s", insight.insight_id)
+        insight.status = "ACTION_FAILED"
+        insight.metadata["approval_failed_at"] = datetime.now(timezone.utc).isoformat()
+        insight.metadata["approval_error"] = str(exc)
+        learning_agent._save_insights()
+        if task_manager and task:
+            task_manager.update_task_status(
+                task.task_id,
+                ActiveTaskStatus.FAILED_UNKNOWN,
+                reason=str(exc),
+                step_desc="Approved insight execution could not be scheduled.",
+            )
+        return {
+            "success": False,
+            "task_id": task.task_id if task else None,
+            "error": "Could not schedule approved insight execution.",
+        }
+
     return {
         "success": True,
         "task_id": task.task_id if task else None,

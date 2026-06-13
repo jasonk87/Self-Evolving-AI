@@ -58,7 +58,12 @@ from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 
 ACTIVE_INSIGHT_STATUSES = {
     "NEW",
+    "PENDING",
+    "PENDING_MANUAL_REVIEW",
+    "PROCESSING_SELF_HEALING",
     "SELF_HEALING_PROPOSED",
+    "APPROVED_BY_USER",
+    "APPROVED_QUEUED",
     "ACTION_FAILED",
 }
 
@@ -242,8 +247,10 @@ class LearningAgent:
                     existing.metadata["insight_fingerprint"] = existing_fingerprint
                 if existing_fingerprint != fingerprint:
                     continue
-                if existing.status not in ACTIVE_INSIGHT_STATUSES and insight.status not in ACTIVE_INSIGHT_STATUSES:
+
+                if existing.status not in ACTIVE_INSIGHT_STATUSES:
                     continue
+
                 self._merge_tool_bug_insight(existing, insight)
                 if persist:
                     self._save_insights()
@@ -588,7 +595,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
                                         # assuming the new insight might lead to a better fix.
                                         
                                         # Also deduplicate pending insights
-                                        if existing_insight.status in ["NEW", "PENDING", "PENDING_MANUAL_REVIEW", "PROCESSING_SELF_HEALING", "SELF_HEALING_PROPOSED"]:
+                                        if existing_insight.status in ACTIVE_INSIGHT_STATUSES:
                                              print(f"LearningAgent: Skipping insight creation for '{related_tool_name}' because a similar insight ({existing_insight.insight_id}) is already pending/proposed.")
                                              return None
 
