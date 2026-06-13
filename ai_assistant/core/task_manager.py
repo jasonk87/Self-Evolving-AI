@@ -231,6 +231,7 @@ ACTIVE_TASKS_FILE_NAME = "active_tasks.json"
 import os
 import json
 from ai_assistant.config import get_data_dir
+from ai_assistant.core.action_audit_ledger import append_action_audit_event
 from .notification_manager import NotificationManager, NotificationType
 from .events import EventEmitter # Import EventEmitter
 
@@ -424,6 +425,20 @@ class TaskManager:
         self._active_tasks[new_task.task_id] = new_task
         self._append_to_wal(new_task, "add")
         self._save_active_tasks()
+        append_action_audit_event(
+            "TASK_CREATED",
+            "task_manager",
+            description,
+            action_type=task_type.name,
+            task_id=new_task.task_id,
+            session_id=session_id,
+            source=related_item_id,
+            status=new_task.status.name,
+            metadata={
+                "related_item_id": related_item_id,
+                "task_type": task_type.name,
+            },
+        )
         print(f"TaskManager: New task added: {new_task.task_id} - {description[:50]}... ({task_type.name})")
         return new_task
 
@@ -505,6 +520,24 @@ class TaskManager:
 
             task.update_status(new_status, reason, step_desc, sub_step_name, progress, is_error_increment, out_preview, resume_data, retry_source)
             self._save_active_tasks()
+            append_action_audit_event(
+                "TASK_STATUS_CHANGED",
+                "task_manager",
+                task.current_step_description or reason or task.description,
+                action_type=task.task_type.name,
+                task_id=task.task_id,
+                session_id=task.session_id,
+                source=task.related_item_id,
+                status=new_status.name,
+                metadata={
+                    "from_status": old_status.name,
+                    "to_status": new_status.name,
+                    "reason": reason,
+                    "step": task.current_step_description,
+                    "error_count": task.error_count,
+                    "progress_percentage": task.progress_percentage,
+                },
+            )
             
             # Emit event for UI
             EventEmitter.emit("task_update", task.to_dict())

@@ -10,6 +10,8 @@ const missionControl = {
     healthPanel: document.getElementById('mission-control-health'),
     reflectionPanel: document.getElementById('mission-control-reflection'),
     cadencePanel: document.getElementById('mission-control-cadence'),
+    actionAuditPanel: document.getElementById('mission-control-action-audit'),
+    scoreboardPanel: document.getElementById('mission-control-scoreboard'),
     refreshBtn: document.getElementById('refresh-tasks-btn'),
     statusPollIntervalMs: 8000,
     staleAfterMs: 20000,
@@ -17,6 +19,7 @@ const missionControl = {
     staleCheckTimer: null,
     lastStatusAtMs: null,
     snapshotSchemaVersion: null,
+    actionAuditFilter: 'all',
 
     init: function () {
         console.log("Mission Control Initialized");
@@ -26,6 +29,8 @@ const missionControl = {
         this.fetchBackgroundCadence();
         this.fetchReflectionSuggestions();
         this.fetchSLOMetrics();
+        this.fetchActionAudit();
+        this.fetchExperimentScoreboard();
         this.startStatusPolling();
 
         if (this.refreshBtn) {
@@ -36,6 +41,8 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchActionAudit();
+                this.fetchExperimentScoreboard();
             });
         }
 
@@ -52,6 +59,8 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchActionAudit();
+                this.fetchExperimentScoreboard();
             }
         });
 
@@ -64,6 +73,8 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchActionAudit();
+                this.fetchExperimentScoreboard();
             });
         }
     },
@@ -116,6 +127,8 @@ const missionControl = {
             this.fetchBackgroundCadence();
             this.fetchReflectionSuggestions();
             this.fetchSLOMetrics();
+            this.fetchActionAudit();
+            this.fetchExperimentScoreboard();
         }, this.statusPollIntervalMs);
 
         this.staleCheckTimer = setInterval(() => {
@@ -252,6 +265,161 @@ const missionControl = {
         } catch (e) {
             console.error("Fetch SLO error:", e);
         }
+    },
+
+    fetchActionAudit: async function () {
+        if (!this.actionAuditPanel) return;
+
+        try {
+            const response = await fetch('/api/system/action-audit?limit=40');
+            const data = await response.json();
+            if (!data.success) {
+                this.actionAuditPanel.innerHTML = `<div class="error">Action audit unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderActionAudit(data.events || []);
+        } catch (e) {
+            console.error('Fetch action audit error:', e);
+            this.actionAuditPanel.innerHTML = `<div class="error">Action audit link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    fetchExperimentScoreboard: async function () {
+        if (!this.scoreboardPanel) return;
+
+        try {
+            const response = await fetch('/api/system/experiment-scoreboard?limit=20');
+            const data = await response.json();
+            if (!data.success) {
+                this.scoreboardPanel.innerHTML = `<div class="error">Scoreboard unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderExperimentScoreboard(data.records || []);
+        } catch (e) {
+            console.error('Fetch experiment scoreboard error:', e);
+            this.scoreboardPanel.innerHTML = `<div class="error">Scoreboard link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    renderExperimentScoreboard: function (records) {
+        if (!this.scoreboardPanel) return;
+
+        const rows = (records || []).slice(0, 6).map(record => {
+            const scorecard = record.scorecard || {};
+            const accepted = !!scorecard.accepted;
+            const blocked = !!scorecard.blocked;
+            const verdict = blocked ? 'Blocked' : accepted ? 'Accepted' : 'Rejected';
+            const verdictClass = blocked ? 'blocked' : accepted ? 'accepted' : 'rejected';
+            const testsRun = Number(scorecard.tests_run || 0);
+            const testsPassed = Number(scorecard.tests_passed || 0);
+            const files = Array.isArray(scorecard.files_touched) ? scorecard.files_touched.slice(0, 3) : [];
+            const route = scorecard.suggested_route ? ` · Route: ${scorecard.suggested_route}` : '';
+            const failure = scorecard.failure_reason && scorecard.failure_reason.failure_class
+                ? ` · Failure: ${scorecard.failure_reason.failure_class}`
+                : '';
+
+            return `
+                <div class="mission-audit-row ${verdictClass}">
+                    <span>${this.escapeHtml(this.formatTimestamp(record.timestamp))}</span>
+                    <strong>${this.escapeHtml(record.experiment_type || 'experiment')}</strong>
+                    <span>${this.escapeHtml(verdict)}</span>
+                </div>
+                <div class="mission-audit-detail">
+                    Tests: ${testsPassed}/${testsRun} · Risk: ${this.escapeHtml(scorecard.risk_level || 'low')}${route}${failure}
+                </div>
+                <div class="mission-audit-detail">
+                    ${files.length ? `Files: ${this.escapeHtml(files.join(', '))}` : 'Files: none recorded'}
+                </div>
+            `;
+        }).join('');
+
+        this.scoreboardPanel.innerHTML = `
+            <div class="mission-status-header-row">
+                <div class="mission-status-header">Experiment Scoreboard</div>
+                <div class="mission-status-freshness">Recent ${Array.isArray(records) ? records.length : 0}</div>
+            </div>
+            <div class="mission-audit-list">
+                ${rows || '<div class="mission-audit-detail">No experiment scorecards recorded yet.</div>'}
+            </div>
+        `;
+    },
+
+    classifyAuditEvent: function (event) {
+        const status = String(event.status || '').toLowerCase();
+        const type = String(event.event_type || '').toLowerCase();
+        if (status.includes('block')) return 'blocked';
+        if (status.includes('fail') || status.includes('reject') || type.includes('failed')) return 'failed';
+        if (type.startsWith('action_') || type.includes('policy')) return 'actions';
+        if (type.startsWith('task_')) return 'tasks';
+        return 'other';
+    },
+
+    renderActionAudit: function (events) {
+        if (!this.actionAuditPanel) return;
+
+        const filters = [
+            { id: 'all', label: 'All' },
+            { id: 'actions', label: 'Actions' },
+            { id: 'tasks', label: 'Tasks' },
+            { id: 'blocked', label: 'Blocked' },
+            { id: 'failed', label: 'Failed' },
+        ];
+
+        const filteredEvents = (events || []).filter(event => {
+            if (this.actionAuditFilter === 'all') return true;
+            return this.classifyAuditEvent(event) === this.actionAuditFilter;
+        });
+
+        const filterControls = filters.map(filter => `
+            <button class="mission-filter-chip ${this.actionAuditFilter === filter.id ? 'active' : ''}"
+                type="button" data-filter="${this.escapeHtml(filter.id)}">${this.escapeHtml(filter.label)}</button>
+        `).join('');
+
+        const rows = filteredEvents.slice(0, 8).map(event => {
+            const kind = this.classifyAuditEvent(event);
+            const taskId = event.task_id ? String(event.task_id).substring(0, 12) : '';
+            const source = event.source ? String(event.source).substring(0, 18) : '';
+            const timestamp = this.formatTimestamp(event.timestamp);
+            const type = String(event.event_type || 'event').replace(/_/g, ' ');
+            const actionType = String(event.action_type || '').replace(/_/g, ' ');
+            const status = String(event.status || kind || 'recorded').replace(/_/g, ' ');
+            const details = [
+                event.actor ? `Actor: ${event.actor}` : '',
+                taskId ? `Task: ${taskId}` : '',
+                source ? `Source: ${source}` : '',
+                actionType ? `Lane: ${actionType}` : '',
+            ].filter(Boolean).join(' · ');
+
+            return `
+                <div class="mission-audit-row ${kind}">
+                    <span>${this.escapeHtml(timestamp)}</span>
+                    <strong>${this.escapeHtml(type)}</strong>
+                    <span>${this.escapeHtml(status)}</span>
+                </div>
+                <div class="mission-audit-detail">${this.escapeHtml(event.summary || '')}</div>
+                ${details ? `<div class="mission-audit-detail">${this.escapeHtml(details)}</div>` : ''}
+            `;
+        }).join('');
+
+        this.actionAuditPanel.innerHTML = `
+            <div class="mission-status-header-row">
+                <div class="mission-status-header">Action Audit Trail</div>
+                <div class="mission-status-freshness">Recent ${Array.isArray(events) ? events.length : 0}</div>
+            </div>
+            <div class="mission-filter-row">${filterControls}</div>
+            <div class="mission-audit-list">
+                ${rows || '<div class="mission-audit-detail">No audit events for this filter yet.</div>'}
+            </div>
+        `;
+
+        this.actionAuditPanel.querySelectorAll('.mission-filter-chip').forEach(button => {
+            button.addEventListener('click', () => {
+                this.actionAuditFilter = button.dataset.filter || 'all';
+                this.renderActionAudit(events);
+            });
+        });
     },
 
     fetchStatusSnapshot: async function () {
@@ -791,11 +959,21 @@ const missionControl = {
         }
     },
 
-    formatTimestamp: function (timestampSeconds) {
-        const ts = Number(timestampSeconds);
-        if (!Number.isFinite(ts) || ts <= 0) return 'Never';
+    formatTimestamp: function (timestampValue) {
+        let timestampMs = 0;
 
-        const timestampMs = ts * 1000;
+        if (typeof timestampValue === 'string' && timestampValue.trim()) {
+            const parsed = Date.parse(timestampValue);
+            timestampMs = Number.isFinite(parsed) ? parsed : 0;
+        } else {
+            const ts = Number(timestampValue);
+            if (Number.isFinite(ts) && ts > 0) {
+                timestampMs = ts > 100000000000 ? ts : ts * 1000;
+            }
+        }
+
+        if (!Number.isFinite(timestampMs) || timestampMs <= 0) return 'Never';
+
         const diffMs = Date.now() - timestampMs;
         const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
 

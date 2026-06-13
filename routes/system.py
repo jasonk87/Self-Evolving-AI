@@ -9,6 +9,9 @@ import threading
 import app_globals
 import ai_assistant.config as config
 from ai_assistant.core.project_manager import find_project
+from ai_assistant.core.action_audit_ledger import get_recent_action_audit_events
+from ai_assistant.core.experiment_scoreboard import get_recent_experiment_scorecards
+from ai_assistant.core.patch_memory import search_patch_lessons
 from ai_assistant.core.background_service import report_user_activity
 from ai_assistant.core.shutdown_manager import shutdown_manager
 from ai_assistant.voice.tts import generate_speech
@@ -205,6 +208,59 @@ def get_quarantine_status():
 
     blocked_tools = app_globals.orchestrator.get_blocked_tools()
     return jsonify({"success": True, "blocked_tools": blocked_tools})
+
+@api_bp.route('/system/action-audit', methods=['GET'])
+def get_action_audit():
+    """Returns recent autonomous action audit events."""
+    raw_limit = request.args.get("limit", 100)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 100
+
+    events = get_recent_action_audit_events(limit=limit)
+    return jsonify({
+        "success": True,
+        "events": events,
+        "count": len(events),
+    })
+
+@api_bp.route('/system/experiment-scoreboard', methods=['GET'])
+def get_experiment_scoreboard():
+    """Returns recent experiment scorecards."""
+    raw_limit = request.args.get("limit", 100)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 100
+
+    records = get_recent_experiment_scorecards(limit=limit)
+    return jsonify({
+        "success": True,
+        "records": records,
+        "count": len(records),
+    })
+
+@api_bp.route('/system/patch-memory', methods=['GET'])
+def get_patch_memory():
+    """Returns matching patch-memory lessons."""
+    raw_limit = request.args.get("limit", 20)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 20
+
+    lessons = search_patch_lessons(
+        failure_class=request.args.get("failure_class"),
+        action_type=request.args.get("action_type"),
+        file_path=request.args.get("file_path"),
+        limit=limit,
+    )
+    return jsonify({
+        "success": True,
+        "lessons": lessons,
+        "count": len(lessons),
+    })
 
 @api_bp.route('/system/quarantine/unblock', methods=['POST'])
 def unblock_quarantined_tool():

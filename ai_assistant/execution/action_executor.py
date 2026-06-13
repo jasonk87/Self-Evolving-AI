@@ -8,6 +8,14 @@ import logging
 
 from ai_assistant.config import DEFAULT_MODEL, get_data_dir, is_debug_mode  # noqa: F401
 from ai_assistant.core import self_modification
+from ai_assistant.core.action_audit_ledger import append_action_audit_event
+from ai_assistant.core.experiment_scoreboard import record_experiment_scorecard
+from ai_assistant.core.patch_memory import (
+    format_patch_lessons_for_prompt,
+    mark_lessons_reused,
+    search_patch_lessons,
+)
+from ai_assistant.execution.swarm.protocol import ExperimentScorecard, classify_failure
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
 from ai_assistant.core.suggestion_manager import mark_suggestion_implemented # Added import
@@ -719,7 +727,106 @@ class ActionExecutor:
         with tracer.start_as_current_span("executor.execute_action") as span:
             action_type = proposed_action.get("action_type")
             span.set_attribute("action_type", str(action_type))
-            return await self._execute_action_internal(proposed_action, session_id)
+            result = await self._execute_action_internal(proposed_action, session_id)
+            self._record_action_scorecard(proposed_action, result)
+            return result
+
+    def _record_action_scorecard(self, proposed_action: Dict[str, Any], accepted: bool) -> Dict[str, Any]:
+        action_type = str(proposed_action.get("action_type") or "UNKNOWN")
+        details = proposed_action.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+
+        source_insight_id = str(proposed_action.get("source_insight_id") or "")
+        files_touched = self._infer_action_files_touched(action_type, details)
+        tests_run = 1 if action_type == "PROPOSE_TOOL_MODIFICATION" and details.get("original_reflection_entry_id") else 0
+        tests_passed = tests_run if accepted and tests_run else 0
+        failure_reason = None if accepted else classify_failure(
+            str(details.get("failure_reason") or details.get("error") or action_type)
+        )
+
+        scorecard = ExperimentScorecard(
+            task_id=source_insight_id or f"action_{uuid.uuid4().hex[:8]}",
+            tests_run=tests_run,
+            tests_passed=tests_passed,
+            risk_level=self._estimate_action_risk_level(action_type, files_touched),
+            files_touched=files_touched,
+            capabilities_used=[],
+            failure_reason=failure_reason,
+            accepted=bool(accepted),
+            blocked=bool(failure_reason and failure_reason.suggested_route in {
+                "route_to_capability_policy_review",
+                "route_to_state_machine_fix",
+                "route_to_environment_fix",
+                "route_to_human_review",
+            }),
+            suggested_route=failure_reason.suggested_route if failure_reason else None,
+        )
+
+        return record_experiment_scorecard(
+            scorecard,
+            actor="action_executor",
+            experiment_type=action_type,
+            source=source_insight_id or None,
+            metadata={
+                "detail_keys": sorted(details.keys()),
+                "session_scoped": bool(proposed_action.get("session_id")),
+            },
+        )
+
+    def _get_patch_lessons_for_action(
+        self,
+        action_type: str,
+        details: Dict[str, Any],
+        failure_class: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        files = self._infer_action_files_touched(action_type, details)
+        lessons: List[Dict[str, Any]] = []
+        seen = set()
+        search_files = files or [None]
+        for file_path in search_files:
+            for lesson in search_patch_lessons(
+                failure_class=failure_class,
+                action_type=action_type,
+                file_path=file_path,
+                limit=3,
+            ):
+                lesson_id = lesson.get("lesson_id")
+                if lesson_id and lesson_id not in seen:
+                    seen.add(lesson_id)
+                    lessons.append(lesson)
+        if lessons:
+            mark_lessons_reused([lesson["lesson_id"] for lesson in lessons if lesson.get("lesson_id")])
+        return lessons[:3]
+
+    @staticmethod
+    def _infer_action_files_touched(action_type: str, details: Dict[str, Any]) -> List[str]:
+        files: List[str] = []
+        for key in ("module_path", "target_path", "path", "file_path"):
+            value = details.get(key)
+            if value:
+                files.append(str(value))
+
+        contract = details.get("contract")
+        if isinstance(contract, dict):
+            files.extend(str(item) for item in contract.get("deliverables", []) if item)
+
+        if action_type == "ADD_LEARNED_FACT":
+            files.append("learned_facts.json")
+        elif action_type == "ADD_PLANNING_HEURISTIC":
+            files.append("planning_heuristics.json")
+
+        return sorted(set(files))
+
+    @staticmethod
+    def _estimate_action_risk_level(action_type: str, files_touched: List[str]) -> str:
+        if action_type == "PROPOSE_TOOL_MODIFICATION":
+            return "high" if any(path.startswith("ai_assistant/core/") for path in files_touched) else "medium"
+        if action_type == "EXECUTE_COMPLEX_PROJECT_TASK":
+            return "medium"
+        if any("requirements" in path or path.endswith((".toml", ".lock")) for path in files_touched):
+            return "medium"
+        return "low"
 
     async def _execute_action_internal(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
         action_type = proposed_action.get("action_type")
@@ -758,8 +865,33 @@ class ActionExecutor:
             action_task_id = action_task.task_id
 
         print(f"ActionExecutor: Received action '{action_type}' for insight '{source_insight_id}'. Task ID: {action_task_id}. Details: {details}")
+        append_action_audit_event(
+            "ACTION_RECEIVED",
+            "action_executor",
+            f"Received autonomous action {action_type}",
+            action_type=action_type,
+            task_id=action_task_id,
+            session_id=session_id,
+            source=source_insight_id,
+            metadata={
+                "detail_keys": sorted(details.keys()) if isinstance(details, dict) else [],
+                "details": details if isinstance(details, dict) else {},
+            },
+        )
 
         policy_preflight = self._run_execution_policy_preflight(action_type, details)
+        if policy_preflight.get("checked", False):
+            append_action_audit_event(
+                "POLICY_PREFLIGHT_EVALUATED",
+                "action_executor",
+                "Policy preflight evaluated",
+                action_type=action_type,
+                task_id=action_task_id,
+                session_id=session_id,
+                source=source_insight_id,
+                status="blocked" if policy_preflight.get("blocked", False) else "allowed",
+                policy_decision=policy_preflight,
+            )
         if policy_preflight.get("blocked", False):
             reason = f"Execution blocked by policy preflight: {', '.join(policy_preflight.get('reasons', [])) or 'blocked'}"
             self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=reason, step_desc="Policy preflight blocked")
@@ -794,6 +926,13 @@ class ActionExecutor:
                 )
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Precondition check failed")
                 return False
+
+            patch_lessons = self._get_patch_lessons_for_action(
+                action_type,
+                details,
+                failure_class=str(details.get("failure_class") or ""),
+            )
+            patch_lesson_prompt = format_patch_lessons_for_prompt(patch_lessons)
 
             # --- CORE SYSTEM PROTECTION GATE ---
             # Check if this modification targets a core system file.
@@ -865,6 +1004,8 @@ class ActionExecutor:
                 # Generate code if missing or if this is a retry
                 if not suggested_code_or_llm_generated_code:
                     context_prompt = original_description
+                    if patch_lesson_prompt:
+                        context_prompt += f"\n\nPATCH MEMORY:\n{patch_lesson_prompt}"
                     if last_failure_notes:
                         context_prompt += f"\n\nPREVIOUS ATTEMPT ALLIED BUT FAILED TESTS.\nFailure Notes: {last_failure_notes}\n\nPlease analyze the failure and generate a CORRECTED version of the code that fixes the issue."
 

@@ -2,6 +2,11 @@ import logging
 from typing import Dict, Any, Optional
 import pathlib
 
+from ai_assistant.core.patch_memory import (
+    format_patch_lessons_for_prompt,
+    mark_lessons_reused,
+    search_patch_lessons,
+)
 from ..protocol import (
     BaseSwarmAgent,
     AgentRole,
@@ -168,6 +173,9 @@ class CoderAgent(BaseSwarmAgent):
 
         self.start_revising()
         guidance = self._build_repair_guidance(classification.failure_class)
+        lesson_guidance = self._repair_lessons_for_prompt(classification.failure_class, target_filename)
+        if lesson_guidance:
+            guidance = f"{guidance}\n\n{lesson_guidance}"
         await self.report_progress(
             f"Routing {classification.failure_class.value} for {target_filename}.",
             {"suggested_route": route},
@@ -217,3 +225,18 @@ class CoderAgent(BaseSwarmAgent):
             ),
         }
         return guidance.get(failure_class, "Route to human review; do not perform a blind rewrite.")
+
+    @staticmethod
+    def _repair_lessons_for_prompt(
+        failure_class: FailureClass,
+        filename: Optional[str],
+    ) -> str:
+        lessons = search_patch_lessons(
+            failure_class=failure_class.value,
+            action_type="sub_swarm",
+            file_path=filename,
+            limit=3,
+        )
+        if lessons:
+            mark_lessons_reused([lesson["lesson_id"] for lesson in lessons if lesson.get("lesson_id")])
+        return format_patch_lessons_for_prompt(lessons)

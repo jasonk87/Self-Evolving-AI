@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, List, Optional
 import uuid
 
+from ai_assistant.core.experiment_scoreboard import record_experiment_scorecard
 from .protocol import (
     SwarmContract,
     AgentRole,
@@ -44,6 +45,19 @@ class SubSwarmCoordinator:
         self.completion_future = asyncio.Future()
         self.blocked_classification: Optional[FailureClassification] = None
         self.flaky_failure_count = 0
+
+    def _record_scorecard(self, scorecard: ExperimentScorecard, outcome: str) -> Dict[str, Any]:
+        return record_experiment_scorecard(
+            scorecard,
+            actor="sub_swarm_coordinator",
+            experiment_type="sub_swarm",
+            source=self.swarm_id,
+            metadata={
+                "outcome": outcome,
+                "contract_task_id": self.contract.task_id,
+                "deliverables": self.contract.deliverables,
+            },
+        )
 
     def setup_coordinator_subscriptions(self):
         """The Coordinator listens for critical lifecycle events."""
@@ -112,6 +126,7 @@ class SubSwarmCoordinator:
             if completed is False:
                 logger.warning(f"[Coordinator {self.swarm_id}] Swarm blocked by failure classification.")
                 scorecard = self._build_scorecard(accepted=False, blocked=True)
+                self._record_scorecard(scorecard, "blocked")
                 return {
                     "status": "error",
                     "message": f"Swarm blocked: {scorecard.suggested_route}",
@@ -122,6 +137,7 @@ class SubSwarmCoordinator:
         except asyncio.TimeoutError:
             logger.warning(f"[Coordinator {self.swarm_id}] Swarm timed out after {self.timeout}s.")
             scorecard = self._build_scorecard(accepted=False, blocked=True)
+            self._record_scorecard(scorecard, "timeout")
             return {
                 "status": "error",
                 "message": f"Swarm timed out after {self.timeout}s.",
@@ -130,6 +146,7 @@ class SubSwarmCoordinator:
         except Exception as e:
             logger.error(f"[Coordinator {self.swarm_id}] Swarm failed: {e}")
             scorecard = self._build_scorecard(accepted=False, blocked=True)
+            self._record_scorecard(scorecard, "error")
             return {"status": "error", "message": str(e), "scorecard": scorecard.model_dump()}
         finally:
             # 3. Clean up agent background tasks
@@ -139,11 +156,13 @@ class SubSwarmCoordinator:
 
         # 4. Extract final artifacts from the Blackboard
         final_artifacts = await self._retrieve_final_artifacts()
+        scorecard = self._build_scorecard(accepted=True, blocked=False)
+        self._record_scorecard(scorecard, "success")
 
         return {
             "status": "success",
             "artifacts": final_artifacts,
-            "scorecard": self._build_scorecard(accepted=True, blocked=False).model_dump(),
+            "scorecard": scorecard.model_dump(),
             "logs": [e for e in self.blackboard.history]
         }
 
