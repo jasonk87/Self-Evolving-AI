@@ -71,6 +71,38 @@ def test_vague_final_answer_rejected_when_context_or_tool_needed():
     assert result.retry_observation
 
 
+def test_casual_conversational_answer_does_not_need_tool_context():
+    gate = AnswerQualityGate()
+
+    result = gate.evaluate(
+        user_prompt="Thanks, that helped",
+        answer="Anytime.",
+        context="",
+        execution_history="",
+        remaining_cycles=2,
+    )
+
+    assert result.accepted is True
+    assert result.reason == "accepted"
+    assert result.should_retrieve_more_context is False
+
+
+def test_generic_reply_to_substantive_non_tool_request_is_still_rejected():
+    gate = AnswerQualityGate()
+
+    result = gate.evaluate(
+        user_prompt="Explain how the approval queue works",
+        answer="Sure.",
+        context="",
+        execution_history="",
+        remaining_cycles=2,
+    )
+
+    assert result.accepted is False
+    assert result.reason == "too_generic"
+    assert result.too_generic is True
+
+
 @pytest.mark.asyncio
 async def test_low_quality_answer_forces_another_react_cycle(monkeypatch):
     responses = iter([

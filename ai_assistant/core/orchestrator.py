@@ -76,6 +76,16 @@ class AnswerQualityGate:
         "i will check", "i'll look into it", "i will look into it", "sounds good",
         "task completed", "completed",
     }
+    _CASUAL_CONVERSATION_TERMS = {
+        "hi", "hello", "hey", "thanks", "thank you", "appreciate it",
+        "good morning", "good afternoon", "good evening", "how are you",
+        "what's up", "whats up",
+    }
+    _SUBSTANTIVE_REQUEST_TERMS = {
+        "explain", "summarize", "compare", "write", "draft", "create", "build",
+        "fix", "debug", "review", "analyze", "plan", "design", "implement",
+        "tell me", "help me", "show me",
+    }
 
     def evaluate(
         self,
@@ -88,16 +98,19 @@ class AnswerQualityGate:
     ) -> AnswerQualityGateResult:
         prompt_text = self._normalize(user_prompt)
         answer_text = self._normalize(answer)
+        answer_key = re.sub(r"[^a-z0-9']+", " ", answer_text).strip()
         has_context = bool(str(context or "").strip())
         has_tool_observation = "result:" in self._normalize(execution_history)
         has_evidence = has_context or has_tool_observation
         needs_evidence = any(term in prompt_text for term in self._EVIDENCE_SEEKING_TERMS)
+        casual_conversation = any(term in prompt_text for term in self._CASUAL_CONVERSATION_TERMS)
+        substantive_request = any(term in prompt_text for term in self._SUBSTANTIVE_REQUEST_TERMS)
         unresolved = any(term in answer_text for term in self._UNCERTAINTY_TERMS)
         word_count = len(answer_text.split())
         too_generic = (
-            answer_text in self._GENERIC_ANSWERS
+            answer_key in self._GENERIC_ANSWERS
             or (word_count <= 3 and needs_evidence and not has_evidence)
-            or any(answer_text.startswith(term) for term in self._GENERIC_ANSWERS if len(term.split()) > 1)
+            or any(answer_key.startswith(term) for term in self._GENERIC_ANSWERS if len(term.split()) > 1)
         )
 
         if not answer_text:
@@ -122,7 +135,7 @@ class AnswerQualityGate:
                 too_generic=too_generic,
             )
 
-        if too_generic and not has_evidence:
+        if too_generic and not has_evidence and substantive_request and not casual_conversation:
             return self._reject(
                 "too_generic",
                 "The answer is too generic for the user's request.",
