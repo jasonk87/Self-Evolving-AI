@@ -71,6 +71,66 @@ def test_action_executor_records_scorecard_for_action(monkeypatch, tmp_path):
     assert records[0]["scorecard"]["accepted"] is True
 
 
+def test_action_executor_scorecard_preserves_policy_block_reason(monkeypatch, tmp_path):
+    monkeypatch.setattr(experiment_scoreboard, "get_data_dir", lambda: str(tmp_path))
+    monkeypatch.setenv("EXPERIMENT_SCOREBOARD_ALLOW_PYTEST", "1")
+
+    executor = ActionExecutor(learning_agent=MagicMock())
+    executor._run_execution_policy_preflight = MagicMock(return_value={
+        "checked": True,
+        "allowed": False,
+        "blocked": True,
+        "reasons": ["token:hard_stop_block"],
+    })
+    executor._execute_ephemeral_agent_task = AsyncMock(return_value=True)
+
+    result = asyncio.run(executor.execute_action({
+        "source_insight_id": "insight_policy_block",
+        "action_type": "EXECUTE_EPHEMERAL_AGENT",
+        "details": {"task_description": "Do not run", "projected_cost_usd": 10.0},
+    }))
+
+    records = get_recent_experiment_scorecards(limit=1)
+    scorecard = records[0]["scorecard"]
+    assert result is False
+    executor._execute_ephemeral_agent_task.assert_not_called()
+    assert scorecard["accepted"] is False
+    assert scorecard["blocked"] is True
+    assert scorecard["suggested_route"] == "route_to_human_review"
+    assert "token:hard_stop_block" in scorecard["failure_reason"]["reason"]
+    assert records[0]["metadata"]["failure_message"].startswith("Execution blocked by policy preflight")
+
+
+def test_action_executor_scorecard_preserves_tool_precondition_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(experiment_scoreboard, "get_data_dir", lambda: str(tmp_path))
+    monkeypatch.setenv("EXPERIMENT_SCOREBOARD_ALLOW_PYTEST", "1")
+
+    executor = ActionExecutor(learning_agent=MagicMock())
+    executor._run_execution_policy_preflight = MagicMock(return_value={
+        "checked": True,
+        "allowed": True,
+        "blocked": False,
+        "reasons": [],
+    })
+
+    result = asyncio.run(executor.execute_action({
+        "source_insight_id": "insight_bad_tool_mod",
+        "action_type": "PROPOSE_TOOL_MODIFICATION",
+        "details": {
+            "tool_name": "/task-action",
+            "suggested_change_description": "Fix tool action routing",
+        },
+    }))
+
+    records = get_recent_experiment_scorecards(limit=1)
+    scorecard = records[0]["scorecard"]
+    assert result is False
+    assert scorecard["accepted"] is False
+    assert scorecard["blocked"] is True
+    assert scorecard["suggested_route"] == "route_to_human_review"
+    assert "Missing module_path or function_name" in scorecard["failure_reason"]["reason"]
+
+
 @pytest.mark.asyncio
 async def test_swarm_coordinator_records_existing_scorecard(monkeypatch, tmp_path):
     from ai_assistant.execution.swarm.coordinator import SubSwarmCoordinator

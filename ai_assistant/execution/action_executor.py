@@ -1,5 +1,6 @@
 # ai_assistant/execution/action_executor.py
-from typing import Dict, Any, Optional, Tuple, List, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, Tuple, List, TYPE_CHECKING, Union
 import datetime 
 import asyncio
 import os
@@ -15,7 +16,11 @@ from ai_assistant.core.patch_memory import (
     mark_lessons_reused,
     search_patch_lessons,
 )
-from ai_assistant.execution.swarm.protocol import ExperimentScorecard, classify_failure
+from ai_assistant.execution.swarm.protocol import (
+    ExperimentScorecard,
+    FailureClassification,
+    classify_failure,
+)
 from ..core.reflection import global_reflection_log, ReflectionLogEntry  # Add ReflectionLogEntry to import
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts, LEARNED_FACTS_FILEPATH
 from ai_assistant.core.suggestion_manager import mark_suggestion_implemented # Added import
@@ -35,6 +40,15 @@ from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+
+@dataclass
+class ActionExecutionOutcome:
+    accepted: bool
+    failure_message: Optional[str] = None
+    blocked: bool = False
+    suggested_route: Optional[str] = None
+    failure_classification: Optional[FailureClassification] = None
 
 LLM_FACT_ASSESSMENT_AND_CATEGORIZATION_PROMPT_TEMPLATE = """
 You are an AI assistant's knowledge curator and categorizer. Your task is to assess if a given fact is valuable to learn, and if so, categorize it.
@@ -727,11 +741,50 @@ class ActionExecutor:
         with tracer.start_as_current_span("executor.execute_action") as span:
             action_type = proposed_action.get("action_type")
             span.set_attribute("action_type", str(action_type))
-            result = await self._execute_action_internal(proposed_action, session_id)
-            self._record_action_scorecard(proposed_action, result)
-            return result
+            internal_result = await self._execute_action_internal(proposed_action, session_id)
+            outcome = self._coerce_action_outcome(internal_result)
+            self._record_action_scorecard(proposed_action, outcome)
+            return outcome.accepted
 
-    def _record_action_scorecard(self, proposed_action: Dict[str, Any], accepted: bool) -> Dict[str, Any]:
+    @staticmethod
+    def _coerce_action_outcome(result: Union[bool, ActionExecutionOutcome]) -> ActionExecutionOutcome:
+        if isinstance(result, ActionExecutionOutcome):
+            return result
+        return ActionExecutionOutcome(accepted=bool(result))
+
+    @staticmethod
+    def _failed_action_outcome(
+        failure_message: str,
+        *,
+        blocked: bool = False,
+        suggested_route: Optional[str] = None,
+    ) -> ActionExecutionOutcome:
+        classification = classify_failure(failure_message)
+        if suggested_route:
+            classification = FailureClassification(
+                failure_class=classification.failure_class,
+                reason=failure_message,
+                suggested_route=suggested_route,
+            )
+        else:
+            classification = FailureClassification(
+                failure_class=classification.failure_class,
+                reason=failure_message,
+                suggested_route=classification.suggested_route,
+            )
+        return ActionExecutionOutcome(
+            accepted=False,
+            failure_message=failure_message,
+            blocked=blocked,
+            suggested_route=classification.suggested_route,
+            failure_classification=classification,
+        )
+
+    def _record_action_scorecard(
+        self,
+        proposed_action: Dict[str, Any],
+        outcome: ActionExecutionOutcome,
+    ) -> Dict[str, Any]:
         action_type = str(proposed_action.get("action_type") or "UNKNOWN")
         details = proposed_action.get("details", {})
         if not isinstance(details, dict):
@@ -740,10 +793,12 @@ class ActionExecutor:
         source_insight_id = str(proposed_action.get("source_insight_id") or "")
         files_touched = self._infer_action_files_touched(action_type, details)
         tests_run = 1 if action_type == "PROPOSE_TOOL_MODIFICATION" and details.get("original_reflection_entry_id") else 0
-        tests_passed = tests_run if accepted and tests_run else 0
-        failure_reason = None if accepted else classify_failure(
-            str(details.get("failure_reason") or details.get("error") or action_type)
-        )
+        tests_passed = tests_run if outcome.accepted and tests_run else 0
+        failure_reason = None
+        if not outcome.accepted:
+            failure_reason = outcome.failure_classification or classify_failure(
+                str(outcome.failure_message or details.get("failure_reason") or details.get("error") or action_type)
+            )
 
         scorecard = ExperimentScorecard(
             task_id=source_insight_id or f"action_{uuid.uuid4().hex[:8]}",
@@ -753,14 +808,14 @@ class ActionExecutor:
             files_touched=files_touched,
             capabilities_used=[],
             failure_reason=failure_reason,
-            accepted=bool(accepted),
-            blocked=bool(failure_reason and failure_reason.suggested_route in {
+            accepted=bool(outcome.accepted),
+            blocked=bool(outcome.blocked or failure_reason and failure_reason.suggested_route in {
                 "route_to_capability_policy_review",
                 "route_to_state_machine_fix",
                 "route_to_environment_fix",
                 "route_to_human_review",
             }),
-            suggested_route=failure_reason.suggested_route if failure_reason else None,
+            suggested_route=outcome.suggested_route or (failure_reason.suggested_route if failure_reason else None),
         )
 
         return record_experiment_scorecard(
@@ -771,6 +826,7 @@ class ActionExecutor:
             metadata={
                 "detail_keys": sorted(details.keys()),
                 "session_scoped": bool(proposed_action.get("session_id")),
+                "failure_message": outcome.failure_message,
             },
         )
 
@@ -828,7 +884,11 @@ class ActionExecutor:
             return "medium"
         return "low"
 
-    async def _execute_action_internal(self, proposed_action: Dict[str, Any], session_id: Optional[str] = None) -> bool:
+    async def _execute_action_internal(
+        self,
+        proposed_action: Dict[str, Any],
+        session_id: Optional[str] = None,
+    ) -> Union[bool, ActionExecutionOutcome]:
         action_type = proposed_action.get("action_type")
         details = proposed_action.get("details", {})
         source_insight_id = proposed_action.get("source_insight_id", f"action_{uuid.uuid4().hex[:8]}")
@@ -905,7 +965,11 @@ class ActionExecutor:
                 status_override="POLICY_PREFLIGHT_BLOCKED",
                 is_self_modification_attempt=False,
             )
-            return False
+            return self._failed_action_outcome(
+                reason,
+                blocked=True,
+                suggested_route="route_to_human_review",
+            )
 
         if action_type == "PROPOSE_TOOL_MODIFICATION":
             tool_name = details.get("tool_name")
@@ -925,7 +989,11 @@ class ActionExecutor:
                     post_modification_test_passed=None, post_modification_test_details={"notes": "Test not run due to precondition failure."}
                 )
                 self._update_task_if_manager(action_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason=log_message_details, step_desc="Precondition check failed")
-                return False
+                return self._failed_action_outcome(
+                    log_message_details,
+                    blocked=True,
+                    suggested_route="route_to_human_review",
+                )
 
             patch_lessons = self._get_patch_lessons_for_action(
                 action_type,
