@@ -84,6 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatContainer = document.getElementById('chat-container');
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
+    const imageUploadBtn = document.getElementById('image-upload-btn');
+    const imageUploadInput = document.getElementById('image-upload-input');
+    const imagePreviewContainer = document.getElementById('image-preview-container');
     const terminalOutput = document.getElementById('terminal-output');
     const terminalInput = document.getElementById('terminal-input');
     const terminalSendBtn = document.getElementById('terminal-send-btn');
@@ -441,12 +444,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 4. Chat & Terminal Inputs
+    let selectedImages = [];
+
+    const renderSelectedImages = () => {
+        if (!imagePreviewContainer) return;
+        imagePreviewContainer.innerHTML = '';
+        if (selectedImages.length === 0) {
+            imagePreviewContainer.classList.add('hidden');
+            return;
+        }
+
+        imagePreviewContainer.classList.remove('hidden');
+        selectedImages.forEach((src, index) => {
+            const item = document.createElement('div');
+            item.className = 'image-preview-item';
+            item.innerHTML = `
+                <img src="${src}" alt="Selected image ${index + 1}">
+                <button class="image-preview-remove" type="button" aria-label="Remove image" data-index="${index}">×</button>
+            `;
+            imagePreviewContainer.appendChild(item);
+        });
+    };
+
+    const readSelectedImageFiles = async (files) => {
+        const imageFiles = Array.from(files || []).filter(file => file.type.startsWith('image/'));
+        const readers = imageFiles.map(file => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+        }));
+        const loaded = await Promise.all(readers);
+        selectedImages = selectedImages.concat(loaded).slice(0, 6);
+        renderSelectedImages();
+    };
+
+    if (imageUploadBtn && imageUploadInput) {
+        imageUploadBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            imageUploadInput.click();
+        });
+        imageUploadInput.addEventListener('change', async () => {
+            await readSelectedImageFiles(imageUploadInput.files);
+            imageUploadInput.value = '';
+        });
+    }
+
+    if (imagePreviewContainer) {
+        imagePreviewContainer.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.image-preview-remove');
+            if (!removeBtn) return;
+            const index = Number(removeBtn.dataset.index);
+            if (!Number.isNaN(index)) {
+                selectedImages.splice(index, 1);
+                renderSelectedImages();
+            }
+        });
+    }
+
     const handleSend = () => {
         Chat.sendMessage(chatInput, chatContainer, editor, {
             currentProject: Files.getCurrentProject(),
             currentFilePath: Files.getCurrentFilePath(),
-            images: [],
+            images: selectedImages,
             onSessionChanged: () => Chat.loadSessions(chatSessionsList)
+        }).then((response) => {
+            if (response !== undefined) {
+                selectedImages = [];
+                renderSelectedImages();
+            }
         });
     };
     if (sendBtn) sendBtn.addEventListener('click', (e) => { e.preventDefault(); handleSend(); });

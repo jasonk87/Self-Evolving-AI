@@ -1243,12 +1243,15 @@ body {
 }
 
 #mic-btn,
-#voice-toggle-btn {
+#voice-toggle-btn,
+#image-upload-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 6px;
     width: 40px;
     height: 40px;
+    min-width: 40px;
+    flex: 0 0 40px;
     font-size: 18px;
     cursor: pointer;
     color: var(--text-secondary);
@@ -1259,7 +1262,8 @@ body {
 }
 
 #mic-btn:hover,
-#voice-toggle-btn:hover {
+#voice-toggle-btn:hover,
+#image-upload-btn:hover {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
     transform: translateY(-2px);
@@ -1267,8 +1271,61 @@ body {
 }
 
 #mic-btn:active,
-#voice-toggle-btn:active {
+#voice-toggle-btn:active,
+#image-upload-btn:active {
     transform: translateY(0) scale(0.95);
+}
+
+#image-upload-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.image-preview-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 180px;
+    overflow-x: auto;
+    flex: 0 1 auto;
+}
+
+.image-preview-container.hidden {
+    display: none;
+}
+
+.image-preview-item {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.image-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.image-preview-remove {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-bottom-left-radius: 6px;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 16px;
+    padding: 0;
 }
 
 #mic-btn.listening {
@@ -2699,6 +2756,8 @@ body {
     #send-btn {
         width: 38px;
         height: 38px;
+        min-width: 38px;
+        flex: 0 0 38px;
         font-size: 16px;
     }
 
