@@ -25,12 +25,38 @@ def _make_isolated_orchestrator():
 
 
 class FakeToolSystem:
+    def __init__(self):
+        self.calls = []
+
     def get_tools_description(self):
         return "status_tool: checks live status"
 
     async def execute_tool(self, tool_name, **kwargs):
+        self.calls.append({"tool_name": tool_name, **kwargs})
         assert tool_name == "status_tool"
         return {"success": True, "result": "all systems nominal"}
+
+
+class FakeSearchToolSystem:
+    def __init__(self):
+        self.calls = []
+
+    def get_tools_description(self):
+        return "google_search: searches the web"
+
+    async def execute_tool(self, tool_name, **kwargs):
+        self.calls.append({"tool_name": tool_name, **kwargs})
+        assert tool_name == "google_search"
+        query = kwargs.get("kwargs", {}).get("query", "")
+        if "Claire" in query or "Clair" in query:
+            return {
+                "success": True,
+                "result": (
+                    "Search result: voco The Clair Cincinnati Downtown appears to be the likely hotel. "
+                    "Aronoff Center is in downtown Cincinnati. Exact walking distance not verified."
+                ),
+            }
+        return {"success": True, "result": "Search result: Aronoff Center address in downtown Cincinnati."}
 
 
 @pytest.mark.asyncio
@@ -153,3 +179,65 @@ async def test_quality_gate_max_cycles_exits_safely(monkeypatch):
     assert final_result["result"] == "Sure."
     assert metadata[0]["quality_gate_result"]["accepted"] is False
     assert "max cycles were reached" in state.errors[-1]
+
+
+@pytest.mark.asyncio
+async def test_repeated_search_stagnation_injects_control_observation(monkeypatch):
+    prompts_seen = []
+    responses = iter([
+        '{"type":"tool_call","thought":"Find the venue.","name":"google_search","params":{"query":"Aronoff Center address"}}',
+        '{"type":"tool_call","thought":"Find the likely Clair hotel.","name":"google_search","params":{"query":"Claire hotel near Aronoff Center Cincinnati"}}',
+        '{"type":"tool_call","thought":"Search again for the Clair hotel.","name":"google_search","params":{"query":"Claire hotel Cincinnati near Aronoff Center"}}',
+        '{"type":"tool_call","thought":"Search exact distance.","name":"google_search","params":{"query":"voco The Clair Cincinnati distance to Aronoff Center"}}',
+        '{"type":"final_answer","thought":"Use gathered evidence with uncertainty.","params":{"message":"The likely hotel is voco The Clair Cincinnati Downtown. I found enough to identify the likely hotel near the Aronoff Center, but I do not have a verified exact walking distance from the search results, so I would treat the distance as still needing confirmation."}}',
+    ])
+
+    async def fake_invoke(prompt, **kwargs):
+        prompts_seen.append(prompt)
+        return next(responses)
+
+    orch = _make_isolated_orchestrator()
+    fake_tools = FakeSearchToolSystem()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
+
+    state = ExecutionState(original_user_prompt="Can you see how far away the Claire hotel is from the Aronoff Center?")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "", [], None, "USER", None)
+
+    final_result = state.tool_results[-1]
+    metadata = final_result["react_cycle_metadata"]
+
+    assert state.current_status == "completed"
+    assert "voco The Clair" in final_result["result"]
+    assert "not have a verified exact walking distance" in final_result["result"]
+    assert any(record.get("retry_reason") is None and record.get("tool_name") == "google_search" for record in metadata)
+    assert any("ReactLoopControl: You are repeating" in prompt for prompt in prompts_seen)
+    assert len(fake_tools.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_near_max_cycles_with_observations_adds_finalization_pressure(monkeypatch):
+    prompts_seen = []
+    responses = iter([
+        '{"type":"tool_call","thought":"Initial lookup.","name":"google_search","params":{"query":"Aronoff Center address"}}',
+        '{"type":"tool_call","thought":"Different lookup one.","name":"google_search","params":{"query":"voco The Clair Cincinnati official address"}}',
+        '{"type":"tool_call","thought":"Different lookup two.","name":"google_search","params":{"query":"Cincinnati Arts Association hotels"}}',
+        '{"type":"tool_call","thought":"Different lookup three.","name":"google_search","params":{"query":"downtown Cincinnati hotel distance map"}}',
+        '{"type":"tool_call","thought":"Different lookup four.","name":"google_search","params":{"query":"Aronoff Center nearby lodging"}}',
+        '{"type":"tool_call","thought":"Different lookup five.","name":"google_search","params":{"query":"voco hotel Cincinnati downtown location"}}',
+        '{"type":"final_answer","thought":"Answer near limit.","params":{"message":"I found partial evidence about the likely hotel and venue, but not enough for a verified exact distance. I would confirm in maps before relying on it."}}',
+    ])
+
+    async def fake_invoke(prompt, **kwargs):
+        prompts_seen.append(prompt)
+        return next(responses)
+
+    orch = _make_isolated_orchestrator()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeSearchToolSystem())
+
+    state = ExecutionState(original_user_prompt="Can you see how far away the Claire hotel is from the Aronoff Center?")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "", [], None, "USER", None)
+
+    assert state.current_status == "completed"
+    assert any("ReactLoopControl: You are near the ReAct cycle limit" in prompt for prompt in prompts_seen)

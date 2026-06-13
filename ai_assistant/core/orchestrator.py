@@ -183,6 +183,112 @@ class AnswerQualityGate:
             too_generic=too_generic,
         )
 
+
+@dataclass
+class ReactLoopControlResult:
+    should_intervene: bool
+    reason: str
+    observation: str = ""
+
+
+class ReactLoopControl:
+    """Deterministic loop-control guard for repeated low-yield tool use."""
+
+    STAGNATION_THRESHOLD = 3
+    FINALIZATION_PRESSURE_CYCLE = 7
+    _SEARCH_TOOL_NAMES = {
+        "google_search",
+        "search_web",
+        "web_search",
+        "search_google_first",
+        "search_duckduckgo",
+        "google_custom_search",
+        "search_google_custom_search",
+    }
+
+    def evaluate_before_cycle(
+        self,
+        *,
+        cycle_number: int,
+        max_cycles: int,
+        cycle_metadata: List[Dict[str, Any]],
+        execution_history: str,
+    ) -> ReactLoopControlResult:
+        repeated = self._detect_repeated_tool_stagnation(cycle_metadata)
+        near_limit = cycle_number >= min(self.FINALIZATION_PRESSURE_CYCLE, max_cycles)
+        has_observations = "result:" in AnswerQualityGate._normalize(execution_history)
+
+        if repeated:
+            return ReactLoopControlResult(
+                should_intervene=True,
+                reason="repeated_tool_stagnation",
+                observation=(
+                    "ReactLoopControl: You are repeating the same tool/search pattern. "
+                    "Do not keep searching for perfection. Use the observations already gathered "
+                    "to answer with a clear confidence level, choose a genuinely different tool or query strategy, "
+                    "or ask a concise clarification if the target cannot be identified. "
+                    "Do not invent exact facts or distances that are not supported by observations."
+                ),
+            )
+
+        if near_limit and has_observations:
+            return ReactLoopControlResult(
+                should_intervene=True,
+                reason="near_max_cycles_with_observations",
+                observation=(
+                    "ReactLoopControl: You are near the ReAct cycle limit and already have tool observations. "
+                    "If the evidence is sufficient, produce the best supported answer now. "
+                    "If evidence is partial, say what is known, what is uncertain, and avoid unsupported precision. "
+                    "Only call another tool if it is a different action likely to resolve the remaining uncertainty."
+                ),
+            )
+
+        return ReactLoopControlResult(should_intervene=False, reason="ok")
+
+    def _detect_repeated_tool_stagnation(self, cycle_metadata: List[Dict[str, Any]]) -> bool:
+        tool_cycles = [
+            record for record in cycle_metadata
+            if record.get("selected_type") == "tool_call" and record.get("tool_name")
+        ]
+        if len(tool_cycles) < self.STAGNATION_THRESHOLD:
+            return False
+
+        recent = tool_cycles[-self.STAGNATION_THRESHOLD:]
+        tool_names = {str(record.get("tool_name") or "") for record in recent}
+        if len(tool_names) != 1:
+            return False
+
+        tool_name = next(iter(tool_names))
+        if tool_name not in self._SEARCH_TOOL_NAMES:
+            return True
+
+        query_tokens = [
+            self._important_tokens(str(record.get("tool_query") or record.get("thought") or ""))
+            for record in recent
+        ]
+        if any(not tokens for tokens in query_tokens):
+            return True
+
+        first = query_tokens[0]
+        return all(self._jaccard_similarity(first, tokens) >= 0.45 for tokens in query_tokens[1:])
+
+    @staticmethod
+    def _important_tokens(text: str) -> set[str]:
+        stopwords = {
+            "the", "and", "for", "near", "with", "from", "that", "this", "need",
+            "find", "search", "between", "distance", "exact", "user", "asking",
+            "wants", "know", "hotel", "center",
+        }
+        tokens = set(re.findall(r"[a-z0-9]+", text.casefold()))
+        normalized = {"clair" if token == "claire" else token for token in tokens}
+        return {token for token in normalized if len(token) > 2 and token not in stopwords}
+
+    @staticmethod
+    def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        return len(left & right) / len(left | right)
+
 class DynamicOrchestrator:
     """
     Orchestrates the dynamic planning and execution of user prompts.
@@ -490,7 +596,9 @@ class DynamicOrchestrator:
         final_answer = ""
         success = False
         answer_quality_gate = AnswerQualityGate()
+        react_loop_control = ReactLoopControl()
         cycle_metadata: List[Dict[str, Any]] = []
+        loop_control_interventions: set[str] = set()
 
         # Define persona guidance based on context_source
         persona_guide = ""
@@ -551,6 +659,18 @@ class DynamicOrchestrator:
             # We loop through cycles
             for step_i in range(max_steps):
                 print(color_text(f"\n--- Cycle {step_i+1}: Direct ReAct ---", CLIColors.THOUGHT))
+                loop_control = react_loop_control.evaluate_before_cycle(
+                    cycle_number=step_i + 1,
+                    max_cycles=max_steps,
+                    cycle_metadata=cycle_metadata,
+                    execution_history=execution_history,
+                )
+                if loop_control.should_intervene and loop_control.reason not in loop_control_interventions:
+                    execution_history += (
+                        f"Cycle {step_i+1} Control Observation:\n"
+                        f"{loop_control.observation}\n"
+                    )
+                    loop_control_interventions.add(loop_control.reason)
                 
                 if current_ui_task:
                     self.task_manager.update_task_status(
@@ -765,6 +885,7 @@ Return STRICT JSON only using the schema described earlier.
                     cycle_record["selected_type"] = "tool_call"
                     cycle_record["tool_name"] = tool_name
                     cycle_record["thought"] = thought
+                    cycle_record["tool_query"] = str(kwargs.get("query") or kwargs.get("search_query") or "")
 
                     # Emit action event for UI
                     action_node_id = f"thought_action_{uuid.uuid4().hex[:8]}"
