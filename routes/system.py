@@ -8,16 +8,165 @@ import subprocess
 import threading
 import app_globals
 import ai_assistant.config as config
+from ai_assistant.core.approval_manager import approval_manager
 from ai_assistant.core.project_manager import find_project
 from ai_assistant.core.action_audit_ledger import get_recent_action_audit_events
 from ai_assistant.core.experiment_scoreboard import get_recent_experiment_scorecards
-from ai_assistant.core.patch_memory import search_patch_lessons
+from ai_assistant.core.patch_memory import get_recent_patch_lessons, search_patch_lessons
 from ai_assistant.core.tool_lifecycle import list_tool_lifecycle_records
 from ai_assistant.core.background_service import report_user_activity
 from ai_assistant.core.shutdown_manager import shutdown_manager
 from ai_assistant.voice.tts import generate_speech
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_limit(raw_value, default: int, maximum: int) -> int:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, maximum))
+
+
+def _safe_task_dict(task) -> dict:
+    try:
+        return task.to_dict()
+    except Exception:  # pragma: no cover
+        return {}
+
+
+def _pending_approval_summaries(limit: int) -> list[dict]:
+    items: list[dict] = []
+    try:
+        for req in approval_manager.get_pending_requests()[:limit]:
+            items.append({
+                "id": req.get("id"),
+                "type": req.get("type"),
+                "source": "approval_manager",
+                "description": req.get("description") or req.get("message") or "",
+                "created_at": req.get("created_at"),
+                "status": "PENDING",
+            })
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Run spine could not read approval manager requests: %s", exc)
+
+    learning_agent = getattr(getattr(app_globals, "orchestrator", None), "learning_agent", None)
+    for insight in list(getattr(learning_agent, "insights", []) or []):
+        status = str(getattr(insight, "status", "") or "")
+        if status not in {"NEW", "SELF_HEALING_PROPOSED", "APPROVED_BY_USER", "APPROVED_QUEUED"}:
+            continue
+        insight_type = getattr(getattr(insight, "type", None), "name", None) or str(getattr(insight, "type", "UNKNOWN"))
+        items.append({
+            "id": getattr(insight, "insight_id", None),
+            "type": insight_type,
+            "source": "learning_agent",
+            "description": getattr(insight, "description", "") or "",
+            "created_at": getattr(insight, "creation_timestamp", None),
+            "status": status,
+            "related_tool_name": getattr(insight, "related_tool_name", None),
+            "approval_task_id": (getattr(insight, "metadata", {}) or {}).get("approval_task_id"),
+        })
+        if len(items) >= limit:
+            break
+    return items[:limit]
+
+
+def build_run_spine_snapshot(limit: int = 12) -> dict:
+    """Join the main autonomous-work evidence streams into one compact snapshot."""
+    bounded_limit = max(1, min(int(limit), 50))
+    task_manager = getattr(getattr(app_globals, "orchestrator", None), "task_manager", None) or getattr(app_globals, "task_manager", None)
+    active_tasks = []
+    if task_manager:
+        active_tasks = [_safe_task_dict(task) for task in task_manager.list_active_tasks()]
+        active_tasks = [task for task in active_tasks if task]
+
+    audit_events = get_recent_action_audit_events(limit=bounded_limit * 3)
+    scorecards = get_recent_experiment_scorecards(limit=bounded_limit)
+    approvals = _pending_approval_summaries(limit=bounded_limit)
+    lessons = get_recent_patch_lessons(limit=min(bounded_limit, 10))
+    lifecycle_records = list_tool_lifecycle_records(limit=min(bounded_limit, 10))
+
+    blocked_scorecards = [
+        record for record in scorecards
+        if isinstance(record.get("scorecard"), dict) and record["scorecard"].get("blocked")
+    ]
+    failed_tasks = [
+        task for task in active_tasks
+        if "FAIL" in str(task.get("status") or "") or str(task.get("status") or "") == "USER_CANCELLED"
+    ]
+    queued_approvals = [
+        item for item in approvals
+        if str(item.get("status") or "") == "APPROVED_QUEUED"
+    ]
+
+    work_items: list[dict] = []
+    for task in active_tasks[:bounded_limit]:
+        task_id = task.get("task_id")
+        related_id = task.get("related_item_id")
+        related_events = [
+            event for event in audit_events
+            if event.get("task_id") == task_id or (related_id and event.get("source") == related_id)
+        ][:5]
+        related_scorecards = [
+            record for record in scorecards
+            if (record.get("scorecard") or {}).get("task_id") == task_id
+            or record.get("source") == task_id
+            or (related_id and record.get("source") == related_id)
+        ][:3]
+        related_approvals = [
+            item for item in approvals
+            if item.get("id") == related_id or item.get("approval_task_id") == task_id
+        ][:3]
+        work_items.append({
+            "kind": "task",
+            "id": task_id,
+            "title": task.get("description") or task_id,
+            "status": task.get("status"),
+            "task_type": task.get("task_type"),
+            "related_item_id": related_id,
+            "current_step": task.get("current_step_description"),
+            "updated_at": task.get("last_updated_at") or task.get("created_at"),
+            "audit_events": related_events,
+            "scorecards": related_scorecards,
+            "approvals": related_approvals,
+        })
+
+    if not work_items:
+        for record in scorecards[:min(5, bounded_limit)]:
+            scorecard = record.get("scorecard") or {}
+            work_items.append({
+                "kind": "scorecard",
+                "id": scorecard.get("task_id") or record.get("record_id"),
+                "title": record.get("experiment_type") or "experiment",
+                "status": "accepted" if scorecard.get("accepted") else "blocked" if scorecard.get("blocked") else "rejected",
+                "updated_at": record.get("timestamp"),
+                "scorecards": [record],
+                "audit_events": [],
+                "approvals": [],
+            })
+
+    return {
+        "schema_version": 1,
+        "counts": {
+            "active_tasks": len(active_tasks),
+            "pending_approvals": len(approvals),
+            "queued_approvals": len(queued_approvals),
+            "audit_events": len(audit_events),
+            "scorecards": len(scorecards),
+            "blocked_scorecards": len(blocked_scorecards),
+            "patch_lessons": len(lessons),
+            "tool_lifecycle_records": len(lifecycle_records),
+            "failed_active_tasks": len(failed_tasks),
+        },
+        "work_items": work_items[:bounded_limit],
+        "active_tasks": active_tasks[:bounded_limit],
+        "approvals": approvals[:bounded_limit],
+        "audit_events": audit_events[:bounded_limit],
+        "scorecards": scorecards[:bounded_limit],
+        "patch_lessons": lessons[:bounded_limit],
+        "tool_lifecycle": lifecycle_records[:bounded_limit],
+    }
 
 @api_bp.route('/config', methods=['GET'])
 def get_config():
@@ -281,6 +430,20 @@ def get_tool_lifecycle():
         "records": records,
         "count": len(records),
     })
+
+@api_bp.route('/system/run-spine', methods=['GET'])
+def get_run_spine():
+    """Returns one joined view of tasks, approvals, audit, scorecards, and lessons."""
+    limit = _coerce_limit(request.args.get("limit"), default=12, maximum=50)
+    try:
+        snapshot = build_run_spine_snapshot(limit=limit)
+        return jsonify({
+            "success": True,
+            "snapshot": snapshot,
+        })
+    except Exception as exc:
+        logger.exception("Run spine snapshot failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 @api_bp.route('/system/quarantine/unblock', methods=['POST'])
 def unblock_quarantined_tool():

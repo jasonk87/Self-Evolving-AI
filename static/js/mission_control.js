@@ -10,6 +10,7 @@ const missionControl = {
     healthPanel: document.getElementById('mission-control-health'),
     reflectionPanel: document.getElementById('mission-control-reflection'),
     cadencePanel: document.getElementById('mission-control-cadence'),
+    runSpinePanel: document.getElementById('mission-control-run-spine'),
     actionAuditPanel: document.getElementById('mission-control-action-audit'),
     scoreboardPanel: document.getElementById('mission-control-scoreboard'),
     toolLifecyclePanel: document.getElementById('mission-control-tool-lifecycle'),
@@ -30,6 +31,7 @@ const missionControl = {
         this.fetchBackgroundCadence();
         this.fetchReflectionSuggestions();
         this.fetchSLOMetrics();
+        this.fetchRunSpine();
         this.fetchActionAudit();
         this.fetchExperimentScoreboard();
         this.fetchToolLifecycle();
@@ -43,6 +45,7 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchRunSpine();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
                 this.fetchToolLifecycle();
@@ -62,6 +65,7 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchRunSpine();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
                 this.fetchToolLifecycle();
@@ -77,6 +81,7 @@ const missionControl = {
                 this.fetchBackgroundCadence();
                 this.fetchReflectionSuggestions();
                 this.fetchSLOMetrics();
+                this.fetchRunSpine();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
                 this.fetchToolLifecycle();
@@ -132,6 +137,7 @@ const missionControl = {
             this.fetchBackgroundCadence();
             this.fetchReflectionSuggestions();
             this.fetchSLOMetrics();
+            this.fetchRunSpine();
             this.fetchActionAudit();
             this.fetchExperimentScoreboard();
         }, this.statusPollIntervalMs);
@@ -288,6 +294,89 @@ const missionControl = {
             console.error('Fetch action audit error:', e);
             this.actionAuditPanel.innerHTML = `<div class="error">Action audit link failure: ${this.escapeHtml(e.message)}</div>`;
         }
+    },
+
+    fetchRunSpine: async function () {
+        if (!this.runSpinePanel) return;
+
+        try {
+            const response = await fetch('/api/system/run-spine?limit=10');
+            const data = await response.json();
+            if (!data.success) {
+                this.runSpinePanel.innerHTML = `<div class="error">Run spine unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderRunSpine(data.snapshot || {});
+        } catch (e) {
+            console.error('Fetch run spine error:', e);
+            this.runSpinePanel.innerHTML = `<div class="error">Run spine link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    renderRunSpine: function (snapshot) {
+        if (!this.runSpinePanel) return;
+
+        const counts = snapshot.counts || {};
+        const items = Array.isArray(snapshot.work_items) ? snapshot.work_items : [];
+        const lessons = Array.isArray(snapshot.patch_lessons) ? snapshot.patch_lessons : [];
+
+        const rows = items.slice(0, 4).map(item => {
+            const scorecards = Array.isArray(item.scorecards) ? item.scorecards : [];
+            const approvals = Array.isArray(item.approvals) ? item.approvals : [];
+            const events = Array.isArray(item.audit_events) ? item.audit_events : [];
+            const latestScore = scorecards.length ? (scorecards[0].scorecard || {}) : {};
+            const testsRun = Number(latestScore.tests_run || 0);
+            const testsPassed = Number(latestScore.tests_passed || 0);
+            const verdict = latestScore.blocked ? 'blocked' : latestScore.accepted ? 'accepted' : item.status || 'tracked';
+            const route = latestScore.suggested_route ? ` Route: ${latestScore.suggested_route}` : '';
+            const failure = latestScore.failure_reason && latestScore.failure_reason.failure_class
+                ? ` Failure: ${latestScore.failure_reason.failure_class}`
+                : '';
+            const detailParts = [
+                item.task_type ? `Type: ${item.task_type}` : '',
+                item.current_step ? `Step: ${item.current_step}` : '',
+                scorecards.length ? `Tests: ${testsPassed}/${testsRun}` : '',
+                approvals.length ? `Approvals: ${approvals.length}` : '',
+                events.length ? `Audit: ${events.length}` : '',
+                route,
+                failure,
+            ].filter(Boolean);
+
+            return `
+                <div class="mission-audit-row ${this.escapeHtml(String(verdict).toLowerCase())}">
+                    <span>${this.escapeHtml(this.formatTimestamp(item.updated_at))}</span>
+                    <strong>${this.escapeHtml((item.title || item.id || 'work item').toString().substring(0, 42))}</strong>
+                    <span>${this.escapeHtml(String(verdict).replace(/_/g, ' '))}</span>
+                </div>
+                <div class="mission-audit-detail">${this.escapeHtml(detailParts.join(' | ') || 'No linked evidence yet.')}</div>
+            `;
+        }).join('');
+
+        const lessonRows = lessons.slice(0, 2).map(lesson => `
+            <div class="mission-audit-detail">
+                Lesson: ${this.escapeHtml(lesson.failure_class || 'unknown')} | ${this.escapeHtml(lesson.rule || lesson.problem || '')}
+            </div>
+        `).join('');
+
+        this.runSpinePanel.innerHTML = `
+            <div class="mission-status-header-row">
+                <div class="mission-status-header">Run Spine</div>
+                <div class="mission-status-freshness">Unified View</div>
+            </div>
+            <div class="mission-kv-grid">
+                <div class="mission-kv-item"><span>Active</span><strong>${Number(counts.active_tasks || 0)}</strong></div>
+                <div class="mission-kv-item"><span>Approvals</span><strong>${Number(counts.pending_approvals || 0)}</strong></div>
+                <div class="mission-kv-item"><span>Queued</span><strong>${Number(counts.queued_approvals || 0)}</strong></div>
+                <div class="mission-kv-item"><span>Scorecards</span><strong>${Number(counts.scorecards || 0)}</strong></div>
+                <div class="mission-kv-item"><span>Blocked</span><strong>${Number(counts.blocked_scorecards || 0)}</strong></div>
+                <div class="mission-kv-item"><span>Lessons</span><strong>${Number(counts.patch_lessons || 0)}</strong></div>
+            </div>
+            <div class="mission-audit-list">
+                ${rows || '<div class="mission-audit-detail">No active work. Recent scorecards and lessons will appear here when recorded.</div>'}
+                ${lessonRows}
+            </div>
+        `;
     },
 
     fetchExperimentScoreboard: async function () {

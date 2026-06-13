@@ -16,7 +16,6 @@ from ai_assistant.execution.swarm.agents.coder import CoderAgent
 from ai_assistant.execution.swarm.blackboard import Blackboard, BlackboardEvent
 from ai_assistant.execution.swarm.protocol import (
     ExperimentScorecard,
-    FailureClass,
     SwarmContract,
     classify_failure,
 )
@@ -57,6 +56,33 @@ def test_patch_memory_stores_searches_and_formats_lessons(monkeypatch, tmp_path)
     assert results[0]["lesson_id"] == lesson["lesson_id"]
     assert "Prior repair lessons" in prompt_text
     assert "Every new import" in prompt_text
+
+
+def test_patch_memory_returns_recent_lessons_without_search_filter(monkeypatch, tmp_path):
+    monkeypatch.setattr(patch_memory, "get_data_dir", lambda: str(tmp_path))
+    monkeypatch.setenv("PATCH_MEMORY_ALLOW_PYTEST", "1")
+
+    older = add_patch_lesson(
+        problem="Older problem",
+        failure_class="unknown",
+        fix="Older fix",
+        rule="Older rule",
+        applies_to=["general"],
+    )
+    newer = add_patch_lesson(
+        problem="Newer problem",
+        failure_class="dependency_missing",
+        fix="Newer fix",
+        rule="Newer rule",
+        applies_to=["general"],
+    )
+
+    recent = patch_memory.get_recent_patch_lessons(limit=2)
+
+    assert [lesson["lesson_id"] for lesson in recent] == [
+        newer["lesson_id"],
+        older["lesson_id"],
+    ]
 
 
 def test_failed_scorecard_derives_patch_lesson(monkeypatch, tmp_path):

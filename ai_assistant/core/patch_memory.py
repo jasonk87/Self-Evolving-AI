@@ -184,6 +184,20 @@ def search_patch_lessons(
     return [lesson for _, lesson in scored[:bounded_limit]]
 
 
+def get_recent_patch_lessons(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return recently updated lessons without requiring a search match."""
+    try:
+        bounded_limit = max(1, min(int(limit), MAX_LESSONS))
+    except (TypeError, ValueError):
+        bounded_limit = 20
+    lessons = sorted(
+        _load_lessons(),
+        key=lambda lesson: str(lesson.get("updated_at") or lesson.get("created_at") or ""),
+        reverse=True,
+    )
+    return lessons[:bounded_limit]
+
+
 def mark_lessons_reused(lesson_ids: List[str]) -> None:
     if not lesson_ids:
         return
