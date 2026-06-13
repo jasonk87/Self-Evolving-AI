@@ -925,6 +925,7 @@ def test_background_cadence_endpoint_returns_runtime_values(monkeypatch):
         SimpleNamespace(
             get_all_settings=lambda: {
                 "ENABLE_DREAM_MODE": True,
+                "ALLOW_DREAMER": True,
                 "DREAM_INTERVAL_SECONDS": 900,
                 "REMINDER_CHECK_INTERVAL_SECONDS": 15,
                 "AUTO_WEB_PIP": False,
@@ -950,6 +951,7 @@ def test_background_cadence_endpoint_returns_runtime_values(monkeypatch):
     assert payload["schema_version"] == 1
     assert payload["cadence"] == {
         "dream_mode_enabled": True,
+        "dreamer_allowed": True,
         "dream_interval_seconds": 900,
         "reminder_check_interval_seconds": 15,
         "auto_web_pip": False,

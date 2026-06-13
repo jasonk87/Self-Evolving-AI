@@ -101,7 +101,7 @@ const missionControl = {
             const res = await fetch('/api/config');
             const config = await res.json();
 
-            d_switch.checked = config.ALLOW_DREAMER !== false;
+            d_switch.checked = config.ENABLE_DREAM_MODE === true;
             m_switch.checked = config.ALLOW_MEMORY_LEARNING !== false;
             a_switch.checked = config.ALLOW_AUTO_FIXING !== false;
 
@@ -117,7 +117,10 @@ const missionControl = {
             } catch(e) { console.error("Toggle config error", e); }
         };
 
-        d_switch.addEventListener('change', () => toggleConfig('ALLOW_DREAMER', d_switch.checked));
+        d_switch.addEventListener('change', () => {
+            toggleConfig('ENABLE_DREAM_MODE', d_switch.checked);
+            this.fetchBackgroundCadence();
+        });
         m_switch.addEventListener('change', () => toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked));
         a_switch.addEventListener('change', () => toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked));
     },
@@ -230,13 +233,18 @@ const missionControl = {
 
             const cadence = data.cadence || {};
             const recent = data.recent || {};
+            const dreamerAllowed = cadence.dreamer_allowed !== false;
+            const dreamModeLabel = cadence.dream_mode_enabled
+                ? (dreamerAllowed ? 'On' : 'Blocked')
+                : 'Off';
             this.cadencePanel.innerHTML = `
                 <div class="mission-status-header-row">
                     <div class="mission-status-header">Background Cadence</div>
                     <div class="mission-status-freshness">Runtime Tunable</div>
                 </div>
                 <div class="mission-kv-grid">
-                    <div class="mission-kv-item"><span>Dream Mode</span><strong>${cadence.dream_mode_enabled ? 'On' : 'Off'}</strong></div>
+                    <div class="mission-kv-item"><span>Dream Mode</span><strong>${dreamModeLabel}</strong></div>
+                    <div class="mission-kv-item"><span>Dreamer Allowed</span><strong>${dreamerAllowed ? 'Yes' : 'No'}</strong></div>
                     <div class="mission-kv-item"><span>Dream Interval</span><strong>${cadence.dream_interval_seconds || 0}s</strong></div>
                     <div class="mission-kv-item"><span>Reminder Poll</span><strong>${cadence.reminder_check_interval_seconds || 0}s</strong></div>
                     <div class="mission-kv-item"><span>Auto Web PiP</span><strong>${cadence.auto_web_pip ? 'On' : 'Off'}</strong></div>

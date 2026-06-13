@@ -2052,6 +2052,7 @@ def mission_control_background_cadence():
 
     cadence = {
         "dream_mode_enabled": bool(settings.get("ENABLE_DREAM_MODE", False)),
+        "dreamer_allowed": bool(settings.get("ALLOW_DREAMER", True)),
         "dream_interval_seconds": int(settings.get("DREAM_INTERVAL_SECONDS", 86400)),
         "reminder_check_interval_seconds": int(settings.get("REMINDER_CHECK_INTERVAL_SECONDS", 10)),
         "auto_web_pip": bool(settings.get("AUTO_WEB_PIP", True)),
