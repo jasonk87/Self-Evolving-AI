@@ -2122,6 +2122,7 @@ body {
 }
 
 .mission-scoreboard,
+.mission-tool-lifecycle,
 .mission-action-audit {
     grid-column: span 2;
 }
@@ -2622,6 +2623,7 @@ body {
     }
 
     .mission-scoreboard,
+    .mission-tool-lifecycle,
     .mission-action-audit {
         grid-column: auto;
     }
@@ -2901,6 +2903,23 @@ body {
 }
 
 .mission-audit-row.blocked strong {
+    color: #fb7185;
+}
+
+.mission-audit-row.graduated strong {
+    color: #4ade80;
+}
+
+.mission-audit-row.registered strong {
+    color: #22d3ee;
+}
+
+.mission-audit-row.candidate strong {
+    color: #facc15;
+}
+
+.mission-audit-row.quarantined strong,
+.mission-audit-row.deprecated strong {
     color: #fb7185;
 }
 

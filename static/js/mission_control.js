@@ -12,6 +12,7 @@ const missionControl = {
     cadencePanel: document.getElementById('mission-control-cadence'),
     actionAuditPanel: document.getElementById('mission-control-action-audit'),
     scoreboardPanel: document.getElementById('mission-control-scoreboard'),
+    toolLifecyclePanel: document.getElementById('mission-control-tool-lifecycle'),
     refreshBtn: document.getElementById('refresh-tasks-btn'),
     statusPollIntervalMs: 8000,
     staleAfterMs: 20000,
@@ -31,6 +32,7 @@ const missionControl = {
         this.fetchSLOMetrics();
         this.fetchActionAudit();
         this.fetchExperimentScoreboard();
+        this.fetchToolLifecycle();
         this.startStatusPolling();
 
         if (this.refreshBtn) {
@@ -43,6 +45,7 @@ const missionControl = {
                 this.fetchSLOMetrics();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
+                this.fetchToolLifecycle();
             });
         }
 
@@ -61,6 +64,7 @@ const missionControl = {
                 this.fetchSLOMetrics();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
+                this.fetchToolLifecycle();
             }
         });
 
@@ -75,6 +79,7 @@ const missionControl = {
                 this.fetchSLOMetrics();
                 this.fetchActionAudit();
                 this.fetchExperimentScoreboard();
+                this.fetchToolLifecycle();
             });
         }
     },
@@ -301,6 +306,75 @@ const missionControl = {
             console.error('Fetch experiment scoreboard error:', e);
             this.scoreboardPanel.innerHTML = `<div class="error">Scoreboard link failure: ${this.escapeHtml(e.message)}</div>`;
         }
+    },
+
+    fetchToolLifecycle: async function () {
+        if (!this.toolLifecyclePanel) return;
+
+        try {
+            const response = await fetch('/api/system/tool-lifecycle?limit=20');
+            const data = await response.json();
+            if (!data.success) {
+                this.toolLifecyclePanel.innerHTML = `<div class="error">Tool lifecycle unavailable: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderToolLifecycle(data.records || []);
+        } catch (e) {
+            console.error('Fetch tool lifecycle error:', e);
+            this.toolLifecyclePanel.innerHTML = `<div class="error">Tool lifecycle link failure: ${this.escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    renderToolLifecycle: function (records) {
+        if (!this.toolLifecyclePanel) return;
+
+        const rows = (records || []).slice(0, 6).map(record => {
+            const state = String(record.state || 'candidate').toLowerCase();
+            const stateClass = ['graduated', 'registered', 'candidate', 'quarantined', 'deprecated'].includes(state)
+                ? state
+                : 'candidate';
+            const latestEvent = Array.isArray(record.events) && record.events.length
+                ? record.events[record.events.length - 1]
+                : null;
+            const type = record.tool_type || 'generated';
+            const usage = Number(record.usage_count || 0);
+            const failures = Number(record.failure_count || 0);
+            const updated = this.formatTimestamp(record.updated_at || record.created_at);
+
+            return `
+                <div class="mission-audit-row ${stateClass}">
+                    <span>${this.escapeHtml(updated)}</span>
+                    <strong>${this.escapeHtml(record.tool_name || 'tool')}</strong>
+                    <span>${this.escapeHtml(state)}</span>
+                </div>
+                <div class="mission-audit-detail">
+                    Type: ${this.escapeHtml(type)} Â· Usage: ${usage} Â· Failures: ${failures}
+                </div>
+                <div class="mission-audit-detail">
+                    ${latestEvent ? this.escapeHtml(latestEvent.summary || latestEvent.event_type || '') : 'No lifecycle events recorded.'}
+                </div>
+            `;
+        }).join('');
+
+        const stateCounts = (records || []).reduce((acc, record) => {
+            const state = String(record.state || 'candidate').toLowerCase();
+            acc[state] = (acc[state] || 0) + 1;
+            return acc;
+        }, {});
+        const summary = Object.entries(stateCounts)
+            .map(([state, count]) => `${state}:${count}`)
+            .join(' ');
+
+        this.toolLifecyclePanel.innerHTML = `
+            <div class="mission-status-header-row">
+                <div class="mission-status-header">Tool Lifecycle</div>
+                <div class="mission-status-freshness">${this.escapeHtml(summary || 'No records')}</div>
+            </div>
+            <div class="mission-audit-list">
+                ${rows || '<div class="mission-audit-detail">No generated tools tracked yet.</div>'}
+            </div>
+        `;
     },
 
     renderExperimentScoreboard: function (records) {

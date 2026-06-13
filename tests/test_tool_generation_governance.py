@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from ai_assistant.custom_tools.agent_tools import create_dynamic_specialist
+from ai_assistant.core import tool_lifecycle
 from ai_assistant.tools.tool_management_tools import generate_and_register_tool_backend
 
 
 @pytest.mark.asyncio
-async def test_generated_tool_backend_writes_to_generated_lane():
+async def test_generated_tool_backend_writes_to_generated_lane(monkeypatch, tmp_path):
+    monkeypatch.setattr(tool_lifecycle, "get_data_dir", lambda: str(tmp_path))
     generated_code = "def reverse_image_search():\n    return 'ok'\n"
     metadata = {
         "suggested_function_name": "reverse_image_search",
@@ -49,13 +51,19 @@ async def test_generated_tool_backend_writes_to_generated_lane():
         for item in import_module.call_args_list
     )
     assert "registered successfully" in result["message"]
+    lifecycle_record = tool_lifecycle.get_tool_lifecycle_record("reverse_image_search")
+    assert lifecycle_record["state"] == "registered"
+    assert os.path.normpath(lifecycle_record["file_path"]) == os.path.normpath(
+        "ai_assistant/custom_tools/generated/reverse_image_search.py"
+    )
 
 
-def test_dynamic_specialist_creation_uses_autonomous_generated_lane(tmp_path):
+def test_dynamic_specialist_creation_uses_autonomous_generated_lane(monkeypatch, tmp_path):
     tool_dir = tmp_path / "ai_assistant" / "custom_tools"
     data_dir = tmp_path / "data"
     tool_dir.mkdir(parents=True)
     data_dir.mkdir()
+    monkeypatch.setattr(tool_lifecycle, "get_data_dir", lambda: str(data_dir))
 
     with patch(
         "ai_assistant.custom_tools.agent_tools.os.path.dirname"
@@ -79,3 +87,6 @@ def test_dynamic_specialist_creation_uses_autonomous_generated_lane(tmp_path):
         / "dynamic_specialist_vision_worker.py"
     )
     assert specialist_path.exists()
+    lifecycle_record = tool_lifecycle.get_tool_lifecycle_record("dynamic_specialist_vision_worker")
+    assert lifecycle_record["state"] == "registered"
+    assert lifecycle_record["tool_type"] == "dynamic_specialist"

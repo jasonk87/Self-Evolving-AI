@@ -7,6 +7,7 @@ import asyncio
 from typing import Callable, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from pydantic import ValidationError
 from ai_assistant.config import is_debug_mode, get_data_dir
+from ai_assistant.core.tool_lifecycle import record_tool_execution
 from ai_assistant.core.models.base_tool import BaseActionRequest, BaseActionResponse
 if TYPE_CHECKING:
     from ..core.task_manager import TaskManager
@@ -344,6 +345,7 @@ class ToolSystem:
 
             if is_debug_mode():
                 print(f"ToolSystem: Tool '{name}' executed successfully. Result (first 200 chars): {str(result)[:200]}")
+            record_tool_execution(name, success=True)
 
             # Enforce BaseActionResponse structure where possible or adapt legacy tools.
             # Realistically, legacy tools return strings or raw dicts. We coerce them into BaseActionResponse format internally.
@@ -365,6 +367,7 @@ class ToolSystem:
             raise
         except Exception as e:
             print(f"ToolSystem: Error during execution of tool '{name}': {type(e).__name__} - {e}")
+            record_tool_execution(name, success=False, error_signature=f"{type(e).__name__}: {e}")
             raise ToolExecutionError(f"Error during execution of tool '{name}': {e}") from e
 
     def get_tools_description(self) -> str:

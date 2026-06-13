@@ -20,6 +20,7 @@ from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.core.events import EventEmitter
+from ai_assistant.core.tool_lifecycle import mark_tool_quarantined
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
 from ai_assistant.core.models.state import ExecutionState
 
@@ -265,6 +266,12 @@ class DynamicOrchestrator:
                 }
                 self._save_quarantine_state()
                 EventEmitter.emit("quarantine_update", {"blocked_tools": self.blocked_tools})
+                mark_tool_quarantined(
+                    tool_name,
+                    reason=reason_str,
+                    error_signature=signature,
+                    metadata={"count": count, "context_data": context_data or {}},
+                )
 
                 # Proactive Self-Healing Trigger
                 if getattr(self, 'learning_agent', None):

@@ -5,6 +5,7 @@ import time
 import json
 from typing import List, Dict, Optional
 from ai_assistant.core.change_policy import GovernanceTier, decide_governance
+from ai_assistant.core.tool_lifecycle import mark_tool_registered, record_tool_candidate
 from ai_assistant.core.agent_manager import AgentManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
 agent_manager = AgentManager()
@@ -129,6 +130,35 @@ def create_dynamic_specialist(name: str, description: str, logic_code: str, reti
             f.write(f'# RETIREMENT: {retirement_policy}\n')
             f.write(f'# ROLLBACK: {rollback_instructions}\n\n')
             f.write(logic_code)
+        module_name = os.path.splitext(filename)[0]
+        module_path = f"ai_assistant.custom_tools.{module_name}"
+        record_tool_candidate(
+            tool_name=module_name,
+            module_path=module_path,
+            function_name=module_name,
+            file_path=filepath,
+            tool_type="dynamic_specialist",
+            source="create_dynamic_specialist",
+            metadata={
+                "specialist_name": name,
+                "description": description,
+                "retirement_policy": retirement_policy,
+                "rollback_instructions": rollback_instructions,
+                "governance": {
+                    "zone": governance.zone.value,
+                    "tier": governance.tier.value,
+                    "required_gates": list(governance.required_gates),
+                },
+            },
+        )
+        mark_tool_registered(
+            tool_name=module_name,
+            module_path=module_path,
+            function_name=module_name,
+            file_path=filepath,
+            tool_type="dynamic_specialist",
+            metadata={"registration_note": "Specialist file created; runtime refresh may be required."},
+        )
         return f"Successfully created dynamic specialist '{name}' at {filename}. Remember to restart the ToolSystem or app to load it."
     except Exception as e:
         return f"Failed to create specialist '{name}': {e}"

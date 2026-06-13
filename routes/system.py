@@ -12,6 +12,7 @@ from ai_assistant.core.project_manager import find_project
 from ai_assistant.core.action_audit_ledger import get_recent_action_audit_events
 from ai_assistant.core.experiment_scoreboard import get_recent_experiment_scorecards
 from ai_assistant.core.patch_memory import search_patch_lessons
+from ai_assistant.core.tool_lifecycle import list_tool_lifecycle_records
 from ai_assistant.core.background_service import report_user_activity
 from ai_assistant.core.shutdown_manager import shutdown_manager
 from ai_assistant.voice.tts import generate_speech
@@ -260,6 +261,25 @@ def get_patch_memory():
         "success": True,
         "lessons": lessons,
         "count": len(lessons),
+    })
+
+@api_bp.route('/system/tool-lifecycle', methods=['GET'])
+def get_tool_lifecycle():
+    """Returns generated/dynamic tool lifecycle records."""
+    raw_limit = request.args.get("limit", 100)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 100
+
+    records = list_tool_lifecycle_records(
+        state=request.args.get("state"),
+        limit=limit,
+    )
+    return jsonify({
+        "success": True,
+        "records": records,
+        "count": len(records),
     })
 
 @api_bp.route('/system/quarantine/unblock', methods=['POST'])
