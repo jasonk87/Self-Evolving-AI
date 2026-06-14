@@ -169,9 +169,6 @@ def emit_startup_interrupted_tasks_digest(tasks: List["ActiveTask"]) -> Optional
         "When ready, you can retry selectively with `/task-action <task_id> retry` or ask me to summarize one first."
     )
 
-    if app_globals.chat_manager:
-        app_globals.chat_manager.add_message(session_id, "assistant", message)
-
     payload = {
         "session_id": session_id,
         "type": "startup_interrupted_digest",

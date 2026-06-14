@@ -260,6 +260,69 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(agent.insights), 1)
         self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
 
+    def test_add_insight_merges_startup_recovery_digest_variants(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        first = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: Startup recovery digest messages were injected "
+                "into the user-facing conversation. (Evidence: Startup recovery "
+                "digest marked tasks as FAILED_INTERRUPTED.)"
+            ),
+            source_reflection_entry_ids=[],
+        )
+        second = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The AI repeatedly issues internal FAILED_INTERRUPTED "
+                "shutdown recovery text into chat."
+            ),
+            source_reflection_entry_ids=[],
+        )
+
+        self.assertTrue(agent.add_insight(first))
+        self.assertFalse(agent.add_insight(second))
+        self.assertEqual(len(agent.insights), 1)
+        self.assertEqual(
+            agent.insights[0].metadata["insight_fingerprint"],
+            "TOOL_BUG_SUSPECTED:theme:startup-recovery-digest-chat-leak",
+        )
+        self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
+
+    def test_add_insight_merges_maximum_cycles_variants(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        first = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: A location lookup failed. "
+                "(Evidence: Reason: Maximum cycles reached.)"
+            ),
+            source_reflection_entry_ids=[],
+            related_tool_name="Task Execution",
+        )
+        second = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: Task execution and error reporting produced "
+                "redundant output after Maximum cycles reached."
+            ),
+            source_reflection_entry_ids=[],
+            related_tool_name="Task Execution and Error Reporting System",
+        )
+
+        self.assertTrue(agent.add_insight(first))
+        self.assertFalse(agent.add_insight(second))
+        self.assertEqual(len(agent.insights), 1)
+        self.assertEqual(
+            agent.insights[0].metadata["insight_fingerprint"],
+            "TOOL_BUG_SUSPECTED:theme:maximum-cycles-reached",
+        )
+        self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
+
     async def test_review_and_propose_next_action_selects_highest_priority(self):
         # Instantiate agent here to allow easier mocking of its action_executor
         agent = LearningAgent(insights_filepath=self.temp_insights_filepath)

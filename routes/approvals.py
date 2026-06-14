@@ -5,7 +5,7 @@ import logging
 import app_globals
 from ai_assistant.core.telemetry import telemetry_tracker
 from ai_assistant.core.approval_manager import approval_manager
-from ai_assistant.learning.learning import ActionableInsight, InsightType
+from ai_assistant.learning.learning import ActionableInsight, InsightType, _build_tool_bug_fingerprint
 from ai_assistant.core.task_manager import ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.status_reporting import get_status_snapshot
 from ai_assistant.core.conversational_alerts import execute_alert_action
@@ -27,6 +27,45 @@ import uuid
 import asyncio
 
 logger = logging.getLogger(__name__)
+
+
+def _coalesce_pending_learning_insights(insights):
+    """Return one approval card per active learning-insight failure theme."""
+    coalesced = []
+    by_key = {}
+
+    for insight in insights:
+        if insight.type == InsightType.TOOL_BUG_SUSPECTED:
+            metadata = dict(insight.metadata or {})
+            key = metadata.get("insight_fingerprint") or _build_tool_bug_fingerprint(insight)
+            metadata["insight_fingerprint"] = key
+            insight.metadata = metadata
+        else:
+            key = f"{insight.type.name}:{insight.related_tool_name or ''}:{insight.description}"
+
+        existing = by_key.get(key)
+        if not existing:
+            by_key[key] = insight
+            coalesced.append(insight)
+            continue
+
+        existing.metadata = dict(existing.metadata or {})
+        duplicate_ids = list(existing.metadata.get("merged_insight_ids") or [])
+        if insight.insight_id and insight.insight_id not in duplicate_ids:
+            duplicate_ids.append(insight.insight_id)
+        if duplicate_ids:
+            existing.metadata["merged_insight_ids"] = duplicate_ids
+
+        duplicate_descriptions = list(existing.metadata.get("merged_descriptions") or [])
+        if insight.description != existing.description and insight.description not in duplicate_descriptions:
+            duplicate_descriptions.append(insight.description)
+        if duplicate_descriptions:
+            existing.metadata["merged_descriptions"] = duplicate_descriptions[-5:]
+
+        existing.metadata["merged_duplicate_count"] = int(existing.metadata.get("merged_duplicate_count", 0)) + 1
+        existing.priority = min(existing.priority, insight.priority)
+
+    return coalesced
 
 
 def _run_async(coro):
@@ -2663,7 +2702,7 @@ def get_approvals():
                 ]
             ]
             
-            for insight in pending_insights:
+            for insight in _coalesce_pending_learning_insights(pending_insights):
                 # Map Insight to Approval Request Format temporarily for UI
                 insight_req = {
                     "id": insight.insight_id, # Standardize on 'id' for frontend

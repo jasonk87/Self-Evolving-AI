@@ -82,6 +82,20 @@ def _build_tool_bug_fingerprint(insight: ActionableInsight) -> str:
     """Group duplicate tool-bug guesses from the same evidence/failure theme."""
     full_text = _normalize_insight_text(insight.description)
     if (
+        "startup recovery digest" in full_text
+        or "failed interrupted" in full_text
+        or (
+            "interrupted" in full_text
+            and "last shutdown" in full_text
+            and ("chat" in full_text or "conversation" in full_text or "user facing" in full_text)
+        )
+    ):
+        return f"{insight.type.name}:theme:startup-recovery-digest-chat-leak"
+
+    if "maximum cycles reached" in full_text:
+        return f"{insight.type.name}:theme:maximum-cycles-reached"
+
+    if (
         "agi" in full_text
         and "project" in full_text
         and "not found" in full_text

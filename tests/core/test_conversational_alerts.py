@@ -80,14 +80,13 @@ def test_emit_task_failure_alert_ignores_failed_interrupted_status(monkeypatch):
     assert payload is None
 
 
-def test_emit_startup_interrupted_tasks_digest_emits_single_summary(monkeypatch):
+def test_emit_startup_interrupted_tasks_digest_emits_socket_without_chat_message(monkeypatch):
     task_a = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
     task_b = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
 
-    added = {}
     emitted = {}
     chat_mgr = SimpleNamespace(
-        add_message=lambda sid, role, content: added.update({"sid": sid, "role": role, "content": content}),
+        add_message=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not add chat message")),
         list_sessions=lambda: [{"id": "session-xyz"}],
         create_session=lambda title: "new-session",
     )
@@ -101,8 +100,7 @@ def test_emit_startup_interrupted_tasks_digest_emits_single_summary(monkeypatch)
     assert payload is not None
     assert payload["type"] == "startup_interrupted_digest"
     assert payload["count"] == 2
-    assert added["role"] == "assistant"
-    assert "startup recovery digest" in added["content"].lower()
+    assert "startup recovery digest" in payload["message"].lower()
     assert emitted["event"] == "assistant_alert"
 def test_execute_alert_action_summarize(monkeypatch):
     task = _make_task()
