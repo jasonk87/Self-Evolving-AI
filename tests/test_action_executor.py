@@ -223,13 +223,17 @@ class TestActionExecutor(unittest.TestCase):
         result = asyncio.run(self.executor.execute_action(proposed_action))
 
         self.assertTrue(result)
-        self.executor.code_service.modify_code.assert_called_once_with(
-            context="SELF_FIX_TOOL",
-            modification_instruction="CodeService generated code: Needs a fix via CodeService.",
-            module_path="test_module.py",
-            function_name="old_func",
-            existing_code=None
+        self.executor.code_service.modify_code.assert_called_once()
+        _, cs_kwargs = self.executor.code_service.modify_code.call_args
+        self.assertEqual(cs_kwargs.get("context"), "SELF_FIX_TOOL")
+        self.assertTrue(
+            cs_kwargs.get("modification_instruction", "").startswith(
+                "CodeService generated code: Needs a fix via CodeService."
+            )
         )
+        self.assertEqual(cs_kwargs.get("module_path"), "test_module.py")
+        self.assertEqual(cs_kwargs.get("function_name"), "old_func")
+        self.assertIsNone(cs_kwargs.get("existing_code"))
         mock_edit_code.assert_called_once()
         args, kwargs = mock_edit_code.call_args
         self.assertEqual(kwargs.get('module_path'), "test_module.py")

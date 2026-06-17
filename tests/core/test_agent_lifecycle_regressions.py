@@ -349,6 +349,84 @@ def test_background_report_targets_latest_active_chat(monkeypatch):
     assert payload["source_session_id"] == "chat-1"
 
 
+def test_background_report_falls_back_to_latest_chat(monkeypatch):
+    captured = {"messages": []}
+
+    class FakeChatSessionManager:
+        def __init__(self, storage_path):
+            pass
+
+        def list_sessions(self):
+            return [{"id": "latest-chat", "updated_at": 100}]
+
+        def add_message(self, session_id, role, content):
+            captured["messages"].append((session_id, role, content))
+
+    monkeypatch.setattr("ai_assistant.core.chat_manager.ChatSessionManager", FakeChatSessionManager)
+    monkeypatch.setattr(background_service, "_socket_broadcaster", None)
+    monkeypatch.setattr("app_globals.latest_active_chat_session_id", None)
+
+    asyncio.run(background_service.broadcast_scheduled_message("Job finished.", title="Scheduled Job"))
+
+    assert captured["messages"] == [
+        ("latest-chat", "assistant", "**Scheduled Job**\n\nJob finished.")
+    ]
+
+
+def test_background_report_creates_system_updates_chat_when_no_target(monkeypatch):
+    captured = {"messages": [], "created_titles": []}
+
+    class FakeChatSessionManager:
+        def __init__(self, storage_path):
+            pass
+
+        def list_sessions(self):
+            return []
+
+        def create_session(self, title="New Chat"):
+            captured["created_titles"].append(title)
+            return "system-chat"
+
+        def add_message(self, session_id, role, content):
+            captured["messages"].append((session_id, role, content))
+
+    monkeypatch.setattr("ai_assistant.core.chat_manager.ChatSessionManager", FakeChatSessionManager)
+    monkeypatch.setattr(background_service, "_socket_broadcaster", None)
+    monkeypatch.setattr("app_globals.latest_active_chat_session_id", None)
+
+    asyncio.run(background_service.broadcast_scheduled_message("Reminder due.", title="Scheduled Reminder"))
+
+    assert captured["created_titles"] == ["System Updates"]
+    assert captured["messages"] == [
+        ("system-chat", "assistant", "**Scheduled Reminder**\n\nReminder due.")
+    ]
+
+
+def test_due_reminders_are_broadcast_to_active_chat(monkeypatch):
+    captured = {"notifications": [], "reports": []}
+
+    class FakeNotificationManager:
+        def add_notification(self, **kwargs):
+            captured["notifications"].append(kwargs)
+
+    async def fake_broadcast(message, title="Scheduled Task"):
+        captured["reports"].append((title, message))
+
+    monkeypatch.setattr(background_service, "check_due_reminders", lambda: [{
+        "message": "stretch",
+        "target_time": "2026-06-17T10:00:00",
+    }])
+    monkeypatch.setattr(background_service, "broadcast_scheduled_message", fake_broadcast)
+
+    count = asyncio.run(background_service.check_and_broadcast_due_reminders(FakeNotificationManager()))
+
+    assert count == 1
+    assert captured["notifications"][0]["summary_message"] == "REMINDER: stretch"
+    assert captured["reports"] == [
+        ("Scheduled Reminder", "Reminder due: stretch\n\nScheduled for: 2026-06-17T10:00:00")
+    ]
+
+
 def test_agent_workspace_rejects_paths_outside_base_directory(tmp_path):
     manager = AgentManager(base_path=str(tmp_path / "temp_agents"))
 

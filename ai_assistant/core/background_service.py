@@ -180,8 +180,11 @@ async def broadcast_agent_message(session_id: str, message: str, title: str = "A
             target_session_id = active_session_id or source_session_id
 
         if not target_session_id:
-            logger.warning("BackgroundService: Dropping agent message with no target chat session.")
-            return
+            sessions = cm.list_sessions()
+            if sessions:
+                target_session_id = sessions[0].get("id")
+            else:
+                target_session_id = cm.create_session(title="System Updates")
 
         body = message
         if source_session_id and target_session_id != source_session_id:
@@ -210,6 +213,41 @@ async def broadcast_agent_message(session_id: str, message: str, title: str = "A
         )
     except Exception as e:
         logger.error(f"BackgroundService: Failed to deliver agent message: {e}")
+
+async def broadcast_scheduled_message(message: str, title: str = "Scheduled Task"):
+    """Sends a scheduled job/reminder report to the active chat."""
+    await broadcast_agent_message(None, message, title=title)
+
+async def check_and_broadcast_due_reminders(notification_manager=None) -> int:
+    """Checks due reminders and reports them through notifications and active chat."""
+    if not check_due_reminders:
+        return 0
+
+    due_reminders = check_due_reminders()
+    if not due_reminders:
+        return 0
+
+    logger.info(f"BackgroundService: Found {len(due_reminders)} due reminders.")
+    for rem in due_reminders:
+        message = rem.get("message", "")
+        target_time = rem.get("target_time", "")
+        logger.info(f"BackgroundService: Firing reminder: {message}")
+        if notification_manager:
+            notification_manager.add_notification(
+                event_type=NotificationType.SYSTEM_ALERT,
+                summary_message=f"REMINDER: {message}",
+                details_payload={
+                    "title": "Scheduled Reminder",
+                    "message": message,
+                    "scheduled_for": target_time,
+                },
+            )
+        await broadcast_scheduled_message(
+            f"Reminder due: {message}\n\nScheduled for: {target_time}",
+            title="Scheduled Reminder",
+        )
+
+    return len(due_reminders)
 
 def get_service_status():
     """Returns the current status of the background service."""
@@ -648,6 +686,16 @@ async def _background_loop_async():
             _last_autonomous_goal_check_time = time.time()
             next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
 
+        # --- Reminder System Task ---
+        # User-scheduled reminders must still fire even when maintenance is in deep sleep.
+        if check_due_reminders and current_loop_time >= _last_reminder_check_time + _reminder_check_interval_seconds:
+            try:
+                await check_and_broadcast_due_reminders(nm if 'nm' in locals() else None)
+            except Exception as e:
+                logger.error(f"BackgroundService: Error checking reminders: {e}")
+
+            _last_reminder_check_time = time.time()
+
         # --- Deep Sleep Check ---
         if is_deep_sleep_active():
             if is_debug_mode():
@@ -712,6 +760,10 @@ async def _background_loop_async():
                                     summary_message="Daily Briefing: Agenda loaded into context.",
                                     details_payload={"agenda": agenda_text}
                                 )
+                            await broadcast_scheduled_message(
+                                agenda_text,
+                                title="Daily Agenda Briefing",
+                            )
                     else:
                         logger.info("BackgroundService: Daily Briefing - No agenda retrieved or error (likely not auth).")
                 else:
@@ -873,36 +925,6 @@ async def _background_loop_async():
                 logger.error(f"BackgroundService: Error during conversation scan: {e}")
             
             _last_conversation_scan_time = time.time()
-
-        # --- Reminder System Task ---
-        if check_due_reminders and current_loop_time >= _last_reminder_check_time + _reminder_check_interval_seconds:
-            try:
-                due_reminders = check_due_reminders()
-                if due_reminders:
-                    logger.info(f"BackgroundService: Found {len(due_reminders)} due reminders.")
-                    
-                    # Notify for each
-                    # We need a notification manager. 'learning_agent' has one, or we can use the one passed in set_orchestrator?
-                    # The LearningAgent one is local to this thread, which is fine as long as the UI polls the same backend.
-                    # Ideally, NotificationManager persists to file, so any instance works.
-                    # We utilize the 'nm' (NotificationManager) created locally in this function.
-                    
-                    if 'nm' in locals() and nm:
-                         for rem in due_reminders:
-                            logger.info(f"BackgroundService: Firing reminder: {rem['message']}")
-                            nm.add_notification(
-                                event_type=NotificationType.SYSTEM_ALERT,
-                                summary_message=f"REMINDER: {rem['message']}",
-                                details_payload={
-                                    "title": "Scheduled Reminder",
-                                    "message": rem['message'],
-                                    "scheduled_for": rem['target_time']
-                                }
-                            )
-            except Exception as e:
-                logger.error(f"BackgroundService: Error checking reminders: {e}")
-            
-            _last_reminder_check_time = time.time()
 
         # === IDLE GATED TASKS ===
         # The following tasks are "Heavy" and should pause if the user is active.
