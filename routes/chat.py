@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_NOTICE_SCOPE = "local_default"
 
 
+def _mark_active_chat_session(session_id: str) -> None:
+    if session_id:
+        app_globals.latest_active_chat_session_id = session_id
+
+
 
 
 MAX_IDENTITY_COMPONENT_LENGTH = 256
@@ -623,6 +628,7 @@ def create_session():
     title = data.get('title', 'New Chat')
     try:
         session_id = app_globals.chat_manager.create_session(title=title)
+        _mark_active_chat_session(session_id)
         return jsonify({"session_id": session_id, "success": True})
     except Exception as e:
         logger.error(f"Error creating session: {e}")
@@ -635,6 +641,7 @@ def get_session(session_id):
         session = app_globals.chat_manager.get_session(session_id)
         if not session:
              return jsonify({"error": "Session not found", "success": False}), 404
+        _mark_active_chat_session(session_id)
         return jsonify({"session": session, "success": True})
     except Exception as e:
         logger.error(f"Error getting session {session_id}: {e}")
@@ -831,6 +838,7 @@ def chat():
 
     if stripped_message == '/start' and identity_key and hasattr(app_globals.chat_manager, 'rotate_session_for_identity'):
         session_id = app_globals.chat_manager.rotate_session_for_identity(identity_key)
+        _mark_active_chat_session(session_id)
         app_globals.chat_manager.add_message(session_id, 'user', message, images=images)
         response = 'Started a fresh conversation context for this channel.'
         app_globals.chat_manager.add_message(session_id, 'assistant', response)
@@ -863,6 +871,8 @@ def chat():
          # Fallback if invalid ID passed
          session_id = app_globals.chat_manager.create_session()
          session_data = app_globals.chat_manager.get_session(session_id)
+
+    _mark_active_chat_session(session_id)
 
     # Load History
     # conversation_history = session_data.get('history', []) # Not used directly passed, orchestrator handles it via session_id or we pass it.

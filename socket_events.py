@@ -46,9 +46,11 @@ def register_socket_events(socketio):
             return
 
         if session_id:
+            app_globals.latest_active_chat_session_id = session_id
             app_globals.chat_manager.add_message(session_id, "user", message)
         else:
             session_id = app_globals.chat_manager.create_session("Terminal Session")
+            app_globals.latest_active_chat_session_id = session_id
 
         try:
             from ai_assistant.core.models.state import ExecutionState

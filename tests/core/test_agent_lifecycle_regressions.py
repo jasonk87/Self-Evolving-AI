@@ -309,10 +309,44 @@ def test_background_report_persists_without_socket_broadcaster(monkeypatch):
 
     monkeypatch.setattr("ai_assistant.core.chat_manager.ChatSessionManager", FakeChatSessionManager)
     monkeypatch.setattr(background_service, "_socket_broadcaster", None)
+    monkeypatch.setattr("app_globals.latest_active_chat_session_id", None)
 
     asyncio.run(background_service.broadcast_agent_message("chat-1", "Finished.", title="Agent Report"))
 
     assert captured["message"] == ("chat-1", "assistant", "**Agent Report**\n\nFinished.")
+
+
+def test_background_report_targets_latest_active_chat(monkeypatch):
+    captured = {"messages": [], "events": []}
+
+    class FakeChatSessionManager:
+        def __init__(self, storage_path):
+            captured["storage_path"] = storage_path
+
+        def get_session(self, session_id):
+            return {"id": session_id} if session_id in {"chat-1", "chat-2"} else None
+
+        def add_message(self, session_id, role, content):
+            captured["messages"].append((session_id, role, content))
+
+    async def fake_broadcaster(event_name, payload):
+        captured["events"].append((event_name, payload))
+
+    monkeypatch.setattr("ai_assistant.core.chat_manager.ChatSessionManager", FakeChatSessionManager)
+    monkeypatch.setattr(background_service, "_socket_broadcaster", fake_broadcaster)
+    monkeypatch.setattr("app_globals.latest_active_chat_session_id", "chat-2")
+
+    asyncio.run(background_service.broadcast_agent_message("chat-1", "Finished.", title="Agent Report"))
+
+    session_id, role, content = captured["messages"][0]
+    assert session_id == "chat-2"
+    assert role == "assistant"
+    assert "Earlier background agent task completed" in content
+    assert "Finished." in content
+    event_name, payload = captured["events"][0]
+    assert event_name == "agent_message"
+    assert payload["session_id"] == "chat-2"
+    assert payload["source_session_id"] == "chat-1"
 
 
 def test_agent_workspace_rejects_paths_outside_base_directory(tmp_path):

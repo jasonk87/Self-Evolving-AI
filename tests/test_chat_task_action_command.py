@@ -148,6 +148,19 @@ def test_chat_task_action_command_executes_without_orchestrator(monkeypatch):
     assert any(m[1] == "assistant" and "done:task_1:retry" in m[2] for m in messages)
 
 
+def test_get_session_marks_latest_active_chat(monkeypatch):
+    app = _build_api_test_app()
+
+    _setup_chat_manager(monkeypatch)
+    monkeypatch.setattr(app_globals, "latest_active_chat_session_id", None)
+
+    with app.test_client() as client:
+        response = client.get('/api/sessions/s1')
+
+    assert response.status_code == 200
+    assert app_globals.latest_active_chat_session_id == "s1"
+
+
 def test_chat_set_config_command_updates_setting(monkeypatch):
     app = _build_test_app()
 
@@ -1036,4 +1049,3 @@ def test_identity_session_pointer_reset_rejects_oversized_identity_key(monkeypat
     payload = response.get_json()
     assert payload["success"] is False
     assert "exceeds max length" in payload["error"]
-

@@ -625,6 +625,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    socket.on('agent_message', (data) => {
+        try {
+            const message = data?.content || data?.message || 'Background agent completed.';
+            const targetSessionId = data?.session_id || null;
+
+            if (targetSessionId && Chat.getCurrentSessionId() === targetSessionId) {
+                Chat.appendMessage(chatContainer, 'assistant', message);
+            } else {
+                UI.showAlert('Agent Report', 'A background agent finished. Open chat for details.');
+                if (targetSessionId) {
+                    Chat.loadChatSession(targetSessionId, chatContainer);
+                    Layout.openMainView('view-chat', 'Chat');
+                }
+            }
+
+            notifyIfHidden('Agent Report', message);
+            Chat.loadSessions(chatSessionsList, (sid) => {
+                Chat.loadChatSession(sid, chatContainer);
+            });
+        } catch (agentErr) {
+            console.error('[System] agent_message handling failed:', agentErr);
+        }
+    });
+
     socket.on('log_event', (data) => {
         // 1. Append to Council Log
         const councilContainer = document.getElementById('council-logs');

@@ -15,6 +15,7 @@ chat_manager = None
 config_manager = None
 task_manager = None
 notification_manager = None
+latest_active_chat_session_id = None
 
 # Initialize SocketIO here to allow imports in other modules
 socketio = SocketIO()

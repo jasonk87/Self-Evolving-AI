@@ -157,25 +157,57 @@ def set_socket_broadcaster(broadcaster_func):
     logger.info("BackgroundService: Socket broadcaster set.")
 
 async def broadcast_agent_message(session_id: str, message: str, title: str = "Agent Report"):
-    """Sends a message to a specific chat session via the broadcaster."""
+    """Sends an agent completion report to the latest active chat session."""
     try:
+        import app_globals
         from ai_assistant.core.chat_manager import ChatSessionManager
 
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
         cm = ChatSessionManager(chat_storage)
-        formatted_msg = f"**{title}**\n\n{message}"
-        cm.add_message(session_id, "assistant", formatted_msg)
+        source_session_id = session_id
+        active_session_id = getattr(app_globals, "latest_active_chat_session_id", None)
+        target_session_id = source_session_id
+
+        if active_session_id:
+            try:
+                if cm.get_session(active_session_id):
+                    target_session_id = active_session_id
+            except Exception:
+                logger.warning("BackgroundService: Could not validate active session %s", active_session_id)
+
+        if not target_session_id:
+            target_session_id = active_session_id or source_session_id
+
+        if not target_session_id:
+            logger.warning("BackgroundService: Dropping agent message with no target chat session.")
+            return
+
+        body = message
+        if source_session_id and target_session_id != source_session_id:
+            body = (
+                "Earlier background agent task completed. It started in another chat, "
+                "so I am posting the result in your active chat.\n\n"
+                f"{message}"
+            )
+
+        formatted_msg = f"**{title}**\n\n{body}"
+        cm.add_message(target_session_id, "assistant", formatted_msg)
 
         if _socket_broadcaster:
             # 2. Emit to UI
             await _socket_broadcaster("agent_message", {
-                "session_id": session_id,
+                "session_id": target_session_id,
+                "source_session_id": source_session_id,
                 "role": "assistant",
                 "content": formatted_msg,
                 "timestamp": time.time()
             })
-        logger.info(f"BackgroundService: Delivered agent message to {session_id}")
+        logger.info(
+            "BackgroundService: Delivered agent message to %s (source session: %s)",
+            target_session_id,
+            source_session_id,
+        )
     except Exception as e:
         logger.error(f"BackgroundService: Failed to deliver agent message: {e}")
 
