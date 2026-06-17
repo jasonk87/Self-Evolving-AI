@@ -7,6 +7,82 @@ import functools
 ai_assistant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BASE_PROJECTS_DIR = os.path.join(ai_assistant_dir, 'ai_generated_projects')
 
+def _normalize_project_lookup_name(name: str) -> str:
+    return ''.join(ch for ch in str(name or '').casefold() if ch.isalnum())
+
+def _candidate_external_project_roots() -> list[str]:
+    roots = [BASE_PROJECTS_DIR]
+    user_home = os.path.expanduser('~')
+    user_profile = os.environ.get('USERPROFILE')
+    for home in (user_profile, user_home):
+        if home:
+            roots.append(os.path.join(home, 'Desktop', 'Projects'))
+            roots.append(os.path.join(home, 'Desktop', 'projects'))
+
+    deduped = []
+    seen = set()
+    for root in roots:
+        abs_root = os.path.abspath(root)
+        key = os.path.normcase(abs_root)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(abs_root)
+    return deduped
+
+def _resolve_external_project_folder(project_identifier: str) -> Optional[str]:
+    """
+    Resolves real user project folders that are not registered in ProjectManager.
+    This lets tools handle names like "llm call" -> "LLM Call" under Desktop/Projects.
+    """
+    if not project_identifier:
+        return None
+
+    raw_identifier = os.path.abspath(project_identifier)
+    if os.path.isdir(raw_identifier):
+        return raw_identifier
+
+    target = _normalize_project_lookup_name(project_identifier)
+    if not target:
+        return None
+
+    sanitized_target = sanitize_project_name(project_identifier)
+    for root in _candidate_external_project_roots():
+        if not os.path.isdir(root):
+            continue
+
+        try:
+            for entry in os.scandir(root):
+                if entry.is_dir() and _normalize_project_lookup_name(entry.name) == target:
+                    return os.path.abspath(entry.path)
+        except OSError:
+            continue
+
+        sanitized_candidate = os.path.join(root, sanitized_target)
+        if os.path.isdir(sanitized_candidate):
+            return os.path.abspath(sanitized_candidate)
+
+    return None
+
+def _resolve_project_root(project_identifier: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    from ai_assistant.core.project_manager import find_project
+    project = find_project(project_identifier)
+    if project:
+        root_path = project.get('root_path')
+        if not root_path:
+            return None, project
+        return os.path.abspath(root_path), project
+
+    external_root = _resolve_external_project_folder(project_identifier)
+    if external_root:
+        return external_root, {
+            'project_id': None,
+            'name': os.path.basename(external_root),
+            'root_path': external_root,
+            'source': 'external_folder',
+        }
+
+    return None, None
+
 def sanitize_project_name(name: str) -> str:
     """
     Sanitizes a project name to create a safe directory name.
@@ -222,11 +298,9 @@ def list_project_files(project_identifier: str = None, sub_directory: Optional[s
         project_identifier = project_root
     if not project_identifier:
         return {'status': 'error', 'message': "Project identifier is required."}
-    from ai_assistant.core.project_manager import find_project
-    project = find_project(project_identifier)
+    root_path, project = _resolve_project_root(project_identifier)
     if not project:
         return {'status': 'error', 'message': f"Project '{project_identifier}' not found."}
-    root_path = project.get('root_path')
     if not root_path:
         return {'status': 'error', 'message': f"Project '{project_identifier}' (ID: {project.get('project_id')}) does not have a root_path defined."}
     if not os.path.isdir(root_path):
@@ -243,7 +317,14 @@ def list_project_files(project_identifier: str = None, sub_directory: Optional[s
         entries = os.listdir(path_to_list)
         files = [entry for entry in entries if os.path.isfile(os.path.join(path_to_list, entry))]
         directories = [entry for entry in entries if os.path.isdir(os.path.join(path_to_list, entry))]
-        return {'status': 'success', 'path_listed': path_to_list, 'files': sorted(files), 'directories': sorted(directories)}
+        return {
+            'status': 'success',
+            'path_listed': path_to_list,
+            'project_name': project.get('name') or os.path.basename(root_path),
+            'project_source': project.get('source', 'project_manager'),
+            'files': sorted(files),
+            'directories': sorted(directories),
+        }
     except FileNotFoundError as e:
         return {'status': 'error', 'message': f'Path not found: {path_to_list} - {str(e)}'}
     except PermissionError as e:
@@ -268,11 +349,9 @@ def get_project_file_content(project_identifier: str, file_path_in_project: str)
         A dictionary with "status": "success", "file_path": "absolute_path", "content": "file_content".
         Or {"status": "error", "message": "error description"}.
     """
-    from ai_assistant.core.project_manager import find_project
-    project = find_project(project_identifier)
+    root_path, project = _resolve_project_root(project_identifier)
     if not project:
         return {'status': 'error', 'message': f"Project '{project_identifier}' not found."}
-    root_path = project.get('root_path')
     if not root_path:
         return {'status': 'error', 'message': f"Project '{project_identifier}' (ID: {project.get('project_id')}) does not have a root_path defined."}
     if not os.path.isdir(root_path):

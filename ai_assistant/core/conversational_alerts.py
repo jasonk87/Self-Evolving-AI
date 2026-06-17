@@ -28,6 +28,23 @@ def should_send_failure_alert(status_name: str) -> bool:
     return normalized in _FAILURE_STATUS_NAMES
 
 
+def should_send_task_failure_alert(task: "ActiveTask") -> bool:
+    if not should_send_failure_alert(task.status.name):
+        return False
+
+    task_type = getattr(getattr(task, "task_type", None), "name", "")
+    status_name = getattr(getattr(task, "status", None), "name", "")
+    reason = str(getattr(task, "status_reason", "") or "")
+    if (
+        task_type == "AGENT_TOOL_MODIFICATION"
+        and status_name == "FAILED_PRE_REVIEW"
+        and "Missing module_path or function_name" in reason
+    ):
+        return False
+
+    return True
+
+
 def _suggested_actions(task: "ActiveTask") -> List[str]:
     return [
         f"Retry with fallback (`/task-action {task.task_id} retry`).",
@@ -119,7 +136,7 @@ def execute_alert_action(task_id: str, action: str) -> Dict[str, Any]:
     return {"success": False, "error": f"Unknown action '{action}'. Supported: retry, summarize, pause."}
 
 def emit_task_failure_alert(task: "ActiveTask") -> Optional[Dict[str, Any]]:
-    if not should_send_failure_alert(task.status.name):
+    if not should_send_task_failure_alert(task):
         return None
 
     message = build_failure_alert_message(task)
