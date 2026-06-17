@@ -8,6 +8,23 @@ import glob
 import shutil
 from ai_assistant.core.events import emit_system_event
 
+def _normalize_path_name(name: str) -> str:
+    return "".join(ch for ch in str(name or "").casefold() if ch.isalnum())
+
+def _find_similar_directory(path: str) -> Optional[str]:
+    parent = os.path.dirname(path)
+    target = _normalize_path_name(os.path.basename(path))
+    if not parent or not target or not os.path.isdir(parent):
+        return None
+
+    try:
+        for entry in os.scandir(parent):
+            if entry.is_dir() and _normalize_path_name(entry.name) == target:
+                return entry.path
+    except OSError:
+        return None
+    return None
+
 def execute_sandboxed_python_script(script_content: str = None, input_files: Optional[Dict[str, str]]=None, output_filenames: Optional[List[str]]=None, timeout_seconds: int=10, python_executable: Optional[str]=None, **kwargs) -> Dict[str, Any]:
     """
     Executes a Python script in a temporary, somewhat isolated environment.
@@ -239,6 +256,38 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
         cwd = os.path.abspath(cwd)
     else:
         cwd = os.getcwd()
+
+    if not os.path.isdir(cwd):
+        suggested_cwd = _find_similar_directory(cwd)
+        parent = os.path.dirname(cwd)
+        nearby_directories = []
+        if parent and os.path.isdir(parent):
+            try:
+                nearby_directories = [
+                    entry.name for entry in os.scandir(parent)
+                    if entry.is_dir()
+                ][:25]
+            except OSError:
+                nearby_directories = []
+
+        recovery_hint = (
+            f"Working directory does not exist: {cwd}. "
+            "Verify the folder by listing its parent directory before retrying."
+        )
+        if suggested_cwd:
+            recovery_hint += f" Likely intended cwd: {suggested_cwd}"
+
+        return {
+            'status': 'error',
+            'error_message': recovery_hint,
+            'return_code': -1,
+            'stdout': '',
+            'stderr': '',
+            'cwd': cwd,
+            'cwd_exists': False,
+            'suggested_cwd': suggested_cwd,
+            'nearby_directories': nearby_directories,
+        }
 
     try:
         emit_system_event('tool_status', {'tool': 'TerminalExecution', 'message': f'Running: {command[:50]}...', 'status': 'RUNNING'})

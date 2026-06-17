@@ -1,6 +1,8 @@
 import asyncio
 import pytest
 
+from ai_assistant.custom_tools.code_execution_tools import run_terminal_command
+
 
 def _initialize_components():
     """Initialize core components needed for a smoke tool execution test."""
@@ -63,3 +65,16 @@ def test_tool_execution_smoke():
     )
 
     assert result is not None
+
+
+def test_run_terminal_command_suggests_similar_directory_for_invalid_cwd(tmp_path):
+    actual_repo = tmp_path / "Self Evolving AI"
+    actual_repo.mkdir()
+    bad_repo = tmp_path / "Self-Evolving-AI"
+
+    result = run_terminal_command("git branch -v", cwd=str(bad_repo))
+
+    assert result["status"] == "error"
+    assert result["cwd_exists"] is False
+    assert result["suggested_cwd"] == str(actual_repo)
+    assert "Likely intended cwd" in result["error_message"]

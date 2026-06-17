@@ -362,6 +362,42 @@ class DynamicOrchestrator:
         except Exception as e:
             logger.error(f"Failed to save quarantine state: {e}")
 
+    @staticmethod
+    def _tool_call_signature(tool_name: str, args: List[Any], kwargs: Dict[str, Any]) -> str:
+        try:
+            payload = json.dumps(
+                {"tool": tool_name, "args": args or [], "kwargs": kwargs or {}},
+                sort_keys=True,
+                default=str,
+            )
+        except TypeError:
+            payload = str({"tool": tool_name, "args": args or [], "kwargs": kwargs or {}})
+        return payload
+
+    @staticmethod
+    def _find_prior_successful_tool_result(
+        current_steps: List[Dict[str, Any]],
+        tool_signature: str,
+    ) -> Optional[Dict[str, Any]]:
+        for step in reversed(current_steps):
+            if (
+                step.get("tool_signature") == tool_signature
+                and step.get("success") is True
+                and str(step.get("result") or "").strip()
+            ):
+                return step
+        return None
+
+    @staticmethod
+    def _build_duplicate_tool_final_answer(tool_name: str, prior_step: Dict[str, Any]) -> str:
+        result = str(prior_step.get("result") or "").strip()
+        if len(result) > 1800:
+            result = result[:1800].rstrip() + "..."
+        return (
+            f"I already ran `{tool_name}` with the same inputs and got a successful result. "
+            f"Using that result instead of repeating the same action:\n\n{result}"
+        )
+
     async def process_prompt(self, state: ExecutionState, conversation_history: Optional[List[Dict[str, str]]] = None, session_id: Optional[str] = None, images: Optional[List[str]] = None, context_source: str = "USER") -> ExecutionState:
         """
         Process a user prompt using the direct ReAct architecture.
@@ -886,6 +922,22 @@ Return STRICT JSON only using the schema described earlier.
                     cycle_record["tool_name"] = tool_name
                     cycle_record["thought"] = thought
                     cycle_record["tool_query"] = str(kwargs.get("query") or kwargs.get("search_query") or "")
+                    tool_signature = self._tool_call_signature(tool_name, args, kwargs)
+                    cycle_record["tool_signature"] = tool_signature
+
+                    prior_success = self._find_prior_successful_tool_result(current_steps, tool_signature)
+                    if prior_success:
+                        final_answer = self._build_duplicate_tool_final_answer(tool_name, prior_success)
+                        success = True
+                        cycle_record["selected_type"] = "final_answer"
+                        cycle_record["retry_reason"] = "duplicate_successful_tool_call_short_circuit"
+                        cycle_metadata.append(cycle_record)
+                        execution_history += (
+                            f"Cycle {step_i+1} Control Observation:\n"
+                            f"ReactLoopControl: skipped duplicate successful tool call to {tool_name}; "
+                            "reused the prior result for the final answer.\n"
+                        )
+                        break
 
                     # Emit action event for UI
                     action_node_id = f"thought_action_{uuid.uuid4().hex[:8]}"
@@ -1024,7 +1076,9 @@ Return STRICT JSON only using the schema described earlier.
                         "cycle": step_i + 1,
                         "reason": thought,
                         "tool": tool_name,
-                        "result": result_str
+                        "result": result_str,
+                        "success": execution_success,
+                        "tool_signature": tool_signature,
                     })
                     cycle_metadata.append(cycle_record)
                     if execution_success and tool_name in {"spawn_background_agent", "wake_agent"}:

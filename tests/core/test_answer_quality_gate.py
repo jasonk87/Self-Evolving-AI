@@ -241,3 +241,30 @@ async def test_near_max_cycles_with_observations_adds_finalization_pressure(monk
 
     assert state.current_status == "completed"
     assert any("ReactLoopControl: You are near the ReAct cycle limit" in prompt for prompt in prompts_seen)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_successful_tool_call_short_circuits_to_final_answer(monkeypatch):
+    responses = iter([
+        '{"type":"tool_call","thought":"Check branches.","name":"status_tool","params":{"command":"git branch -v","cwd":"C:\\\\Users\\\\Owner\\\\Desktop\\\\Projects\\\\Self Evolving AI"}}',
+        '{"type":"tool_call","thought":"Check branches again.","name":"status_tool","params":{"command":"git branch -v","cwd":"C:\\\\Users\\\\Owner\\\\Desktop\\\\Projects\\\\Self Evolving AI"}}',
+    ])
+
+    async def fake_invoke(*args, **kwargs):
+        return next(responses)
+
+    orch = _make_isolated_orchestrator()
+    fake_tools = FakeToolSystem()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
+
+    state = ExecutionState(original_user_prompt="Look up the latest updated branch for Self Evolving AI")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "", [], None, "USER", None)
+
+    final_result = state.tool_results[-1]
+    metadata = final_result["react_cycle_metadata"]
+
+    assert state.current_status == "completed"
+    assert len(fake_tools.calls) == 1
+    assert "all systems nominal" in final_result["result"]
+    assert metadata[-1]["retry_reason"] == "duplicate_successful_tool_call_short_circuit"
