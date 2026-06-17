@@ -8,6 +8,24 @@ let currentSessionId = null;
 let lastResponseHash = "";
 let ghostPortalTimeout = null;
 
+export function renderChatHome(container) {
+    if (!container) return;
+    container.innerHTML = `
+        <section class="chat-home-card">
+            <div class="chat-home-orb">W</div>
+            <div class="chat-home-copy">
+                <span class="mission-mode-label">Normal Mode</span>
+                <h1>Weebo is ready.</h1>
+                <p>Ask for anything. I will handle the work, track background agents, surface approvals, and report results back here.</p>
+            </div>
+            <div class="chat-home-actions">
+                <button class="mission-action-btn" data-target="view-mission-control">Mission</button>
+                <button class="mission-action-btn secondary" data-sidebar-target="view-sidebar-approvals">Approvals</button>
+            </div>
+        </section>
+    `;
+}
+
 // Handle live browser snapshots for Ghost Mode PIP
 socket.on('browser_snapshot', (data) => {
     const portal = document.getElementById('ghost-portal');
@@ -144,7 +162,7 @@ export async function loadSessions(listElement, onSessionSelected) {
                                 await fetch(`/api/sessions/${s.id}`, { method: 'DELETE' });
                                 if (currentSessionId === s.id) {
                                     currentSessionId = null;
-                                    document.getElementById('chat-container').innerHTML = '';
+                                    renderChatHome(document.getElementById('chat-container'));
                                 }
                                 loadSessions(listElement, onSessionSelected); // Reload
                             },
@@ -175,7 +193,7 @@ export async function loadChatSession(sessionId, container) {
                     appendMessage(container, msg.role, msg.content, msg.images);
                 });
             } else {
-                appendMessage(container, 'system', '<div class="bubble">New conversation started.</div>');
+                renderChatHome(container);
             }
             return true;
         }

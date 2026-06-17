@@ -28,6 +28,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Event Delegation for New Chat ---
     // We bind to document to ensure we catch clicks even if the button is replaced
     document.addEventListener('click', async (e) => {
+        const navButton = e.target.closest('.mission-action-btn[data-target], .text-link-btn[data-target]');
+        if (navButton) {
+            const target = navButton.dataset.target;
+            const navItem = document.querySelector(`.mobile-nav-item[data-target="${target}"], .toolbar-item[data-target="${target}"], .main-tab[data-target="${target}"]`);
+            if (navItem) {
+                navItem.click();
+                return;
+            }
+        }
+
+        const sidebarButton = e.target.closest('.mission-action-btn[data-sidebar-target], .text-link-btn[data-sidebar-target]');
+        if (sidebarButton) {
+            const target = sidebarButton.dataset.sidebarTarget;
+            const navItem = document.querySelector(`.activity-item[data-target="${target}"], .mobile-sidebar-tab[data-target="${target}"]`);
+            if (navItem) {
+                navItem.click();
+                return;
+            }
+        }
+
         const btn = e.target.closest('#new-chat-btn');
         if (btn) {
             console.log("[System] New Chat button clicked (Delegated Event)");
@@ -685,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Default View
-    Layout.openMainView('view-chat', 'Chat');
+    Layout.openMainView('view-mission-control', 'Home');
 
     // --- Telemetry Polling ---
     function updateTokenTelemetry() {

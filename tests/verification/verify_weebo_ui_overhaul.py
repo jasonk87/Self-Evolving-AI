@@ -16,7 +16,6 @@ def verify_weebo_ui_overhaul():
             desktop.on("pageerror", lambda err: desktop_errors.append(str(err)))
 
             desktop.goto(BASE_URL, wait_until="networkidle", timeout=30000)
-            desktop.locator('[data-target="view-mission-control"]').first.click()
             desktop.locator(".weebo-command-center").wait_for(state="visible", timeout=10000)
             desktop.wait_for_timeout(2500)
 
@@ -29,6 +28,11 @@ def verify_weebo_ui_overhaul():
 
             desktop.locator("#mission-debug-toggle").check(force=True)
             desktop.locator("#mission-debug-workbench").wait_for(state="visible", timeout=5000)
+
+            desktop.locator('[data-target="view-chat"]').first.click()
+            desktop.locator(".chat-home-card").wait_for(state="visible", timeout=5000)
+            assert "Weebo is ready" in desktop.locator(".chat-home-card").inner_text()
+
             desktop.screenshot(path="output-playwright-mission-desktop.png", full_page=True)
             assert desktop_errors == []
 
@@ -38,7 +42,6 @@ def verify_weebo_ui_overhaul():
             mobile.on("pageerror", lambda err: mobile_errors.append(str(err)))
 
             mobile.goto(BASE_URL, wait_until="networkidle", timeout=30000)
-            mobile.locator('.mobile-nav-item[data-target="view-mission-control"]').click()
             mobile.locator(".weebo-command-center").wait_for(state="visible", timeout=10000)
             mobile.wait_for_timeout(2000)
 
@@ -47,6 +50,10 @@ def verify_weebo_ui_overhaul():
                 "() => document.documentElement.scrollWidth > window.innerWidth + 2"
             )
             assert not has_horizontal_overflow
+
+            mobile.locator('.mobile-nav-item[data-target="view-chat"]').click()
+            mobile.locator(".chat-home-card").wait_for(state="visible", timeout=5000)
+            assert "Weebo is ready" in mobile.locator(".chat-home-card").inner_text()
 
             mobile.screenshot(path="output-playwright-mission-mobile.png", full_page=True)
             assert mobile_errors == []

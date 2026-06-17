@@ -88,6 +88,12 @@ body {
     display: none;
 }
 
+.mobile-app-title {
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0;
+}
+
 /* --- 1. ACTIVITY BAR (Icons) --- */
 .activity-bar {
     grid-area: activity;
@@ -982,6 +988,53 @@ body {
     gap: 15px;
 }
 
+.chat-home-card {
+    width: min(780px, calc(100% - 24px));
+    margin: auto;
+    padding: 28px;
+    border: 1px solid rgba(32, 214, 161, 0.24);
+    border-radius: 8px;
+    background:
+        linear-gradient(145deg, rgba(10, 20, 31, 0.88), rgba(18, 25, 39, 0.72));
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34), 0 0 44px rgba(32, 214, 161, 0.08);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 18px;
+    align-items: center;
+}
+
+.chat-home-orb {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: #04110d;
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #1fe0b0, #6ee7f9);
+    box-shadow: 0 0 32px rgba(32, 214, 161, 0.32);
+}
+
+.chat-home-copy h1 {
+    margin: 4px 0 8px;
+    font-size: 32px;
+    line-height: 1.08;
+}
+
+.chat-home-copy p {
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-width: 620px;
+}
+
+.chat-home-actions {
+    grid-column: 2;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .message {
     display: flex;
     gap: 15px;
@@ -1623,10 +1676,15 @@ body {
 
 @media (max-width: 768px) {
     .mission-topbar {
+        height: auto;
         min-height: auto;
         align-items: flex-start;
-        padding: 12px;
+        padding: 12px 12px 14px;
         flex-wrap: wrap;
+    }
+
+    .mission-brand {
+        flex: 1 1 220px;
     }
 
     .mission-title-main {
@@ -1681,6 +1739,38 @@ body {
     .normal-list,
     .normal-approvals-list {
         max-height: none;
+    }
+
+    .chat-home-card {
+        width: 100%;
+        margin: 12px 0 auto;
+        grid-template-columns: auto 1fr;
+        padding: 16px;
+        gap: 12px;
+    }
+
+    .chat-home-orb {
+        width: 48px;
+        height: 48px;
+        font-size: 20px;
+    }
+
+    .chat-home-copy h1 {
+        font-size: 22px;
+        margin-bottom: 8px;
+    }
+
+    .chat-home-copy p {
+        grid-column: 1 / -1;
+        font-size: 14px;
+    }
+
+    .chat-home-actions {
+        grid-column: 1 / -1;
+    }
+
+    .chat-home-actions .mission-action-btn {
+        min-height: 38px;
     }
 }
 
