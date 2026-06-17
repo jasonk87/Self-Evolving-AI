@@ -12,6 +12,7 @@ def test_settings_schema_includes_runtime_controls():
     assert schema["REMINDER_CHECK_INTERVAL_SECONDS"]["type"] == "integer"
     assert "DREAM_INTERVAL_SECONDS" in schema
     assert "ENABLE_DREAM_MODE" in schema
+    assert schema["ALLOW_ARCHITECT"]["type"] == "boolean"
 
 
 def test_coerce_setting_value_validates_enum():

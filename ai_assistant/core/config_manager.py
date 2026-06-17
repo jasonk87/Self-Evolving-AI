@@ -64,7 +64,8 @@ class ConfigManager:
             "CATEGORY_BUDGETS": getattr(config_module, 'CATEGORY_BUDGETS', {}),
             "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
             "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
-            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
+            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True),
+            "ALLOW_ARCHITECT": getattr(config_module, 'ALLOW_ARCHITECT', False)
         }
         self._write_json(data)
 
@@ -159,7 +160,8 @@ class ConfigManager:
             "CATEGORY_BUDGETS": getattr(config_module, 'CATEGORY_BUDGETS', {}),
             "ALLOW_DREAMER": getattr(config_module, 'ALLOW_DREAMER', True),
             "ALLOW_MEMORY_LEARNING": getattr(config_module, 'ALLOW_MEMORY_LEARNING', True),
-            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True)
+            "ALLOW_AUTO_FIXING": getattr(config_module, 'ALLOW_AUTO_FIXING', True),
+            "ALLOW_ARCHITECT": getattr(config_module, 'ALLOW_ARCHITECT', False)
         }
 
     def get_settings_schema(self):
@@ -245,6 +247,10 @@ class ConfigManager:
             "ALLOW_AUTO_FIXING": {
                 "type": "boolean",
                 "description": "Allow background autonomous file fixing to run.",
+            },
+            "ALLOW_ARCHITECT": {
+                "type": "boolean",
+                "description": "Allow Evolutionary Architect audits to generate source-change proposals.",
             }
         }
 

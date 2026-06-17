@@ -933,6 +933,7 @@ async def _background_loop_async():
         ALLOW_DREAMER = getattr(runtime_config, "ALLOW_DREAMER", True)
         ALLOW_MEMORY_LEARNING = getattr(runtime_config, "ALLOW_MEMORY_LEARNING", True)
         ALLOW_AUTO_FIXING = getattr(runtime_config, "ALLOW_AUTO_FIXING", True)
+        ALLOW_ARCHITECT = getattr(runtime_config, "ALLOW_ARCHITECT", False)
 
         # --- Visual Audit Task (Heavy) ---
         if ALLOW_AUTO_FIXING and user_is_idle and vision_service and current_loop_time >= next_visual_audit_run_time:
@@ -1106,7 +1107,7 @@ async def _background_loop_async():
 
 
         # --- Evolutionary Architect Audit Task (Heavy) ---
-        if user_is_idle and current_loop_time >= next_architect_audit_run_time:
+        if ALLOW_ARCHITECT and user_is_idle and current_loop_time >= next_architect_audit_run_time:
              logger.info("BackgroundService: Running Evolutionary Architect Audit...")
              try:
                  proposal = await perform_architectural_audit()

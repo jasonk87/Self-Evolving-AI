@@ -115,6 +115,7 @@ CATEGORY_BUDGETS: Dict[str, float] = {
 ALLOW_DREAMER = True
 ALLOW_MEMORY_LEARNING = True
 ALLOW_AUTO_FIXING = True
+ALLOW_ARCHITECT = False
 
 # --- Auto-Approval Configuration ---
 # Wait time (in seconds) before the AI auto-executes pending requests for Self-Evolving activities.
