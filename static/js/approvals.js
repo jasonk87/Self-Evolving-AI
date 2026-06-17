@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const approvalsList = document.getElementById('approvals-list');
+    const normalApprovalsList = document.getElementById('normal-approvals-list');
+    const normalApprovalCount = document.getElementById('normal-approval-count');
     const badge = document.getElementById('approval-badge');
     const refreshBtn = document.getElementById('refresh-approvals-btn');
 
@@ -40,50 +42,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.classList.add('hidden');
             }
         }
+        if (normalApprovalCount) {
+            normalApprovalCount.textContent = approvals.length;
+        }
 
         if (approvals.length === 0) {
             approvalsList.innerHTML = '<div class="empty-state" style="opacity:0.5; text-align:center; margin-top:20px;">No pending approvals.</div>';
+            if (normalApprovalsList) {
+                normalApprovalsList.innerHTML = '<div class="normal-empty-state">No approvals waiting. Weebo will surface the next decision here.</div>';
+            }
             return;
         }
 
         approvalsList.innerHTML = '';
+        if (normalApprovalsList) normalApprovalsList.innerHTML = '';
         approvals.forEach(req => {
-            const card = document.createElement('div');
-            card.className = 'approval-card glass-panel-light';
-
-            let typeLabel = formatType(req.type);
-
-            card.innerHTML = `
-                <div class="approval-header">
-                    <span class="approval-type type-${req.type}">${typeLabel}</span>
-                    <span class="approval-time">${new Date(req.timestamp * 1000).toLocaleTimeString()}</span>
-                </div>
-                <div class="approval-body">
-                    ${req.data && req.data.related_tool_name ? `<div class="target-name">Target Tool: <code>${req.data.related_tool_name}</code></div>` : ''}
-                    ${req.data && req.data.details && req.data.details.target_file ? `<div class="target-name">Target File: <code>${req.data.details.target_file}</code></div>` : ''}
-                    <p class="approval-desc">${req.description}</p>
-                    <textarea class="approval-feedback-input" placeholder="Optional feedback (e.g., reason for denial, or instructions)..." style="width:100%; margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); color:#eee; font-size:12px; resize:vertical; min-height:60px;"></textarea>
-                </div>
-                <div class="approval-actions">
-                    <button class="btn-deny" data-id="${req.id}">Deny</button>
-                    <button class="btn-approve" data-id="${req.id}">Approve</button>
-                </div>
-            `;
-
-            // Listeners
-            const feedbackInput = card.querySelector('.approval-feedback-input');
-
-            card.querySelector('.btn-approve').addEventListener('click', () => {
-                const feedback = feedbackInput.value;
-                handleAction(req.id, 'approve', feedback);
-            });
-            card.querySelector('.btn-deny').addEventListener('click', () => {
-                const feedback = feedbackInput.value;
-                handleAction(req.id, 'deny', feedback);
-            });
-
-            approvalsList.appendChild(card);
+            approvalsList.appendChild(createApprovalCard(req));
+            if (normalApprovalsList) {
+                normalApprovalsList.appendChild(createApprovalCard(req, true));
+            }
         });
+    }
+
+    function createApprovalCard(req, compact = false) {
+        const card = document.createElement('div');
+        card.className = compact ? 'approval-card glass-panel-light compact-approval-card' : 'approval-card glass-panel-light';
+
+        let typeLabel = formatType(req.type);
+
+        card.innerHTML = `
+            <div class="approval-header">
+                <span class="approval-type type-${req.type}">${typeLabel}</span>
+                <span class="approval-time">${new Date(req.timestamp * 1000).toLocaleTimeString()}</span>
+            </div>
+            <div class="approval-body">
+                ${req.data && req.data.related_tool_name ? `<div class="target-name">Target Tool: <code>${req.data.related_tool_name}</code></div>` : ''}
+                ${req.data && req.data.details && req.data.details.target_file ? `<div class="target-name">Target File: <code>${req.data.details.target_file}</code></div>` : ''}
+                <p class="approval-desc">${req.description}</p>
+                <textarea class="approval-feedback-input" placeholder="Optional feedback..." style="width:100%; margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); color:#eee; font-size:12px; resize:vertical; min-height:${compact ? '44px' : '60px'};"></textarea>
+            </div>
+            <div class="approval-actions">
+                <button class="btn-deny" data-id="${req.id}">Deny</button>
+                <button class="btn-approve" data-id="${req.id}">Approve</button>
+            </div>
+        `;
+
+        const feedbackInput = card.querySelector('.approval-feedback-input');
+
+        card.querySelector('.btn-approve').addEventListener('click', () => {
+            const feedback = feedbackInput.value;
+            handleAction(req.id, 'approve', feedback);
+        });
+        card.querySelector('.btn-deny').addEventListener('click', () => {
+            const feedback = feedbackInput.value;
+            handleAction(req.id, 'deny', feedback);
+        });
+
+        return card;
     }
 
     function formatType(type) {

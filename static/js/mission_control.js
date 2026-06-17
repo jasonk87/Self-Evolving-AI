@@ -14,6 +14,15 @@ const missionControl = {
     actionAuditPanel: document.getElementById('mission-control-action-audit'),
     scoreboardPanel: document.getElementById('mission-control-scoreboard'),
     toolLifecyclePanel: document.getElementById('mission-control-tool-lifecycle'),
+    normalWorkPanel: document.getElementById('normal-current-work'),
+    normalWorkCount: document.getElementById('normal-work-count'),
+    weeboStatusLine: document.getElementById('weebo-status-line'),
+    normalToolsCount: document.getElementById('normal-tools-count'),
+    normalMemoryState: document.getElementById('normal-memory-state'),
+    normalAgentCount: document.getElementById('normal-agent-count'),
+    normalInboxCount: document.getElementById('normal-inbox-count'),
+    debugWorkbench: document.getElementById('mission-debug-workbench'),
+    debugToggle: document.getElementById('mission-debug-toggle'),
     refreshBtn: document.getElementById('refresh-tasks-btn'),
     statusPollIntervalMs: 8000,
     staleAfterMs: 20000,
@@ -54,6 +63,8 @@ const missionControl = {
 
         // Initialize background kill switches
         this.initBackgroundSwitches();
+        this.initNormalModeActions();
+        this.initDebugModeToggle();
 
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -94,6 +105,7 @@ const missionControl = {
         const d_switch = document.getElementById('switch-allow-dreamer');
         const m_switch = document.getElementById('switch-allow-memory');
         const a_switch = document.getElementById('switch-allow-autofix');
+        const arch_switch = document.getElementById('switch-allow-architect');
 
         if (!d_switch || !m_switch || !a_switch) return;
 
@@ -104,6 +116,7 @@ const missionControl = {
             d_switch.checked = config.ENABLE_DREAM_MODE === true;
             m_switch.checked = config.ALLOW_MEMORY_LEARNING !== false;
             a_switch.checked = config.ALLOW_AUTO_FIXING !== false;
+            if (arch_switch) arch_switch.checked = config.ALLOW_ARCHITECT === true;
 
         } catch(e) { console.error("Could not init switches", e); }
 
@@ -123,6 +136,44 @@ const missionControl = {
         });
         m_switch.addEventListener('change', () => toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked));
         a_switch.addEventListener('change', () => toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked));
+        if (arch_switch) {
+            arch_switch.addEventListener('change', () => {
+                toggleConfig('ALLOW_ARCHITECT', arch_switch.checked);
+                this.fetchBackgroundCadence();
+            });
+        }
+    },
+
+    initNormalModeActions: function () {
+        document.querySelectorAll('.mission-action-btn[data-target], .text-link-btn[data-target]').forEach(button => {
+            button.addEventListener('click', () => {
+                const target = button.dataset.target;
+                const navItem = document.querySelector(`.mobile-nav-item[data-target="${target}"], .toolbar-item[data-target="${target}"], .main-tab[data-target="${target}"]`);
+                if (navItem) navItem.click();
+            });
+        });
+
+        document.querySelectorAll('.mission-action-btn[data-sidebar-target], .text-link-btn[data-sidebar-target]').forEach(button => {
+            button.addEventListener('click', () => {
+                const target = button.dataset.sidebarTarget;
+                const navItem = document.querySelector(`.activity-item[data-target="${target}"], .mobile-sidebar-tab[data-target="${target}"]`);
+                if (navItem) navItem.click();
+            });
+        });
+    },
+
+    initDebugModeToggle: function () {
+        if (!this.debugToggle || !this.debugWorkbench) return;
+
+        const savedState = localStorage.getItem('weeboDebugMode') === 'true';
+        this.debugToggle.checked = savedState;
+        this.debugWorkbench.classList.toggle('debug-enabled', savedState);
+
+        this.debugToggle.addEventListener('change', () => {
+            const enabled = this.debugToggle.checked;
+            localStorage.setItem('weeboDebugMode', enabled ? 'true' : 'false');
+            this.debugWorkbench.classList.toggle('debug-enabled', enabled);
+        });
     },
 
     isMissionControlActive: function () {
@@ -618,6 +669,8 @@ const missionControl = {
     renderStatusSnapshot: function (snapshot, generatedAtIso) {
         if (!this.statusPanel || !snapshot) return;
 
+        this.renderNormalSnapshot(snapshot);
+
         const toolsByType = Object.entries(snapshot.tools_by_type || {})
             .map(([toolType, count]) => `<span class="mission-kv-pill">${this.escapeHtml(toolType)}: ${count}</span>`)
             .join('');
@@ -674,6 +727,18 @@ const missionControl = {
             </div>
         `;
         this.updateStaleState();
+    },
+
+    renderNormalSnapshot: function (snapshot) {
+        if (!snapshot) return;
+
+        const activeAgents = Number(snapshot.delegation_active_tasks || 0) + Number(snapshot.delegation_chat_delegate_active_tasks || 0);
+        if (this.normalToolsCount) this.normalToolsCount.textContent = Number(snapshot.tools_total || 0);
+        if (this.normalAgentCount) this.normalAgentCount.textContent = activeAgents;
+        if (this.normalInboxCount) this.normalInboxCount.textContent = Number(snapshot.work_inbox_unread || 0);
+        if (this.normalMemoryState) {
+            this.normalMemoryState.textContent = snapshot.autonomous_learning_enabled ? 'On' : 'Off';
+        }
     },
 
     fetchReflectionSuggestions: async function () {
@@ -880,12 +945,49 @@ const missionControl = {
 
             if (data.success) {
                 this.renderTasks(data.tasks);
+                this.renderNormalWork(data.tasks || []);
             } else {
                 this.board.innerHTML = `<div class="error">Failed to fetch directives: ${data.error}</div>`;
+                if (this.normalWorkPanel) this.normalWorkPanel.innerHTML = '<div class="normal-empty-state">Current work is unavailable.</div>';
             }
         } catch (e) {
             console.error("Fetch tasks error:", e);
             this.board.innerHTML = `<div class="error">Comm link failure: ${e.message}</div>`;
+            if (this.normalWorkPanel) this.normalWorkPanel.innerHTML = '<div class="normal-empty-state">Current work is unavailable.</div>';
+        }
+    },
+
+    renderNormalWork: function (tasks) {
+        if (!this.normalWorkPanel) return;
+
+        const activeTasks = Array.isArray(tasks) ? tasks : [];
+        if (this.normalWorkCount) this.normalWorkCount.textContent = activeTasks.length;
+
+        if (activeTasks.length === 0) {
+            this.normalWorkPanel.innerHTML = '<div class="normal-empty-state">No active background work. Weebo will report when new work starts or finishes.</div>';
+            if (this.weeboStatusLine) this.weeboStatusLine.textContent = 'No active directives right now. Weebo is ready for the next instruction.';
+            return;
+        }
+
+        this.normalWorkPanel.innerHTML = activeTasks.slice(0, 4).map(task => {
+            const status = this.escapeHtml(String(task.status || 'RUNNING').replace(/_/g, ' '));
+            const title = this.escapeHtml(task.title || task.name || task.description || 'Active task');
+            const step = this.escapeHtml(task.current_step || task.step_desc || 'Working');
+            const progress = Number.isFinite(task.progress_percentage) ? Number(task.progress_percentage) : null;
+            const progressHtml = progress !== null
+                ? `<div class="normal-progress"><span style="width:${Math.max(0, Math.min(100, progress))}%"></span></div>`
+                : '';
+            return `
+                <div class="normal-work-item">
+                    <div><strong>${title}</strong><span>${status}</span></div>
+                    <p>${step}</p>
+                    ${progressHtml}
+                </div>
+            `;
+        }).join('');
+
+        if (this.weeboStatusLine) {
+            this.weeboStatusLine.textContent = `Weebo is actively tracking ${activeTasks.length} task${activeTasks.length === 1 ? '' : 's'} and will report results back into chat.`;
         }
     },
 

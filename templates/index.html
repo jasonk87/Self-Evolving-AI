@@ -343,11 +343,71 @@
 
             <!-- Mission Control -->
             <div id="view-mission-control" class="view-container">
-                <header class="stage-header glass-panel">
-                    <span class="title">MISSION CONTROL</span>
+                <header class="stage-header glass-panel mission-topbar">
+                    <div class="mission-brand">
+                        <span class="mission-mode-label">Normal Mode</span>
+                        <span class="mission-title-main">Self-Evolving AI</span>
+                        <span class="mission-subtitle-main">Weebo is handling the work. Approvals stay in your hands.</span>
+                    </div>
                     <div class="actions"><button id="refresh-tasks-btn" class="btn-icon">↻</button></div>
+                    <label class="debug-mode-toggle" for="mission-debug-toggle">
+                        <span>Debug Mode</span>
+                        <input type="checkbox" id="mission-debug-toggle">
+                        <span class="debug-slider"></span>
+                    </label>
                 </header>
-                <div id="mission-control-kill-switches" class="mission-status glass-panel" style="margin-bottom: 20px;">
+
+                <section class="weebo-command-center" aria-label="Weebo command center">
+                    <div class="weebo-card glass-panel">
+                        <div class="weebo-face">
+                            <div class="weebo-orb">W</div>
+                            <div>
+                                <div class="weebo-kicker">Weebo</div>
+                                <h2>Ready to build, watch, and report back.</h2>
+                            </div>
+                        </div>
+                        <p id="weebo-status-line">Syncing the live system state...</p>
+                        <div class="weebo-actions">
+                            <button class="mission-action-btn" data-target="view-chat">Open Chat</button>
+                            <button class="mission-action-btn secondary" data-sidebar-target="view-sidebar-approvals">Review Approvals</button>
+                        </div>
+                    </div>
+
+                    <div class="normal-panel glass-panel">
+                        <div class="normal-panel-header">
+                            <span>Current Work</span>
+                            <strong id="normal-work-count">0</strong>
+                        </div>
+                        <div id="normal-current-work" class="normal-list">
+                            <div class="loading">Checking active work...</div>
+                        </div>
+                    </div>
+
+                    <div class="normal-panel glass-panel approval-priority-panel">
+                        <div class="normal-panel-header">
+                            <span>Approvals</span>
+                            <strong id="normal-approval-count">0</strong>
+                        </div>
+                        <div id="normal-approvals-list" class="approvals-list normal-approvals-list">
+                            <div class="loading">Checking approvals...</div>
+                        </div>
+                    </div>
+
+                    <div class="normal-panel glass-panel">
+                        <div class="normal-panel-header">
+                            <span>Workspace</span>
+                            <button class="text-link-btn" data-sidebar-target="view-sidebar-files">Open</button>
+                        </div>
+                        <div class="normal-stats-grid">
+                            <div><span>Tools</span><strong id="normal-tools-count">--</strong></div>
+                            <div><span>Memory</span><strong id="normal-memory-state">On</strong></div>
+                            <div><span>Agents</span><strong id="normal-agent-count">--</strong></div>
+                            <div><span>Inbox</span><strong id="normal-inbox-count">--</strong></div>
+                        </div>
+                    </div>
+                </section>
+
+                <div id="mission-control-kill-switches" class="mission-status glass-panel normal-autonomy-card">
                     <h3 style="margin-bottom: 10px;">Background Fleet Operations</h3>
                     <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                         <div class="setting-group" style="display: flex; align-items: center; gap: 10px;">
@@ -371,8 +431,23 @@
                                 <label for="switch-allow-autofix"></label>
                             </div>
                         </div>
+                        <div class="setting-group" style="display: flex; align-items: center; gap: 10px;">
+                            <label>Architect Audits</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="switch-allow-architect">
+                                <label for="switch-allow-architect"></label>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <section class="debug-workbench" id="mission-debug-workbench">
+                    <div class="debug-section-header">
+                        <div>
+                            <span class="mission-mode-label">Debug Mode</span>
+                            <h3>Developer Tools</h3>
+                        </div>
+                        <p>Detailed internals stay available here without crowding Weebo's normal operating view.</p>
+                    </div>
                 <div class="mission-diagnostics-grid">
                     <div id="mission-control-run-spine" class="mission-status glass-panel mission-run-spine">
                         <div class="loading">Joining run/task/action evidence...</div>
@@ -405,6 +480,7 @@
                 <div id="mission-control-board" class="mission-board">
                     <div class="loading">Scanning for active directives...</div>
                 </div>
+                </section>
             </div>
 
             <!-- Editor -->
