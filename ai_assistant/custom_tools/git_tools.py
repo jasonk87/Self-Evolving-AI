@@ -4,12 +4,112 @@ after user approval.
 """
 import logging
 import os
-from typing import Optional
+import shutil
+import subprocess
+from typing import Optional, Dict, Any, List
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 if not logger.handlers: # Avoid adding multiple handlers if script is reloaded/run multiple times
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+def get_latest_git_branch_update(project_root: str, include_remotes: bool = True, limit: int = 10) -> Dict[str, Any]:
+    """
+    Returns Git branches sorted by last commit timestamp without relying on shell pipelines.
+
+    This is Windows-safe because it uses subprocess argument lists instead of `sort`,
+    `head`, quoting-sensitive shell chains, or Unix utilities.
+    """
+    if not project_root or not str(project_root).strip():
+        return {"status": "error", "error_message": "project_root is required.", "branches": []}
+
+    root = os.path.abspath(project_root)
+    if not os.path.isdir(root):
+        return {"status": "error", "error_message": f"Project root does not exist: {root}", "branches": []}
+
+    git_path = shutil.which("git")
+    if not git_path:
+        return {"status": "error", "error_message": "Git executable was not found in PATH.", "branches": []}
+
+    refs = ["refs/heads/"]
+    if include_remotes:
+        refs.append("refs/remotes/")
+
+    try:
+        result = subprocess.run(
+            [
+                git_path,
+                "-C",
+                root,
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)|%(committerdate:iso8601)|%(objectname:short)|%(subject)",
+                *refs,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "error_message": "Git branch lookup timed out.", "branches": []}
+    except Exception as exc:
+        return {"status": "error", "error_message": f"Git branch lookup failed: {exc}", "branches": []}
+
+    if result.returncode != 0:
+        return {
+            "status": "error",
+            "error_message": result.stderr.strip() or result.stdout.strip() or "Git command failed.",
+            "return_code": result.returncode,
+            "branches": [],
+        }
+
+    branches: List[Dict[str, str]] = []
+    seen = set()
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        name, date, commit, subject = (line.split("|", 3) + ["", "", "", ""])[:4]
+        if name.endswith("/HEAD"):
+            continue
+        # Prefer local branch names over the duplicate origin/<branch> entry.
+        canonical = name.removeprefix("origin/")
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        branches.append({
+            "branch": name,
+            "canonical_branch": canonical,
+            "last_commit_timestamp": date,
+            "commit": commit,
+            "subject": subject,
+        })
+        if len(branches) >= max(1, int(limit or 10)):
+            break
+
+    if not branches:
+        return {"status": "error", "error_message": "No branch refs were found.", "branches": []}
+
+    return {
+        "status": "success",
+        "project_root": root,
+        "latest_branch": branches[0],
+        "branches": branches,
+    }
+
+GET_LATEST_GIT_BRANCH_UPDATE_SCHEMA = {
+    "name": "get_latest_git_branch_update",
+    "description": (
+        "Windows-safe Git helper that returns branches sorted by last commit timestamp. "
+        "Use this instead of raw terminal pipelines for questions like latest updated branch."
+    ),
+    "parameters": [
+        {"name": "project_root", "type": "str", "description": "Absolute path to the Git repository."},
+        {"name": "include_remotes", "type": "bool", "description": "Include remote refs such as origin/*. Default true."},
+        {"name": "limit", "type": "int", "description": "Maximum number of branch entries to return. Default 10."},
+    ],
+    "returns": {"type": "dict", "description": "Latest branch info plus sorted branch entries."},
+}
 
 def push_ai_generated_commits(
     project_root: str, 

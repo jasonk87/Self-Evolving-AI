@@ -12,6 +12,7 @@ if project_root not in sys.path:
 import asyncio
 import json
 import logging
+import platform
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -660,6 +661,14 @@ class DynamicOrchestrator:
                 "To assign an available persistent workspace, call wake_agent. To create a new background goal, call spawn_background_agent."
             )
 
+        host_os_guide = (
+            f"HOST EXECUTION ENVIRONMENT: {platform.system()} {platform.release()} ({os.name}). "
+            "This app is running on Windows. For terminal work, use Windows-compatible commands and paths. "
+            "Prefer tool `cwd` parameters or `git -C <path>` over shell `cd` chains. "
+            "Do not use Unix-only commands or pipelines such as `head`, `tail`, `grep`, `sed`, `awk`, or `sort -r` unless you have first verified they exist. "
+            "For Git branch recency, prefer `get_latest_git_branch_update` instead of hand-writing shell pipelines."
+        )
+
         # Create ephemeral task for UI feedback
         current_ui_task = None
         if self.task_manager and session_id:
@@ -742,6 +751,7 @@ class DynamicOrchestrator:
                 action_prompt = f"""You are a tool-capable assistant. Decide the next action for this request in one step.
 Goal: {state.original_user_prompt}
 {persona_guide}
+{host_os_guide}
 {quarantine_info}
 Context:
 {context}
@@ -799,6 +809,7 @@ Rules:
                     action_prompt = f"""You are a tool-capable assistant. Decide the next action for this request in one step.
 Goal: {state.original_user_prompt}
 {persona_guide}
+{host_os_guide}
 {quarantine_info}
 Context:
 {context}

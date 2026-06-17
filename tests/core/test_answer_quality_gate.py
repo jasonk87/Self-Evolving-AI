@@ -314,3 +314,24 @@ async def test_spawn_ephemeral_agent_gets_session_and_finishes_as_queued_backgro
     assert state.current_status == "completed"
     assert tool_kwargs["session_id"] == "chat-42"
     assert "assigned a real background task" in final_result["result"]
+
+
+@pytest.mark.asyncio
+async def test_react_prompt_includes_windows_execution_context(monkeypatch):
+    prompts_seen = []
+
+    async def fake_invoke(prompt, **kwargs):
+        prompts_seen.append(prompt)
+        return '{"type":"final_answer","thought":"Enough context.","params":{"message":"Done."}}'
+
+    orch = _make_isolated_orchestrator()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
+
+    state = ExecutionState(original_user_prompt="Check the current repo branch")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "repo branch is main", [], None, "USER", None)
+
+    assert state.current_status == "completed"
+    assert any("This app is running on Windows" in prompt for prompt in prompts_seen)
+    assert any("Do not use Unix-only commands" in prompt for prompt in prompts_seen)
+    assert any("get_latest_git_branch_update" in prompt for prompt in prompts_seen)

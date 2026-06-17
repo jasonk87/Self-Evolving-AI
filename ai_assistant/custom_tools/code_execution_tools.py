@@ -315,7 +315,11 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
 
 RUN_TERMINAL_COMMAND_SCHEMA = {
     'name': 'run_terminal_command', 
-    'description': "Executes ANY terminal command on the host OS. Use for git, testing, starting servers, or system administration.", 
+    'description': (
+        "Executes a terminal command on the host OS. The host is Windows, so commands must be Windows cmd/PowerShell compatible. "
+        "Do not use Unix-only helpers like head, grep, sed, awk, or sort -r unless verified available. "
+        "Prefer dedicated tools such as get_latest_git_branch_update for Git branch recency instead of raw shell pipelines."
+    ), 
     'parameters': [
         {'name': 'command', 'type': 'str', 'description': 'The command string to execute.'},
         {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout in seconds. Default 120.'},
