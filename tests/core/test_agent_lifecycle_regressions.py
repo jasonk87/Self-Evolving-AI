@@ -31,6 +31,44 @@ def test_background_goal_is_persisted_and_queued_immediately(tmp_path, monkeypat
     assert "Queued for execution" in result
 
 
+def test_spawn_ephemeral_agent_queues_real_background_goal(tmp_path, monkeypatch):
+    goals_path = tmp_path / "goals.json"
+    manager = AgentManager(base_path=str(tmp_path / "temp_agents"))
+    monkeypatch.setattr(goal_management, "DEFAULT_GOALS_FILE", str(goals_path))
+    monkeypatch.setattr(goal_management, "_goals_db", {})
+    monkeypatch.setattr(agent_tools, "agent_manager", manager)
+
+    result = agent_tools.spawn_ephemeral_agent(
+        "Investigate the LLM Call project",
+        scope_type="persistent",
+        session_id="chat-42",
+    )
+    goal = next(iter(goal_management._goals_db.values()))
+
+    assert result["queued"] == "true"
+    assert result["scope"] == "user"
+    assert result["goal_id"] == goal["id"]
+    assert goal["status"] == "pending"
+    assert goal["metadata"]["type"] == "background_agent"
+    assert goal["metadata"]["routed_agent_id"] == result["agent_id"]
+    assert goal["metadata"]["source_session_id"] == "chat-42"
+    assert (tmp_path / "temp_agents" / result["agent_id"] / "metadata.json").exists()
+
+
+def test_spawn_ephemeral_agent_workspace_only_mode_for_executor(tmp_path, monkeypatch):
+    goals_path = tmp_path / "goals.json"
+    manager = AgentManager(base_path=str(tmp_path / "temp_agents"))
+    monkeypatch.setattr(goal_management, "DEFAULT_GOALS_FILE", str(goals_path))
+    monkeypatch.setattr(goal_management, "_goals_db", {})
+    monkeypatch.setattr(agent_tools, "agent_manager", manager)
+
+    result = agent_tools.spawn_ephemeral_agent("Run generated code", queue_task=False)
+
+    assert "goal_id" not in result
+    assert result["scope"] == "session"
+    assert goal_management._goals_db == {}
+
+
 def test_autonomous_goal_is_queued_immediately(tmp_path, monkeypatch):
     goals_path = tmp_path / "goals.json"
     monkeypatch.setattr(goal_management, "DEFAULT_GOALS_FILE", str(goals_path))

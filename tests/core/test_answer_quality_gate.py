@@ -59,6 +59,28 @@ class FakeSearchToolSystem:
         return {"success": True, "result": "Search result: Aronoff Center address in downtown Cincinnati."}
 
 
+class FakeAgentToolSystem:
+    def __init__(self):
+        self.calls = []
+
+    def get_tools_description(self):
+        return "spawn_ephemeral_agent: spawns and queues an agent"
+
+    async def execute_tool(self, tool_name, **kwargs):
+        self.calls.append({"tool_name": tool_name, **kwargs})
+        assert tool_name == "spawn_ephemeral_agent"
+        return {
+            "success": True,
+            "result": {
+                "agent_id": "agent-1",
+                "goal_id": "goal-1",
+                "goal_status": "pending",
+                "queued": "true",
+                "message": "Agent agent-1 was created and assigned a real background task.",
+            },
+        }
+
+
 @pytest.mark.asyncio
 async def test_final_answer_accepted_when_useful(monkeypatch):
     async def fake_invoke(*args, **kwargs):
@@ -268,3 +290,27 @@ async def test_duplicate_successful_tool_call_short_circuits_to_final_answer(mon
     assert len(fake_tools.calls) == 1
     assert "all systems nominal" in final_result["result"]
     assert metadata[-1]["retry_reason"] == "duplicate_successful_tool_call_short_circuit"
+
+
+@pytest.mark.asyncio
+async def test_spawn_ephemeral_agent_gets_session_and_finishes_as_queued_background_task(monkeypatch):
+    async def fake_invoke(*args, **kwargs):
+        return (
+            '{"type":"tool_call","thought":"Queue a real agent.","name":"spawn_ephemeral_agent",'
+            '"params":{"task_description":"Investigate the LLM Call project","scope_type":"persistent"}}'
+        )
+
+    orch = _make_isolated_orchestrator()
+    fake_tools = FakeAgentToolSystem()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
+
+    state = ExecutionState(original_user_prompt="What is the LLM Call project about?")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "", [], "chat-42", "USER", None)
+
+    final_result = state.tool_results[-1]
+    tool_kwargs = fake_tools.calls[0]["kwargs"]
+
+    assert state.current_status == "completed"
+    assert tool_kwargs["session_id"] == "chat-42"
+    assert "assigned a real background task" in final_result["result"]

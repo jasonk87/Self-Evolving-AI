@@ -972,7 +972,7 @@ Return STRICT JSON only using the schema described earlier.
                     else:
                         for attempt in range(max_retries + 1):
                             try:
-                                if tool_name in {"spawn_background_agent", "wake_agent"} and session_id and "session_id" not in kwargs:
+                                if tool_name in {"spawn_background_agent", "wake_agent", "spawn_ephemeral_agent"} and session_id and "session_id" not in kwargs:
                                     kwargs["session_id"] = session_id
 
                                 # `execute_tool` now returns a validated dictionary based on BaseActionResponse
@@ -1081,7 +1081,7 @@ Return STRICT JSON only using the schema described earlier.
                         "tool_signature": tool_signature,
                     })
                     cycle_metadata.append(cycle_record)
-                    if execution_success and tool_name in {"spawn_background_agent", "wake_agent"}:
+                    if execution_success and tool_name in {"spawn_background_agent", "wake_agent", "spawn_ephemeral_agent"}:
                         final_answer = result_str
                         success = True
                         break

@@ -1596,7 +1596,7 @@ if __name__ == '__main__': # pragma: no cover
         self._update_task_if_manager(action_task_id, ActiveTaskStatus.INITIALIZING, step_desc="Spawning ephemeral agent")
         try:
             # 1. Spawn Agent
-            spawn_result = spawn_ephemeral_agent(task_description)
+            spawn_result = spawn_ephemeral_agent(task_description, queue_task=False)
             agent_id = spawn_result.get("agent_id")
             workspace_path = spawn_result.get("workspace_path")
 

@@ -10,9 +10,15 @@ from ai_assistant.core.agent_manager import AgentManager
 from ai_assistant.core.notification_manager import NotificationManager, NotificationType
 agent_manager = AgentManager()
 
-def spawn_ephemeral_agent(task_description: str, scope_type: str = "session") -> Dict[str, str]:
+def _normalize_scope_type(scope_type: str) -> str:
+    normalized = str(scope_type or "session").strip().casefold()
+    if normalized in {"persistent", "persist", "user_scoped", "user-scoped", "user"}:
+        return "user"
+    return "session"
+
+def create_agent_workspace(task_description: str, scope_type: str = "session") -> Dict[str, str]:
     """
-    Spawns a new ephemeral or persistent agent with a dedicated workspace.
+    Creates a new ephemeral or persistent agent workspace without queueing work.
 
     Args:
         task_description (str): A description of the task the agent is intended to perform.
@@ -21,9 +27,68 @@ def spawn_ephemeral_agent(task_description: str, scope_type: str = "session") ->
     Returns:
         dict: Contains 'agent_id' and 'workspace_path'.
     """
+    scope_type = _normalize_scope_type(scope_type)
     agent_id = agent_manager.create_workspace(task_description, scope_type=scope_type)
     workspace_path = agent_manager.get_workspace_path(agent_id)
     return {'agent_id': agent_id, 'workspace_path': workspace_path, 'scope': scope_type}
+
+def spawn_ephemeral_agent(task_description: str, scope_type: str = "session", session_id: str = None, queue_task: bool = True) -> Dict[str, str]:
+    """
+    Spawns an agent workspace and, by default, queues real background work for it.
+
+    A workspace alone is not an active agent. Chat-facing calls should keep
+    queue_task=True so the background service actually executes the task and
+    reports back to the originating conversation when finished.
+    """
+    workspace = create_agent_workspace(task_description, scope_type=scope_type)
+    if not queue_task:
+        return workspace
+
+    from ai_assistant.goals.goal_management import create_goal, list_goals
+
+    normalized_description = task_description.strip().casefold()
+    for existing_goal in list_goals():
+        metadata = existing_goal.get("metadata", {})
+        if (
+            str(existing_goal.get("description", "")).strip().casefold() == normalized_description
+            and metadata.get("type") == "background_agent"
+            and existing_goal.get("status") in {"PENDING_APPROVAL", "pending", "in_progress"}
+        ):
+            return {
+                **workspace,
+                "goal_id": existing_goal.get("id"),
+                "goal_status": existing_goal.get("status"),
+                "queued": "false",
+                "message": (
+                    f"Agent workspace exists, and a matching background task is already queued. "
+                    f"Goal ID: {existing_goal.get('id')}. Status: {existing_goal.get('status')}."
+                ),
+            }
+
+    metadata = {
+        "type": "background_agent",
+        "routed_agent_id": workspace["agent_id"],
+        "source_session_id": session_id,
+        "created_at": time.time(),
+        "execution_mode": "one_shot",
+    }
+    goal = create_goal(
+        title=f"Agent Task for {workspace['agent_id']}: {task_description[:40]}...",
+        description=task_description,
+        priority="high",
+        status="pending",
+        metadata=metadata,
+    )
+    return {
+        **workspace,
+        "goal_id": goal["id"],
+        "goal_status": goal["status"],
+        "queued": "true",
+        "message": (
+            f"Agent {workspace['agent_id']} was created and assigned a real background task. "
+            f"Goal ID: {goal['id']}. Status: {goal['status']}. It will report back when finished."
+        ),
+    }
 
 def run_agent_code(agent_id: str, filename: str, code: str, cmd_args: List[str]=None) -> Dict[str, str]:
     """
@@ -165,12 +230,14 @@ def create_dynamic_specialist(name: str, description: str, logic_code: str, reti
 
 SCHEMA = {
     "spawn_ephemeral_agent": {
-        "description": "Spawns a new ephemeral or persistent agent with a dedicated workspace.",
+        "description": "Spawns a new ephemeral or persistent agent and queues real background work that reports back when finished.",
         "parameters": {
             "type": "object",
             "properties": {
                 "task_description": {"type": "string", "description": "The task description."},
-                "scope_type": {"type": "string", "description": "'session' (ephemeral) or 'user' (persistent)."}
+                "scope_type": {"type": "string", "description": "'session' (ephemeral) or 'user'/'persistent'."},
+                "session_id": {"type": "string", "description": "Optional originating chat session ID for completion delivery."},
+                "queue_task": {"type": "boolean", "description": "Internal use only. Defaults true; false creates only a workspace."}
             },
             "required": ["task_description"]
         }
