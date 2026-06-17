@@ -194,6 +194,26 @@ def _queue_insight_execution(insight: ActionableInsight) -> dict:
         "message": "Insight approval queued for background execution.",
     }
 
+
+def _approve_architect_approval_manager_request(req_id: str, req: dict) -> dict:
+    """Execute a persisted architect proposal instead of silently dropping it."""
+    if not app_globals.orchestrator or not app_globals.orchestrator.learning_agent:
+        return {"success": False, "error": "Learning agent is unavailable."}
+
+    proposal = req.get("data")
+    if not isinstance(proposal, dict):
+        return {"success": False, "error": "Architect proposal payload is missing or invalid."}
+
+    success = _run_async(app_globals.orchestrator.learning_agent.execute_architect_proposal(proposal))
+    if not success:
+        return {
+            "success": False,
+            "error": "Architect proposal execution failed. The approval card was left pending.",
+        }
+
+    approval_manager.deny_request(req_id)
+    return {"success": True, "message": "Architect proposal executed and approval cleared."}
+
 DEFAULT_NOTICE_SCOPE = "local_default"
 MAX_IDENTITY_COMPONENT_LENGTH = 256
 MAX_IDENTITY_KEY_LENGTH = 512
@@ -2723,12 +2743,17 @@ def get_approvals():
 def approve_request(req_id):
     """Approves a request (either transient or persistent insight)."""
     try:
-        feedback = request.json.get('feedback') if request.json else None
+        payload = request.get_json(silent=True) or {}
+        feedback = payload.get('feedback')
 
         # 1. Try ApprovalManager first
-        if approval_manager.get_request(req_id):
+        approval_req = approval_manager.get_request(req_id)
+        if approval_req:
             if feedback:
                 logger.info(f"User approved request {req_id} with feedback: {feedback}")
+            if approval_req.get("type") == "architect_proposal":
+                result = _approve_architect_approval_manager_request(req_id, approval_req)
+                return jsonify(result), (200 if result.get("success") else 400)
             success = _run_async(approval_manager.approve_request(req_id))
             if success: return jsonify({"success": True})
 
@@ -2774,7 +2799,8 @@ def approve_request(req_id):
 def deny_request(req_id):
     """Denies a request."""
     try:
-        feedback = request.json.get('feedback') if request.json else None
+        payload = request.get_json(silent=True) or {}
+        feedback = payload.get('feedback')
 
         # 1. Try ApprovalManager
         if approval_manager.get_request(req_id):

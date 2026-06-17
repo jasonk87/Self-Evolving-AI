@@ -40,6 +40,67 @@ def test_status_snapshot_returns_503_when_orchestrator_missing(monkeypatch):
     assert payload["success"] is False
 
 
+def test_persisted_architect_approval_executes_before_clearing(monkeypatch):
+    app = _build_test_app()
+    proposal = {"target_file": "target.py", "proposal": {"summary": "Refactor", "plan": ["step"]}}
+    cleared = []
+    executed = []
+
+    class FakeApprovalManager:
+        def get_request(self, req_id):
+            return {"id": req_id, "type": "architect_proposal", "data": proposal}
+
+        def deny_request(self, req_id):
+            cleared.append(req_id)
+            return True
+
+    class FakeLearningAgent:
+        async def execute_architect_proposal(self, payload):
+            executed.append(payload)
+            return True
+
+    monkeypatch.setattr(approvals, "approval_manager", FakeApprovalManager())
+    monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(learning_agent=FakeLearningAgent()))
+
+    with app.test_client() as client:
+        response = client.post("/api/approvals/arch-1/approve")
+
+    assert response.status_code == 200
+    assert executed == [proposal]
+    assert cleared == ["arch-1"]
+    assert response.get_json()["success"] is True
+
+
+def test_failed_persisted_architect_approval_stays_pending(monkeypatch):
+    app = _build_test_app()
+    proposal = {"target_file": "target.py", "proposal": {"summary": "Refactor", "plan": ["step"]}}
+    cleared = []
+
+    class FakeApprovalManager:
+        def get_request(self, req_id):
+            return {"id": req_id, "type": "architect_proposal", "data": proposal}
+
+        def deny_request(self, req_id):
+            cleared.append(req_id)
+            return True
+
+    class FakeLearningAgent:
+        async def execute_architect_proposal(self, payload):
+            return False
+
+    monkeypatch.setattr(approvals, "approval_manager", FakeApprovalManager())
+    monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(learning_agent=FakeLearningAgent()))
+
+    with app.test_client() as client:
+        response = client.post("/api/approvals/arch-1/approve")
+
+    assert response.status_code == 400
+    assert cleared == []
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert "left pending" in payload["error"]
+
+
 def test_status_snapshot_returns_structured_data(monkeypatch):
     app = _build_test_app()
 
