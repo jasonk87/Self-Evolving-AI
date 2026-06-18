@@ -1035,6 +1035,31 @@ body {
     flex-wrap: wrap;
 }
 
+.chat-home-status-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.chat-home-status-row span {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.25;
+    padding: 8px 10px;
+}
+
+.mobile-drawer-identity {
+    display: none;
+}
+
 .message {
     display: flex;
     gap: 15px;
@@ -1745,8 +1770,9 @@ body {
         width: 100%;
         margin: 12px 0 auto;
         grid-template-columns: auto 1fr;
-        padding: 16px;
+        padding: 18px;
         gap: 12px;
+        align-items: start;
     }
 
     .chat-home-orb {
@@ -1767,10 +1793,25 @@ body {
 
     .chat-home-actions {
         grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .chat-home-actions .mission-action-btn {
         min-height: 38px;
+        width: 100%;
+    }
+
+    .chat-home-status-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+        margin-top: 0;
+    }
+
+    .chat-home-status-row span {
+        min-height: 32px;
+        font-size: 12px;
+        padding: 7px 9px;
     }
 }
 
@@ -3040,35 +3081,78 @@ body {
     }
 
     /* Mobile Sidebar Switcher styling */
+    .mobile-drawer-identity {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        align-items: center;
+        padding: 18px 16px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        background:
+            radial-gradient(circle at 12% 20%, rgba(31, 224, 176, 0.16), transparent 36%),
+            linear-gradient(145deg, rgba(11, 18, 29, 0.98), rgba(7, 9, 14, 0.96));
+    }
+
+    .mobile-drawer-orb {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: #04110d;
+        font-weight: 800;
+        font-size: 20px;
+        background: linear-gradient(135deg, #1fe0b0, #6ee7f9);
+        box-shadow: 0 0 24px rgba(32, 214, 161, 0.28);
+    }
+
+    .mobile-drawer-identity strong {
+        display: block;
+        margin: 2px 0 4px;
+        color: var(--text-primary);
+        font-size: 18px;
+        letter-spacing: 0;
+    }
+
+    .mobile-drawer-identity p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
     .mobile-sidebar-tabs {
-        display: flex !important;
-        overflow-x: auto;
-        padding: 10px 8px;
-        background: rgba(0, 0, 0, 0.25);
-        border-bottom: 1px solid var(--border-color);
-        gap: 6px;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow: visible;
+        padding: 12px;
+        background: rgba(2, 4, 8, 0.76);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        gap: 8px;
         scrollbar-width: none; /* Firefox */
     }
     .mobile-sidebar-tabs::-webkit-scrollbar {
         display: none; /* Safari/Chrome */
     }
     .mobile-sidebar-tab {
-        flex-shrink: 0;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 16px;
+        min-width: 0;
+        min-height: 38px;
+        background: rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
         color: var(--text-secondary);
-        padding: 6px 12px;
-        font-size: 11px;
-        font-weight: 500;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 700;
         cursor: pointer;
         transition: all 0.2s var(--easing);
+        text-align: center;
     }
     .mobile-sidebar-tab.active {
-        background: rgba(0, 240, 255, 0.12);
-        border-color: rgba(0, 240, 255, 0.3);
-        color: var(--accent-cyan);
-        box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
+        background: rgba(32, 214, 161, 0.14);
+        border-color: rgba(32, 214, 161, 0.42);
+        color: #8fffe5;
+        box-shadow: 0 0 14px rgba(32, 214, 161, 0.12);
     }
 
     /* Sidebar Drawer */
@@ -3077,19 +3161,68 @@ body {
         top: 0;
         left: 0;
         bottom: 0;
-        width: 80%;
-        max-width: 320px;
+        width: 88%;
+        max-width: 390px;
         z-index: 1000;
         transform: translateX(-100%);
-        border-right: 1px solid var(--border-color);
-        background: #06070a;
+        border-right: 1px solid rgba(32, 214, 161, 0.18);
+        background: #05070b;
         margin-left: 0;
         box-shadow: 20px 0 40px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+    }
+
+    .sidebar-panel.collapsed {
+        width: 88%;
+        max-width: 390px;
+        opacity: 1;
+        border-right-color: rgba(32, 214, 161, 0.18);
     }
 
     .sidebar-panel.active {
         transform: translateX(0);
-        width: 80%;
+        width: 88%;
+    }
+
+    .sidebar-panel .sidebar-view {
+        padding: 14px;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .sidebar-panel .panel-header {
+        margin-bottom: 12px;
+        padding: 0;
+        border-bottom: none;
+    }
+
+    .sidebar-panel .panel-header h3 {
+        color: var(--text-primary);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+    }
+
+    .sidebar-panel .btn-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+    }
+
+    .sessions-list {
+        gap: 10px;
+    }
+
+    .session-item {
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.035);
+        padding: 14px;
+    }
+
+    .session-item:hover,
+    .session-item.active {
+        border-color: rgba(32, 214, 161, 0.28);
+        background: rgba(32, 214, 161, 0.08);
     }
 
     /* Mobile Overlay for Sidebar */
@@ -3117,24 +3250,34 @@ body {
 
     .main-tabs-header {
         display: flex;
+        align-items: center;
         overflow: hidden;
         scrollbar-width: none;
         min-width: 0;
+        height: 44px;
+        padding: 0 12px;
+        background: rgba(5, 8, 14, 0.82);
     }
     .main-tabs-header::-webkit-scrollbar {
         display: none;
     }
 
+    .main-tabs-header::before {
+        content: "Normal Mode";
+        color: #58e6c9;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+
     .main-tabs-header .main-tab {
-        min-width: 96px;
-        max-width: 132px;
-        padding: 0 16px;
-        flex: 0 0 auto;
+        display: none;
     }
 
     .main-tabs-header .header-toolbar {
         margin-left: auto !important;
-        padding-right: 6px !important;
+        padding-right: 0 !important;
         gap: 2px !important;
         flex: 0 0 auto;
         min-width: 0;
@@ -3162,6 +3305,9 @@ body {
         text-overflow: ellipsis;
         white-space: nowrap;
         justify-content: flex-start;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.07);
     }
 
     .main-tabs-header .toolbar-item::after {
@@ -3244,13 +3390,19 @@ body {
 
     /* Input Area adjustments for mobile */
     .input-area {
-        padding: 8px 12px;
-        gap: 6px;
+        padding: 8px 10px;
+        gap: 7px;
+        border-top: 1px solid rgba(32, 214, 161, 0.14);
+        background: rgba(5, 7, 12, 0.96);
     }
 
     #chat-input {
         font-size: 16px; /* Prevent iOS zoom */
-        padding: 8px 10px;
+        padding: 10px 12px;
+        min-height: 40px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.035);
     }
 
     /* Shrink buttons slightly to fit better */
@@ -3258,11 +3410,12 @@ body {
     #voice-toggle-btn,
     #image-upload-btn,
     #send-btn {
-        width: 38px;
-        height: 38px;
-        min-width: 38px;
-        flex: 0 0 38px;
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        flex: 0 0 40px;
         font-size: 16px;
+        border-radius: 8px;
     }
 
     .btn-pill-neon {

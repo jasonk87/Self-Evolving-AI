@@ -152,19 +152,26 @@
         <aside class="sidebar-panel glass-panel collapsed" id="sidebar-panel">
 
             <!-- Mobile Sidebar tabs switcher (visible only on mobile) -->
+            <div class="mobile-drawer-identity">
+                <div class="mobile-drawer-orb">W</div>
+                <div>
+                    <span class="mission-mode-label">Weebo</span>
+                    <strong>Command Menu</strong>
+                    <p>Chats, approvals, workspace, and deeper systems when needed.</p>
+                </div>
+            </div>
             <div class="mobile-sidebar-tabs" id="mobile-sidebar-tabs">
                 <button class="mobile-sidebar-tab active" data-target="view-sidebar-chats">Chats</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-approvals">Approvals</button>
                 <button class="mobile-sidebar-tab" data-target="view-sidebar-files">Files</button>
                 <button class="mobile-sidebar-tab" data-target="view-sidebar-memory">Memory</button>
-                <button class="mobile-sidebar-tab" data-target="view-sidebar-council">Council</button>
-                <button class="mobile-sidebar-tab" data-target="view-sidebar-quarantine">Quarantine</button>
-                <button class="mobile-sidebar-tab" data-target="view-sidebar-approvals">Approvals</button>
+                <button class="mobile-sidebar-tab" data-target="view-sidebar-council">Debug</button>
             </div>
 
             <!-- Chats View -->
             <div id="view-sidebar-chats" class="sidebar-view hidden">
                 <div class="panel-header">
-                    <h3>CHATS</h3>
+                    <h3>CONVERSATIONS</h3>
                     <button class="btn-icon" id="new-chat-btn" title="New Chat">➕</button>
                 </div>
                 <div id="chat-sessions-list" class="sessions-list">
@@ -312,6 +319,11 @@
                         <div class="chat-home-actions">
                             <button class="mission-action-btn" data-target="view-mission-control">Mission</button>
                             <button class="mission-action-btn secondary" data-sidebar-target="view-sidebar-approvals">Approvals</button>
+                        </div>
+                        <div class="chat-home-status-row">
+                            <span>Agents report back here</span>
+                            <span>Approvals stay visible</span>
+                            <span>Debug is one layer down</span>
                         </div>
                     </section>
                 </div>

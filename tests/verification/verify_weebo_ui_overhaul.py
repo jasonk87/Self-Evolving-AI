@@ -54,6 +54,21 @@ def verify_weebo_ui_overhaul():
             mobile.locator('.mobile-nav-item[data-target="view-chat"]').click()
             mobile.locator(".chat-home-card").wait_for(state="visible", timeout=5000)
             assert "Weebo is ready" in mobile.locator(".chat-home-card").inner_text()
+            assert mobile.locator(".chat-home-status-row").is_visible()
+
+            mobile.locator("#mobile-menu-btn").click()
+            mobile.locator("#sidebar-panel.active").wait_for(state="visible", timeout=5000)
+            mobile.locator(".mobile-drawer-identity").wait_for(state="visible", timeout=5000)
+            assert "Command Menu" in mobile.locator(".mobile-drawer-identity").inner_text()
+            assert mobile.locator(".mobile-sidebar-tab").count() == 5
+            assert mobile.locator('.mobile-sidebar-tab[data-target="view-sidebar-approvals"]').is_visible()
+            drawer_has_horizontal_overflow = mobile.evaluate(
+                """() => {
+                    const drawer = document.querySelector('#sidebar-panel');
+                    return drawer && drawer.scrollWidth > drawer.clientWidth + 2;
+                }"""
+            )
+            assert not drawer_has_horizontal_overflow
 
             mobile.screenshot(path="output-playwright-mission-mobile.png", full_page=True)
             assert mobile_errors == []

@@ -22,6 +22,11 @@ export function renderChatHome(container) {
                 <button class="mission-action-btn" data-target="view-mission-control">Mission</button>
                 <button class="mission-action-btn secondary" data-sidebar-target="view-sidebar-approvals">Approvals</button>
             </div>
+            <div class="chat-home-status-row">
+                <span>Agents report back here</span>
+                <span>Approvals stay visible</span>
+                <span>Debug is one layer down</span>
+            </div>
         </section>
     `;
 }
