@@ -42,7 +42,7 @@ class SubSwarmCoordinator:
         ]
 
         # Future to signal when the swarm is done
-        self.completion_future = asyncio.Future()
+        self.completion_future: Optional[asyncio.Future] = None
         self.blocked_classification: Optional[FailureClassification] = None
         self.flaky_failure_count = 0
 
@@ -116,6 +116,7 @@ class SubSwarmCoordinator:
         logger.info(f"[Coordinator {self.swarm_id}] Starting sub-swarm for contract: {self.contract.task_id}")
 
         self.setup_coordinator_subscriptions()
+        self.completion_future = asyncio.Future()
 
         # 1. Start all agents concurrently as background tasks
         agent_tasks = [asyncio.create_task(agent.run()) for agent in self.agents]

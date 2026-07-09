@@ -15,8 +15,9 @@ class TesterAgent(BaseSwarmAgent):
     def __init__(self, name: str, contract: SwarmContract, blackboard: Blackboard, llm_provider: Any):
         super().__init__(name, AgentRole.TESTER, contract, blackboard, llm_provider)
         self.drafts = {} # filename -> code string
-        self.test_files = [f for f in self.contract.deliverables if f.startswith("test_")]
-        self.impl_files = [f for f in self.contract.deliverables if not f.startswith("test_") and f.endswith(".py")]
+        import pathlib
+        self.test_files = [f for f in self.contract.deliverables if pathlib.Path(f).name.startswith("test_")]
+        self.impl_files = [f for f in self.contract.deliverables if not pathlib.Path(f).name.startswith("test_") and f.endswith(".py")]
 
     def setup_subscriptions(self):
         # The Tester listens for when the Coder publishes a draft implementation
@@ -87,7 +88,14 @@ class TesterAgent(BaseSwarmAgent):
         impl_code = event.data.get("code")
 
         # 1. Map implementation file to its corresponding test file
-        test_filename = f"test_{impl_filename}"
+        import pathlib
+        impl_path = pathlib.Path(impl_filename)
+        expected_test_name = f"test_{impl_path.name}"
+        
+        test_filename = next(
+            (tf for tf in self.test_files if pathlib.Path(tf).name == expected_test_name), 
+            None
+        )
 
         # Fast path: If the contract doesn't require testing for this file, skip execution
         # and signal immediate success to unblock the Reviewer.

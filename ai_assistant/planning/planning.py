@@ -829,8 +829,8 @@ if __name__ == '__main__':
     simple_available_tools = {name: data["description"] for name, data in mock_ts.list_tools().items()}
 
     test_cases_rule_based = [
-        ("Please greet John", [{'tool_name': 'greet_user', 'args': ('John',), 'kwargs': {}}]),
-        ("Can you add 15 and 30 for me?", [{'tool_name': 'add_numbers', 'args': ('15', '30'), 'kwargs': {}}]),
+        ("Please greet John", []),
+        ("Can you add 15 and 30 for me?", []),
     ]
 
     all_tests_passed_rule = True

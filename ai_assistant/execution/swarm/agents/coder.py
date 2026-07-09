@@ -37,7 +37,8 @@ class CoderAgent(BaseSwarmAgent):
         await self.report_progress("Starting code generation for contract deliverables.")
 
         # 1. Identify which deliverables are implementation files (not test files)
-        impl_files = [f for f in self.contract.deliverables if not f.startswith("test_") and f.endswith(".py")]
+        import pathlib
+        impl_files = [f for f in self.contract.deliverables if not pathlib.Path(f).name.startswith("test_") and f.endswith(".py")]
 
         if not impl_files:
             await self.report_progress("No implementation files to generate in contract.")

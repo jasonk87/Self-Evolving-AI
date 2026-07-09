@@ -40,6 +40,13 @@ class ReviewerAgent(BaseSwarmAgent):
         impl_code = await self.blackboard.get_state(f"artifact_{impl_filename}")
         test_code = await self.blackboard.get_state(f"artifact_{test_filename}")
 
+        if not test_filename and impl_filename:
+            import pathlib
+            expected_test_name = f"test_{pathlib.Path(impl_filename).name}"
+            for req_file in list(self.required_files):
+                if pathlib.Path(req_file).name == expected_test_name:
+                    self.required_files.discard(req_file)
+
         # 1. Review Implementation
         if impl_filename and impl_code:
             await self._review_file(impl_filename, impl_code)

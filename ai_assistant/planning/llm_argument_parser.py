@@ -1,5 +1,5 @@
 # ai_assistant/planning/llm_argument_parser.py
-from typing import Tuple, List, Dict, Optional
+from typing import Tuple, List, Dict, Optional, Any
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model
 from ai_assistant.config import get_model_for_task # Added import
 import json
@@ -35,7 +35,7 @@ def populate_tool_arguments_with_llm(
     tool_name: str,
     tool_description: str,
     ollama_model_name: Optional[str] = None 
-) -> Tuple[List[str], Dict[str, str]]:
+) -> Tuple[List[Any], Dict[str, Any]]:
     """
     Uses an LLM to populate arguments for a given tool based on a goal description.
     """
@@ -78,16 +78,16 @@ def populate_tool_arguments_with_llm(
     raw_kwargs = parsed_json.get("kwargs")
 
     # Validate and sanitize args
-    final_args: List[str] = []
+    final_args: List[Any] = []
     if isinstance(raw_args, list):
-        final_args = [str(arg) for arg in raw_args]
+        final_args = raw_args
     elif raw_args is not None: # If it's present but not a list
         print(f"LLMArgParser: Warning - 'args' from LLM was not a list (got {type(raw_args)}). Using empty list.")
     
     # Validate and sanitize kwargs
-    final_kwargs: Dict[str, str] = {}
+    final_kwargs: Dict[str, Any] = {}
     if isinstance(raw_kwargs, dict):
-        final_kwargs = {str(k): str(v) for k, v in raw_kwargs.items()}
+        final_kwargs = {str(k): v for k, v in raw_kwargs.items()}
     elif raw_kwargs is not None: # If it's present but not a dict
         print(f"LLMArgParser: Warning - 'kwargs' from LLM was not a dictionary (got {type(raw_kwargs)}). Using empty dict.")
 
@@ -96,6 +96,7 @@ def populate_tool_arguments_with_llm(
 
 
 if __name__ == '__main__':
+    global invoke_ollama_model
     print("--- Testing LLM Argument Parser ---")
     
     # Mock invoke_ollama_model for testing this module directly
@@ -148,8 +149,7 @@ if __name__ == '__main__':
         return None # Default to no response
 
     # Replace the actual function with the mock
-    from ai_assistant.llm_interface import ollama_client
-    ollama_client.invoke_ollama_model = mock_invoke_ollama
+    invoke_ollama_model = mock_invoke_ollama
 
 
     # Test cases
@@ -236,5 +236,5 @@ if __name__ == '__main__':
     assert kwargs == {}
 
     # Restore original function
-    ollama_client.invoke_ollama_model = original_invoke_ollama
+    invoke_ollama_model = original_invoke_ollama
     print("\n--- LLM Argument Parser Tests Finished (mocked Ollama) ---")
