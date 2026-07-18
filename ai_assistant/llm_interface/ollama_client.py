@@ -14,8 +14,10 @@ from ai_assistant.config import (
     DAILY_TOKEN_BUDGET,
     CATEGORY_BUDGETS
 )
+from ai_assistant.config import GEMINI_EMBEDDING_MODEL
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
+import ai_assistant.llm_interface.deepseek_client as deepseek_client
 from ai_assistant.core.telemetry import telemetry_tracker
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
 
@@ -23,6 +25,9 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_ENDPOINT = f"{OLLAMA_HOST}/api/generate"
 OLLAMA_CHAT_API_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 DEFAULT_OLLAMA_MODEL = CFG_DEFAULT_MODEL
+
+def _is_deepseek_model(model_name: Optional[str]) -> bool:
+    return str(model_name or "").lower().startswith("deepseek-")
 
 def process_llm_response(response_data: Dict) -> Optional[Tuple[str, Optional[str]]]:
     if not response_data:
@@ -63,8 +68,43 @@ def invoke_ollama_model(
 ) -> Optional[str]:
     _check_budget(task_name or "unknown")
 
+    if _is_deepseek_model(model_name):
+        api_key = deepseek_client._get_api_key()
+        if not api_key:
+            print("DeepSeek API key is not configured.")
+            return None
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max(max_tokens, 512),
+            "temperature": temperature,
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "high",
+        }
+        try:
+            response = requests.post(
+                deepseek_client.DEEPSEEK_API_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            choices = response.json().get("choices", [])
+            return choices[0].get("message", {}).get("content", "") if choices else None
+        except requests.RequestException as exc:
+            print(f"Error invoking DeepSeek model '{model_name}': {exc}")
+            return None
+
     if LLM_PROVIDER == "gemini":
-        return gemini_client.invoke_gemini_model(prompt, model_name, temperature, max_tokens, strategy="RAW")
+        return gemini_client.invoke_gemini_model(
+            prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            strategy="RAW",
+            task_name=task_name or "unknown",
+            json_mode=json_mode
+        )
 
     use_chat_api = False
 
@@ -142,6 +182,16 @@ async def invoke_ollama_model_async_internal(
 ) -> Optional[str]:
     _check_budget(task_name or "unknown")
 
+    if _is_deepseek_model(model_name):
+        return await deepseek_client.invoke_raw_deepseek_async(
+            messages=[{"role": "user", "content": prompt}],
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            task_name=task_name or "unknown",
+            json_mode=json_mode,
+        )
+
     if LLM_PROVIDER == "gemini":
         return await gemini_client.invoke_gemini_model_async(
             prompt,
@@ -149,7 +199,8 @@ async def invoke_ollama_model_async_internal(
             temperature=temperature,
             max_tokens=max_tokens,
             strategy="RAW",
-            task_name=task_name or "unknown"
+            task_name=task_name or "unknown",
+            json_mode=json_mode
         )
 
     use_chat_api = False
@@ -241,29 +292,16 @@ class OllamaProvider:
 
     async def get_embeddings_async(self, text: str, model_name: Optional[str] = None) -> Optional[List[float]]:
         """
-        Generates embeddings for a given text using Ollama or Gemini based on config.
+        Generates embeddings using the dedicated Gemini embedding model.
+
+        Embeddings are intentionally independent from the chat provider. DeepSeek
+        V4 handles generation, but it is not an embeddings endpoint, and routing
+        this call to local Ollama would fail when DeepSeek is the active provider.
         """
-        if LLM_PROVIDER == "gemini":
-            return await gemini_client.get_embeddings_async(text)
-
-        model = model_name or self.model
-        payload = {
-            "model": model,
-            "prompt": text
-        }
-
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60.0)) as session:
-            try:
-                async with session.post(self.embeddings_endpoint, json=payload) as response:
-                    response.raise_for_status()
-                    data = await response.json()
-                    return data.get("embedding")
-            except Exception as e:
-                print(f"Error getting embeddings from Ollama: {e}")
-                return None
-            
-            # Windows/ProactorEventLoop workaround
-            await asyncio.sleep(0.250)
+        return await gemini_client.get_embeddings_async(
+            text,
+            model_name=model_name or GEMINI_EMBEDDING_MODEL,
+        )
 
     async def generate_code_async(self, prompt: str) -> Optional[str]:
         """

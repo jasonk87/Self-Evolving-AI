@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 from ai_assistant import config
 from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.core.llm.gemini_provider import GeminiProvider
@@ -14,6 +14,8 @@ class ModelRouter:
             "ollama": OllamaProvider(),
             "deepseek": DeepseekProvider()
         }
+        self.model = getattr(config, "DEFAULT_MODEL", "deepseek-v4-pro")
+        self.DEFAULT_MODEL = self.model
 
     def get_route(self, task_name: str) -> Tuple[LLMProvider, str, str, str]:
         """
@@ -38,6 +40,47 @@ class ModelRouter:
             provider = self._providers["gemini"]
 
         return provider, model, mode, endpoint
+
+    async def generate_response(
+        self,
+        prompt: str,
+        task_name: str = "chat",
+        system_instruction: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        model_name: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+        images: Optional[List[str]] = None,
+    ) -> str:
+        provider, routed_model, _, endpoint = self.get_route(task_name)
+        return await provider.generate_response(
+            prompt,
+            system_instruction=system_instruction,
+            history=history,
+            model_name=model_name or routed_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            images=images,
+            endpoint_url=endpoint,
+        )
+
+    async def invoke_ollama_model_async(
+        self,
+        prompt: str,
+        model_name: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+        task_name: Optional[str] = None,
+        json_mode: bool = False,
+    ) -> str:
+        """Compatibility method for legacy callers while they migrate."""
+        return await self.generate_response(
+            prompt,
+            task_name=task_name or "coding",
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
 # Singleton instance
 model_router = ModelRouter()

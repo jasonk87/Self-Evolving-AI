@@ -30,7 +30,7 @@ def divide(a, b):
     # Patches
     # Patch get_function_source_code
     with patch("ai_assistant.learning.learning.self_modification.get_function_source_code") as mock_get_code, \
-         patch("ai_assistant.learning.learning.invoke_gemini_model_async", new_callable=AsyncMock) as mock_llm, \
+         patch("ai_assistant.learning.learning.model_router.generate_response", new_callable=AsyncMock) as mock_llm, \
          patch("ai_assistant.learning.learning.get_tool") as mock_get_tool:
 
         mock_get_code.return_value = mock_code

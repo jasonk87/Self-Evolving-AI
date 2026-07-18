@@ -23,10 +23,10 @@ class GracefulShutdownManager:
         """
         if self._shutdown_requested:
             # Optionally refuse new tasks if shutdown is pending?
-            # For now, we log a warning but allow it if it's critical, 
+            # For now, we log a warning but allow it if it's critical,
             # though ideally the system should check is_shutdown_requested()
             logger.warning(f"Task '{description}' started during shutdown sequence.")
-        
+
         task_id = str(uuid.uuid4())
         with self._lock:
             self._active_tasks[task_id] = description
@@ -53,15 +53,15 @@ class GracefulShutdownManager:
         """
         self._shutdown_requested = True
         logger.info(f"Shutdown requested. Waiting up to {timeout_seconds}s for {len(self._active_tasks)} active tasks...")
-        
+
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout_seconds:
             with self._lock:
                 if not self._active_tasks:
                     logger.info("All tasks completed. Shutting down gracefully now.")
                     break
-                
+
             time.sleep(0.5)
             # Log periodic status
             with self._lock:

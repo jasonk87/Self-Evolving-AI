@@ -188,7 +188,7 @@ class CriticalReviewCoordinator:
         is_approved = False
         if "Status: APPROVED" in judge_response or "Status: APPROVE" in judge_response:
              is_approved = True
-        
+
         # Clean reasoning extraction
         reasoning = judge_response.replace("Status: APPROVED", "").replace("Status: APPROVE", "").replace("Status: REJECTED", "").strip()
         if reasoning.startswith("Reasoning:"):

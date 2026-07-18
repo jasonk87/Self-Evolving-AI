@@ -14,9 +14,9 @@ considering these scores alongside the suggestion's action type and details.
 This allows the assistant to make informed decisions about which self-improvement
 tasks to undertake.
 """
-import json 
+import json
 import ast
- 
+
 import time
 from typing import List, Dict, Any, Optional
 import re
@@ -24,8 +24,8 @@ import logging
 import asyncio # Ensure asyncio is imported for __main__
 from unittest.mock import patch, AsyncMock # Ensure these are imported for __main__
 
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model 
-from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry 
+from ai_assistant.llm_interface.ollama_client import invoke_ollama_model
+from ai_assistant.core.reflection import global_reflection_log, ReflectionLogEntry
 from ..memory.event_logger import log_event
 from ai_assistant.config import get_model_for_task, is_debug_mode
 from ai_assistant.learning.evolution import apply_code_modification
@@ -35,8 +35,8 @@ from .notification_manager import NotificationManager
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_ENTRIES_FOR_ANALYSIS = 5 
-DEFAULT_MAX_ENTRIES_TO_FETCH = 50    
+DEFAULT_MIN_ENTRIES_FOR_ANALYSIS = 5
+DEFAULT_MAX_ENTRIES_TO_FETCH = 50
 
 IDENTIFY_FAILURE_PATTERNS_PROMPT_TEMPLATE = """
 You are an AI assistant analyzing a summary of your own past operational reflection logs. Your task is to identify recurring failure patterns, problematic tools or goals, and other insights that could lead to self-improvement.
@@ -264,7 +264,7 @@ def get_reflection_log_summary_for_analysis(
     formatted_summary_parts: List[str] = ["Recent Reflection Log Summary for Analysis:\n"]
     relevant_entry_count = 0
 
-    for i, entry in enumerate(entries): 
+    for i, entry in enumerate(entries):
         if entry.status in {"FAILURE", "PARTIAL_SUCCESS", "EMPTY_FAILURE"} and is_failure_stale(
             {"runtime_revision_at_failure": entry.runtime_revision_at_failure},
             failure_observed_at=entry.timestamp,
@@ -277,7 +277,7 @@ def get_reflection_log_summary_for_analysis(
 
         if entry.error_type or entry.error_message:
             entry_details.append(f"  Error: {entry.error_type} - {entry.error_message}")
-        
+
         if entry.notes:
             entry_details.append(f"  Notes: {entry.notes}")
 
@@ -285,14 +285,14 @@ def get_reflection_log_summary_for_analysis(
             plan_steps_summary = []
             for step_idx, step in enumerate(entry.plan):
                 tool_name = step.get('tool_name', 'N/A')
-                args_preview = str(step.get('args', 'N/A'))[:50] 
+                args_preview = str(step.get('args', 'N/A'))[:50]
                 step_result_preview = ""
                 if entry.execution_results and step_idx < len(entry.execution_results):
                     res = entry.execution_results[step_idx]
                     if isinstance(res, Exception):
                         step_result_preview = f" -> Failed: {type(res).__name__}"
                 plan_steps_summary.append(f"    Step {step_idx + 1}: Tool: {tool_name}, Args: {args_preview}{step_result_preview}")
-            
+
             if plan_steps_summary:
                 entry_details.append("  Plan:")
                 entry_details.extend(plan_steps_summary)
@@ -303,7 +303,7 @@ def get_reflection_log_summary_for_analysis(
                 entry_details.append(f"    Source Suggestion ID: {entry.source_suggestion_id}")
             if entry.modification_type:
                 entry_details.append(f"    Modification Type: {entry.modification_type}")
-            
+
             test_outcome_str = "N/A"
             if entry.post_modification_test_passed is True:
                 test_outcome_str = "PASSED"
@@ -314,7 +314,7 @@ def get_reflection_log_summary_for_analysis(
             if entry.post_modification_test_details and isinstance(entry.post_modification_test_details, dict):
                 test_notes = entry.post_modification_test_details.get('notes', '')
                 entry_details.append(f"    Test Notes: {test_notes[:100]}{'...' if len(test_notes) > 100 else ''}")
-            
+
             commit_status_str = "N/A"
             if entry.commit_info and isinstance(entry.commit_info, dict):
                 commit_success = entry.commit_info.get('status')
@@ -329,10 +329,10 @@ def get_reflection_log_summary_for_analysis(
                     commit_status_str = f"Commit status unknown (Info: {commit_msg_snippet}{'...' if len(commit_msg_snippet) == 50 else ''})"
             entry_details.append(f"    Commit Status: {commit_status_str}")
             entry_details.append("  ---------------------------------")
-        
+
         formatted_summary_parts.append("\n".join(entry_details))
         relevant_entry_count += 1
-    
+
     if relevant_entry_count == 0 :
         return "No relevant reflection log entries found for analysis based on current criteria."
 
@@ -361,11 +361,11 @@ def _robust_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
     try:
         cleaned_str = json_str
         # Replace 'Unterminated string' issues due to newlines
-        cleaned_str = cleaned_str.replace('\n', '\\n') 
+        cleaned_str = cleaned_str.replace('\n', '\\n')
         return json.loads(cleaned_str)
     except json.JSONDecodeError:
         pass
-        
+
     return None
 
 def repair_json(json_str: str) -> str:
@@ -380,13 +380,13 @@ def repair_json(json_str: str) -> str:
             if stack:
                 if (char == '}' and stack[-1] == '{') or (char == ']' and stack[-1] == '['):
                     stack.pop()
-    
+
     closing = ""
     while stack:
         opener = stack.pop()
         if opener == '{': closing += '}'
         elif opener == '[': closing += ']'
-    
+
     return json_str + closing
 
 def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -397,7 +397,7 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
     if not llm_response_str:
         logger.warning(f"Received no response from LLM ({model_to_use}) for pattern identification.")
         return None
-    
+
     json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", llm_response_str, re.DOTALL)
     if json_match:
         cleaned_response = json_match.group(1).strip()
@@ -408,19 +408,19 @@ def _invoke_pattern_identification_llm(log_summary_str: str, llm_model_name: Opt
             cleaned_response = llm_response_str[first_brace : last_brace+1].strip()
         else:
             cleaned_response = llm_response_str.strip()
-    
+
     data = _robust_json_parse(cleaned_response)
     if not data:
          # Try logic in except block as last resort or rely on _robust_json_parse returning None
          # Actually _robust_json_parse handles standard loads. If it returns proper dict, we are good.
          pass
-    
+
     if isinstance(data, dict):
         if "identified_patterns" not in data or not isinstance(data["identified_patterns"], list):
             logger.warning(f"LLM response for pattern identification missing 'identified_patterns' list or incorrect type. Response: {cleaned_response}")
             return None
         return data
-        
+
     try:
         if not data:
              data = json.loads(cleaned_response) # This will raise if bad, jumping to except
@@ -449,7 +449,7 @@ def _invoke_suggestion_generation_llm(identified_patterns_json_list_str: str, av
     if not llm_response_str:
         logger.warning(f"Received no response from LLM ({model_to_use}) for suggestion generation.")
         return None
-        
+
     json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", llm_response_str, re.DOTALL)
     if json_match:
         cleaned_response = json_match.group(1).strip()
@@ -536,7 +536,7 @@ def _invoke_suggestion_scoring_llm(suggestion: Dict[str, Any], llm_model_name: O
             if not isinstance(data[key], int):
                 logger.warning(f"LLM response for suggestion scoring key '{key}' is not an integer. Value: {data[key]}. Response: {cleaned_response}")
                 return None
-        
+
         return {
             "impact_score": data["impact_score"],
             "risk_score": data["risk_score"],
@@ -606,7 +606,7 @@ def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Op
             cleaned_response = llm_response_str[first_brace : last_brace+1].strip()
         else:
             cleaned_response = llm_response_str.strip()
-            
+
     try:
         data = json.loads(cleaned_response)
         if not isinstance(data, dict) or \
@@ -635,9 +635,9 @@ def _invoke_suggestion_review_llm(suggestion: Dict[str, Any], llm_model_name: Op
         return None
 
 def run_self_reflection_cycle(
-    available_tools: Dict[str, str], 
+    available_tools: Dict[str, str],
     llm_model_name: Optional[str] = None,
-    max_log_entries: int = DEFAULT_MAX_ENTRIES_TO_FETCH, 
+    max_log_entries: int = DEFAULT_MAX_ENTRIES_TO_FETCH,
     min_entries_for_analysis: int = DEFAULT_MIN_ENTRIES_FOR_ANALYSIS,
     notification_manager: Optional[NotificationManager] = None
 ) -> Optional[List[Dict[str, Any]]]:
@@ -648,9 +648,9 @@ def run_self_reflection_cycle(
         source="autonomous_reflection.run_self_reflection_cycle",
         metadata={"max_log_entries": max_log_entries, "min_entries_for_analysis": min_entries_for_analysis}
     )
-    
+
     log_summary = get_reflection_log_summary_for_analysis(
-        max_entries=max_log_entries, 
+        max_entries=max_log_entries,
         min_entries_for_analysis=min_entries_for_analysis
     )
     if not log_summary:
@@ -667,9 +667,9 @@ def run_self_reflection_cycle(
         logger.debug(f"Reflection log summary for analysis: {log_summary}")
 
     logger.info("Self-Reflection Cycle: Identifying failure patterns from log summary...")
-    patterns_data = _invoke_pattern_identification_llm(log_summary, llm_model_name=llm_model_name) 
-    
-    if not patterns_data: 
+    patterns_data = _invoke_pattern_identification_llm(log_summary, llm_model_name=llm_model_name)
+
+    if not patterns_data:
         logger.warning("Self-Reflection Cycle: Could not identify any significant patterns (LLM call failed or invalid format).")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_PATTERN_ID_FAILED",
@@ -678,9 +678,9 @@ def run_self_reflection_cycle(
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection")}
         )
         return None
-        
+
     identified_patterns_list = patterns_data.get("identified_patterns")
-    if identified_patterns_list is None: 
+    if identified_patterns_list is None:
         logger.warning("Self-Reflection Cycle: 'identified_patterns' key missing in LLM response for patterns.")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_PATTERN_ID_ERROR",
@@ -689,7 +689,7 @@ def run_self_reflection_cycle(
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "response_preview": str(patterns_data)[:200]}
         )
         return None
-    
+
     log_event(
         event_type="AUTONOMOUS_REFLECTION_PATTERNS_IDENTIFIED",
         description=f"Pattern identification complete. Found {len(identified_patterns_list)} pattern(s).",
@@ -697,15 +697,15 @@ def run_self_reflection_cycle(
         metadata={"num_patterns": len(identified_patterns_list), "patterns_preview": identified_patterns_list[:3], "model_used": llm_model_name or get_model_for_task("reflection")}
     )
 
-    if not identified_patterns_list: 
+    if not identified_patterns_list:
         logger.info("Self-Reflection Cycle: No specific patterns were identified by the LLM.")
-        pass 
+        pass
 
     logger.info(f"Self-Reflection Cycle: Identified {len(identified_patterns_list)} pattern(s). Generating improvement suggestions...")
 
     # Fetch rejected insights to prevent duplicates, and failed ones to guide retries
     all_insights = load_actionable_insights()
-    
+
     rejected_insights = [i for i in all_insights if i.get("status") in ["REJECTED_BY_USER", "BLOCKED_BY_COUNCIL"]]
     failed_insights = [
         i for i in all_insights
@@ -741,14 +741,14 @@ def run_self_reflection_cycle(
         return None
 
     suggestions_data = _invoke_suggestion_generation_llm(
-        patterns_json_list_str, 
-        available_tools_json_str, 
+        patterns_json_list_str,
+        available_tools_json_str,
         rejected_suggestions_str,
         failed_suggestions_str,
         llm_model_name=llm_model_name
     )
 
-    if not suggestions_data: 
+    if not suggestions_data:
         logger.warning("Self-Reflection Cycle: Could not generate improvement suggestions (LLM call failed or invalid format).")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_SUGGESTION_GEN_FAILED",
@@ -757,9 +757,9 @@ def run_self_reflection_cycle(
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "num_patterns_input": len(identified_patterns_list)}
         )
         return None
-        
+
     final_suggestions = suggestions_data.get("improvement_suggestions")
-    if final_suggestions is None: 
+    if final_suggestions is None:
         logger.warning("Self-Reflection Cycle: 'improvement_suggestions' key missing in LLM response for suggestions.")
         log_event(
             event_type="AUTONOMOUS_REFLECTION_SUGGESTION_GEN_ERROR",
@@ -768,15 +768,15 @@ def run_self_reflection_cycle(
             metadata={"llm_model_name": llm_model_name or get_model_for_task("reflection"), "response_preview": str(suggestions_data)[:200]}
         )
         return None
-    
+
     log_event(
         event_type="AUTONOMOUS_REFLECTION_SUGGESTIONS_GENERATED",
         description=f"Suggestion generation complete. Generated {len(final_suggestions)} suggestion(s).",
         source="autonomous_reflection.run_self_reflection_cycle",
-        metadata={"num_suggestions": len(final_suggestions), "suggestions_preview": final_suggestions[:3], "model_used": llm_model_name or get_model_for_task("reflection")} 
+        metadata={"num_suggestions": len(final_suggestions), "suggestions_preview": final_suggestions[:3], "model_used": llm_model_name or get_model_for_task("reflection")}
     )
-    
-    if not final_suggestions: 
+
+    if not final_suggestions:
         logger.info("Self-Reflection Cycle: No improvement suggestions were generated by the LLM.")
     else:
         logger.info(f"Self-Reflection Cycle: Generated {len(final_suggestions)} improvement suggestion(s). Scoring them now...")
@@ -832,7 +832,7 @@ async def select_suggestion_for_autonomous_action( # Made async
     supported_action_types: Optional[List[str]] = None,
     notification_manager: Optional[NotificationManager] = None
 ) -> Optional[Dict[str, Any]]:
-    if supported_action_types is None: 
+    if supported_action_types is None:
         supported_action_types = ["UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL", "MODIFY_TOOL_CODE"]
 
     if not suggestions:
@@ -843,20 +843,20 @@ async def select_suggestion_for_autonomous_action( # Made async
     if not actionable_suggestions:
         logger.debug(f"No suggestions match supported action types: {supported_action_types}")
         return None
-    
+
     valid_scored_suggestions = []
     for s in actionable_suggestions:
         impact = s.get("impact_score")
         risk = s.get("risk_score")
         effort = s.get("effort_score")
-        
+
         if isinstance(impact, int) and impact != -1 and \
            isinstance(risk, int) and risk != -1 and \
            isinstance(effort, int) and effort != -1:
             valid_scored_suggestions.append(s)
         else:
             logger.debug(f"Suggestion {s.get('suggestion_id', 'N/A')} filtered out due to missing/failed I/R/E scores (Impact: {impact}, Risk: {risk}, Effort: {effort}).")
-            
+
     if not valid_scored_suggestions:
         logger.debug("No suggestions remaining after filtering for valid I/R/E scores.")
         return None
@@ -878,12 +878,12 @@ async def select_suggestion_for_autonomous_action( # Made async
         impact_score = s["impact_score"]
         risk_score = s["risk_score"]
         effort_score = s["effort_score"]
-        
+
         s["_priority_score"] = impact_score - risk_score - (effort_score * 0.5)
         logger.debug(f"Suggestion {s.get('suggestion_id', 'N/A')} (Action: {s.get('action_type')}) calculated priority_score: {s['_priority_score']} (I:{impact_score}, R:{risk_score}, E:{effort_score}) Reviewer Confidence: {s.get('reviewer_confidence', 'N/A')}")
 
     sorted_suggestions = sorted(reviewed_and_approved_suggestions, key=lambda x: x["_priority_score"], reverse=True)
-    
+
     logger.debug(f"{len(sorted_suggestions)} suggestions sorted by priority_score.")
     if sorted_suggestions:
         logger.debug(f"Top sorted suggestion ID {sorted_suggestions[0].get('suggestion_id', 'N/A')} with score {sorted_suggestions[0]['_priority_score']}")
@@ -906,7 +906,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                     'details': action_details
                 }
                 return suggestion
-        
+
         elif action_type == "CREATE_NEW_TOOL":
             if isinstance(action_details, dict) and \
                isinstance(action_details.get("tool_description_prompt"), str) and action_details.get("tool_description_prompt"):
@@ -924,7 +924,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                isinstance(action_details.get("module_path"), str) and action_details.get("module_path") and \
                isinstance(action_details.get("function_name"), str) and action_details.get("function_name") and \
                isinstance(action_details.get("suggested_code_change"), str) and action_details.get("suggested_code_change"):
-                
+
                 code_mod_params = {
                     "module_path": action_details["module_path"],
                     "function_name": action_details["function_name"],
@@ -934,16 +934,16 @@ async def select_suggestion_for_autonomous_action( # Made async
                 logger.info(f"Attempting to apply code modification for tool '{code_mod_params['function_name']}' "+
                             f"in module '{code_mod_params['module_path']}' based on suggestion "+
                             f"{suggestion.get('suggestion_id', 'N/A')} (Priority: {priority_score_for_log}).")
-                
+
                 code_mod_result = await apply_code_modification(code_mod_params)
                 suggestion['_action_result'] = code_mod_result # Store the result
-                
+
                 overall_success_from_apply = code_mod_result['overall_status']
                 detailed_message_from_apply = code_mod_result['overall_message']
-                
+
                 test_outcome_details = code_mod_result.get('test_outcome')
                 test_passed_for_log = test_outcome_details.get('passed') if test_outcome_details else None
-                
+
                 commit_outcome_details = code_mod_result.get('commit_outcome')
                 commit_info_for_log = None
                 if commit_outcome_details:
@@ -963,7 +963,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                 global_reflection_log.log_execution(
                     goal_description=f"Self-modification attempt for suggestion {suggestion.get('suggestion_id', 'N/A')}",
                     plan=[{
-                        "tool_name": "apply_code_modification", 
+                        "tool_name": "apply_code_modification",
                         "args": [code_mod_params],
                         "status": "attempted"
                     }],
@@ -978,7 +978,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                     post_modification_test_details=test_outcome_details,
                     commit_info=commit_info_for_log
                 )
-                
+
                 logger.info(detailed_message_from_apply)
                 log_event(
                     event_type="AUTONOMOUS_ACTION_MODIFY_TOOL_CODE_ATTEMPT",
@@ -999,7 +999,7 @@ async def select_suggestion_for_autonomous_action( # Made async
                 return suggestion # Return the suggestion with the action_result
             else:
                 logger.warning(f"Skipping MODIFY_TOOL_CODE suggestion {suggestion.get('suggestion_id', 'N/A')} due to missing/invalid action_details: {action_details}")
-        
+
     logger.debug("No suggestion passed action_details validation or other criteria after sorting by priority_score.")
     return None
 
@@ -1014,13 +1014,13 @@ if __name__ == '__main__':
             "suggestion_id": "MTC001", "action_type": "MODIFY_TOOL_CODE", "priority": "High",
             "impact_score": 4, "risk_score": 1, "effort_score": 2, "review_looks_good": True, "reviewer_confidence": 0.8,
             "action_details": {
-                "module_path": "ai_assistant.tools.sample_tool", 
-                "function_name": "do_something", 
+                "module_path": "ai_assistant.tools.sample_tool",
+                "function_name": "do_something",
                 "suggested_code_change": "def do_something(new_param):\n  pass"
             }
         },
         {
-            "suggestion_id": "UTD001", "action_type": "UPDATE_TOOL_DESCRIPTION", "priority": "Medium", 
+            "suggestion_id": "UTD001", "action_type": "UPDATE_TOOL_DESCRIPTION", "priority": "Medium",
             "impact_score": 3, "risk_score": 1, "effort_score": 1, "review_looks_good": True, "reviewer_confidence": 0.7,
             "action_details": {"tool_name": "tool_A", "new_description": "New desc for A"}
         },
@@ -1039,8 +1039,8 @@ if __name__ == '__main__':
             "impact_score": 5, "risk_score": 1, "effort_score": 1, "review_looks_good": False, "reviewer_confidence": 0.2,
             "qualitative_review": "Reviewer found potential issues.",
             "action_details": {
-                "module_path": "ai_assistant.tools.rejected_tool", 
-                "function_name": "rejected_func", 
+                "module_path": "ai_assistant.tools.rejected_tool",
+                "function_name": "rejected_func",
                 "suggested_code_change": "def rejected_func():\n  # risky change\n  pass"
             }
         }
@@ -1063,7 +1063,7 @@ if __name__ == '__main__':
                 supported_action_types=["MODIFY_TOOL_CODE", "UPDATE_TOOL_DESCRIPTION", "CREATE_NEW_TOOL"],
                 notification_manager=None
             )
-            
+
             if selected_mtc:
                 print(f"Selected suggestion (MTC Test): {selected_mtc.get('suggestion_id')}")
                 assert selected_mtc.get('suggestion_id') == "MTC001", f"Expected MTC001, got {selected_mtc.get('suggestion_id')}"
@@ -1086,7 +1086,7 @@ if __name__ == '__main__':
                 "edit_outcome": {"status": True}, "test_outcome": {"passed": False, "notes": "Test failed"},
                 "revert_outcome": {"status": True, "message": "Reverted"}
             }
-            
+
             selected_mtc_fail = await select_suggestion_for_autonomous_action(
                 [mock_suggestions_for_select_test[0]],
                 supported_action_types=["MODIFY_TOOL_CODE"],
@@ -1118,6 +1118,6 @@ if __name__ == '__main__':
             else:
                 assert False, "Expected UTD001 to be selected in the rejected test."
     asyncio.run(run_select_suggestion_test3())
-            
+
     print("\n--- select_suggestion_for_autonomous_action tests complete ---")
 # Removed duplicated [end of Self-Evolving-Agent-feat-learning-module/Self-Evolving-Agent-feat-chat-history-context/ai_assistant/core/autonomous_reflection.py] marker

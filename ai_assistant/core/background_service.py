@@ -54,7 +54,7 @@ except ImportError as e: # pragma: no cover
     print(f"BackgroundService: Warning - Could not import project execution tools. Autonomous project work will be disabled. Error: {e}")
     PROJECT_TOOLS_AVAILABLE = False
     # Define placeholders if imports fail, so the rest of the module doesn't break
-    BASE_PROJECTS_DIR = "ai_generated_projects" 
+    BASE_PROJECTS_DIR = "ai_generated_projects"
     async def execute_project_coding_plan(project_name: str, base_projects_dir_override: Optional[str] = None) -> str:
         return "Error: execute_project_coding_plan tool not available due to import failure."
 
@@ -88,6 +88,82 @@ _memory_maintenance_interval_seconds = 3600 # 1 hour (was 30 mins)
 # Learning & Conversation Scan State
 _last_conversation_scan_time: float = 0.0
 _conversation_scan_interval_seconds = 1800 # 30 mins (was 10 mins)
+
+
+def _format_exception_details(error: Exception) -> str:
+    detail = str(error).strip()
+    return f"{type(error).__name__}: {detail}" if detail else type(error).__name__
+
+
+def _is_dream_provider_failure(error: Exception) -> bool:
+    """Return True for LLM/network failures that must not become tool-fix approvals."""
+    current: Optional[BaseException] = error
+    while current:
+        class_name = type(current).__name__.casefold()
+        module_name = type(current).__module__.casefold()
+        detail = str(current).casefold()
+        if (
+            "deepseek" in class_name
+            or "deepseek" in module_name
+            or "gemini" in class_name
+            or "timeout" in class_name
+            or "timed out" in detail
+            or "client error" in detail
+            or "rate limit" in detail
+            or "connection" in detail
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _record_dream_mode_failure(
+    learning_agent: Optional[LearningAgent],
+    target_tool: Optional[str],
+    error: Exception,
+) -> Optional[object]:
+    """Record a failed dream run as diagnostics, never as an unverified tool repair."""
+    details = _format_exception_details(error)
+    provider_failure = _is_dream_provider_failure(error)
+    failure_scope = "provider" if provider_failure else "dream_runner"
+    selected_tool = str(target_tool or "").strip() or None
+
+    if not learning_agent:
+        return None
+
+    from ai_assistant.core.reflection import ActionableInsight, InsightType
+    insight = ActionableInsight(
+        type=InsightType.DREAM_EXPERIMENT,
+        description=(
+            f"Dream Mode {failure_scope} failure"
+            + (f" while evaluating '{selected_tool}'" if selected_tool else "")
+            + f": {details}"
+        ),
+        source_reflection_entry_ids=[],
+        related_tool_name=selected_tool,
+        priority=5,
+        status="ACTION_FAILED",
+        metadata={
+            "error_category": "DREAM_MODE_PROVIDER_ERROR" if provider_failure else "DREAM_MODE_RUNNER_ERROR",
+            "exception_details": details,
+            "failure_scope": failure_scope,
+            "repairable_tool_failure": False,
+            "selected_tool": selected_tool,
+        },
+    )
+    learning_agent.insights.append(insight)
+    learning_agent._save_insights()
+
+    notification_manager = getattr(learning_agent, "notification_manager", None)
+    if notification_manager:
+        notification_manager.add_notification(
+            NotificationType.WARNING,
+            insight.description,
+            related_item_id=insight.insight_id,
+            related_item_type="dream_experiment",
+            details_payload=insight.metadata,
+        )
+    return insight
 
 # Vision Service State
 _last_visual_audit_time: float = 0.0
@@ -382,7 +458,7 @@ async def run_autonomous_goal_processor():
 
                     # POST-EXECUTION REPORTING
                     # We need to know the result. orchestrator.process_prompt returns (success, response, images)
-                    # Use a callback or wait? 
+                    # Use a callback or wait?
                     # create_task wraps it. We can define a wrapper.
                     async def _run_and_report(gid=goal_id, sess_id=session_id, desc=goal_desc, source_sess=goal.get("metadata", {}).get("source_session_id")):
                         try:
@@ -393,7 +469,7 @@ async def run_autonomous_goal_processor():
                                 session_id=sess_id,
                                 context_source="SYSTEM" # Use SYSTEM personas
                             )
-                            
+
                             success = state.current_status == "completed"
                             result_text = ""
                             if state.tool_results and len(state.tool_results) > 0:
@@ -407,24 +483,24 @@ async def run_autonomous_goal_processor():
                             # Update Goal Status and preserve the truthful terminal result.
                             new_status = "completed" if success else "failed"
                             goal_management.record_goal_result(gid, status=new_status, result_summary=result_text)
-                            
+
                             # Report back to source session if exists
                             if source_sess:
                                 report_title = f"Agent Report: {desc[:30]}..."
                                 report_body = result_text if success else f"Agent failed to complete task: {result_text}"
                                 await broadcast_agent_message(source_sess, report_body, title=report_title)
-                                
+
                             # NEW: Trigger Learning from this experience
                             # If successful, extract facts from the result
                             if success and hasattr(_orchestrator, 'learning_agent') and _orchestrator.learning_agent:
                                 logger.info(f"BackgroundService: Triggering learning extraction for goal {gid}...")
-                                # Fire and forget (or await if we want to ensure it completes before goal update? 
+                                # Fire and forget (or await if we want to ensure it completes before goal update?
                                 # goal is already updated. Awaiting is safer to managing loop).
                                 await _orchestrator.learning_agent.extract_and_save_facts(
                                     text=result_text,
                                     source_desc=f"Background Agent Task: {desc}"
                                 )
-                                
+
                         except Exception as e:
                             logger.error(f"Error in autonomous wrapper for goal {gid}: {e}")
                             result_text = f"Background agent failed unexpectedly: {e}"
@@ -506,7 +582,7 @@ def sanitize_project_name(name: str) -> str:
 
     if not s_name:
         return "unnamed_project"
-    
+
     return s_name[:50]
 
 def write_text_to_file(filepath: str, content: str) -> str:
@@ -526,9 +602,9 @@ def write_text_to_file(filepath: str, content: str) -> str:
     # ... (ensure all internal uses of 'full_filepath' are changed to 'filepath')
     try:
         dir_path = os.path.dirname(filepath)
-        if dir_path: 
+        if dir_path:
             os.makedirs(dir_path, exist_ok=True)
-        
+
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
         return f"Success: Content written to '{filepath}'."
@@ -551,7 +627,7 @@ def read_text_from_file(filepath: str) -> str:
 
     if not os.path.exists(filepath):
          return f"Error: File '{filepath}' not found."
-    
+
     if not os.path.isfile(filepath):
         return f"Error: Path '{filepath}' is not a file."
 
@@ -598,17 +674,17 @@ async def _background_loop_async():
     _last_reminder_check_time = time.time()
     _last_memory_maintenance_time = time.time()
     _last_conversation_scan_time = time.time()
-    
+
     _load_architect_state()
 
     # Track limits to avoid processing
     _last_reflection_analyzed_timestamp = global_reflection_log.get_last_entry_timestamp()
-    
+
     # Track modification time of learned facts file to avoid redundant curation
     _last_facts_file_mtime = 0.0
     if os.path.exists(LEARNED_FACTS_FILEPATH):
         _last_facts_file_mtime = os.path.getmtime(LEARNED_FACTS_FILEPATH)
-    
+
     if is_debug_mode():
         logger.info(f"BackgroundService: Initialized last analyzed reflection timestamp to {_last_reflection_analyzed_timestamp}")
         logger.info(f"BackgroundService: Initialized facts file mtime to {_last_facts_file_mtime}")
@@ -645,7 +721,7 @@ async def _background_loop_async():
     except Exception as e: # pragma: no cover
         logger.error(f"BackgroundService: Failed to initialize LearningAgent: {e}")
         learning_agent = None
-    
+
     # Initialize Reviewer for Auto-Approvals
     reviewer_agent = ReviewerAgent()
 
@@ -678,7 +754,7 @@ async def _background_loop_async():
             300,
             int(getattr(runtime_config, "DREAM_INTERVAL_SECONDS", globals().get('_dream_interval_seconds', 86400)))
         )
-        
+
         # --- Autonomous Goal Processing Task ---
         # User-assigned work is not maintenance and must run before idle throttling.
         if should_run_autonomous_goal_processor(current_loop_time, next_autonomous_goal_check_time):
@@ -777,7 +853,7 @@ async def _background_loop_async():
             # Update state
             _last_agenda_briefing_date = current_date_str
             write_text_to_file(os.path.join(get_data_dir(), "last_agenda_briefing.txt"), current_date_str)
-        
+
         # Check global daily token budget from telemetry
         if has_telemetry_tracker and telemetry_tracker_ref:
             try:
@@ -796,10 +872,10 @@ async def _background_loop_async():
         # --- Self-Reflection Task ---
         if current_loop_time >= next_reflection_run_time:
             current_time_str_reflection = time.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             # Optimization: Check if there are new logs since last analysis
             latest_log_timestamp = global_reflection_log.get_last_entry_timestamp()
-            
+
             if latest_log_timestamp <= _last_reflection_analyzed_timestamp:
                 if is_debug_mode():
                     logger.debug(f"BackgroundService: Skipping self-reflection. No new logs since {_last_reflection_analyzed_timestamp} (Current latest: {latest_log_timestamp}).")
@@ -813,7 +889,7 @@ async def _background_loop_async():
                         logger.info("BackgroundService: No tools available for reflection cycle. Skipping self-reflection.")
                     else:
                         suggestions = await asyncio.to_thread(run_self_reflection_cycle, available_tools=available_tools)
-                        
+
                         # Update the timestamp only after a successful run attempt (even if no suggestions)
                         # We use the timestamp we fetched before the run to be safe, or fetch again?
                         # Fetching again is safer in case logs were added *during* the run.
@@ -821,27 +897,27 @@ async def _background_loop_async():
 
                         if suggestions:
                             logger.info(f"BackgroundService: Self-reflection cycle generated {len(suggestions)} suggestions. Routing to Weebo.")
-                            
+
                             from ai_assistant.core.suggestion_manager import add_new_suggestion, _update_suggestion_status
-                            
+
                             prompt_text = "SYSTEM: A background self-reflection cycle generated the following insights/suggestions for you to evaluate and handle autonomously:\n\n"
-                            
+
                             if learning_agent:
                                 for i, suggestion in enumerate(suggestions):
                                     suggestion_desc = suggestion.get("suggestion_text", "No description")
                                     action_type = suggestion.get("action_type", "UNKNOWN")
-                                    
+
                                     sugg_record = add_new_suggestion(
                                         type=action_type,
                                         description=suggestion_desc,
                                         action_details=suggestion.get("action_details", {})
                                     )
-                                    
+
                                     if sugg_record:
                                         _update_suggestion_status(sugg_record['suggestion_id'], "ROUTED_TO_WEEBO", "Routed to autonomous loop.")
-                                    
+
                                     prompt_text += f"{i+1}. [{action_type}] {suggestion_desc}\n"
-                                    
+
                             prompt_text += "\nPlease use your tools to apply these changes or modifications if you determine they are beneficial. You do not need to ask for user permission."
 
                             if _orchestrator:
@@ -851,7 +927,7 @@ async def _background_loop_async():
                                         import uuid
                                         session_id = f"autonomous_insight_{uuid.uuid4().hex[:8]}"
                                         state = ExecutionState(original_user_prompt=prompt, context_limits={"max_tokens": 100000})
-                                        
+
                                         logger.info(f"BackgroundService: Triggering Orchestrator to process suggestions (Session: {session_id}).")
                                         await _orchestrator.process_prompt(
                                             state=state,
@@ -860,27 +936,27 @@ async def _background_loop_async():
                                         )
                                     except Exception as e:
                                         logger.error(f"BackgroundService: Error during autonomous insight processing: {e}", exc_info=True)
-                                
+
                                 asyncio.create_task(_weebo_process())
                         elif suggestions == []: # pragma: no cover
                             logger.info("BackgroundService: Self-reflection cycle generated no suggestions.")
-                        else: 
+                        else:
                             logger.info("BackgroundService: Self-reflection cycle did not complete normally.")
                 except Exception as e: # pragma: no cover
                     logger.error(f"BackgroundService: Error during self-reflection cycle: {e}", exc_info=True)
-                
+
                 next_reflection_run_time = time.time() + _polling_interval_seconds
 
         # --- LLM-Powered Fact Curation Task ---
         if current_loop_time >= next_fact_curation_run_time:
             current_time_str_curation = time.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             # Optimization: Check if facts file has been modified
             current_facts_mtime = 0.0
             if os.path.exists(LEARNED_FACTS_FILEPATH):
                 current_facts_mtime = os.path.getmtime(LEARNED_FACTS_FILEPATH)
-            
-            # We add a small buffer (e.g. 1 sec) or just strict inequality. 
+
+            # We add a small buffer (e.g. 1 sec) or just strict inequality.
             # If the file hasn't changed since we last looked/updated, skip.
             if current_facts_mtime <= _last_facts_file_mtime:
                 if is_debug_mode():
@@ -891,12 +967,12 @@ async def _background_loop_async():
                 try:
                     # Call the dedicated function from knowledge_tools
                     curation_success = await run_periodic_fact_store_curation_async()
-                    
+
                     if curation_success: # pragma: no cover
                         logger.info("BackgroundService: LLM fact curation process completed successfully.")
                     else: # pragma: no cover
                         logger.warning("BackgroundService: LLM fact curation process encountered an issue or made no changes.")
-                    
+
                     # Update our mtime tracker to NOW (or re-read file mtime)
                     # Re-reading is safer as curation writes to the file.
                     if os.path.exists(LEARNED_FACTS_FILEPATH):
@@ -906,16 +982,16 @@ async def _background_loop_async():
 
                 except Exception as e: # pragma: no cover
                     logger.error(f"BackgroundService: Error during LLM fact curation: {e}", exc_info=True)
-                
+
                 _last_fact_curation_time = time.time()
                 next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
-        
+
         # --- Active Learning: Conversation Scan ---
         if learning_agent and current_loop_time >= _last_conversation_scan_time + _conversation_scan_interval_seconds:
             try:
                 # 1. Scan for new insights
                 new_insights = await learning_agent.scan_recent_conversations()
-                
+
                 # 2. Fast-track Facts
                 if new_insights > 0:
                      processed = await learning_agent.process_learned_facts_immediately()
@@ -923,7 +999,7 @@ async def _background_loop_async():
                          logger.info(f"BackgroundService: Fast-tracked {processed} learned facts from conversation.")
             except Exception as e:
                 logger.error(f"BackgroundService: Error during conversation scan: {e}")
-            
+
             _last_conversation_scan_time = time.time()
 
         # === IDLE GATED TASKS ===
@@ -1024,7 +1100,7 @@ async def _background_loop_async():
                 await memory_maintenance_service.run_maintenance_cycle()
              except Exception as e:
                 logger.error(f"BackgroundService: Error during memory maintenance cycle: {e}", exc_info=True)
-            
+
              _last_memory_maintenance_time = time.time()
 
         # --- Autonomous Project Coding Task (Heavy) ---
@@ -1048,8 +1124,8 @@ async def _background_loop_async():
                                 try:
                                     manifest_data = json.loads(manifest_content_str)
                                     # Ensure project_name is derived correctly, it might not be the sanitized name
-                                    original_project_name = manifest_data.get("project_name", project_sanitized_name) 
-                                    
+                                    original_project_name = manifest_data.get("project_name", project_sanitized_name)
+
                                     # Check for planned tasks more accurately
                                     # The manifest schema stores tasks in 'development_tasks'
                                     development_tasks = manifest_data.get("development_tasks", [])
@@ -1059,7 +1135,7 @@ async def _background_loop_async():
                                             if isinstance(task, dict) and task.get("status") == "planned":
                                                 has_planned_tasks = True
                                                 break
-                                    
+
                                     if has_planned_tasks:
                                         logger.info(f"BackgroundService: Project '{original_project_name}' has planned tasks. Attempting to execute coding plan.")
                                         # Pass the BASE_PROJECTS_DIR to ensure execute_project_coding_plan uses the correct root
@@ -1093,7 +1169,7 @@ async def _background_loop_async():
                     logger.info(f"BackgroundService: Autonomously processed {processed_count} self-healing insights.")
             except Exception as e:
                  logger.error(f"BackgroundService: Error during self-healing cycle: {e}", exc_info=True)
-            
+
             next_self_healing_run_time = time.time() + _self_healing_interval_seconds
 
         # --- General Insight Processing (Learning - Always Run) ---
@@ -1149,32 +1225,34 @@ async def _background_loop_async():
 
         if ALLOW_DREAMER and ENABLE_DREAM_MODE and user_is_idle and current_loop_time >= _last_dream_time + _dream_interval_seconds:
             logger.info("BackgroundService: Entering Dream Mode...")
+            target_tool = None
+            dream_retry_delay_seconds = _dream_interval_seconds
             try:
                 # Lazy init Dreamer
                 if 'dreamer_agent' not in locals():
                     from ai_assistant.dreaming.dreamer import DreamerAgent
                     dreamer_agent = DreamerAgent()
-                
+
                 # Pick a random tool
                 available_tools = tool_system.tool_system_instance.list_tools()
                 if available_tools:
                     import random
                     target_tool = random.choice(list(available_tools.keys()))
-                    
+
                     logger.info(f"BackgroundService: Dreaming about '{target_tool}'...")
                     dream_result = await dreamer_agent.realize_dream(target_tool)
-                    
+
                     if dream_result and "verification_script" in dream_result:
                         # Execute the Dream
                         script_content = dream_result["verification_script"]
                         logger.info(f"BackgroundService: Running verification for dream '{dream_result.get('scenario_name')}'")
-                        
+
                         # Save to temp file
                         import tempfile
                         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp_script:
                             tmp_script.write(script_content)
                             tmp_script_path = tmp_script.name
-                        
+
                         # Run it
                         proc = await asyncio.create_subprocess_exec(
                             sys.executable, tmp_script_path,
@@ -1184,16 +1262,16 @@ async def _background_loop_async():
                         stdout, stderr = await proc.communicate()
                         stdout_str = stdout.decode().strip()
                         stderr_str = stderr.decode().strip()
-                        
+
                         # Cleanup
                         try: os.unlink(tmp_script_path)
                         except Exception: pass
-                        
+
                         # Analyze Result
                         if "DREAM_CRASH_DETECTED" in stdout_str or proc.returncode != 0:
                             logger.warning(f"BackgroundService: Nightmare realized! Tool '{target_tool}' failed hypothetical scenario.")
                             globals()['_last_dream_status'] = f"Nightmare realized! Tool '{target_tool}' failed simulation."
-                            
+
                             # ACTIVE IMMUNE SYSTEM: Attempt to fix
                             if learning_agent and learning_agent.action_executor and learning_agent.action_executor.code_service:
                                 logger.info(f"BackgroundService: Initiating Autonomous Immune Response for '{target_tool}'...")
@@ -1325,30 +1403,32 @@ async def _background_loop_async():
                         else:
                             logger.info(f"BackgroundService: Tool '{target_tool}' survived the dream scenario.")
                             globals()['_last_dream_status'] = f"Tool '{target_tool}' survived dream scenario '{dream_result.get('scenario_name')}'."
-                    
-            except Exception as e:
-                logger.error(f"BackgroundService: Error during Dream Mode: {e}", exc_info=True)
-                # Capture general dream mode errors as insights
-                if learning_agent:
-                    from ai_assistant.core.reflection import ActionableInsight, InsightType
-                    new_insight = ActionableInsight(
-                        type=InsightType.TOOL_BUG_SUSPECTED,
-                        description=f"Error encountered during Dream Mode execution: {str(e)}",
-                        source_reflection_entry_ids=[],
-                        related_tool_name="dream_mode_runner",
-                        priority=4,
-                        status="NEW",
-                        metadata={
-                            "error_category": "DREAM_MODE_SYSTEM_ERROR",
-                            "exception_details": str(e)
-                        }
-                    )
-                    learning_agent.insights.append(new_insight)
-                    learning_agent._save_insights()
-                    logger.info("BackgroundService: Saved DREAM_MODE_SYSTEM_ERROR insight.")
 
-            
-            _last_dream_time = time.time()
+            except Exception as e:
+                details = _format_exception_details(e)
+                provider_failure = _is_dream_provider_failure(e)
+                logger.error(
+                    "BackgroundService: Dream Mode failed while evaluating %s: %s",
+                    target_tool or "no selected tool",
+                    details,
+                    exc_info=True,
+                )
+                _record_dream_mode_failure(learning_agent, target_tool, e)
+                globals()['_last_dream_status'] = (
+                    f"Dream Mode provider failure while evaluating '{target_tool}': {details}"
+                    if provider_failure and target_tool
+                    else f"Dream Mode runner failure: {details}"
+                )
+                if provider_failure:
+                    # Retry transient provider failures after 15 minutes instead
+                    # of waiting for the full daily Dream Mode interval.
+                    dream_retry_delay_seconds = min(900, _dream_interval_seconds)
+
+
+            _last_dream_time = time.time() - max(
+                0,
+                _dream_interval_seconds - dream_retry_delay_seconds,
+            )
 
         # --- Auto-Approval Task ---
         if current_loop_time >= next_auto_approve_check_time:
@@ -1356,7 +1436,7 @@ async def _background_loop_async():
                  pending_requests = approval_manager.get_pending_requests()
                  if pending_requests:
                      logger.info(f"BackgroundService: Checking {len(pending_requests)} pending requests for auto-approval (Timeout: {AUTO_APPROVE_DELAY_SECONDS}s).")
-                     
+
                      for req in pending_requests:
                          req_id = req['id']
                          req_time = req['timestamp']
@@ -1365,17 +1445,17 @@ async def _background_loop_async():
                          if _requires_manual_source_approval(req.get("type")):
                              logger.info(f"BackgroundService: Request {req_id} requires manual source-change approval.")
                              continue
-                         
+
                          if age >= AUTO_APPROVE_DELAY_SECONDS:
                              logger.info(f"BackgroundService: Evaluating request {req_id} for auto-approval (Age: {age:.1f}s).")
-                             
+
                              # AI Review Step
                              eval_result = await reviewer_agent.evaluate_auto_approval_request(
                                  request_type=req.get('type'),
                                  description=req.get('description'),
                                  request_data=req.get('data')
                              )
-                             
+
                              logger.info(f"BackgroundService: AI Gatekeeper decision for {req_id}: {eval_result['status'].upper()} (Safety: {eval_result['safety_score']}, Opt: {eval_result['optimization_score']})")
 
                              if eval_result['status'] == 'approved':
@@ -1396,7 +1476,7 @@ async def _background_loop_async():
                                      logger.info(f"BackgroundService: Successfully auto-executed request {req_id}.")
                                  else:
                                      logger.error(f"BackgroundService: Failed to auto-execute request {req_id}.")
-                             
+
                              else:
                                  # Auto-Deny
                                  if learning_agent and learning_agent.notification_manager:
@@ -1411,15 +1491,15 @@ async def _background_loop_async():
                                      )
                                  approval_manager.deny_request(req_id)
                                  logger.info(f"BackgroundService: Auto-denied request {req_id}. Reason: {eval_result['reason']}")
-                         
+
              except Exception as e:
                  logger.error(f"BackgroundService: Error during Auto-Approval check: {e}", exc_info=True)
-             
+
              next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
-        
+
         # --- 6. Conversational Analysis ---
         global _last_conversation_analysis_time, _conversation_analysis_interval_seconds
-        
+
         if '_last_conversation_analysis_time' not in globals():
              _last_conversation_analysis_time = 0.0
         if '_conversation_analysis_interval_seconds' not in globals():
@@ -1446,7 +1526,7 @@ async def _background_loop_async():
         time_until_next_auto_approve = max(0, next_auto_approve_check_time - time.time())
         time_until_next_visual_audit = max(0, next_visual_audit_run_time - time.time())
         time_until_next_goal_check = max(0, next_autonomous_goal_check_time - time.time())
-        
+
         sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, time_until_next_goal_check, 10)
 
         try:
@@ -1463,8 +1543,8 @@ async def _background_loop_async():
             await asyncio.sleep(sleep_duration)
         except asyncio.CancelledError: # pragma: no cover
             logger.info("BackgroundService: Loop cancelled during sleep.")
-            break 
-            
+            break
+
     logger.info("BackgroundService: Async loop finished.")
 
 # Renamed and made synchronous as it just creates a task
@@ -1475,21 +1555,21 @@ def start_background_services():
     if _background_service_active and isinstance(_background_task, asyncio.Task) and not _background_task.done():
         logger.info("BackgroundService: Service is already running or starting.") # pragma: no cover
         return
-        
+
     _background_service_active = True
-    _last_fact_curation_time = 0.0 
+    _last_fact_curation_time = 0.0
     _last_project_execution_scan_time = 0.0 # Reset this too
     _last_self_healing_time = 0.0
     if is_debug_mode():
         logger.info("BackgroundService: Attempting to start service...")
     try:
-        loop = asyncio.get_running_loop() 
+        loop = asyncio.get_running_loop()
         _background_task = loop.create_task(_background_loop_async())
         if is_debug_mode():
             logger.info("BackgroundService: Service task created.")
     except RuntimeError: # pragma: no cover
         logger.error("BackgroundService: Asyncio loop not running. Cannot start service this way.")
-        _background_service_active = False 
+        _background_service_active = False
         return
     except Exception as e: # pragma: no cover
         logger.error(f"BackgroundService: Failed to create service task: {e}", exc_info=True)
@@ -1499,24 +1579,24 @@ def start_background_services():
 # Renamed, remains async
 async def stop_background_services():
     global _background_service_active, _background_task
-    
+
     if not _background_service_active or not isinstance(_background_task, asyncio.Task): # pragma: no cover
         logger.info("BackgroundService: Service is not running or task not found.")
         return
 
     logger.info("BackgroundService: Attempting to stop service...")
-    _background_service_active = False 
-    
+    _background_service_active = False
+
     if _background_task and not _background_task.done(): # pragma: no branch
         _background_task.cancel()
         try:
-            await _background_task 
+            await _background_task
             logger.info("BackgroundService: Service task successfully cancelled and awaited.") # pragma: no cover
         except asyncio.CancelledError: # pragma: no cover
             logger.info("BackgroundService: Service task explicitly cancelled.")
         except Exception as e: # pragma: no cover
             logger.error(f"BackgroundService: Error while awaiting cancelled task: {e}", exc_info=True)
-            
+
     _background_task = None
     logger.info("BackgroundService: Service stop procedure completed.")
 
@@ -1531,14 +1611,14 @@ def start_background_services_on_loop(loop):
     asyncio thread as the main AI orchestrator.
     """
     global _background_service_active, _background_task
-    
+
     if _background_service_active:
         logger.warning("BackgroundService: Service already active. Ignoring request to start.")
         return
 
     logger.info("BackgroundService: Starting background loop on provided event loop...")
     _background_service_active = True
-    
+
     try:
         # submit to the provided loop
         _background_task = asyncio.run_coroutine_threadsafe(_background_loop_async(), loop)
@@ -1549,11 +1629,11 @@ def start_background_services_on_loop(loop):
 if __name__ == '__main__': # pragma: no cover
     # Minimal __main__ for testing the background service loop structure manually
     # Actual tool imports and functionality would require more setup or mocking
-    
+
     # Mock necessary components if they are not available in this standalone run
     class MockToolSystemInstance:
         def list_tools(self): return {"mock_tool": "A mock tool for testing."}
-    
+
     class MockReflectionModule:
         def run_self_reflection_cycle(self, available_tools):
             logger.info("--- MOCK run_self_reflection_cycle CALLED ---")
@@ -1575,7 +1655,7 @@ if __name__ == '__main__': # pragma: no cover
     globals()['run_periodic_fact_store_curation_async'] = MockKnowledgeToolsModule().run_periodic_fact_store_curation_async
 
     logger.info("--- Background Service Manual Test (via __main__) ---")
-    
+
     async def test_run():
         global _polling_interval_seconds, _fact_curation_interval_seconds
         global PROJECT_EXECUTION_INTERVAL_SECONDS # Ensure this is accessible
@@ -1588,10 +1668,10 @@ if __name__ == '__main__': # pragma: no cover
         PROJECT_EXECUTION_INTERVAL_SECONDS = 5 # Short interval for project execution
 
         start_background_services() # Call the renamed sync function
-        
+
         logger.info("Background service is running. Main test will sleep for 15 seconds.")
-        await asyncio.sleep(15) 
-        
+        await asyncio.sleep(15)
+
         logger.info("\nStopping background service...")
         await stop_background_services() # Call the renamed async function
         logger.info("Background service stopped by test.")
@@ -1599,7 +1679,7 @@ if __name__ == '__main__': # pragma: no cover
     if os.name == 'nt':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(test_run())
-    
+
     globals()['run_self_reflection_cycle'] = run_self_reflection_cycle_orig
     globals()['run_periodic_fact_store_curation_async'] = run_periodic_fact_store_curation_async_orig
 

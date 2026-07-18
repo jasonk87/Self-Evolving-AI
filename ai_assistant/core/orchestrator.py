@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from ai_assistant.core.router import TaskRouter
 import ai_assistant.config as config
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 from ai_assistant.tools.tool_system import tool_system_instance
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from ai_assistant.core.events import EventEmitter
@@ -28,7 +28,7 @@ from ai_assistant.core.models.state import ExecutionState
 
 # Legacy imports to keep signature compatible
 from ..planning.planning import PlannerAgent
-from ..planning.execution import ExecutionAgent 
+from ..planning.execution import ExecutionAgent
 from ..learning.learning import LearningAgent
 from ..execution.action_executor import ActionExecutor
 from .task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
@@ -36,6 +36,10 @@ from .notification_manager import NotificationManager
 from ..planning.hierarchical_planner import HierarchicalPlanner
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 from ai_assistant.utils.token_counter import estimate_tokens, truncate_to_token_limit
+from ai_assistant.core.context_compression import (
+    compact_execution_history,
+    compact_transcript_text,
+)
 from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
@@ -296,7 +300,7 @@ class DynamicOrchestrator:
     Uses a direct single-call ReAct loop.
     """
 
-    def __init__(self, 
+    def __init__(self,
                  planner: PlannerAgent,
                  executor: ExecutionAgent,
                  learning_agent: LearningAgent,
@@ -411,7 +415,7 @@ class DynamicOrchestrator:
     async def _process_prompt_internal(self, state: ExecutionState, conversation_history: Optional[List[Dict[str, str]]], session_id: Optional[str], images: Optional[List[str]], context_source: str) -> ExecutionState:
         try:
             self.current_goal = state.original_user_prompt
-            
+
             # 1. Vision Analysis (Common for all modes if images exist)
             prompt_with_context = await self._enrich_prompt_with_vision(state.original_user_prompt, images)
 
@@ -668,6 +672,14 @@ class DynamicOrchestrator:
             "Do not use Unix-only commands or pipelines such as `head`, `tail`, `grep`, `sed`, `awk`, or `sort -r` unless you have first verified they exist. "
             "For Git branch recency, prefer `get_latest_git_branch_update` instead of hand-writing shell pipelines."
         )
+        presentation_guide = (
+            "CHAT PRESENTATION: When a table, status card, metrics, weather summary, or structured list would be "
+            "materially clearer than plain text, the final answer may include a fenced `html-dynamic` fragment. "
+            "Use small HTML fragments only (for example div, table, tr, th, td, span, ul, li) and the existing "
+            "classes ai-card, ai-table, ai-metric, ai-status-good, ai-status-warning, and ai-status-bad. "
+            "Never include scripts, event-handler attributes, forms, external embeds, html/head/body tags, or "
+            "unsanitized user content. The frontend sanitizes fragments with DOMPurify."
+        )
 
         # Create ephemeral task for UI feedback
         current_ui_task = None
@@ -681,8 +693,8 @@ class DynamicOrchestrator:
                     session_id=session_id
                 )
                 self.task_manager.update_task_status(
-                    current_ui_task.task_id, 
-                    ActiveTaskStatus.PLANNING, 
+                    current_ui_task.task_id,
+                    ActiveTaskStatus.PLANNING,
                     step_desc="Analyzing request..."
                 )
             except Exception as e:
@@ -716,7 +728,10 @@ class DynamicOrchestrator:
                         f"{loop_control.observation}\n"
                     )
                     loop_control_interventions.add(loop_control.reason)
-                
+
+                if estimate_tokens(execution_history) > 12000:
+                    execution_history = compact_execution_history(execution_history, 8000)
+
                 if current_ui_task:
                     self.task_manager.update_task_status(
                         current_ui_task.task_id,
@@ -736,9 +751,9 @@ class DynamicOrchestrator:
                     # Optimizing chat history to prevent context explosion on massive tasks
                     history_tokens = estimate_tokens(chat_history_str)
                     if history_tokens > 40000:
-                        chat_history_str = truncate_to_token_limit(chat_history_str, 40000)
-                        logger.warning(f"Chat history truncated. Was ~{history_tokens} tokens.")
-                
+                        chat_history_str = compact_transcript_text(chat_history_str, 40000)
+                        logger.warning(f"Chat history compacted. Was ~{history_tokens} tokens.")
+
                 # Expose Quarantined Tools
                 quarantine_info = ""
                 quarantined_tools = self.get_blocked_tools()
@@ -752,6 +767,7 @@ class DynamicOrchestrator:
 Goal: {state.original_user_prompt}
 {persona_guide}
 {host_os_guide}
+{presentation_guide}
 {quarantine_info}
 Context:
 {context}
@@ -801,15 +817,16 @@ Rules:
                     logger.warning(f"Action prompt exceeds {MAX_ACTION_PROMPT_TOKENS} tokens ({total_tokens}). Forcing truncation on history/context to fit limits safely.")
                     # Force prune history more aggressively
                     if history:
-                        chat_history_str = truncate_to_token_limit(chat_history_str, 10000)
+                        chat_history_str = compact_transcript_text(chat_history_str, 10000)
                     if execution_history:
-                        execution_history = truncate_to_token_limit(execution_history, 5000)
+                        execution_history = compact_execution_history(execution_history, 5000)
 
                     # Reconstruct
                     action_prompt = f"""You are a tool-capable assistant. Decide the next action for this request in one step.
 Goal: {state.original_user_prompt}
 {persona_guide}
 {host_os_guide}
+{presentation_guide}
 {quarantine_info}
 Context:
 {context}
@@ -828,10 +845,10 @@ Return STRICT JSON only using the schema described earlier.
                 state.current_status = "tool_execution"
                 print(color_text(f"--- Cycle {step_i+1}: Action Selection ---", CLIColors.TOOL_NAME))
 
-                action_response = await invoke_gemini_model_async(
+                action_response = await model_router.generate_response(
                     prompt=action_prompt,
+                    task_name="chat",
                     model_name=config.DEFAULT_MODEL,
-                    strategy="RAW"
                 )
 
                 parsed_response = self._parse_tool_call(action_response) # Reuse parser, effectively parsing JSON
@@ -1099,7 +1116,7 @@ Return STRICT JSON only using the schema described earlier.
                     continue
 
                 # The model did not use a tool or final-answer schema. Treat as conversational response or retry if it looks like broken JSON.
-                
+
                 # Safety check: If response looks like JSON but wasn't parsed, DO NOT treat as final answer.
                 is_suspicious_json = action_response.strip().startswith("{") or \
                                      action_response.strip().lower().startswith("json") or \
@@ -1201,7 +1218,7 @@ Return STRICT JSON only using the schema described earlier.
             cleaned_text = text.strip()
             if cleaned_text.lower().startswith("json"):
                 cleaned_text = cleaned_text[4:].strip()
-            
+
             # 1. Attempt refined regex for backticks
             # Matches ```json { ... } ``` or ``` { ... } ```
             match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -1324,16 +1341,16 @@ Return STRICT JSON only using the schema described earlier.
         # 1. Find existing episode for this session
         episodes = self.memory_manager.get_all_episodes()
         existing_episode = next((e for e in episodes if e.get("session_id") == session_id), None)
-        
+
         # 2. Summarize History
         try:
             chat_text = ""
-            recent_history = history[-30:] 
+            recent_history = history[-30:]
             for msg in recent_history:
                 role = msg.get('role', 'unknown').upper()
                 content = str(msg.get('content', ''))[:500]
                 chat_text += f"{role}: {content}\n"
-                
+
             prompt = f"""Summarize this chat session into a high-level narrative.
 Focus on the overall goal and progress.
 Chat History:
@@ -1341,7 +1358,7 @@ Chat History:
 
 Output ONLY the summary text."""
 
-            summary = await invoke_gemini_model_async(prompt, model_name=config.DEFAULT_MODEL)
+            summary = await model_router.generate_response(prompt, task_name="summarization")
             if not summary:
                 return
 
@@ -1349,19 +1366,19 @@ Output ONLY the summary text."""
                 self.memory_manager.update_episode(
                     episode_id=existing_episode['episode_id'],
                     summary=summary,
-                    title=existing_episode.get('title') 
+                    title=existing_episode.get('title')
                 )
             else:
                 title_prompt = f"Generate a short (3-5 words) title for this chat:\n{summary}"
-                title = await invoke_gemini_model_async(title_prompt, model_name=config.DEFAULT_MODEL)
+                title = await model_router.generate_response(title_prompt, task_name="summarization")
                 title = title.strip().replace('"', '') if title else "Chat Session"
-                
+
                 self.memory_manager.add_episode(
                     summary=summary,
                     title=title,
                     session_id=session_id
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in _update_session_summary: {e}")
 

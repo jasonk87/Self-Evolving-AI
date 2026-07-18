@@ -6,6 +6,7 @@ import json
 from typing import Dict, Any, Optional, List
 import glob
 import shutil
+import time
 from ai_assistant.core.events import emit_system_event
 
 def _normalize_path_name(name: str) -> str:
@@ -328,7 +329,117 @@ RUN_TERMINAL_COMMAND_SCHEMA = {
     'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}
 }
 
-def search_codebase(query: str, directory: str = ".", include_globs: Optional[List[str]] = None, case_sensitive: bool = False) -> Dict[str, Any]:
+_SEARCH_IGNORED_DIRS = {
+    '.git', '__pycache__', 'node_modules', '.venv', 'venv', '.env',
+    '.pytest_cache', '.mypy_cache', '.ruff_cache', '.next', 'chroma_db',
+    'dist', 'build', 'coverage', '_memory_',
+}
+_SEARCH_DEFAULT_EXTENSIONS = {
+    '.bat', '.cfg', '.css', '.csv', '.html', '.ini', '.java', '.js',
+    '.json', '.jsx', '.md', '.ps1', '.py', '.sh', '.sql', '.toml',
+    '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
+}
+
+
+def _parse_ripgrep_json(output: str, max_results: int) -> List[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
+    for raw_line in str(output or '').splitlines():
+        try:
+            event = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if event.get('type') != 'match':
+            continue
+        data = event.get('data', {})
+        path = data.get('path', {}).get('text') or ''
+        content = data.get('lines', {}).get('text') or ''
+        matches.append({
+            'file': path,
+            'line_number': data.get('line_number'),
+            'content': content.strip()[:200],
+        })
+        if len(matches) >= max_results:
+            break
+    return matches
+
+
+def _bounded_python_search(
+    pattern: Any,
+    directory: str,
+    include_globs: Optional[List[str]],
+    max_results: int,
+    max_file_size_bytes: int,
+    max_files: int,
+    timeout_seconds: float,
+) -> Dict[str, Any]:
+    """Bounded fallback used when ripgrep is unavailable."""
+    started = time.monotonic()
+    matches: List[Dict[str, Any]] = []
+    files_scanned = 0
+    stop_reason = None
+
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [
+            name for name in dirs
+            if name.casefold() not in _SEARCH_IGNORED_DIRS and not name.startswith('.')
+        ]
+        for filename in files:
+            if time.monotonic() - started >= timeout_seconds:
+                stop_reason = f'Search timed out after {timeout_seconds:g} seconds.'
+                break
+            if files_scanned >= max_files:
+                stop_reason = f'Search stopped after scanning {max_files} files.'
+                break
+            if include_globs:
+                if not any(glob.fnmatch.fnmatch(filename, item) for item in include_globs):
+                    continue
+            elif os.path.splitext(filename)[1].casefold() not in _SEARCH_DEFAULT_EXTENSIONS:
+                continue
+
+            filepath = os.path.join(root, filename)
+            try:
+                if os.path.getsize(filepath) > max_file_size_bytes:
+                    continue
+                files_scanned += 1
+                with open(filepath, 'r', encoding='utf-8', errors='replace') as handle:
+                    for line_num, line in enumerate(handle, 1):
+                        if pattern.search(line):
+                            matches.append({
+                                'file': filepath,
+                                'line_number': line_num,
+                                'content': line.strip()[:200],
+                            })
+                            if len(matches) >= max_results:
+                                stop_reason = f'Search truncated to {max_results} results.'
+                                break
+                if stop_reason:
+                    break
+            except OSError:
+                continue
+        if stop_reason:
+            break
+
+    return {
+        'status': 'partial' if stop_reason else 'success',
+        'message': stop_reason,
+        'total_matches': len(matches),
+        'matches': matches,
+        'engine': 'python-bounded-fallback',
+        'files_scanned': files_scanned,
+        'elapsed_seconds': round(time.monotonic() - started, 3),
+    }
+
+
+def search_codebase(
+    query: str,
+    directory: str = ".",
+    include_globs: Optional[List[str]] = None,
+    case_sensitive: bool = False,
+    timeout_seconds: float = 12.0,
+    max_results: int = 50,
+    max_file_size_bytes: int = 2_000_000,
+    max_files: int = 20_000,
+) -> Dict[str, Any]:
     """
     Performs a regex search across a directory (similar to ripgrep), ignoring standard hidden folders like .git
     
@@ -337,72 +448,103 @@ def search_codebase(query: str, directory: str = ".", include_globs: Optional[Li
         directory: The root directory to search in. Default is current directory.
         include_globs: Optional list of glob patterns to filter (e.g. ["*.py", "*.jsx"]).
         case_sensitive: If True, performs case-sensitive regex search.
+        timeout_seconds: Hard time limit for a broad search.
+        max_results: Maximum matches returned.
+        max_file_size_bytes: Files larger than this are skipped.
+        max_files: Maximum files scanned by the Python fallback.
         
     Returns:
         A dictionary containing "status", "matches" (list of filenames and snippets), and "total_matches".
     """
-    import logging
+    if not isinstance(query, str) or not query.strip():
+        return {'status': 'error', 'error_message': 'Search query cannot be empty.'}
+    directory = os.path.abspath(os.path.expanduser(str(directory or '.')))
+    if not os.path.isdir(directory):
+        return {'status': 'error', 'error_message': f'Search directory does not exist: {directory}'}
+    if isinstance(include_globs, str):
+        include_globs = [include_globs]
+    max_results = max(1, min(int(max_results), 200))
+    timeout_seconds = max(0.1, min(float(timeout_seconds), 60.0))
+    max_file_size_bytes = max(1_024, min(int(max_file_size_bytes), 20_000_000))
+    max_files = max(1, min(int(max_files), 100_000))
+
     try:
-        # Re-importing re for safety in case of scope issues in tool loading
-        import re 
+        import re
         flags = 0 if case_sensitive else re.IGNORECASE
         pattern = re.compile(query, flags)
     except re.error as e:
         return {'status': 'error', 'error_message': f'Invalid regex syntax: {e}'}
 
-    ignored_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', '.env', '.pytest_cache'}
-    matches = []
-    
-    try:
-        for root, dirs, files in os.walk(directory):
-            dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith('.')]
-            
-            for file in files:
-                # filter by glob if requested
-                if include_globs:
-                    if not any(glob.fnmatch.fnmatch(file, pattern) for pattern in include_globs):
-                        continue
-                        
-                filepath = os.path.join(root, file)
-                
-                try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        for line_num, line in enumerate(f, 1):
-                            if pattern.search(line):
-                                matches.append({
-                                    "file": filepath,
-                                    "line_number": line_num,
-                                    "content": line.strip()[:200]
-                                })
-                                if len(matches) > 50:
-                                    return {
-                                        "status": "partial", 
-                                        "message": "Too many matches found. Truncated to 50 results. Consider narrowing your search query.", 
-                                        "total_matches": ">50", 
-                                        "matches": matches
-                                    }
-                except UnicodeDecodeError:
-                    continue # Skip binary files
-                except Exception as e:
-                    logging.warning(f"Failed to read file for search {filepath}: {e}")
-                    pass
-        
-        return {
-            "status": "success",
-            "total_matches": len(matches),
-            "matches": matches
-        }
-    except Exception as e:
-        return {'status': 'error', 'error_message': f'Unexpected error during directory traversal: {str(e)}'}
+    rg_path = shutil.which('rg')
+    if rg_path:
+        command = [
+            rg_path, '--json', '--max-count', '3', '--max-filesize',
+            str(max_file_size_bytes),
+        ]
+        if not case_sensitive:
+            command.append('--ignore-case')
+        for ignored in sorted(_SEARCH_IGNORED_DIRS):
+            command.extend(['--glob', f'!**/{ignored}/**'])
+        for item in include_globs or []:
+            command.extend(['--glob', item])
+        command.extend(['--', query, directory])
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=timeout_seconds,
+                check=False,
+            )
+            matches = _parse_ripgrep_json(completed.stdout, max_results)
+            if completed.returncode not in (0, 1):
+                return {
+                    'status': 'error',
+                    'error_message': completed.stderr.strip() or f'ripgrep exited with code {completed.returncode}.',
+                }
+            return {
+                'status': 'partial' if len(matches) >= max_results else 'success',
+                'message': f'Search truncated to {max_results} results.' if len(matches) >= max_results else None,
+                'total_matches': len(matches),
+                'matches': matches,
+                'engine': 'ripgrep',
+                'elapsed_seconds': round(time.monotonic() - started, 3),
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                'status': 'timeout',
+                'error_message': f'Code search timed out after {timeout_seconds:g} seconds. Narrow the directory, query, or include_globs.',
+                'total_matches': 0,
+                'matches': [],
+                'engine': 'ripgrep',
+                'elapsed_seconds': round(time.monotonic() - started, 3),
+            }
+        except OSError:
+            pass
+
+    return _bounded_python_search(
+        pattern=pattern,
+        directory=directory,
+        include_globs=include_globs,
+        max_results=max_results,
+        max_file_size_bytes=max_file_size_bytes,
+        max_files=max_files,
+        timeout_seconds=timeout_seconds,
+    )
 
 SEARCH_CODEBASE_SCHEMA = {
     'name': 'search_codebase', 
-    'description': "Performs a regex search across a directory (similar to grep), ignoring .git and node_modules. Essential for navigating large codebases.", 
+    'description': "Performs a bounded regex search across source/text files. Uses ripgrep when available, skips dependency/build/database directories and oversized files, returns at most 50 matches, and times out broad searches instead of blocking chat.",
     'parameters': [
         {'name': 'query', 'type': 'str', 'description': 'The regex string to search for.'},
         {'name': 'directory', 'type': 'str', 'description': 'Optional. Directory to search in. Default is "."'},
         {'name': 'include_globs', 'type': 'list', 'description': 'Optional. List of string glob patterns to filter (e.g. ["*.py"]).'},
-        {'name': 'case_sensitive', 'type': 'bool', 'description': 'Optional. Boolean to enforce case-sensitivity. Default False.'}
+        {'name': 'case_sensitive', 'type': 'bool', 'description': 'Optional. Boolean to enforce case-sensitivity. Default False.'},
+        {'name': 'timeout_seconds', 'type': 'float', 'description': 'Optional. Hard search timeout, default 12 seconds.'},
+        {'name': 'max_results', 'type': 'int', 'description': 'Optional. Maximum results, default 50 and hard-capped at 200.'}
     ], 
     'returns': {'type': 'dict', 'description': "A dict with 'status', 'total_matches', and a 'matches' list containing file, line_number, and content."}
 }

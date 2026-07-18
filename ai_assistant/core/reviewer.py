@@ -165,7 +165,7 @@ class ReviewerAgent:
             original_requirements=original_requirements,
             related_tests=tests_for_prompt
         )
-        
+
         # Optional: Use attempt_number in a print statement for clarity during execution
         # Limiting length of requirements in print for brevity
         requirements_preview = original_requirements[:70].replace('\n', ' ')
@@ -196,7 +196,7 @@ class ReviewerAgent:
             # Remove stray closing tags (common if context is truncated or model is chatty)
             cleaned_response_str = cleaned_response_str.replace('</think>', '')
             cleaned_response_str = cleaned_response_str.strip()
-            
+
             review_data = None
 
             # 2. Strategy A: Markdown Code Block Extraction (Priority)
@@ -225,13 +225,13 @@ class ReviewerAgent:
             if not review_data and "{" in cleaned_response_str and "}" in cleaned_response_str:
                 # Find the *first* { and *last* }
                 # Note: This is risky if the intro text contains {}, e.g. "I checked the {code}."
-                # To mitigte, we could look for the LAST { if the first one fails? 
+                # To mitigte, we could look for the LAST { if the first one fails?
                 # For now, keep simple but strict.
                 potential_json = cleaned_response_str[cleaned_response_str.find("{"):cleaned_response_str.rfind("}") + 1]
                 try:
                     review_data = json.loads(potential_json)
                 except json.JSONDecodeError:
-                    # If this fails, maybe there are multiple JSON-like objects. 
+                    # If this fails, maybe there are multiple JSON-like objects.
                     # Try to find the *last* complete JSON object if possible, or just fail.
                     pass
 
@@ -250,11 +250,11 @@ class ReviewerAgent:
                     "comments": error_comment,
                     "suggestions": ""
                 }
-            
+
             # Ensure suggestions key exists and has a valid value
             if "suggestions" not in review_data or review_data["suggestions"] is None:
                 review_data["suggestions"] = ""
-            
+
             # Validate status value
             valid_statuses = ["approved", "requires_changes", "rejected"]
             if not review_data.get("status") or review_data["status"] not in valid_statuses:
@@ -363,22 +363,22 @@ class ReviewerAgent:
             "efficiency_score": 8
         }}
         """
-        
+
         print(f"ReviewerAgent: Evaluating auto-approval for '{description}'...")
-        
+
         try:
             response_str = await invoke_ollama_model_async(
                 prompt,
                 model_name=self.llm_model_name, # Use same model or specific one
                 temperature=0.3
             )
-            
+
             # Basic parsing of JSON from Markdown
             if "```json" in response_str:
                 response_str = response_str.split("```json")[1].split("```")[0]
             elif "```" in response_str:
                 response_str = response_str.split("```")[1].split("```")[0]
-                
+
             result = json.loads(response_str.strip())
             return {
                 "status": "approved" if result.get("decision") == "APPROVED" else "rejected",
@@ -414,8 +414,8 @@ if __name__ == '__main__':
     async def main():
         # Ensure you have a model configured for "code_reviewer" or "general_purpose_llm"
         # For testing, you might explicitly pass a known model if config isn't set up:
-        # reviewer = ReviewerAgent(llm_model_name="your_local_ollama_code_model:latest") 
-        reviewer = ReviewerAgent() 
+        # reviewer = ReviewerAgent(llm_model_name="your_local_ollama_code_model:latest")
+        reviewer = ReviewerAgent()
 
         # Test Case 1: Code that needs changes
         code1 = """
@@ -462,12 +462,12 @@ def multiply(x: int, y: int) -> int:
         print("\n--- Reviewing Code 3 (Flawed Code) ---")
         review3 = await reviewer.review_code(code3, reqs3, attempt_number=1) # No tests
         print(json.dumps(review3, indent=2))
-        
+
         # Test Case 4: Empty code
         print("\n--- Reviewing Code 4 (Empty Code) ---")
         review4 = await reviewer.review_code("", reqs1, attempt_number=1) # Using reqs1 for consistency
         print(json.dumps(review4, indent=2))
-        
+
         # Test Case 5: No requirements
         print("\n--- Reviewing Code 5 (No Requirements) ---")
         review5 = await reviewer.review_code(code1, "", attempt_number=1)

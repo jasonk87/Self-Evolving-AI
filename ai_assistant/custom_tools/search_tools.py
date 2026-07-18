@@ -37,7 +37,7 @@ async def google_custom_search(query: str, num_results: int = 5) -> Dict[str, An
         return {"results": [], "images": images, "error": "Google API Key or CSE ID is not configured."}
     try:
         def _do_search():
-            with build("customsearch", "v1", developerKey=GOOGLE_API_KEY) as service:
+            with build("customsearch", "v1", developerKey=GOOGLE_API_KEY, cache_discovery=False) as service:
                 return service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=num_results).execute()
 
         res = await asyncio.to_thread(_do_search)
@@ -120,7 +120,7 @@ async def web_search_images(query: str, num_images: int = 1) -> Dict[str, Any]:
     try:
         # Run synchronous Google API call in a thread to avoid blocking
         def _do_image_search():
-            with build("customsearch", "v1", developerKey=GOOGLE_API_KEY) as service:
+            with build("customsearch", "v1", developerKey=GOOGLE_API_KEY, cache_discovery=False) as service:
                 return service.cse().list(q=query, cx=GOOGLE_CSE_ID, num=max(1, min(num_images, 5)), searchType='image').execute()
                 
         loop = asyncio.get_event_loop()

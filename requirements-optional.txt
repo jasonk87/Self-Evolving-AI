@@ -2,3 +2,4 @@
 chromadb
 pyaudio
 mss
+pyautogui

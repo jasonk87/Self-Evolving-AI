@@ -35,6 +35,8 @@ Plan -> Execute -> Reflect -> Learn -> Evolve.
 import datetime
 import os
 import asyncio
+import hashlib
+import json
 import re
 import uuid # Added for entry_id in MockReflectionLogEntry
 from typing import Optional, Dict, Any, List, Tuple # TYPE_CHECKING removed
@@ -51,9 +53,10 @@ from ai_assistant.core import self_modification # For code reading
 from ai_assistant.core.failure_freshness import (
     SUPERSEDED_FAILURE_STATUS,
     annotate_failure_metadata,
+    get_runtime_revision_timestamp,
     is_failure_stale,
 )
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 
 
 ACTIVE_INSIGHT_STATUSES = {
@@ -67,6 +70,29 @@ ACTIVE_INSIGHT_STATUSES = {
     "ACTION_FAILED",
 }
 
+DISMISSED_AS_FIXED_STATUS = "DISMISSED_AS_FIXED"
+DISMISSED_INSIGHT_STATUSES = {
+    "REJECTED_BY_USER",
+    "BLOCKED_BY_COUNCIL",
+    DISMISSED_AS_FIXED_STATUS,
+    SUPERSEDED_FAILURE_STATUS,
+}
+
+_FIXED_FEEDBACK_RE = re.compile(
+    r"\b(?:already\s+(?:been\s+)?fix(?:ed)?|fix(?:ed)?\s+already|already\s+resolved|"
+    r"was\s+fixed|is\s+fixed|has\s+been\s+fixed|not\s+(?:a\s+)?bug|no\s+longer\s+broken|"
+    r"stale|obsolete|resolved\s+already)\b",
+    flags=re.IGNORECASE,
+)
+
+_ISSUE_STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "because", "been", "but", "by",
+    "caus", "cause", "causing", "did", "do", "does", "due", "for", "from", "had",
+    "has", "have", "in", "incorrectly", "instead", "into", "is", "it", "leading",
+    "of", "on", "or", "repeated", "result", "that", "the", "this", "to", "tool",
+    "trigger", "triggering", "was", "were", "when", "with",
+}
+
 
 def _normalize_insight_text(text: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", " ", str(text or "").casefold())
@@ -78,9 +104,107 @@ def _extract_evidence_text(description: str) -> str:
     return match.group(1) if match else ""
 
 
+def _feedback_indicates_already_fixed(feedback: Optional[str]) -> bool:
+    return bool(_FIXED_FEEDBACK_RE.search(str(feedback or "")))
+
+
+def _stem_issue_token(token: str) -> str:
+    replacements = {
+        "dictionaries": "dictionary",
+        "crashes": "crash",
+        "crashed": "crash",
+        "failures": "failure",
+        "timeouts": "timeout",
+        "records": "record",
+        "objects": "object",
+        "calls": "call",
+        "calling": "call",
+    }
+    if token in replacements:
+        return replacements[token]
+    if len(token) > 6 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 5 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 5 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _infer_tool_bug_target(insight: ActionableInsight) -> str:
+    metadata = insight.metadata or {}
+    candidates = [
+        insight.related_tool_name,
+        metadata.get("tool_name"),
+        metadata.get("function_name"),
+        metadata.get("target_tool"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_insight_text(candidate).replace(" ", "_")
+        if normalized:
+            return normalized
+
+    description = str(insight.description or "")
+    patterns = (
+        r"[`'\"]([A-Za-z_][A-Za-z0-9_.-]*)[`'\"]\s+tool\b",
+        r"\btool\s+[`'\"]([A-Za-z_][A-Za-z0-9_.-]*)[`'\"]",
+        r"\bbroken\s+([A-Za-z_][A-Za-z0-9_.-]*)\s+tool\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, description, flags=re.IGNORECASE)
+        if match:
+            return _normalize_insight_text(match.group(1)).replace(" ", "_")
+    return ""
+
+
+def _tool_bug_issue_tokens(insight: ActionableInsight) -> set[str]:
+    description = re.sub(
+        r"\(Evidence:.*?\)\s*$",
+        "",
+        str(insight.description or ""),
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    description = re.sub(
+        r"ROOT CAUSE ANALYSIS:.*$",
+        "",
+        description,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    tokens = {
+        _stem_issue_token(token)
+        for token in _normalize_insight_text(description).split()
+        if len(token) > 2
+    }
+    target = _infer_tool_bug_target(insight)
+    tokens.difference_update(_ISSUE_STOP_WORDS)
+    tokens.difference_update(target.split("_"))
+    return tokens
+
+
 def _build_tool_bug_fingerprint(insight: ActionableInsight) -> str:
     """Group duplicate tool-bug guesses from the same evidence/failure theme."""
     full_text = _normalize_insight_text(insight.description)
+    target = _infer_tool_bug_target(insight)
+    if (
+        (target == "recall_facts" or "recall facts" in full_text)
+        and "lower" in full_text
+        and ("dictionary" in full_text or "dictionaries" in full_text)
+    ):
+        return f"{insight.type.name}:theme:recall-facts-dictionary-normalization"
+
+    if (
+        "timeout" in full_text
+        and ("deepseek" in full_text or "provider" in full_text)
+        and ("dream mode runner" in full_text or "tool failure" in full_text or "repair approval" in full_text)
+    ):
+        return f"{insight.type.name}:theme:provider-timeout-misattributed-as-tool-failure"
+
+    if (
+        (target == "run_architect_cycle" or "run architect cycle" in full_text)
+        and ("already ran" in full_text or "cached" in full_text or "deduplication" in full_text)
+    ):
+        return f"{insight.type.name}:theme:tool-result-deduplication-context-leak:run-architect-cycle"
+
     if (
         "startup recovery digest" in full_text
         or "failed interrupted" in full_text
@@ -123,6 +247,84 @@ def _build_tool_bug_fingerprint(insight: ActionableInsight) -> str:
     return f"{insight.type.name}:description:{_normalize_insight_text(description)[:500]}"
 
 
+def _tool_bug_insights_match(existing: ActionableInsight, incoming: ActionableInsight) -> bool:
+    """Match semantically equivalent bug reports without relying on LLM wording."""
+    # Recompute rather than trusting persisted fingerprints so algorithm upgrades
+    # migrate old records automatically during the next load/coalesce pass.
+    existing_fingerprint = _build_tool_bug_fingerprint(existing)
+    incoming_fingerprint = _build_tool_bug_fingerprint(incoming)
+    existing.metadata["insight_fingerprint"] = existing_fingerprint
+    incoming.metadata["insight_fingerprint"] = incoming_fingerprint
+    if existing_fingerprint == incoming_fingerprint:
+        return True
+
+    existing_target = _infer_tool_bug_target(existing)
+    incoming_target = _infer_tool_bug_target(incoming)
+    if existing_target and incoming_target and existing_target != incoming_target:
+        return False
+
+    existing_tokens = _tool_bug_issue_tokens(existing)
+    incoming_tokens = _tool_bug_issue_tokens(incoming)
+    if not existing_tokens or not incoming_tokens:
+        return False
+
+    intersection = len(existing_tokens & incoming_tokens)
+    union = len(existing_tokens | incoming_tokens)
+    smaller = min(len(existing_tokens), len(incoming_tokens))
+    jaccard = intersection / union if union else 0.0
+    containment = intersection / smaller if smaller else 0.0
+    if existing_target and incoming_target:
+        return intersection >= 3 and (jaccard >= 0.28 or containment >= 0.5)
+    return intersection >= 4 and jaccard >= 0.42
+
+
+def _parse_insight_timestamp(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str) and value:
+        try:
+            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _has_fresh_runtime_evidence(existing: ActionableInsight, incoming: ActionableInsight) -> bool:
+    """Only a real, newer runtime event may reopen a dismissed conversational diagnosis."""
+    if (incoming.metadata or {}).get("source") == "conversational_analysis":
+        return False
+    if not incoming.source_reflection_entry_ids:
+        return False
+    if set(incoming.source_reflection_entry_ids) <= set(existing.source_reflection_entry_ids):
+        return False
+
+    if existing.status == SUPERSEDED_FAILURE_STATUS:
+        return True
+
+    dismissed_at = _parse_insight_timestamp((existing.metadata or {}).get("dismissed_at"))
+    observed_at = _parse_insight_timestamp((incoming.metadata or {}).get("failure_observed_at"))
+    return bool(dismissed_at is not None and observed_at is not None and observed_at > dismissed_at)
+
+
+def record_insight_rejection(
+    insight: ActionableInsight,
+    feedback: Optional[str] = None,
+    feedback_key: str = "user_rejection_reason",
+) -> str:
+    """Persist a rejection as a durable suppression decision for this issue."""
+    if not insight.metadata:
+        insight.metadata = {}
+    feedback_text = str(feedback or "").strip()
+    if feedback_text:
+        insight.metadata[feedback_key] = feedback_text
+        insight.metadata["rejection_feedback"] = feedback_text
+    insight.metadata["insight_fingerprint"] = _build_tool_bug_fingerprint(insight) if insight.type == InsightType.TOOL_BUG_SUSPECTED else insight.metadata.get("insight_fingerprint")
+    insight.metadata["dismissed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    insight.metadata["runtime_revision_at_dismissal"] = get_runtime_revision_timestamp()
+    insight.status = DISMISSED_AS_FIXED_STATUS if _feedback_indicates_already_fixed(feedback_text) else "REJECTED_BY_USER"
+    return insight.status
+
+
 def _is_low_quality_tool_bug_insight(insight: ActionableInsight) -> bool:
     text = _normalize_insight_text(insight.description)
     demo_markers = [
@@ -158,8 +360,36 @@ class LearningAgent:
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         self.chat_storage_dir = os.path.join(base_dir, "_memory_", "chat_sessions")
         self.chat_manager = ChatSessionManager(self.chat_storage_dir)
+        state_stem, _ = os.path.splitext(self.insights_filepath)
+        self.conversation_analysis_state_filepath = f"{state_stem}.conversation_analysis_state.json"
+        self._conversation_analysis_state = self._load_conversation_analysis_state()
 
         self._load_insights()
+
+    @staticmethod
+    def _conversation_history_digest(history: List[Dict[str, Any]]) -> str:
+        payload = json.dumps(history, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _load_conversation_analysis_state(self) -> Dict[str, Any]:
+        try:
+            with open(self.conversation_analysis_state_filepath, "r", encoding="utf-8") as handle:
+                state = json.load(handle)
+            if isinstance(state, dict) and isinstance(state.get("sessions"), dict):
+                return state
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        return {"version": 1, "sessions": {}}
+
+    def _save_conversation_analysis_state(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.conversation_analysis_state_filepath), exist_ok=True)
+            temporary_path = f"{self.conversation_analysis_state_filepath}.tmp"
+            with open(temporary_path, "w", encoding="utf-8") as handle:
+                json.dump(self._conversation_analysis_state, handle, indent=2, ensure_ascii=False)
+            os.replace(temporary_path, self.conversation_analysis_state_filepath)
+        except OSError as exc:  # pragma: no cover - persistence failure should not stop learning
+            print(f"LearningAgent: Could not save conversation analysis checkpoint: {exc}")
 
     async def scan_recent_conversations(self) -> int:
         """
@@ -177,18 +407,72 @@ class LearningAgent:
             session_id = session_summary.get("id")
             session_data = self.chat_manager.get_session(session_id)
             if not session_data: continue
+            history = list(session_data.get("history") or [])
+            if not history:
+                continue
 
-            # Optimization: Check if we already analyzed this session state?
-            # We could store a hash of history in metadata of an insight?
-            # Or just rely on the Analyst to be somewhat idempotent or okay with redundant partial insights.
-            # Let's run it.
-            
-            new_insights = await self.conversational_analyst.analyze_session_transcript(session_data)
+            session_key = str(session_id or "")
+            checkpoint = self._conversation_analysis_state["sessions"].get(session_key, {})
+            if not checkpoint:
+                latest_existing_analysis = max(
+                    (
+                        _parse_insight_timestamp(item.creation_timestamp) or 0.0
+                        for item in self.insights
+                        if (item.metadata or {}).get("source") == "conversational_analysis"
+                        and str((item.metadata or {}).get("session_id") or "") == session_key
+                    ),
+                    default=0.0,
+                )
+                session_updated_at = _parse_insight_timestamp(session_data.get("updated_at")) or 0.0
+                if latest_existing_analysis and latest_existing_analysis >= session_updated_at:
+                    full_digest = self._conversation_history_digest(history)
+                    self._conversation_analysis_state["sessions"][session_key] = {
+                        "message_count": len(history),
+                        "transcript_digest": full_digest,
+                        "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "migrated_from_existing_insights": True,
+                    }
+                    self._save_conversation_analysis_state()
+                    continue
+
+            previous_count = int(checkpoint.get("message_count", 0) or 0)
+            previous_digest = str(checkpoint.get("transcript_digest", "") or "")
+            prefix_unchanged = (
+                0 <= previous_count <= len(history)
+                and self._conversation_history_digest(history[:previous_count]) == previous_digest
+            )
+            if prefix_unchanged and previous_count == len(history):
+                continue
+
+            focus_start = previous_count if prefix_unchanged else 0
+            context_start = max(0, focus_start - 6)
+            analysis_data = dict(session_data)
+            analysis_data["history"] = history[context_start:]
+            relative_focus_start = focus_start - context_start
+
+            new_insights = await self.conversational_analyst.analyze_session_transcript(
+                analysis_data,
+                focus_start_index=relative_focus_start,
+            )
+            if not getattr(self.conversational_analyst, "last_analysis_succeeded", True):
+                continue
+
+            full_digest = self._conversation_history_digest(history)
             
             for insight in new_insights:
+                insight.metadata["analysis_transcript_digest"] = full_digest
+                insight.metadata["analysis_focus_start_index"] = focus_start
+                insight.metadata["analysis_message_count"] = len(history)
                 if self.add_insight(insight, persist=False):
                     count += 1
                     print(f"LearningAgent: Found new conversational insight: {insight.description}")
+
+            self._conversation_analysis_state["sessions"][session_key] = {
+                "message_count": len(history),
+                "transcript_digest": full_digest,
+                "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            self._save_conversation_analysis_state()
 
         if count > 0:
             self._save_insights()
@@ -255,24 +539,28 @@ class LearningAgent:
             for existing in self.insights:
                 if existing.type != InsightType.TOOL_BUG_SUSPECTED:
                     continue
-                existing_fingerprint = existing.metadata.get("insight_fingerprint")
-                if not existing_fingerprint:
-                    existing_fingerprint = _build_tool_bug_fingerprint(existing)
-                    existing.metadata["insight_fingerprint"] = existing_fingerprint
-                if existing_fingerprint != fingerprint:
+                if not _tool_bug_insights_match(existing, insight):
                     continue
 
-                if existing.status not in ACTIVE_INSIGHT_STATUSES:
-                    continue
+                if existing.status in ACTIVE_INSIGHT_STATUSES:
+                    self._merge_tool_bug_insight(existing, insight)
+                    if persist:
+                        self._save_insights()
+                    return False
 
-                self._merge_tool_bug_insight(existing, insight)
-                if persist:
-                    self._save_insights()
-                return False
+                if (
+                    existing.status in DISMISSED_INSIGHT_STATUSES
+                    and not _has_fresh_runtime_evidence(existing, insight)
+                ):
+                    self._merge_tool_bug_insight(existing, insight, suppressed=True)
+                    if persist:
+                        self._save_insights()
+                    return False
 
         for existing in self.insights:
             if (
-                existing.type == insight.type
+                insight.type != InsightType.TOOL_BUG_SUSPECTED
+                and existing.type == insight.type
                 and existing.description == insight.description
                 and existing.related_tool_name == insight.related_tool_name
             ):
@@ -283,10 +571,18 @@ class LearningAgent:
             self._save_insights()
         return True
 
-    def _merge_tool_bug_insight(self, existing: ActionableInsight, incoming: ActionableInsight) -> None:
+    def _merge_tool_bug_insight(
+        self,
+        existing: ActionableInsight,
+        incoming: ActionableInsight,
+        suppressed: bool = False,
+    ) -> None:
         """Merge duplicate tool-bug guesses without adding another approval card."""
         metadata = existing.metadata
         metadata["merged_duplicate_count"] = int(metadata.get("merged_duplicate_count", 0)) + 1
+        if suppressed:
+            metadata["suppressed_duplicate_count"] = int(metadata.get("suppressed_duplicate_count", 0)) + 1
+            metadata["last_suppressed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         candidate_targets = list(metadata.get("candidate_related_tool_names") or [])
         for target in [existing.related_tool_name, incoming.related_tool_name]:
@@ -323,7 +619,7 @@ class LearningAgent:
                 continue
             annotate_failure_metadata(insight.metadata, insight.creation_timestamp)
             if (
-                insight.status != SUPERSEDED_FAILURE_STATUS
+                insight.status in ACTIVE_INSIGHT_STATUSES
                 and is_failure_stale(insight.metadata, insight.creation_timestamp)
             ):
                 insight.status = SUPERSEDED_FAILURE_STATUS
@@ -425,10 +721,10 @@ Explain EXACTLY why the error occurred based on the code logic.
 Be concise and specific (e.g., "Line 45 assumes `x` is a list, but it is None because...").
 Do not provide a full fix, just the diagnosis.
 """
-        response = await invoke_gemini_model_async(
+        response = await model_router.generate_response(
             prompt=f"Analyzing root cause for {tool_name}\n\n{prompt}",
             temperature=0.0,
-            task_name="root_cause_analysis"
+            task_name="reviewing",
         )
         return response if response else "Could not generate root cause analysis."
 
@@ -1072,7 +1368,7 @@ Example:
 
         try:
             # specialized model for extraction if available, otherwise default
-            response = await invoke_gemini_model_async(
+            response = await model_router.generate_response(
                 prompt=f"Fact Extraction\n\n{prompt}",
                 task_name="fact_extraction",
             )

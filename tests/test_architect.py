@@ -11,7 +11,10 @@ class TestSystemArchitect(unittest.IsolatedAsyncioTestCase):
         self.episodic_patcher = patch('ai_assistant.core.agency.architect.EpisodicMemoryManager')
         self.MockEpisodic = self.episodic_patcher.start()
 
-        self.llm_patcher = patch('ai_assistant.core.agency.architect.invoke_gemini_model_async', new_callable=AsyncMock)
+        self.llm_patcher = patch(
+            'ai_assistant.core.agency.architect.model_router.generate_response',
+            new_callable=AsyncMock,
+        )
         self.mock_llm = self.llm_patcher.start()
 
         self.judge_patcher = patch('ai_assistant.core.agency.architect.judge')

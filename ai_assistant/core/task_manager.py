@@ -253,7 +253,7 @@ class TaskManager:
         _ensure_data_dir_exists()
         self.active_tasks_filepath = filepath or os.path.join(get_data_dir(), ACTIVE_TASKS_FILE_NAME)
         self.wal_filepath = self.active_tasks_filepath + ".wal"
-        
+
         # 1. Recover from WAL if needed
         self._recover_from_wal()
         # 2. Load the normal state (which might now be recovered)
@@ -272,7 +272,7 @@ class TaskManager:
         """Replays the Write-Ahead Log over the existing state if the app crashed."""
         if not os.path.exists(self.wal_filepath):
             return
-            
+
         print(f"TaskManager: Checking WAL for recovery at {self.wal_filepath}")
         try:
             recovered_tasks = {}
@@ -311,7 +311,7 @@ class TaskManager:
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(list(recovered_tasks.values()), f, indent=2, ensure_ascii=False)
             os.replace(temp_path, self.active_tasks_filepath)
-            
+
             # Clear WAL now that state is synced to JSON
             os.remove(self.wal_filepath)
             print("TaskManager: Successfully recovered and synced state from WAL.")
@@ -346,7 +346,7 @@ class TaskManager:
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(tasks_to_save, f, indent=2, ensure_ascii=False)
             os.replace(temp_path, self.active_tasks_filepath)
-            
+
             # Since we successfully saved the full snapshot, we can truncate the WAL
             if os.path.exists(self.wal_filepath):
                 os.remove(self.wal_filepath)
@@ -538,10 +538,10 @@ class TaskManager:
                     "progress_percentage": task.progress_percentage,
                 },
             )
-            
+
             # Emit event for UI
             EventEmitter.emit("task_update", task.to_dict())
-            
+
             print(f"TaskManager: Task {task_id} ({task.description[:30]}...) status updated from {old_status.name} to {new_status.name}. Step: {task.current_step_description or 'N/A'}")
 
             terminal_statuses = [
@@ -600,11 +600,11 @@ class TaskManager:
                 self._archive_task(task_id)
         else:
             print(f"TaskManager: Error - Task {task_id} not found for status update.")
-        
+
         if task and new_status not in TERMINAL_TASK_STATUSES:
              # Fast append to WAL for standard updates instead of slow full snapshot save
              self._append_to_wal(task, "update")
-             
+
         return task
 
     def _archive_task(self, task_id: str):

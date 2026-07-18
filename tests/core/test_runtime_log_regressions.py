@@ -109,7 +109,7 @@ async def test_orchestrator_chat_tool_cycle_uses_non_code_status_and_image_prove
         record_experience=AsyncMock(),
     )
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
 
     state = ExecutionState(original_user_prompt="How is the agent doing?")
 

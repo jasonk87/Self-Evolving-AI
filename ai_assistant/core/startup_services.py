@@ -63,7 +63,7 @@ async def resume_interrupted_tasks(
                     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                     chat_storage = os.path.join(base_dir, "_memory_", "chat_sessions")
                     cm = ChatSessionManager(chat_storage)
-                    
+
                     session_data = cm.get_session(task.session_id)
                     if session_data:
                         already_injected = False
@@ -72,7 +72,7 @@ async def resume_interrupted_tasks(
                             if msg.get("role") == "system" and "System restarted" in msg.get("content", ""):
                                 already_injected = True
                                 break
-                                
+
                         if not already_injected:
                             sys_msg = f"[System restarted] The system was restarted while executing the following task: '{task.description}'. The orphaned task was marked FAILED_INTERRUPTED. Retry it explicitly if the work is still needed."
                             cm.add_message(task.session_id, "system", sys_msg)

@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.innerHTML = `
             <div class="approval-header">
                 <span class="approval-type type-${req.type}">${typeLabel}</span>
-                <span class="approval-time">${new Date(req.timestamp * 1000).toLocaleTimeString()}</span>
+                <span class="approval-time">${formatApprovalTime(req)}</span>
             </div>
             <div class="approval-body">
                 ${req.data && req.data.related_tool_name ? `<div class="target-name">Target Tool: <code>${req.data.related_tool_name}</code></div>` : ''}
@@ -99,6 +99,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         return card;
+    }
+
+    function formatApprovalTime(req) {
+        const raw = req && (req.timestamp ?? req.created_at);
+        if (raw === null || raw === undefined || raw === '') return 'Unknown time';
+
+        let date;
+        if (typeof raw === 'number') {
+            date = new Date(raw > 100000000000 ? raw : raw * 1000);
+        } else if (/^\d+(\.\d+)?$/.test(String(raw).trim())) {
+            const numeric = Number(raw);
+            date = new Date(numeric > 100000000000 ? numeric : numeric * 1000);
+        } else {
+            date = new Date(raw);
+        }
+
+        return Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleTimeString();
     }
 
     function formatType(type) {

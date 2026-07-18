@@ -3,7 +3,7 @@ from typing import Dict, Any
 import json
 import re
 
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 from ai_assistant.tools import tool_system 
 from ai_assistant.core import self_modification
 
@@ -62,7 +62,7 @@ Output JSON format:
     "verification_script": "Full python code..."
 }}
 """
-        response = await invoke_gemini_model_async(prompt, temperature=0.7) # High temp for creativity
+        response = await model_router.generate_response(prompt, task_name="background_dreamer", temperature=0.7) # High temp for creativity
         
         try:
             # 1. Use regex to find the first JSON object

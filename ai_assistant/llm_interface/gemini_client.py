@@ -175,7 +175,8 @@ def _invoke_raw_gemini_sync(
     model_name: str = GEMINI_FLASH_LITE_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 8192,
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    json_mode: bool = False
 ) -> str:
     """
     Synchronously invokes the Google Gemini model directly.
@@ -201,6 +202,8 @@ def _invoke_raw_gemini_sync(
             "maxOutputTokens": max_tokens
         }
     }
+    if json_mode:
+        payload["generationConfig"]["responseMimeType"] = "application/json"
     thinking_budget = _apply_thinking_config(payload, model_name)
 
     if VERBOSE_LLM_LOGGING:
@@ -270,7 +273,8 @@ async def _invoke_raw_gemini_async(
     temperature: float = 0.7,
     max_tokens: int = 8192,
     images: Optional[List[str]] = None,
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    json_mode: bool = False
 ) -> str:
     """
     Asynchronously invokes the Google Gemini model directly.
@@ -304,6 +308,8 @@ async def _invoke_raw_gemini_async(
             "maxOutputTokens": max_tokens
         }
     }
+    if json_mode:
+        payload["generationConfig"]["responseMimeType"] = "application/json"
     thinking_budget = _apply_thinking_config(payload, model_name)
 
     if VERBOSE_LLM_LOGGING:
@@ -376,13 +382,13 @@ async def _invoke_raw_gemini_async(
 
 # --- PUBLIC WRAPPERS ---
 
-def invoke_raw_gemini_sync(prompt: str, model_name: str = GEMINI_FLASH_LITE_MODEL, temperature: float = 0.7, max_tokens: int = 8192, task_name: str = "unknown") -> str:
+def invoke_raw_gemini_sync(prompt: str, model_name: str = GEMINI_FLASH_LITE_MODEL, temperature: float = 0.7, max_tokens: int = 8192, task_name: str = "unknown", json_mode: bool = False) -> str:
     """Public wrapper for raw sync invocation."""
-    return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens, task_name=task_name)
+    return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens, task_name=task_name, json_mode=json_mode)
 
-async def invoke_raw_gemini_async(prompt: str, model_name: str = GEMINI_FLASH_LITE_MODEL, temperature: float = 0.7, max_tokens: int = 8192, images: Optional[List[str]] = None, task_name: str = "unknown") -> str:
+async def invoke_raw_gemini_async(prompt: str, model_name: str = GEMINI_FLASH_LITE_MODEL, temperature: float = 0.7, max_tokens: int = 8192, images: Optional[List[str]] = None, task_name: str = "unknown", json_mode: bool = False) -> str:
     """Public wrapper for raw async invocation."""
-    return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name)
+    return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name, json_mode=json_mode)
 
 def invoke_gemini_model(
     prompt: str,
@@ -390,14 +396,15 @@ def invoke_gemini_model(
     temperature: float = 0.7,
     max_tokens: int = 8192,
     strategy: str = "RAW",
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    json_mode: bool = False
 ) -> str:
     """
     Synchronously invokes Gemini with a single direct model call.
     """
     model_name = model_name or GEMINI_FLASH_LITE_MODEL
 
-    return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens, task_name=task_name)
+    return _invoke_raw_gemini_sync(prompt, model_name, temperature, max_tokens, task_name=task_name, json_mode=json_mode)
 
 async def invoke_gemini_model_async(
     prompt: str,
@@ -406,14 +413,15 @@ async def invoke_gemini_model_async(
     max_tokens: int = 8192,
     images: Optional[List[str]] = None,
     strategy: str = "RAW",
-    task_name: str = "unknown"
+    task_name: str = "unknown",
+    json_mode: bool = False
 ) -> str:
     """
     Asynchronously invokes Gemini with a single direct model call.
     """
     model_name = model_name or GEMINI_FLASH_LITE_MODEL
 
-    return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name)
+    return await _invoke_raw_gemini_async(prompt, model_name, temperature, max_tokens, images, task_name=task_name, json_mode=json_mode)
 
 # --- EMBEDDINGS ---
 

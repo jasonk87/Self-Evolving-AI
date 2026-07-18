@@ -17,6 +17,9 @@ Context: The AI is designed to start simple but "self-evolve" by creating new to
 Session Transcript:
 {transcript}
 
+Messages marked PRIOR CONTEXT are provided only to interpret the NEW MESSAGES section. Do not
+create an insight solely from PRIOR CONTEXT, and do not repeat an issue that appears only there.
+
 Task:
 Analyze the transcript above. Look for:
 1. **User Frustration**: Did the user have to repeat themselves? Did they express annoyance at the AI's behavior (e.g., "stop doing X", "I already told you Y")?
@@ -49,11 +52,17 @@ Example JSON:
 class ConversationalAnalyst:
     def __init__(self):
         self.model = get_model_for_task("reflection") # Use a smart model for analysis
+        self.last_analysis_succeeded = False
 
-    def _format_transcript(self, session_data: Dict) -> str:
+    def _format_transcript(self, session_data: Dict, focus_start_index: int = 0) -> str:
         history = session_data.get("history", [])
         transcript = []
-        for msg in history:
+        focus_start_index = max(0, min(int(focus_start_index or 0), len(history)))
+        for index, msg in enumerate(history):
+            if index == 0 and focus_start_index > 0:
+                transcript.append("--- PRIOR CONTEXT (DO NOT REDISCOVER INSIGHTS HERE) ---")
+            if index == focus_start_index:
+                transcript.append("--- NEW MESSAGES TO ANALYZE ---")
             role = msg.get("role", "unknown").upper()
             content = msg.get("content", "")
             # Truncate very long content to avoid context window issues
@@ -75,10 +84,30 @@ class ConversationalAnalyst:
         if start != -1 and end != -1 and end >= start:
             cleaned = cleaned[start:end + 1]
 
-        return json.loads(cleaned)
+        # Sanitize \xXX escapes which are valid in Python but not in JSON
+        # Replace \xXX with \u00XX
+        cleaned = re.sub(r'\\x([0-9a-fA-F]{2})', r'\\u00\1', cleaned)
 
-    async def analyze_session_transcript(self, session_data: Dict) -> List[ActionableInsight]:
-        transcript = self._format_transcript(session_data)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Fallback to ast.literal_eval if it has single quotes or other Python quirks
+            import ast
+            try:
+                val = ast.literal_eval(cleaned)
+                if isinstance(val, dict):
+                    return val
+            except Exception:
+                pass
+            raise
+
+    async def analyze_session_transcript(
+        self,
+        session_data: Dict,
+        focus_start_index: int = 0,
+    ) -> List[ActionableInsight]:
+        self.last_analysis_succeeded = False
+        transcript = self._format_transcript(session_data, focus_start_index=focus_start_index)
         if not transcript.strip():
             return []
 
@@ -91,6 +120,7 @@ class ConversationalAnalyst:
             
             data = self._extract_json_object(response)
             insights_data = data.get("insights", [])
+            self.last_analysis_succeeded = True
             
             actionable_insights = []
             for item in insights_data:

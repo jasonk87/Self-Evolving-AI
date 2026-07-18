@@ -33,10 +33,11 @@ from ai_assistant import config
 from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.core.config_manager import ConfigManager
 from ai_assistant.core.chat_manager import ChatSessionManager
+from ai_assistant.core.context_compression import ContextCompressor
 from ai_assistant.core.memory_manager import MemoryManager
 from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.startup_services import resume_interrupted_tasks
-from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.core.llm.router import model_router
 from ai_assistant.planning.hierarchical_planner import HierarchicalPlanner
 from ai_assistant.learning.learning import LearningAgent
 from ai_assistant.execution.action_executor import ActionExecutor
@@ -151,8 +152,8 @@ async def init_orchestrator():
     # Instantiate LLM Provider
     llm_provider = None
     try:
-        logger.info(f"Initializing LLM Provider ({config.LLM_PROVIDER})...")
-        llm_provider = OllamaProvider() 
+        logger.info(f"Initializing LLM Provider ({config.DEFAULT_LLM_PROVIDER})...")
+        llm_provider = model_router
     except Exception as e:
         logger.error(f"Failed to initialize OllamaProvider: {e}")
 
@@ -175,7 +176,8 @@ async def init_orchestrator():
     action_executor = ActionExecutor(
         learning_agent=learning_agent,
         task_manager=app_globals.task_manager,
-        notification_manager=app_globals.notification_manager
+        notification_manager=app_globals.notification_manager,
+        llm_provider=llm_provider,
     )
 
     execution_agent = ExecutionAgent()
@@ -192,7 +194,20 @@ async def init_orchestrator():
         memory_manager=app_globals.memory_manager
     )
 
-    app_globals.controller = SystemController(app_globals.orchestrator)
+    context_compressor = None
+    if getattr(config, "CONTEXT_COMPRESSION_ENABLED", True):
+        context_compressor = ContextCompressor(
+            app_globals.chat_manager,
+            llm_router=model_router,
+            trigger_tokens=getattr(config, "CONTEXT_COMPRESSION_TRIGGER_TOKENS", 16000),
+            max_prepared_tokens=getattr(config, "CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS", 24000),
+            summary_max_tokens=getattr(config, "CONTEXT_COMPRESSION_SUMMARY_TOKENS", 4000),
+            recent_message_count=getattr(config, "CONTEXT_COMPRESSION_RECENT_MESSAGES", 12),
+        )
+    app_globals.controller = SystemController(
+        app_globals.orchestrator,
+        context_compressor=context_compressor,
+    )
     logger.info("SystemController initialized successfully.")
 
     # Connect orchestrator to background service

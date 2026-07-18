@@ -86,7 +86,8 @@ class ActionExecutor:
     """
     def __init__(self, learning_agent: "LearningAgent",
                  task_manager: Optional[TaskManager] = None,
-                 notification_manager: Optional[NotificationManager] = None): # New parameter
+                 notification_manager: Optional[NotificationManager] = None,
+                 llm_provider: Optional[Any] = None): # New parameter
         """
         Initializes the ActionExecutor.
         """
@@ -97,11 +98,14 @@ class ActionExecutor:
         self.task_manager = task_manager
         self.notification_manager = notification_manager # Store it
 
-        from ai_assistant.llm_interface import ollama_client as default_llm_provider
         from ai_assistant.core import self_modification as default_self_modification_service
 
+        if llm_provider is None:
+            from ai_assistant.core.llm.router import model_router
+            llm_provider = model_router
+
         self.code_service = CodeService(
-            llm_provider=default_llm_provider,
+            llm_provider=llm_provider,
             self_modification_service=default_self_modification_service,
             task_manager=self.task_manager,
             notification_manager=self.notification_manager # Add this line

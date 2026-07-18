@@ -13,6 +13,7 @@ except ImportError:
 # Backward-compatible module symbol for tests/patching.
 async_playwright = _async_playwright
 from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.config import GEMINI_VISION_FALLBACK_MODEL
 import ai_assistant.config as config
 from ai_assistant.core.events import emit_system_event
 
@@ -102,7 +103,7 @@ class VisionService:
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop
-            headless_mode = True 
+            headless_mode = True
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
@@ -129,7 +130,7 @@ class VisionService:
 
             # Wait a bit to let the user see the page in Ghost Mode
             await asyncio.sleep(3)
-            
+
             await self._emit_snapshot(page, status="Capturing...")
 
             screenshot_bytes = await page.screenshot(type="png", full_page=True)
@@ -158,7 +159,7 @@ class VisionService:
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop
-            headless_mode = True 
+            headless_mode = True
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
@@ -202,7 +203,7 @@ class VisionService:
 
             # Always run headless in Ghost Mode (we stream the view)
             # Only run non-headless if we explicitly want to debug on server desktop
-            headless_mode = True 
+            headless_mode = True
             slow_mo = config.BROWSER_SLOW_MO if config.GHOST_MODE else 0
 
             browser = await playwright.chromium.launch(headless=headless_mode, slow_mo=slow_mo)
@@ -217,7 +218,7 @@ class VisionService:
             await self._inject_hud(page)
 
             await page.goto(url, wait_until="networkidle", timeout=30000)
-            
+
             await self._emit_snapshot(page, status="Scanning Images...")
 
             # Heuristic Logic to find good images
@@ -277,7 +278,7 @@ class VisionService:
 
                 # 3. Wait for visual effect
                 await page.wait_for_timeout(300)
-                
+
                 await self._emit_snapshot(page, status="Clicking...")
 
             # 4. Perform Click
@@ -310,7 +311,7 @@ class VisionService:
 
             # 4. Type text
             await page.type(selector, text, delay=50 if config.GHOST_MODE else 0)
-            
+
             await self._emit_snapshot(page, status="Typing...")
 
         except Exception as e:
@@ -345,7 +346,7 @@ class VisionService:
         try:
             response_text = await invoke_gemini_model_async(
                 prompt=system_prompt,
-                model_name=config.DEFAULT_MODEL,
+                model_name=GEMINI_VISION_FALLBACK_MODEL,
                 images=[image_data],
                 temperature=0.2 # Low temperature for analytical task
             )

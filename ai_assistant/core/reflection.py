@@ -192,7 +192,7 @@ class ReflectionLogEntry:
                 try:
                     details_str = json.dumps(self.modification_details, indent=2, sort_keys=True)
                     # For very long code changes, maybe just show keys or a summary
-                    if len(details_str) > 500: 
+                    if len(details_str) > 500:
                         details_str = f"Keys: {list(self.modification_details.keys())} (Details too long to display fully)"
                 except TypeError:
                     details_str = str(self.modification_details) # Fallback
@@ -209,14 +209,14 @@ class ReflectionLogEntry:
                 test_details_summary = self.post_modification_test_details.get("notes", "No specific notes.")
                 if len(test_details_summary) > 200 : test_details_summary = test_details_summary[:197] + "..."
                 output_parts.append(f"Post-Modification Test Details: {test_details_summary}")
-            
+
             if self.commit_info:
                 commit_message_summary = self.commit_info.get("commit_message", "N/A")
                 if len(commit_message_summary) > 200 : commit_message_summary = commit_message_summary[:197] + "..."
                 output_parts.append(f"Commit Info: {commit_message_summary}")
-            
+
             output_parts.append("---------------------------------------")
-        
+
         output_parts.append("--------------------------------------------------")
         return "\n".join(output_parts)
 
@@ -603,6 +603,6 @@ class ActionableInsight:
             self.insight_id = f"{self.type.name}_{uuid.uuid4().hex[:8]}"
         if self.type in {InsightType.TOOL_BUG_SUSPECTED, InsightType.SELF_CORRECTION_FAILURE}:
             annotate_failure_metadata(self.metadata, self.creation_timestamp)
-            
+
     def to_dict(self) -> Dict[str, Any]:
          return asdict(self)

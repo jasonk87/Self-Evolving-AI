@@ -69,7 +69,7 @@ async def generate_new_tool_from_description(tool_description: str, suggested_to
             # We'll check all of them.
             tool_summaries = []
             for name, details in existing_tools.items():
-                desc = details.get('description', 'No description')
+                desc = details.get('description', 'No description') if isinstance(details, dict) else str(details or 'No description')
                 tool_summaries.append(f"- {name}: {desc[:150]}...")
             
             tool_list_str = "\n".join(tool_summaries)
@@ -96,6 +96,7 @@ Answer:
             elif hasattr(llm, 'invoke_ollama_model_async'):
                 check_response = await llm.invoke_ollama_model_async(check_prompt, model_name=get_model_for_task('fast_task'), temperature=0.0)
             
+            check_response = str(check_response or "")
             if "YES:" in check_response:
                 match = re.search(r"YES:\s*([\w_]+)", check_response)
                 existing_tool_name = match.group(1) if match else "an existing tool"
@@ -108,6 +109,7 @@ Answer:
 
         generated_code = ''
         final_filename = ''
+        tool_function_name = None
         last_error = ''
         
         # --- Council Review Loop ---
@@ -115,11 +117,13 @@ Answer:
             from ai_assistant.core.reviewer import ReviewerAgent
             from ai_assistant.core.critical_reviewer import CriticalReviewCoordinator
         except ImportError:
-            logger.warning("Could not import ReviewerAgent or CriticalReviewCoordinator. Skipping Council Review.")
+            logger.error("Could not import ReviewerAgent or CriticalReviewCoordinator. Tool generation is blocked.")
             ReviewerAgent = None
             CriticalReviewCoordinator = None
 
         council_feedback = ""
+        if not ReviewerAgent or not CriticalReviewCoordinator:
+            return 'Error: Council review components are unavailable. No files were written.'
         
         max_retries = 3
         for attempt in range(max_retries):
@@ -194,14 +198,36 @@ Answer:
                 except Exception: return code_str
 
             candidate_code = deduplicate_imports(candidate_code)
+
+            # Only public module-level functions can become tools. Class methods
+            # such as ``__init__`` are implementation details and must never be
+            # used as a generated filename or registry name.
+            candidate_tree = ast.parse(candidate_code)
+            public_functions = [
+                node.name for node in candidate_tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and not node.name.startswith('_')
+            ]
+            if suggested_tool_function_name:
+                if suggested_tool_function_name not in public_functions:
+                    last_error = (
+                        f"Requested public function '{suggested_tool_function_name}' "
+                        "was not defined at module scope."
+                    )
+                    continue
+                candidate_tool_function_name = suggested_tool_function_name
+            elif public_functions:
+                candidate_tool_function_name = public_functions[0]
+            else:
+                last_error = 'Generated code did not define a public top-level tool function.'
+                continue
             
             # --- Council Review Step ---
             if CriticalReviewCoordinator and ReviewerAgent:
                 try:
                     # Dynamically instantiate reviewers for this session
                     skeptic = ReviewerAgent("council_skeptic")
-                    judge = ReviewerAgent("council_judge")
-                    coordinator = CriticalReviewCoordinator(skeptic, judge)
+                    coordinator = CriticalReviewCoordinator(skeptic)
                     
                     logger.info(f"Convening The Council for new tool review (Attempt {attempt + 1})...")
                     is_approved, reasoning = await coordinator.execute_council_debate(
@@ -221,12 +247,13 @@ Answer:
                     logger.info(f"Council APPROVED the new tool code. Reasoning: {reasoning}")
                     
                 except Exception as e_review:
-                    logger.error(f"Error during Council Review: {e_review}. Proceeding with caution (Fail-Open or logging).")
-                    pass
+                    logger.error(f"Error during Council Review: {e_review}. Generated code was not written.")
+                    return f"Error: Council review failed: {type(e_review).__name__}: {e_review}. No files were written."
             # ---------------------------
 
             # If we got here, it passed syntax and (if applicable) Council review
             generated_code = candidate_code
+            tool_function_name = candidate_tool_function_name
             
             if suggested_filename:
                 final_filename = os.path.basename(suggested_filename)
@@ -240,14 +267,21 @@ Answer:
             return f'Error: Failed to generate valid tool code after {max_retries} attempts. {final_reason}'
 
         if not final_filename:
-            func_name_match = re.search('def\\s+([\\w_]+)\\s*\\(', generated_code)
-            base_name = func_name_match.group(1) if func_name_match else f'generated_tool_{int(time.time())}'
+            base_name = tool_function_name or f'generated_tool_{int(time.time())}'
             final_filename = f'{base_name}.py'
             logger.warning(f'No filename suggested by LLM or user. Using fallback: {final_filename}')
         
         final_filename = re.sub('[^\\w_.-]', '', final_filename)
-        if not final_filename or not final_filename.endswith('.py'):
-            final_filename = f'tool_{int(time.time())}.py'
+        module_name = final_filename[:-3] if final_filename.endswith('.py') else ''
+        if (
+            not final_filename
+            or not final_filename.endswith('.py')
+            or final_filename.casefold() == '__init__.py'
+            or not module_name.isidentifier()
+            or module_name.startswith('_')
+        ):
+            final_filename = f'{tool_function_name}.py'
+            module_name = tool_function_name
         
 
 
@@ -258,25 +292,10 @@ Answer:
             with open(init_py_path, 'w', encoding='utf-8') as f_init:
                 f_init.write("# This file makes Python treat the 'generated' directory as a package.\n")
             logger.info(f'Created __init__.py in {generated_tools_dir}')
+        if os.path.exists(file_path):
+            return f"Error: Refusing to overwrite existing generated tool file: {final_filename}"
         with open(file_path, 'w', encoding='utf-8') as f_tool:
             f_tool.write(generated_code)
-        tool_function_name = None
-        func_match = re.search('def\\s+([\\w_]+)\\s*\\(', generated_code)
-        if func_match:
-            tool_function_name = func_match.group(1)
-        if tool_function_name:
-            module_name = final_filename.replace('.py', '')
-            import_statement = f'from .{module_name} import {tool_function_name}\n'
-            current_init_content = ''
-            if os.path.exists(init_py_path):
-                with open(init_py_path, 'r', encoding='utf-8') as f_read_init:
-                    current_init_content = f_read_init.read()
-            if import_statement.strip() not in current_init_content:
-                with open(init_py_path, 'a', encoding='utf-8') as f_append_init:
-                    if current_init_content and (not current_init_content.endswith('\n')):
-                        f_append_init.write('\n')
-                    f_append_init.write(import_statement)
-                logger.info(f"Appended '{import_statement.strip()}' to {init_py_path}")
         try:
             from ai_assistant.tools.tool_system import tool_system_instance
             reload_result = tool_system_instance.refresh_custom_tools()
@@ -319,11 +338,15 @@ async def _generate_test_for_tool(tool_name: str, tool_filename: str, tool_code:
     prompt = f'\nYou are an expert QA engineer.\nYour task is to write a comprehensive `pytest` test suite for the following Python tool.\n\nTool Name: `{tool_name}`\nModule Name: `{module_name}`\nTool Source Code:\n```python\n{tool_code}\n```\n\nRequirements:\n1. Use `pytest`.\n2. The test file should import the tool from `ai_assistant.custom_tools.generated.{module_name}`.\n3. Include tests for:\n    - Normal operation (happy path).\n    - Edge cases (empty inputs, invalid types).\n    - Error handling (if the tool raises exceptions).\n4. Do NOT mock `action_executor` unless absolutely necessary (try to pass None or a simple MagicMock if needed).\n5. Output ONLY the Python code for the test file, enclosed in triple backticks.\n\nExample Import:\n`from ai_assistant.custom_tools.generated.{module_name} import {tool_name}`\n\nGenerate the test code now.\n'
     try:
         if hasattr(llm, 'send_request'):
-            llm_response = await llm.send_request(prompt=prompt, model_name=model_name, temperature=0.2)
+            request = llm.send_request(prompt=prompt, model_name=model_name, temperature=0.2)
         elif hasattr(llm, 'invoke_ollama_model_async'):
-            llm_response = await llm.invoke_ollama_model_async(prompt, model_name=model_name, temperature=0.2)
+            request = llm.invoke_ollama_model_async(prompt, model_name=model_name, temperature=0.2)
         else:
             return 'Failed (LLM method not found).'
+        try:
+            llm_response = await asyncio.wait_for(request, timeout=30.0)
+        except asyncio.TimeoutError:
+            return 'Skipped (test generation timed out after 30 seconds).'
         if not llm_response:
             return 'Failed (Empty LLM response).'
         code_match = re.search('```(?:python)?\\s*\\n(.*?)\\n```', llm_response, re.DOTALL | re.IGNORECASE)
@@ -335,6 +358,12 @@ async def _generate_test_for_tool(tool_name: str, tool_filename: str, tool_code:
         os.makedirs(test_dir, exist_ok=True)
         test_filename = f'test_{module_name}.py'
         test_filepath = os.path.join(test_dir, test_filename)
+        try:
+            ast.parse(test_code)
+        except SyntaxError as syntax_error:
+            return f'Failed (generated test has invalid syntax: {syntax_error}).'
+        if os.path.exists(test_filepath):
+            return f'Skipped ({test_filename} already exists; refusing to overwrite it).'
         with open(test_filepath, 'w', encoding='utf-8') as f:
             f.write(test_code)
         return f'Success! Saved to {test_filename}'

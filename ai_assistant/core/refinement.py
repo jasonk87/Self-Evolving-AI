@@ -106,7 +106,7 @@ class RefinementAgent:
         # Clean LLM output (remove markdown fences)
         cleaned_code = re.sub(r"^\s*```python\s*\n?", "", llm_response_str, flags=re.IGNORECASE | re.MULTILINE)
         cleaned_code = re.sub(r"\n?\s*```\s*$", "", cleaned_code, flags=re.IGNORECASE | re.MULTILINE).strip()
-        
+
         if not cleaned_code:
             print("Warning: LLM response was empty after cleaning markdown for code refinement.")
             return ""
@@ -137,13 +137,13 @@ def calculate_sum(a, b):
             "comments": "The function correctly adds two numbers, but it's missing the docstring. Also, the requirement that 'a' must be positive is not enforced.",
             "suggestions": "1. Add a comprehensive docstring. 2. Add a check at the beginning of the function to ensure 'a' is positive; if not, raise a ValueError."
         }
-        
+
         empty_suggestions_feedback = {
             "status": "requires_changes",
             "comments": "Missing docstring and validation for 'a'.",
             "suggestions": None # Test None suggestions
         }
-        
+
         blank_suggestions_feedback = {
             "status": "requires_changes",
             "comments": "Missing docstring and validation for 'a'.",
@@ -155,7 +155,7 @@ def calculate_sum(a, b):
         refined_code1 = await refinement_agent.refine_code(original_code_sample, requirements_sample, review_feedback_sample)
         print("Refined Code 1:")
         print(refined_code1)
-        
+
         print("\n--- Refining Code Sample 2 (with empty suggestions) ---")
         refined_code2 = await refinement_agent.refine_code(original_code_sample, requirements_sample, empty_suggestions_feedback)
         print("Refined Code 2 (should be similar to 1 if LLM is good):")

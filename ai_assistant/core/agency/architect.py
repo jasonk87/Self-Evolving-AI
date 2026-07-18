@@ -7,7 +7,7 @@ import time
 
 from ai_assistant.core.safety.judge import judge
 from ai_assistant.goals.goal_management import create_goal, save_current_goals
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 from ai_assistant.memory.episodic_manager import EpisodicMemoryManager
 from ai_assistant.config import DEFAULT_MODEL
 
@@ -112,10 +112,9 @@ Example:
 ]
 """
         try:
-            response = await invoke_gemini_model_async(
-                prompt=prompt, 
-                model_name=DEFAULT_MODEL,
-                task_name="architectural_planning"
+            response = await model_router.generate_response(
+                prompt=prompt,
+                task_name="coding",
             )
             # Parse JSON from response (handling potential markdown code blocks)
             cleaned_response = response.replace("```json", "").replace("```", "").strip()

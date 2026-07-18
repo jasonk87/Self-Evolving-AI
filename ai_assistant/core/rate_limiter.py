@@ -29,7 +29,7 @@ class AsyncTokenBucket:
                 # Calculate sleep time required to get enough tokens
                 needed_tokens = tokens - self.tokens
                 sleep_time = needed_tokens / self.refill_rate
-            
+
             # Wait outside the lock so other tasks might acquire smaller amounts
             await asyncio.sleep(sleep_time)
 
@@ -39,7 +39,7 @@ class AsyncTokenBucket:
         """
         now = time.monotonic()
         elapsed = now - self.last_refill
-        
+
         new_tokens = elapsed * self.refill_rate
         self.tokens = min(self.capacity, self.tokens + new_tokens)
         self.last_refill = now

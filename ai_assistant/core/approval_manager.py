@@ -54,10 +54,10 @@ class ApprovalManager:
             execute_func: A callable (sync or async) to execute if approved.
         """
         req_id = str(uuid.uuid4())
-        
+
         # --- Deduplication Logic ---
         fingerprint = self._generate_fingerprint(req_type, data, description)
-        
+
         # Check against pending requests
         for existing_id, existing_req in self.pending_requests.items():
             existing_fingerprint = self._generate_fingerprint(existing_req["type"], existing_req["data"], existing_req["description"])
@@ -76,7 +76,7 @@ class ApprovalManager:
             "timestamp": time.time(),
             "status": "pending"
         }
-        
+
         if execute_func:
             self.callbacks[req_id] = execute_func
         self._save_pending_requests()
@@ -89,18 +89,18 @@ class ApprovalManager:
         """
         try:
             # 1. Tool Modification / Fix
-            # Use module/function name as the core identity. 
+            # Use module/function name as the core identity.
             # Description often varies slightly (different evidence quote), so we ignore it if we have hard data.
             if req_type == "tool_modification" or req_type == "tool_fix":
                 if isinstance(data, dict):
                     mod_path = data.get("module_path")
                     func_name = data.get("function_name")
                     tool_name = data.get("tool_name")
-                    
+
                     # If we have specific code targets, that's a strong identity
                     if mod_path and func_name:
                          return f"{req_type}:{mod_path}:{func_name}"
-                    
+
                     # Fallback to tool name
                     if tool_name:
                          return f"{req_type}:{tool_name}"
@@ -121,7 +121,7 @@ class ApprovalManager:
             # Default: Fallback to description (maybe hashed if too long)
             # Normalize description to catch small variations?
             # E.g. "ISSUE DETECTED: Foo bar (Evidence: ...)" -> "ISSUE DETECTED: Foo bar"
-            
+
             # Simple normalization: First 50 chars of description + type
             clean_desc = description.strip().lower()[:100]
             return f"{req_type}:{clean_desc}"
@@ -148,10 +148,10 @@ class ApprovalManager:
         """Executes the callback associated with the request."""
         if req_id in self.pending_requests:
             logger.info(f"Approving request {req_id}")
-            
+
             func = self.callbacks.get(req_id)
             success = True
-            
+
             if func:
                 try:
                     result = func()
@@ -160,7 +160,7 @@ class ApprovalManager:
                 except Exception as e:
                     logger.error(f"Error executing approved request {req_id}: {e}")
                     success = False
-            
+
             # Clean up
             self._cleanup(req_id)
             return success

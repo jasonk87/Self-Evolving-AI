@@ -1,10 +1,11 @@
 import logging
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List
 
 from opentelemetry import trace
 from ai_assistant.core.models.state import ExecutionState
 from ai_assistant.core.orchestrator import DynamicOrchestrator
 from ai_assistant.core.logging_config import correlation_id_var
+from ai_assistant.utils.token_counter import estimate_tokens
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -19,8 +20,9 @@ class SystemController:
     back to the client UI.
     """
 
-    def __init__(self, orchestrator: DynamicOrchestrator):
+    def __init__(self, orchestrator: DynamicOrchestrator, context_compressor: Optional[Any] = None):
         self.orchestrator = orchestrator
+        self.context_compressor = context_compressor
 
     async def handle_user_request(
         self,
@@ -57,6 +59,34 @@ class SystemController:
         try:
             state.current_status = "planning"
 
+            prepared_history = conversation_history
+            if self.context_compressor:
+                try:
+                    prepared_history = await self.context_compressor.prepare_history(
+                        session_id,
+                        conversation_history,
+                    )
+                    state.context_limits["history_messages_before"] = len(conversation_history or [])
+                    state.context_limits["history_messages_after"] = len(prepared_history or [])
+                    state.context_limits["history_tokens_before"] = sum(
+                        estimate_tokens(str(message.get("content") or "")) + 8
+                        for message in conversation_history or []
+                        if isinstance(message, dict)
+                    )
+                    state.context_limits["history_tokens_after"] = sum(
+                        estimate_tokens(str(message.get("content") or "")) + 8
+                        for message in prepared_history or []
+                        if isinstance(message, dict)
+                    )
+                except Exception as compression_error:
+                    logger.error(
+                        "Context compression failed for session %s; using original history: %s",
+                        session_id,
+                        compression_error,
+                        exc_info=True,
+                    )
+                    prepared_history = conversation_history
+
             with tracer.start_as_current_span("handle_user_request") as span:
                 span.set_attribute("correlation_id", state.correlation_id)
                 if session_id:
@@ -69,7 +99,7 @@ class SystemController:
                     # The orchestrator accepts and directly mutates the ExecutionState object.
                     state = await self.orchestrator.process_prompt(
                         state=state,
-                        conversation_history=conversation_history,
+                        conversation_history=prepared_history,
                         session_id=session_id,
                         images=images,
                         context_source=context_source

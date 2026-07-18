@@ -90,44 +90,44 @@ class MemoryMaintenanceService:
         for f in facts:
             if "permanence" not in f or f["permanence"] not in ["permanent", "transient"]:
                 legacy_facts.append(f)
-        
+
         if not legacy_facts:
             logger.debug("MemoryMaintenanceService: No legacy facts found.")
             return 0
 
         logger.info(f"MemoryMaintenanceService: Found {len(legacy_facts)} legacy facts to classify.")
-        
+
         # Backup before modification check?
         # PersistentMemory methods usually handle atomic writes, but a backup is safe.
         # We'll rely on the source file existing.
-        
+
         modifications = {}
-        
+
         # Batch Process
         for i in range(0, len(legacy_facts), self.batch_size):
             batch = legacy_facts[i:i+self.batch_size]
-            
+
             facts_list_str = ""
             for f in batch:
                 text = f.get('text', '')[:200]
                 facts_list_str += f"- ID: {f['fact_id']}\n  Text: {text}\n"
-            
+
             prompt = AUDIT_PROMPT_TEMPLATE.format(facts_list=facts_list_str)
-            
+
             try:
                 response = await invoke_ollama_model_async(prompt, model_name=DEFAULT_MODEL)
                 if not response: continue
-                
+
                 # Robust JSON Parse
                 json_str = response
                 if "```json" in response:
                     json_str = response.split("```json")[1].split("```")[0]
                 elif "```" in response:
                     json_str = response.split("```")[1].split("```")[0]
-                
+
                 batch_results = json.loads(json_str)
                 modifications.update(batch_results)
-                
+
             except Exception as e:
                 logger.warning(f"MemoryMaintenanceService: Error processing batch {i}: {e}")
 
@@ -143,7 +143,7 @@ class MemoryMaintenanceService:
                     if tag in ["permanent", "transient"]:
                         f["permanence"] = tag
                         updated_count += 1
-            
+
              if updated_count > 0:
                 if save_learned_facts(facts):
                     logger.info(f"MemoryMaintenanceService: Successfully classified {updated_count} legacy facts.")
@@ -160,15 +160,15 @@ class MemoryMaintenanceService:
         insights = load_actionable_insights()
         if not insights:
             return 0
-        
+
         cutoff = datetime.now(timezone.utc) - timedelta(hours=age_hours)
         keep_insights = []
         removed_count = 0
-        
+
         for insight in insights:
             # Check type
             insight_type = insight.get("type")
-            
+
             # Pruning Rules:
             # 1. TOOL_BUG_SUSPECTED older than cutoff
             # 2. HYPOTHETICAL_SCENARIO (Dream results) older than cutoff (often clutter)
@@ -187,11 +187,11 @@ class MemoryMaintenanceService:
                      pass
 
             keep_insights.append(insight)
-        
+
         if removed_count > 0:
             if save_actionable_insights(keep_insights):
                 logger.info(f"MemoryMaintenanceService: Pruned {removed_count} stale insights (Tool Bugs/Dreams older than {age_hours}h).")
             else:
                 logger.error("MemoryMaintenanceService: Failed to save insights after pruning.")
-        
+
         return removed_count

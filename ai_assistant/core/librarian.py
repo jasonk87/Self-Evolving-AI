@@ -57,40 +57,40 @@ class LibrarianAgent:
         for root, dirs, files in os.walk(self.project_root):
              # Skip hidden directories and virtual envs (basic heuristic)
             dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['venv', 'env', '__pycache__', 'node_modules']]
-            
+
             for file in files:
                 if file.endswith(".py") and "test" not in file.lower():
                     filepath = os.path.join(root, file)
-                    
+
                     # Diff check
                     try:
                         mtime = os.path.getmtime(filepath)
                         relative_path = os.path.relpath(filepath, self.project_root)
-                        
+
                         file_state = self.last_scan_state.get(filepath, {})
                         last_mtime = file_state.get("mtime", 0.0)
                         old_hashes = set(file_state.get("fact_hashes", []))
 
                         if last_mtime == mtime:
                             continue # Skip unchanged file
-                        
+
                         logger.debug(f"LibrarianAgent: Processing {relative_path}...")
-                        
+
                         # 1. Parse current facts
                         facts = self._process_file(filepath, relative_path)
-                        
+
                         # 2. Compute new hashes and map
                         new_fact_map = {}
                         for fact_text in facts:
                             fact_hash = hashlib.md5(fact_text.encode('utf-8')).hexdigest()
                             new_fact_map[fact_hash] = fact_text
-                        
+
                         new_hashes = set(new_fact_map.keys())
-                        
+
                         # 3. Calculate Delta
                         hashes_to_add = new_hashes - old_hashes
                         hashes_to_remove = old_hashes - new_hashes
-                        
+
                         stats_added = 0
                         stats_removed = 0
 
@@ -114,17 +114,17 @@ class LibrarianAgent:
                             )
                             facts_added += 1
                             stats_added += 1
-                        
+
                         # Update state
                         self.last_scan_state[filepath] = {
                             "mtime": mtime,
                             "fact_hashes": list(new_hashes)
                         }
                         files_processed += 1
-                        
+
                         if (stats_added > 0 or stats_removed > 0):
                              logger.info(f"LibrarianAgent: {relative_path} delta: +{stats_added} / -{stats_removed} facts")
-                        
+
                         # Yield control to event loop occasionally
                         if files_processed % 5 == 0:
                             await asyncio.sleep(0.01)
@@ -146,16 +146,16 @@ class LibrarianAgent:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 source = f.read()
-            
+
             tree = ast.parse(source)
             facts.extend(self._extract_metadata_from_ast(tree, relative_path))
-            
+
         except SyntaxError as e:
             logger.warning(f"LibrarianAgent: SyntaxError in {relative_path}: {e}")
             facts.append(f"The file {relative_path} currently contains a syntax error: {e}")
         except Exception as e:
             logger.error(f"LibrarianAgent: Failed to parse {relative_path}: {e}")
-        
+
         return facts
 
     def _extract_metadata_from_ast(self, tree: ast.AST, filename: str) -> List[str]:
@@ -163,11 +163,11 @@ class LibrarianAgent:
         Extracts classes, functions, imports, and inheritance from AST.
         """
         facts = []
-        
+
         # Module level definition
         module_name = filename.replace(os.sep, ".").replace(".py", "")
         facts.append(f"The module {module_name} is located at {filename}.")
-        
+
         for node in ast.walk(tree):
             # Classes
             if isinstance(node, ast.ClassDef):
@@ -178,12 +178,12 @@ class LibrarianAgent:
                         bases.append(base.id)
                     elif isinstance(base, ast.Attribute):
                         bases.append(f"{base.value.id if isinstance(base.value, ast.Name) else '?'}.{base.attr}")
-                
+
                 fact = f"The file {filename} defines the class {class_name}."
                 if bases:
                     fact += f" It inherits from: {', '.join(bases)}."
                 facts.append(fact)
-                
+
                 # Methods within class
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef) and not item.name.startswith("_"):
@@ -193,11 +193,11 @@ class LibrarianAgent:
             elif isinstance(node, ast.FunctionDef):
                 # Check if it's top level by ensuring it's not inside a class (basic check: parent is Module)
                 # ast.walk doesn't give parent info easily without custom traversal.
-                # However, for RAG, simple existence is good enough. 
+                # However, for RAG, simple existence is good enough.
                 # We can try to distinguish, but basic "file defines function" is okay.
                 # A better way is to iterate explicitly over tree.body.
-                pass 
-                
+                pass
+
             # Imports
             elif isinstance(node, ast.Import):
                 for alias in node.names:

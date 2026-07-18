@@ -88,7 +88,7 @@ def _update_suggestion_status(suggestion_id: str, new_status: str, reason: Optio
             suggestion['updated_at'] = datetime.now(timezone.utc).isoformat()
             suggestion_found = True
             break
-    
+
     if not suggestion_found:
         print(color_text(f"Suggestion with ID '{suggestion_id}' not found.", CLIColors.ERROR_MESSAGE))
         return False
@@ -149,12 +149,12 @@ def get_suggestions_summary_status() -> str:
     suggestions = _load_suggestions()
     if not suggestions:
         return "No suggestions found."
-    
+
     status_counts: Dict[str, int] = {}
     for suggestion in suggestions:
         status = suggestion.get('status', 'unknown')
         status_counts[status] = status_counts.get(status, 0) + 1
-    
+
     summary_lines = [f"Total Suggestions: {len(suggestions)}"]
     for status, count in status_counts.items():
         summary_lines.append(f"  - {status.capitalize()}: {count}")

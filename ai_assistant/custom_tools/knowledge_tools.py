@@ -122,21 +122,32 @@ async def learn_fact(fact: str) -> str:
 
 def recall_facts(query: Optional[str]=None) -> List[str]:
     """
-    Retrieves a list of learned facts.
-    Now uses RAG for query if provided, otherwise returns all from JSON.
+    Retrieves learned fact text from the canonical fact store.
+
+    Semantic retrieval for chat context is handled by ``MemoryManager``. This
+    tool intentionally remains a lightweight, synchronous lookup that also
+    works when the vector index or embedding provider is unavailable.
     """
-    from ai_assistant.memory.persistent_memory import load_learned_facts
-    if not query:
-        return load_learned_facts()
     all_facts = load_learned_facts()
+    fact_texts = []
+    for fact in all_facts:
+        if isinstance(fact, dict):
+            text = str(fact.get("text") or "").strip()
+        else:
+            text = str(fact or "").strip()
+        if text:
+            fact_texts.append(text)
+
+    if not query:
+        return fact_texts
     if isinstance(query, dict):
         query = query.get('query', query.get('text', str(query)))
     if not isinstance(query, str):
         query = str(query)
     if query.strip():
-        query_lower = query.lower()
-        return [fact for fact in all_facts if query_lower in fact.lower()]
-    return all_facts
+        query_text = query.casefold()
+        return [fact for fact in fact_texts if query_text in fact.casefold()]
+    return fact_texts
 
 async def run_periodic_fact_store_curation_async() -> bool:
     """

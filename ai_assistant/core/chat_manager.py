@@ -53,21 +53,21 @@ class ChatSessionManager:
     def add_message(self, session_id: str, role: str, content: str, images: Optional[List[str]] = None):
         session = self.get_session(session_id)
         if not session:
-            # If session doesn't exist, create it implicitly? 
+            # If session doesn't exist, create it implicitly?
             # No, for robustness, we should create it explicitly if needed, but let's handle just in case.
             # Actually, let's create it.
-            session_id = self.create_session() # Generates new ID if passed one was invalid? 
+            session_id = self.create_session() # Generates new ID if passed one was invalid?
             # Wait, if I pass an ID that doesn't exist, I can't just create a random NEW one and return it easily here without changing ID.
             # Let's return None to signal failure.
             return None
-        
+
         message_data = {"role": role, "content": content}
         if images:
             message_data["images"] = images
 
         session["history"].append(message_data)
         session["updated_at"] = time.time()
-        
+
         # Auto-update title if it's the first user message and title is "New Chat"
         # Check if there is exactly 1 user message (the one we just added)
         user_msgs = [m for m in session["history"] if m["role"] == "user"]
@@ -100,14 +100,14 @@ class ChatSessionManager:
         session = self.get_session(session_id)
         if not session:
             return None
-            
+
         # Ensure metadata dict exists
         if "metadata" not in session:
             session["metadata"] = {}
-            
+
         session["metadata"].update(metadata)
         session["updated_at"] = time.time()
-        
+
         self._save_session(session_id, session)
         return session
 

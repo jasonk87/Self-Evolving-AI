@@ -72,7 +72,7 @@ def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> lis
     """
     import importlib.util
     errors = []
-    
+
     for node in new_imports:
         try:
             # Determine the module name to check
@@ -105,10 +105,10 @@ def _validate_new_imports(new_imports: list[ast.Import | ast.ImportFrom]) -> lis
                             errors.append(f"Import Error: Submodule '{node.module}' verification failed.")
                 else:
                     # relative import (from . import foo) - usually safe if inside package
-                    pass 
+                    pass
         except Exception as e:
             errors.append(f"Validation Error checking import {node}: {e}")
-            
+
     return errors
 
 
@@ -146,7 +146,7 @@ def _parse_and_validate_function_update(code_string: str, function_name: str) ->
 
     if not new_function_node:
         return None, [], "Error: new_code_string does not contain a valid function definition."
-    
+
     if new_function_node.name != function_name:
          # Just a warning context, but we return the node. Caller handles logging if needed.
          pass
@@ -200,10 +200,10 @@ def get_function_source_code(module_path: str, function_name: str) -> Optional[s
                 # Fallback to unparse (reformats code)
                 if hasattr(ast, 'unparse'):
                     return ast.unparse(node)
-                
+
                 logger.error(f"AST found function '{function_name}' but could not extract source (no get_source_segment/unparse).")
                 return None
-                
+
         logger.error(f"Function '{function_name}' not found in parsed file '{file_path}'.")
         return None
     except Exception as e:
@@ -239,17 +239,17 @@ def _resolve_file_path_robust(module_path: str, function_name: str, project_root
         # Ideally, we should have it. For now, use CWD as fallback or relative to this file.
         # But this function is imported, so let's try CWD.
         project_root_path = os.getcwd()
-    
+
     relative_module_path = os.path.join(*module_path.split('.'))
     naive_path = os.path.join(project_root_path, relative_module_path)
-    
+
     potential_paths = []
-    
+
     # Check if 'naive_path' is a directory (package)
     if os.path.isdir(naive_path):
         # A. Function might be exposed in __init__.py of the package
         potential_paths.append(os.path.join(naive_path, "__init__.py"))
-        
+
         # B. Function might be in a file inside the directory matching its name? Unlikely but possible.
         # C. Scan children py files for definition (Parsing)
         for root, _, files in os.walk(naive_path):
@@ -260,14 +260,14 @@ def _resolve_file_path_robust(module_path: str, function_name: str, project_root
     else:
         # Is a file
         potential_paths.append(naive_path + ".py")
-        
+
     # Scan potential paths for the function definition
     for p in potential_paths:
         if os.path.exists(p):
             try:
                 with open(p, 'r', encoding='utf-8') as f:
                     content = f.read()
-                    
+
                 # Fast check using string search before parsing
                 if f"def {function_name}" in content or f"async def {function_name}" in content:
                     # Verify with AST
@@ -280,7 +280,7 @@ def _resolve_file_path_robust(module_path: str, function_name: str, project_root
                         pass
             except Exception:
                 continue
-                
+
     return None
 
 def resolve_module_file_path(module_path: str) -> Optional[str]:
@@ -337,7 +337,7 @@ async def edit_function_source_code(
 
         # Use robust introspection to find the file path
         file_path = _resolve_file_path_robust(module_path, function_name, project_root_path)
-        
+
         if not file_path:
              logger.error(f"Could not resolve file path for '{module_path}.{function_name}'.")
              _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.FAILED_PRE_REVIEW, reason="File path resolution failed", step="Path resolution")
@@ -376,7 +376,7 @@ async def edit_function_source_code(
                 step_desc="Governance policy blocked modification",
             )
             return err_msg
-        
+
         # Read the original file content immediately
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -455,7 +455,7 @@ CRITICAL RULES:
                 temp_new_func_ast = ast.parse(current_new_code).body[0]
                 # We parse existing original_source again to avoid mutating the master 'original_ast' permanently until final success
                 temp_full_ast = ast.parse(original_source)
-                
+
                 # Replace function in temp AST
                 new_body = []
                 found_in_temp = False
@@ -465,7 +465,7 @@ CRITICAL RULES:
                         found_in_temp = True
                     else:
                         new_body.append(node)
-                
+
                 if found_in_temp:
                     temp_full_ast.body = new_body
                     try:
@@ -506,11 +506,11 @@ CRITICAL RULES:
                 # --- SANDBOX CONTINUOUS EVOLUTION LOOP ---
                 _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Generating unit test for sandbox validation")
                 test_script = await _generate_sandbox_test(module_path, function_name, full_file_content_for_review, change_description)
-                
+
                 sandbox = SandboxManager(project_root_path)
                 logger.info("Executing sandbox validation...")
                 success, stdout, stderr = sandbox.execute_test(module_path, full_file_content_for_review, test_script)
-                
+
                 if success:
                     logger.info(f"Change to function '{function_name}' approved by critical review and PASSED sandbox tests.")
                     _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.CRITIC_REVIEW_APPROVED, step_desc="Sandbox tests passed")
@@ -523,7 +523,7 @@ CRITICAL RULES:
                         "comments": f"Sandbox Test Execution Failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
                         "suggestions": "Please fix the code so it passes the generated unit tests."
                     }]
-            
+
             # If not approved (either by static analysis, critic, or sandbox), check if we can refine
             if attempt < max_refinement_attempts:
                 logger.info(f"Change to '{function_name}' NOT approved. Attempting refinement ({attempt+1})...")
@@ -620,7 +620,7 @@ CRITICAL RULES:
                     module = node.module
                     for alias in node.names:
                         existing_import_sigs.add((module, alias.name, alias.asname))
-            
+
             unique_new_imports = []
             for imp in new_imports:
                 new_names = []
@@ -629,7 +629,7 @@ CRITICAL RULES:
                     if sig not in existing_import_sigs:
                         new_names.append(alias)
                         existing_import_sigs.add(sig)
-                
+
                 if new_names:
                     imp.names = new_names
                     unique_new_imports.append(imp)
@@ -657,7 +657,7 @@ CRITICAL RULES:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
                 target_node = node
                 break
-        
+
         if not target_node:
             err_msg = f"Error: Function '{function_name}' not found in module '{module_path}' (file '{file_path}')."
             logger.error(err_msg)
@@ -717,7 +717,7 @@ CRITICAL RULES:
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc="Writing modified code to file")
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_source_code)
-        
+
         success_step_desc = f"Code for '{function_name}' in '{module_path}' successfully written to disk."
         _update_parent_task(task_manager, parent_task_id, ActiveTaskStatus.APPLYING_CHANGES, step_desc=success_step_desc)
 
@@ -797,7 +797,7 @@ def get_backup_function_source_code(module_path: str, function_name: str) -> Opt
     if not file_path:
         # Fallback to naive construction
         file_path = os.path.join(*module_path.split('.')) + ".py"
-    
+
     # Check if we are dealing with a package/init and the function might be in a submodule
     if file_path.endswith("__init__.py"):
          package_dir = os.path.dirname(file_path)
@@ -806,7 +806,7 @@ def get_backup_function_source_code(module_path: str, function_name: str) -> Opt
          found_file = _find_function_in_package_dir(package_dir, function_name)
          if found_file:
              file_path = found_file
-             # Re-verify if this is the backup logic we want. 
+             # Re-verify if this is the backup logic we want.
              # If edit_function_source_code modified 'weather_tool.py', it created 'weather_tool.py.bak'.
              # So we want 'weather_tool.py' + '.bak'
 
@@ -1098,7 +1098,7 @@ async def edit_class_method(
                  module = node.module
                  for alias in node.names:
                      existing_import_sigs.add((module, alias.name, alias.asname))
-         
+
          unique_new_imports = []
          for imp in new_imports:
              new_names = []
@@ -1107,7 +1107,7 @@ async def edit_class_method(
                  if sig not in existing_import_sigs:
                      new_names.append(alias)
                      existing_import_sigs.add(sig)
-             
+
              if new_names:
                  imp.names = new_names
                  unique_new_imports.append(imp)
@@ -1131,7 +1131,7 @@ async def edit_class_method(
                     if new_method_ast.name != method_name:
                          # Log warning?
                          pass
-                    # We might want to preserve decorators if not provided in snippet? 
+                    # We might want to preserve decorators if not provided in snippet?
                     # Usually snippet has full definition.
                     new_class_body.append(new_method_ast)
                 else:
@@ -1256,7 +1256,7 @@ async def upsert_import(
     elif isinstance(new_import_node, ast.ImportFrom):
         for alias in new_import_node.names:
             target_sigs.add((new_import_node.module, alias.name, alias.asname))
-            
+
     # Check against existing
     existing_sigs = set()
     for node in original_ast.body:
@@ -1406,7 +1406,7 @@ async def surgical_edit_function(
         original_ast = ast.parse(original_source)
     except Exception as e:
         return f"Error parsing original file: {e}"
-    
+
     class SurgicalTransformer(ast.NodeTransformer):
         def __init__(self):
             self.found = False
@@ -1428,7 +1428,7 @@ async def surgical_edit_function(
                         new_body.append(child)
                 node.body = new_body
             return node
-        
+
         def visit_AsyncFunctionDef(self, node):
             return self.visit_FunctionDef(node)
 
@@ -1447,9 +1447,9 @@ async def surgical_edit_function(
 
     critic = ReviewerAgent()
     coordinator = CriticalReviewCoordinator(critic)
-    
+
     _update_p_task(ActiveTaskStatus.AWAITING_CRITIC_REVIEW, step_desc="Reviewing surgical changes")
-    
+
     approved, reviews = await coordinator.request_critical_review(
         original_code=original_source,
         new_code_string=new_source_code,
@@ -1463,7 +1463,7 @@ async def surgical_edit_function(
     shutil.copy2(file_path, file_path + ".bak")
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_source_code)
-    
+
     _update_p_task(ActiveTaskStatus.COMPLETED_SUCCESSFULLY, step_desc="Surgical edit applied.")
     return f"Surgical edit to '{function_name}' applied successfully."
 
@@ -1475,7 +1475,7 @@ if __name__ == '__main__': # pragma: no cover
 
     if os.path.exists(TEST_DIR):
         shutil.rmtree(TEST_DIR)
-    
+
     os.makedirs(CORE_DIR_SM, exist_ok=True)
     os.makedirs(CUSTOM_TOOLS_DIR_SM, exist_ok=True)
 

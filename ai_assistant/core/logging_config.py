@@ -1,6 +1,10 @@
 import logging
 import contextvars
-from pythonjsonlogger import jsonlogger
+try:
+    from pythonjsonlogger.json import JsonFormatter
+except ImportError:
+    from pythonjsonlogger import jsonlogger
+    JsonFormatter = jsonlogger.JsonFormatter
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter, BatchSpanProcessor
@@ -56,7 +60,7 @@ def setup_logging_and_tracing():
             trace.set_tracer_provider(provider)
 
         # 2. Setup Structured JSON Logging
-        formatter = jsonlogger.JsonFormatter(
+        formatter = JsonFormatter(
             '%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(trace_id)s %(span_id)s %(message)s'
         )
 

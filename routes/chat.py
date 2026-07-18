@@ -5,7 +5,7 @@ from . import api_bp
 import logging
 import app_globals
 from ai_assistant.core.project_manager import find_project
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 import json
 import asyncio
 from ai_assistant.custom_tools.reminder_tool import set_reminder, list_reminders, delete_reminder, update_reminder
@@ -762,9 +762,9 @@ def summarize_session(session_id):
         # 3. Call LLM
         import asyncio
         future = asyncio.run_coroutine_threadsafe(
-            invoke_gemini_model_async(
+            model_router.generate_response(
                 prompt=f"Summarizing Session\n\n{prompt}",
-                task_name="session_summary",
+                task_name="summarization",
             ),
             app_globals.ai_loop
         )

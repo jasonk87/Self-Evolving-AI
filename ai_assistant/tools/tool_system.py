@@ -4,7 +4,7 @@ import sys
 import json
 import inspect
 import asyncio
-from typing import Callable, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from pydantic import ValidationError
 from ai_assistant.config import is_debug_mode, get_data_dir
 from ai_assistant.core.tool_lifecycle import record_tool_execution
@@ -91,6 +91,12 @@ class ToolSystem:
             except Exception as e:
                 print(f'ToolSystem: Warning - Error during custom tool discovery from {module_filename} (path: {module_import_path}): {e}')
 
+        generated_results, generated_changed = self._refresh_generated_tool_modules(reload_modules=False)
+        any_new_tools_registered_overall = any_new_tools_registered_overall or generated_changed
+        if is_debug_mode():
+            for result in generated_results:
+                print(f'ToolSystem: {result}')
+
         self.register_example_tools()
 
         if any_new_tools_registered_overall:
@@ -99,7 +105,13 @@ class ToolSystem:
         if is_debug_mode():
             print(f'ToolSystem: Initialization complete. {len(self._tool_registry)} tools registered.')
 
-    def _discover_and_register_custom_tools(self, module_to_inspect, module_path_str: str) -> bool:
+    def _discover_and_register_custom_tools(
+        self,
+        module_to_inspect,
+        module_path_str: str,
+        *,
+        preserve_existing: bool = False,
+    ) -> bool:
         """
         Discovers and registers public functions from a given module as tools.
         Skips functions starting with '_' or not defined directly in the module.
@@ -129,6 +141,20 @@ class ToolSystem:
             if name.startswith('_'):
                 continue
             if func_object.__module__ != module_to_inspect.__name__ and (not func_object.__module__.startswith(module_to_inspect.__name__ + '.')):
+                continue
+
+            existing_entry = self._tool_registry.get(name)
+            if (
+                preserve_existing
+                and existing_entry
+                and existing_entry.get('module_path') != module_path_str
+            ):
+                results_source = existing_entry.get('module_path', 'unknown module')
+                if is_debug_mode():
+                    print(
+                        f"ToolSystem: Skipping generated tool name collision '{name}' from "
+                        f"{module_path_str}; existing registration from {results_source} wins."
+                    )
                 continue
 
             # Check for existing registration
@@ -166,6 +192,48 @@ class ToolSystem:
 
         return new_tools_registered_in_this_module
 
+    def _refresh_generated_tool_modules(self, *, reload_modules: bool) -> Tuple[List[str], bool]:
+        """Discover each generated module independently so one bad plugin cannot hide the rest."""
+        generated_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', 'custom_tools', 'generated')
+        )
+        results: List[str] = []
+        changed = False
+        expected_modules = set()
+
+        if os.path.isdir(generated_dir):
+            for filename in sorted(os.listdir(generated_dir)):
+                if filename == '__init__.py' or not filename.endswith('.py'):
+                    continue
+                module_stem = filename[:-3]
+                if not module_stem.isidentifier() or module_stem.startswith('_'):
+                    results.append(f'Skipped invalid generated module filename: {filename}')
+                    continue
+                module_path = f'ai_assistant.custom_tools.generated.{module_stem}'
+                expected_modules.add(module_path)
+                try:
+                    if reload_modules and module_path in sys.modules:
+                        module = importlib.reload(sys.modules[module_path])
+                    else:
+                        module = importlib.import_module(module_path)
+                    if self._discover_and_register_custom_tools(
+                        module,
+                        module_path,
+                        preserve_existing=True,
+                    ):
+                        changed = True
+                        results.append(f'Discovered generated tools in {filename}')
+                except Exception as exc:
+                    results.append(f'Failed to refresh generated module {filename}: {type(exc).__name__}: {exc}')
+
+        for registered_name, entry in list(self._tool_registry.items()):
+            module_path = str(entry.get('module_path') or '')
+            if module_path.startswith('ai_assistant.custom_tools.generated.') and module_path not in expected_modules:
+                del self._tool_registry[registered_name]
+                changed = True
+
+        return results, changed
+
     def refresh_custom_tools(self) -> str:
         """
         Reloads all custom tool modules and re-registers tools.
@@ -185,6 +253,8 @@ class ToolSystem:
                     results.append(f'Discovered new tools in {module_filename}')
             except Exception as e:
                 results.append(f'Failed to refresh {module_filename}: {e}')
+        generated_results, _ = self._refresh_generated_tool_modules(reload_modules=True)
+        results.extend(generated_results)
         self.save_registered_tools()
         self.register_example_tools()
         return 'Tool refresh complete. ' + ('; '.join(results) if results else 'No new tools discovered, but modules were reloaded.')

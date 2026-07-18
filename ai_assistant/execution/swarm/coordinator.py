@@ -46,6 +46,12 @@ class SubSwarmCoordinator:
         self.blocked_classification: Optional[FailureClassification] = None
         self.flaky_failure_count = 0
 
+    def _ensure_completion_future(self) -> asyncio.Future:
+        """Create the completion signal on the active event loop when first needed."""
+        if self.completion_future is None:
+            self.completion_future = asyncio.get_running_loop().create_future()
+        return self.completion_future
+
     def _record_scorecard(self, scorecard: ExperimentScorecard, outcome: str) -> Dict[str, Any]:
         return record_experiment_scorecard(
             scorecard,
@@ -69,16 +75,18 @@ class SubSwarmCoordinator:
     async def _handle_swarm_complete(self, event: BlackboardEvent):
         """When the Reviewer approves all files, the swarm is done."""
         logger.info(f"[Coordinator {self.swarm_id}] Swarm reported complete!")
-        if not self.completion_future.done():
-            self.completion_future.set_result(True)
+        completion_future = self._ensure_completion_future()
+        if not completion_future.done():
+            completion_future.set_result(True)
 
     async def _handle_agent_error(self, event: BlackboardEvent):
         """If an agent crashes critically, abort the swarm."""
         error = event.data.get("error")
         role = event.data.get("role")
         logger.error(f"[Coordinator {self.swarm_id}] Critical error in {role}: {error}")
-        if not self.completion_future.done():
-            self.completion_future.set_exception(RuntimeError(f"Swarm aborted due to {role} error: {error}"))
+        completion_future = self._ensure_completion_future()
+        if not completion_future.done():
+            completion_future.set_exception(RuntimeError(f"Swarm aborted due to {role} error: {error}"))
 
     async def _handle_progress_update(self, event: BlackboardEvent):
         """Pass progress up to the UI/TaskManager if configured."""
@@ -105,9 +113,10 @@ class SubSwarmCoordinator:
             self.flaky_failure_count += 1
             should_block = self.flaky_failure_count > 1
 
-        if should_block and not self.completion_future.done():
+        completion_future = self._ensure_completion_future()
+        if should_block and not completion_future.done():
             self.blocked_classification = classification
-            self.completion_future.set_result(False)
+            completion_future.set_result(False)
 
     async def execute_swarm(self) -> Dict[str, Any]:
         """
@@ -116,7 +125,7 @@ class SubSwarmCoordinator:
         logger.info(f"[Coordinator {self.swarm_id}] Starting sub-swarm for contract: {self.contract.task_id}")
 
         self.setup_coordinator_subscriptions()
-        self.completion_future = asyncio.Future()
+        self.completion_future = asyncio.get_running_loop().create_future()
 
         # 1. Start all agents concurrently as background tasks
         agent_tasks = [asyncio.create_task(agent.run()) for agent in self.agents]

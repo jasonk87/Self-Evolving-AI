@@ -31,20 +31,20 @@ import re
 class TaskRouter:
     def __init__(self, llm_model: str = DEFAULT_MODEL):
         self.llm_model = llm_model
-        
+
         # Pre-compile regex patterns for lightning-fast routing
         self.direct_patterns = [
             re.compile(r"^(hi|hello|hey|hola|ping|sup|greetings)[\!?\.]*$", re.IGNORECASE),
             re.compile(r"^(summarize|translate|format) ", re.IGNORECASE),
             re.compile(r"^(what is|define|who is) ", re.IGNORECASE)
         ]
-        
+
         self.thinking_patterns = [
             re.compile(r"(architect|design|refactor entire|refactor all|deep analysis|comprehensive|brainstorm)", re.IGNORECASE),
             re.compile(r"plan (a|) (project|system|feature)", re.IGNORECASE),
             re.compile(r"create a (new |)project", re.IGNORECASE)
         ]
-        
+
         self.fast_react_patterns = [
             re.compile(r"(write|create) a (script|function|class)", re.IGNORECASE),
             re.compile(r"(fix|debug|resolve) (this|error|bug)", re.IGNORECASE),
@@ -58,18 +58,18 @@ class TaskRouter:
         Falls back to FAST_REACT by default to save LLM overhead.
         """
         prompt_clean = prompt.strip()
-        
+
         # 1. Fast Heuristic Checks (Regex)
         for pattern in self.direct_patterns:
             if pattern.search(prompt_clean):
                 logger.info("Router: Heuristic match -> DIRECT")
                 return ExecutionMode.DIRECT
-                
+
         for pattern in self.thinking_patterns:
             if pattern.search(prompt_clean):
                 logger.info("Router: Heuristic match -> FAST_REACT")
                 return ExecutionMode.FAST_REACT
-                
+
         for pattern in self.fast_react_patterns:
             if pattern.search(prompt_clean):
                 logger.info("Router: Heuristic match -> FAST_REACT")

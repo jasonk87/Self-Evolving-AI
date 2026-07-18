@@ -24,7 +24,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
             self.memory_manager
         )
 
-    @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
+    @patch('ai_assistant.core.orchestrator.model_router.generate_response')
     @patch('ai_assistant.core.orchestrator.TaskRouter.determine_mode')
     async def test_direct_mode_routing(self, mock_determine_mode, mock_invoke_gemini):
         # Setup
@@ -43,7 +43,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(success)
         self.assertEqual(response, "Direct response.")
 
-    @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
+    @patch('ai_assistant.core.orchestrator.model_router.generate_response')
     @patch('ai_assistant.core.orchestrator.TaskRouter.determine_mode')
     @patch('ai_assistant.core.orchestrator.tool_system_instance')
     async def test_fast_react_mode_execution(self, mock_tool_system, mock_determine_mode, mock_invoke_gemini):
@@ -72,7 +72,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_invoke_gemini.call_count, 2)
         mock_tool_system.execute_tool.assert_called_once()
 
-    @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
+    @patch('ai_assistant.core.orchestrator.model_router.generate_response')
     @patch('ai_assistant.core.orchestrator.TaskRouter.determine_mode')
     @patch('ai_assistant.core.orchestrator.tool_system_instance')
     async def test_complex_fast_react_execution(self, mock_tool_system, mock_determine_mode, mock_invoke_gemini):
@@ -101,7 +101,7 @@ class TestTriStateOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_invoke_gemini.call_count, 2)
         args, kwargs = mock_invoke_gemini.call_args_list[0]
 
-    @patch('ai_assistant.core.orchestrator.invoke_gemini_model_async')
+    @patch('ai_assistant.core.orchestrator.model_router.generate_response')
     @patch('ai_assistant.core.orchestrator.TaskRouter.determine_mode')
     @patch('ai_assistant.core.orchestrator.tool_system_instance')
     async def test_fallback_logic(self, mock_tool_system, mock_determine_mode, mock_invoke_gemini):

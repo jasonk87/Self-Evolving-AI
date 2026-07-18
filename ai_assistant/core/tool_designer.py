@@ -65,7 +65,7 @@ Respond ONLY with the JSON object.
 
         design_json_str = llm_response["message"]["content"]
         logger.debug(f"LLM response for tool design:\n{design_json_str}")
-        
+
         tool_design_params = json.loads(design_json_str)
 
         # Validate required keys (basic validation)

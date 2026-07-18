@@ -101,7 +101,7 @@ def execute_project_script(
     command_parts = [sys.executable, script_path]
     if args:
         command_parts.extend(args)
-    
+
     command_str = " ".join(command_parts) # For logging
     logger.info(f"Attempting to execute project script: {command_str} from directory {projects_dir}")
 

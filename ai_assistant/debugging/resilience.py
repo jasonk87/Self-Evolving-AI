@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import inspect
 import logging
 import random
 import time
@@ -35,7 +36,7 @@ def retry_with_backoff(
         jitter: Whether to add random jitter to the delay.
     """
     def decorator(func: CallableT) -> CallableT:
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any: # Using Any for return type with Coroutine
                 last_exception: Optional[Exception] = None

@@ -9,14 +9,26 @@ from typing import List, Dict, Any, Optional
 
 # Attempt to import from the ai_assistant package.
 try:
-    from ai_assistant.learning.learning import LearningAgent, ActionableInsight, InsightType
+    from ai_assistant.learning.learning import (
+        DISMISSED_AS_FIXED_STATUS,
+        LearningAgent,
+        ActionableInsight,
+        InsightType,
+        record_insight_rejection,
+    )
     from ai_assistant.core.reflection import ReflectionLogEntry
 except ImportError: # pragma: no cover
     import sys
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.learning.learning import LearningAgent, ActionableInsight, InsightType
+    from ai_assistant.learning.learning import (
+        DISMISSED_AS_FIXED_STATUS,
+        LearningAgent,
+        ActionableInsight,
+        InsightType,
+        record_insight_rejection,
+    )
     from ai_assistant.core.reflection import ReflectionLogEntry
 
 
@@ -56,6 +68,9 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         if os.path.exists(self.temp_insights_filepath):
             os.remove(self.temp_insights_filepath)
+        state_path = f"{os.path.splitext(self.temp_insights_filepath)[0]}.conversation_analysis_state.json"
+        if os.path.exists(state_path):
+            os.remove(state_path)
 
     def _create_mock_reflection_entry(
         self,
@@ -199,6 +214,165 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(agent.add_insight(junk))
         self.assertEqual(agent.insights, [])
+
+    def test_already_fixed_rejection_suppresses_reworded_conversation_bug(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        rejected = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: The 'recall_facts' tool crashed after calling "
+                ".lower() on dictionary objects and was quarantined."
+            ),
+            source_reflection_entry_ids=[],
+            metadata={"source": "conversational_analysis", "session_id": "session-1"},
+        )
+        self.assertTrue(agent.add_insight(rejected))
+        self.assertEqual(
+            record_insight_rejection(rejected, "This was fixed already"),
+            DISMISSED_AS_FIXED_STATUS,
+        )
+
+        repeated = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description=(
+                "ISSUE DETECTED: recall_facts calls lower on memory records that are "
+                "dictionaries, causing repeated failures and quarantine."
+            ),
+            source_reflection_entry_ids=[],
+            metadata={"source": "conversational_analysis", "session_id": "session-1"},
+        )
+
+        self.assertFalse(agent.add_insight(repeated))
+        self.assertEqual(len(agent.insights), 1)
+        self.assertEqual(agent.insights[0].status, DISMISSED_AS_FIXED_STATUS)
+        self.assertEqual(agent.insights[0].metadata["suppressed_duplicate_count"], 1)
+        self.assertEqual(agent.insights[0].metadata["rejection_feedback"], "This was fixed already")
+
+    def test_real_post_dismissal_runtime_failure_can_reopen_issue(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        rejected = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="ISSUE DETECTED: The 'recall_facts' tool called lower on a dictionary.",
+            source_reflection_entry_ids=["old-runtime-event"],
+        )
+        self.assertTrue(agent.add_insight(rejected))
+        record_insight_rejection(rejected, "already fixed")
+        rejected.metadata["dismissed_at"] = "2026-07-18T10:00:00+00:00"
+
+        regression = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="ISSUE DETECTED: recall_facts crashed because lower received dictionary records.",
+            source_reflection_entry_ids=["new-runtime-event"],
+            metadata={
+                "source": "reflection_log",
+                "failure_observed_at": "2026-07-18T10:05:00+00:00",
+            },
+        )
+
+        self.assertTrue(agent.add_insight(regression))
+        self.assertEqual(len(agent.insights), 2)
+
+    def test_superseded_conversation_bug_stays_suppressed_but_runtime_regression_reopens(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        superseded = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="ISSUE DETECTED: DeepSeek timeout was classified as a dream_mode_runner tool failure.",
+            source_reflection_entry_ids=[],
+            status="SUPERSEDED_EXTERNAL_UPDATE",
+            metadata={"source": "conversational_analysis"},
+        )
+        self.assertTrue(agent.add_insight(superseded))
+
+        rediscovered = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="ISSUE DETECTED: A DeepSeek timeout triggered a repair approval for dream mode runner.",
+            source_reflection_entry_ids=[],
+            metadata={"source": "conversational_analysis"},
+        )
+        self.assertFalse(agent.add_insight(rediscovered))
+        self.assertEqual(len(agent.insights), 1)
+
+        runtime_regression = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="ISSUE DETECTED: DeepSeek timeout was classified as a dream_mode_runner tool failure.",
+            source_reflection_entry_ids=["runtime-regression"],
+            metadata={"source": "reflection_log"},
+        )
+        self.assertTrue(agent.add_insight(runtime_regression))
+        self.assertEqual(len(agent.insights), 2)
+
+    async def test_conversation_scan_checkpoints_unchanged_transcript(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        session = {
+            "id": "session-checkpoint",
+            "history": [
+                {"role": "user", "content": "The weather output was wrong."},
+                {"role": "assistant", "content": "I will investigate."},
+            ],
+        }
+        agent.chat_manager = mock.Mock()
+        agent.chat_manager.list_sessions.return_value = [{"id": session["id"]}]
+        agent.chat_manager.get_session.side_effect = lambda _session_id: session
+
+        class FakeAnalyst:
+            def __init__(self):
+                self.calls = []
+                self.last_analysis_succeeded = True
+
+            async def analyze_session_transcript(self, session_data, focus_start_index=0):
+                self.calls.append((list(session_data["history"]), focus_start_index))
+                return []
+
+        analyst = FakeAnalyst()
+        agent.conversational_analyst = analyst
+
+        self.assertEqual(await agent.scan_recent_conversations(), 0)
+        self.assertEqual(await agent.scan_recent_conversations(), 0)
+        self.assertEqual(len(analyst.calls), 1)
+
+        session["history"].append({"role": "user", "content": "It is fixed now."})
+        self.assertEqual(await agent.scan_recent_conversations(), 0)
+        self.assertEqual(len(analyst.calls), 2)
+        self.assertEqual(analyst.calls[1][1], 2)
+
+    async def test_conversation_scan_bootstraps_checkpoint_from_newer_existing_analysis(self):
+        with mock.patch('ai_assistant.learning.learning.ActionExecutor'):
+            agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+
+        existing = ActionableInsight(
+            type=InsightType.USER_PREFERENCE_LEARNED,
+            description="User prefers readable output.",
+            source_reflection_entry_ids=[],
+            creation_timestamp="2026-07-18T10:05:00+00:00",
+            metadata={"source": "conversational_analysis", "session_id": "session-migrate"},
+        )
+        self.assertTrue(agent.add_insight(existing))
+        session = {
+            "id": "session-migrate",
+            "updated_at": "2026-07-18T10:00:00+00:00",
+            "history": [{"role": "user", "content": "Make output readable."}],
+        }
+        agent.chat_manager = mock.Mock()
+        agent.chat_manager.list_sessions.return_value = [{"id": session["id"]}]
+        agent.chat_manager.get_session.return_value = session
+        agent.conversational_analyst = mock.Mock()
+        agent.conversational_analyst.analyze_session_transcript = mock.AsyncMock(
+            side_effect=AssertionError("migrated transcript must not be analyzed again")
+        )
+
+        self.assertEqual(await agent.scan_recent_conversations(), 0)
+        checkpoint = agent._conversation_analysis_state["sessions"][session["id"]]
+        self.assertEqual(checkpoint["message_count"], 1)
+        self.assertTrue(checkpoint["migrated_from_existing_insights"])
+        agent.conversational_analyst.analyze_session_transcript.assert_not_awaited()
 
     def test_add_insight_does_not_merge_new_failure_into_completed_tool_bug(self):
         with mock.patch('ai_assistant.learning.learning.ActionExecutor'):

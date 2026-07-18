@@ -70,10 +70,10 @@ def execute_tool(
             raise ToolExecutionError(f"Tool function '{tool_name}' not found in module {tool_module_path}")
 
         tool_function = getattr(tool_module, tool_name)
-        
+
         logger.info(f"Executing tool '{tool_name}' with arguments: {tool_arguments}")
         result = tool_function(**tool_arguments)
-        
+
         response["success"] = True
         response["result"] = result
         logger.info(f"Tool '{tool_name}' executed successfully. Result: {result}")

@@ -939,6 +939,42 @@ def test_reflection_suggestion_reject_endpoint_updates_status(monkeypatch):
     assert insight.metadata["operator_rejection_reason"] == "not now"
 
 
+def test_regular_insight_denial_saves_fixed_feedback_even_if_memory_mirror_fails(monkeypatch):
+    app = _build_test_app()
+    insight = approvals.ActionableInsight(
+        insight_id="i_fixed",
+        type=approvals.InsightType.TOOL_BUG_SUSPECTED,
+        status="NEW",
+        description="ISSUE DETECTED: The 'recall_facts' tool called lower on a dictionary.",
+        source_reflection_entry_ids=[],
+    )
+    saves = []
+    learning_agent = SimpleNamespace(
+        insights=[insight],
+        _save_insights=lambda: saves.append(True),
+    )
+    monkeypatch.setattr(app_globals, "orchestrator", SimpleNamespace(learning_agent=learning_agent))
+    monkeypatch.setattr(
+        app_globals,
+        "memory_manager",
+        SimpleNamespace(add_fact=lambda _fact: (_ for _ in ()).throw(RuntimeError("embedding offline"))),
+    )
+    monkeypatch.setattr(approvals.approval_manager, "get_request", lambda _req_id: None)
+
+    with app.test_client() as client:
+        response = client.post(
+            "/api/approvals/i_fixed/deny",
+            json={"feedback": "It was fixed already"},
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "DISMISSED_AS_FIXED"
+    assert insight.status == "DISMISSED_AS_FIXED"
+    assert insight.metadata["user_rejection_reason"] == "It was fixed already"
+    assert insight.metadata["rejection_feedback"] == "It was fixed already"
+    assert saves == [True]
+
+
 def test_reflection_suggestion_triage_endpoint_rejects_non_pending_status(monkeypatch):
     app = _build_test_app()
 

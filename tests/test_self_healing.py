@@ -32,8 +32,11 @@ class TestOrchestratorSelfHealing(unittest.IsolatedAsyncioTestCase):
         self.tool_system_patcher = patch('ai_assistant.core.orchestrator.tool_system_instance')
         self.mock_tool_system = self.tool_system_patcher.start()
 
-        self.gemini_patcher = patch('ai_assistant.core.orchestrator.invoke_gemini_model_async', new_callable=AsyncMock)
-        self.mock_gemini = self.gemini_patcher.start()
+        self.model_router_patcher = patch(
+            'ai_assistant.core.orchestrator.model_router.generate_response',
+            new_callable=AsyncMock,
+        )
+        self.mock_gemini = self.model_router_patcher.start()
 
         self.episodic_patcher = patch('ai_assistant.core.orchestrator.EpisodicMemoryManager')
         self.mock_episodic = self.episodic_patcher.start()
@@ -45,7 +48,7 @@ class TestOrchestratorSelfHealing(unittest.IsolatedAsyncioTestCase):
         self.load_quarantine_patcher.stop()
         self.save_quarantine_patcher.stop()
         self.tool_system_patcher.stop()
-        self.gemini_patcher.stop()
+        self.model_router_patcher.stop()
         self.episodic_patcher.stop()
 
     async def test_circuit_breaker_quarantine_activation(self):

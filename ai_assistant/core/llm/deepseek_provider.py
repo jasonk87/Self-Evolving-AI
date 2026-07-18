@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
 from ai_assistant.core.llm.provider import LLMProvider
+from ai_assistant.core.llm.gemini_provider import GeminiProvider
+from ai_assistant.config import GEMINI_VISION_FALLBACK_MODEL
 from ai_assistant.llm_interface.deepseek_client import invoke_raw_deepseek_async
 
 class DeepseekProvider(LLMProvider):
@@ -14,6 +16,19 @@ class DeepseekProvider(LLMProvider):
         images: Optional[List[str]] = None,
         endpoint_url: Optional[str] = None
     ) -> str:
+        if images:
+            # DeepSeek's text endpoint is not used for image payloads. Keep vision
+            # requests functional through the configured Gemini fallback.
+            return await GeminiProvider().generate_response(
+                prompt,
+                system_instruction=system_instruction,
+                history=history,
+                model_name=GEMINI_VISION_FALLBACK_MODEL,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                images=images,
+            )
+
         messages = []
         
         if system_instruction:

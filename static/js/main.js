@@ -604,6 +604,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mic
     document.getElementById('mic-btn')?.addEventListener('click', Voice.toggleListening);
 
+    // Voice Toggle
+    const voiceToggleBtn = document.getElementById('voice-toggle-btn');
+    if (voiceToggleBtn) {
+        voiceToggleBtn.addEventListener('click', () => {
+            const enabled = !Voice.getAutoSpeak();
+            Voice.setAutoSpeak(enabled);
+            voiceToggleBtn.classList.toggle('active', enabled);
+            voiceToggleBtn.setAttribute('title', `Auto-Speech (${enabled ? 'On' : 'Off'})`);
+        });
+    }
+
 
     // Socket Events
     socket.on('response', (data) => {

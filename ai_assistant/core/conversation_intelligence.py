@@ -211,7 +211,7 @@ async def detect_missed_tool_opportunity(
 
     # ---- Retrieve and format learned facts ----
     try:
-        recalled_facts_list = recall_facts() 
+        recalled_facts_list = recall_facts()
         if recalled_facts_list:
             facts_for_prompt = "\n".join([f"- {fact}" for fact in recalled_facts_list[:5]])
             if len(recalled_facts_list) > 5: # pragma: no cover
@@ -223,7 +223,7 @@ async def detect_missed_tool_opportunity(
             print(f"[DEBUG CONV_INTEL] Error recalling facts for tool detection: {e_facts}")
         facts_for_prompt = "Could not retrieve learned facts at this time."
     # ---- END Fact Retrieval ----
-    
+
     # Escape content that might contain stray {} characters which could break .format()
     escaped_user_statement = user_statement.replace('{', '{{').replace('}', '}}')
     escaped_conversation_history = conversation_history_for_prompt.replace('{', '{{').replace('}', '}}')
@@ -296,7 +296,7 @@ async def detect_missed_tool_opportunity(
             if key not in parsed_response: # pragma: no cover
                 print(f"Warning: LLM response (tool suggestion) JSON is missing key '{key}'. Response: {llm_response}")
                 return None
-        
+
         # --- Robust argument parsing ---
         tool_name_detected = parsed_response.get("tool_name")
         raw_inferred_args = parsed_response.get("inferred_args")
@@ -319,7 +319,7 @@ async def detect_missed_tool_opportunity(
                 project_description_val = raw_inferred_args.get("project_description")
                 if project_description_val is None and "project_description" in final_kwargs_dict: # Check if it's in kwargs
                     project_description_val = final_kwargs_dict.pop("project_description")
-                
+
                 if project_name_val is not None and project_description_val is not None:
                     final_args_list = [str(project_name_val), str(project_description_val)]
                 elif project_name_val is not None: # Only name found
@@ -338,7 +338,7 @@ async def detect_missed_tool_opportunity(
                 final_args_list = [str(v) for v in raw_inferred_args.values()]
         elif raw_inferred_args is not None: # Present but not list or dict
              print(f"Warning: 'inferred_args' from LLM for tool '{tool_name_detected}' was not a list or dict (got {type(raw_inferred_args)}). Using empty list.")
-        
+
         parsed_response['inferred_args'] = final_args_list
         parsed_response['inferred_kwargs'] = final_kwargs_dict
         # --- End robust argument parsing ---
@@ -355,7 +355,7 @@ async def detect_missed_tool_opportunity(
 
         if tool_name_detected not in available_tools and tool_name_detected != "manage_tool_confirmation_settings": # Allow this special tool
             print(f"Warning: LLM suggested tool '{tool_name_detected}' which is not in the available tools list (and not manage_tool_confirmation_settings).") # pragma: no cover
-            return None 
+            return None
 
         if tool_name_detected == "generate_code_for_project_file":
             project_name_arg_check = final_args_list[0] if final_args_list else None
@@ -373,9 +373,9 @@ async def detect_missed_tool_opportunity(
                         "inferred_args": [project_name_arg_check, desc_for_init],
                         "inferred_kwargs": {},
                         "reasoning": f"Project '{project_name_arg_check}' needs to be initiated first.",
-                        "suggestion_prompt": new_suggestion_prompt 
+                        "suggestion_prompt": new_suggestion_prompt
                     }
-        
+
         if tool_name_detected == "get_self_awareness_info_and_converse" and not parsed_response.get("inferred_args"): # pragma: no cover
             if is_debug_mode():
                 print(f"[DEBUG CONV_INTEL] Auto-populating 'user_input' for '{tool_name_detected}' with current user_statement: '{user_statement}'")
@@ -389,7 +389,7 @@ async def detect_missed_tool_opportunity(
         if tool_name_detected not in requires_confirmation_tools:
             if is_debug_mode(): # pragma: no cover
                 print(f"[DEBUG CONV_INTEL] Tool '{tool_name_detected}' is NOT in 'requires confirmation' list. Proceeding with autonomous execution.")
-            
+
             inferred_args_tuple = tuple(parsed_response['inferred_args']) # Should be a list now
             inferred_kwargs_dict = parsed_response['inferred_kwargs'] # Should be a dict
 
@@ -597,7 +597,7 @@ async def generate_conversational_response(user_input: str, conversation_history
             print("[DEBUG CONV_INTEL] generate_conversational_response received empty user_input. Returning default.")
         return "Is there something specific you'd like to talk about?"
 
-    user_name = "User" 
+    user_name = "User"
     all_recalled_facts: List[str] = []
     try:
         all_recalled_facts = recall_facts()
@@ -607,7 +607,7 @@ async def generate_conversational_response(user_input: str, conversation_history
         for fact in all_recalled_facts:
             if fact.lower().startswith(name_fact_prefix.lower()):
                 potential_name = fact[len(name_fact_prefix):].strip()
-                if potential_name: 
+                if potential_name:
                     name_from_facts = potential_name
             else:
                 other_facts_for_prompt.append(fact)
@@ -663,10 +663,10 @@ if __name__ == '__main__': # pragma: no cover
     async def run_conv_intel_tests():
         print("--- Testing Conversation Intelligence Module (with Mocks & Broader Name/Fact Usage) ---")
         # ... (your existing __main__ test setup and cases) ...
-        # (Ensure mocks for invoke_ollama_model_async, recall_facts, get_recent_events, 
+        # (Ensure mocks for invoke_ollama_model_async, recall_facts, get_recent_events,
         #  _load_requires_confirmation_list_ci, ExecutionAgent, ToolSystem are in place if running this directly)
         pass # Placeholder for actual test calls if this file were run standalone
-    
+
     # To run the tests if this file is executed:
     # asyncio.run(run_conv_intel_tests())
 ### END FILE: ai_assistant/core/conversation_intelligence.py ###

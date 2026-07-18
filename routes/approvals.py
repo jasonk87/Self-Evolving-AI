@@ -5,7 +5,13 @@ import logging
 import app_globals
 from ai_assistant.core.telemetry import telemetry_tracker
 from ai_assistant.core.approval_manager import approval_manager
-from ai_assistant.learning.learning import ActionableInsight, InsightType, _build_tool_bug_fingerprint
+from ai_assistant.learning.learning import (
+    ActionableInsight,
+    InsightType,
+    _build_tool_bug_fingerprint,
+    _tool_bug_insights_match,
+    record_insight_rejection,
+)
 from ai_assistant.core.task_manager import ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.status_reporting import get_status_snapshot
 from ai_assistant.core.conversational_alerts import execute_alert_action
@@ -32,7 +38,6 @@ logger = logging.getLogger(__name__)
 def _coalesce_pending_learning_insights(insights):
     """Return one approval card per active learning-insight failure theme."""
     coalesced = []
-    by_key = {}
 
     for insight in insights:
         if insight.type == InsightType.TOOL_BUG_SUSPECTED:
@@ -43,9 +48,22 @@ def _coalesce_pending_learning_insights(insights):
         else:
             key = f"{insight.type.name}:{insight.related_tool_name or ''}:{insight.description}"
 
-        existing = by_key.get(key)
+        existing = next(
+            (
+                candidate for candidate in coalesced
+                if (
+                    insight.type == InsightType.TOOL_BUG_SUSPECTED
+                    and candidate.type == InsightType.TOOL_BUG_SUSPECTED
+                    and _tool_bug_insights_match(candidate, insight)
+                )
+                or (
+                    insight.type != InsightType.TOOL_BUG_SUSPECTED
+                    and key == f"{candidate.type.name}:{candidate.related_tool_name or ''}:{candidate.description}"
+                )
+            ),
+            None,
+        )
         if not existing:
-            by_key[key] = insight
             coalesced.append(insight)
             continue
 
@@ -70,6 +88,72 @@ def _coalesce_pending_learning_insights(insights):
 
 def _run_async(coro):
     return asyncio.run(coro)
+
+
+def _approval_timestamp_seconds(value) -> float:
+    """Normalize epoch seconds, epoch milliseconds, datetimes, and ISO strings."""
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        numeric = float(value)
+        return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0.0
+        try:
+            numeric = float(text)
+            return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+        except ValueError:
+            try:
+                return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return 0.0
+    return 0.0
+
+
+def _normalize_approval_timestamp(record: dict) -> dict:
+    raw_value = record.get("timestamp")
+    if raw_value in (None, "", 0):
+        raw_value = record.get("created_at")
+    record["timestamp"] = _approval_timestamp_seconds(raw_value)
+    return record
+
+
+def _release_quarantined_tool_for_insight(insight: ActionableInsight) -> dict:
+    """Release the tool named by an approved bug insight, independently of repair."""
+    tool_name = str(getattr(insight, "related_tool_name", "") or "").strip()
+    orchestrator = app_globals.orchestrator
+    if not tool_name:
+        return {"released": False, "reason": "Insight does not identify a related tool."}
+    if not orchestrator:
+        return {"released": False, "tool_name": tool_name, "reason": "Orchestrator is unavailable."}
+
+    blocked_tools = orchestrator.get_blocked_tools()
+    if tool_name not in blocked_tools:
+        return {
+            "released": False,
+            "already_released": True,
+            "tool_name": tool_name,
+            "reason": "Tool is not currently quarantined.",
+        }
+
+    if not orchestrator.unblock_tool(tool_name):
+        return {"released": False, "tool_name": tool_name, "reason": "Tool could not be released."}
+
+    # Keep the lifecycle display consistent with the live circuit-breaker state.
+    try:
+        from ai_assistant.core.tool_lifecycle import ToolLifecycleState, upsert_tool_lifecycle
+        upsert_tool_lifecycle(
+            tool_name=tool_name,
+            state=ToolLifecycleState.REGISTERED,
+            summary="Tool manually released from quarantine by approved bug insight.",
+            metadata={"insight_id": insight.insight_id, "released_by": "user_approval"},
+        )
+    except Exception as exc:  # pragma: no cover - release already succeeded
+        logger.warning("Could not update lifecycle after releasing %s: %s", tool_name, exc)
+
+    return {"released": True, "tool_name": tool_name}
 
 
 def _queue_insight_execution(insight: ActionableInsight) -> dict:
@@ -1373,10 +1457,7 @@ def _collect_reflection_suggestions(limit: int = 20) -> list:
                     insight_type_name = str(insight_type or "UNKNOWN")
         
                 created = getattr(insight, "creation_timestamp", 0)
-                try:
-                    created_ts = float(created)
-                except (TypeError, ValueError):
-                    created_ts = 0.0
+                created_ts = _approval_timestamp_seconds(created)
         
                 insight_id = str(getattr(insight, "insight_id", "") or "").strip()
                 if not insight_id:
@@ -1557,12 +1638,7 @@ def mission_control_reject_reflection_suggestion(req_id):
         return jsonify({"success": False, "error": f"Suggestion is not pending (status={status})"}), 400
 
     feedback = (request.json or {}).get("feedback") if request.is_json else None
-    if not getattr(insight, "metadata", None):
-        insight.metadata = {}
-    if feedback:
-        insight.metadata["operator_rejection_reason"] = str(feedback)
-
-    insight.status = "REJECTED_BY_USER"
+    record_insight_rejection(insight, feedback, feedback_key="operator_rejection_reason")
     app_globals.orchestrator.learning_agent._save_insights()
     return jsonify({"success": True, "insight_id": req_id, "status": insight.status})
 
@@ -2695,24 +2771,31 @@ def get_approvals():
             req_copy['data'] = serialize_approval_data(req_copy['data'])
             # Ensure it has a source tag
             req_copy['source'] = 'approval_manager'
-            serialized_requests.append(req_copy)
+            serialized_requests.append(_normalize_approval_timestamp(req_copy))
 
         # 2. Source-changing architect proposals require a human click in this UI.
         from ai_assistant.goals.goal_management import list_goals
         for goal in list_goals(status="PENDING_APPROVAL"):
             if goal.get("metadata", {}).get("type") != "architect_source_change":
                 continue
-            serialized_requests.append({
+            serialized_requests.append(_normalize_approval_timestamp({
                 "id": goal["id"],
                 "type": "architect_source_change",
                 "description": goal.get("description") or goal.get("title"),
-                "timestamp": goal.get("metadata", {}).get("created_at", 0),
+                "created_at": goal.get("metadata", {}).get("created_at", 0),
                 "data": serialize_approval_data(goal),
                 "source": "goal_management",
-            })
+            }))
 
         # 3. Get persistent 'NEW' insights from LearningAgent
         if app_globals.orchestrator and app_globals.orchestrator.learning_agent:
+            supersede_stale = getattr(
+                app_globals.orchestrator.learning_agent,
+                "_supersede_stale_failure_insights",
+                None,
+            )
+            if callable(supersede_stale):
+                supersede_stale()
             pending_insights = [
                 i for i in app_globals.orchestrator.learning_agent.insights 
                 if i.status in ["NEW", "SELF_HEALING_PROPOSED"] 
@@ -2732,7 +2815,7 @@ def get_approvals():
                     "data": serialize_approval_data(insight),
                     "source": "learning_agent"
                 }
-                serialized_requests.append(insight_req)
+                serialized_requests.append(_normalize_approval_timestamp(insight_req))
 
         return jsonify({"approvals": serialized_requests, "success": True})
     except Exception as e:
@@ -2777,9 +2860,27 @@ def approve_request(req_id):
                     app_globals.memory_manager.add_fact(f"User Approved Insight {req_id} with feedback: {feedback}")
 
                 if insight.type in [InsightType.TOOL_BUG_SUSPECTED, InsightType.TOOL_ENHANCEMENT_SUGGESTED]:
+                     quarantine_result = (
+                         _release_quarantined_tool_for_insight(insight)
+                         if insight.type == InsightType.TOOL_BUG_SUSPECTED
+                         else {"released": False, "reason": "Enhancement insight does not release quarantine."}
+                     )
                      queue_result = _queue_insight_execution(insight)
+                     queue_result["quarantine"] = quarantine_result
                      if queue_result.get("success"):
                          return jsonify(queue_result), 202
+                     if quarantine_result.get("released"):
+                         return jsonify({
+                             "success": True,
+                             "repair_queued": False,
+                             "message": (
+                                 f"Tool '{quarantine_result['tool_name']}' was released from quarantine, "
+                                 "but its background repair could not be queued."
+                             ),
+                             "warning": queue_result.get("error"),
+                             "task_id": queue_result.get("task_id"),
+                             "quarantine": quarantine_result,
+                         }), 200
                      return jsonify(queue_result), 503
                 else:
                     app_globals.orchestrator.learning_agent._save_insights()
@@ -2821,14 +2922,14 @@ def deny_request(req_id):
         if app_globals.orchestrator and app_globals.orchestrator.learning_agent:
             insight = next((i for i in app_globals.orchestrator.learning_agent.insights if i.insight_id == req_id), None)
             if insight:
-                insight.status = "REJECTED_BY_USER"
-                if feedback:
-                    if not insight.metadata: insight.metadata = {}
-                    insight.metadata['user_rejection_reason'] = feedback
-                    app_globals.memory_manager.add_fact(f"User rejected insight '{insight.description}' with reason: {feedback}")
-                
+                record_insight_rejection(insight, feedback, feedback_key="user_rejection_reason")
                 app_globals.orchestrator.learning_agent._save_insights()
-                return jsonify({"success": True})
+                if feedback and app_globals.memory_manager:
+                    try:
+                        app_globals.memory_manager.add_fact(f"User rejected insight '{insight.description}' with reason: {feedback}")
+                    except Exception as memory_error:
+                        logger.warning("Insight rejection was saved, but memory mirroring failed: %s", memory_error)
+                return jsonify({"success": True, "status": insight.status})
 
         return jsonify({"error": "Request not found", "success": False}), 404
     except Exception as e:

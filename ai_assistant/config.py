@@ -4,12 +4,17 @@
 # Options: "gemini", "ollama"
 import importlib
 import importlib.util
+import json
 import os
 
-LLM_PROVIDER = "gemini" 
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "deepseek").strip().lower()
 
 GEMINI_FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_MODEL = GEMINI_FLASH_LITE_MODEL
+GEMINI_VISION_FALLBACK_MODEL = "gemini-2.5-flash"
+GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
+DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
+DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", DEEPSEEK_V4_FLASH_MODEL)
 
 # Gemini 2.5 Flash-Lite does not think by default. Set a budget to enable it.
 # Use 0 to disable, -1 for dynamic thinking, or 512-24576 for a manual budget.
@@ -63,25 +68,32 @@ DEFAULT_EXECUTION_MODE = "DIRECT"
 # This allows using different models for different capabilities (e.g., code generation, planning, reflection).
 # If a task is not listed here, or if its value is None, the DEFAULT_MODEL will be used.
 TASK_MODELS: Dict[str, Optional[str]] = {
-    "code_generation": GEMINI_FLASH_LITE_MODEL,
-    "planning": GEMINI_FLASH_LITE_MODEL,
-    "reflection": GEMINI_FLASH_LITE_MODEL,
-    "conversation_intelligence": GEMINI_FLASH_LITE_MODEL,
-    "argument_population": GEMINI_FLASH_LITE_MODEL,
-    "goal_preprocessing": GEMINI_FLASH_LITE_MODEL,
-    "summarization": GEMINI_FLASH_LITE_MODEL,
-    "reviewing": GEMINI_FLASH_LITE_MODEL,
-    "fact_extraction": GEMINI_FLASH_LITE_MODEL,
-    "tool_design": GEMINI_FLASH_LITE_MODEL,
-    "tool_creation": GEMINI_FLASH_LITE_MODEL,
-    "council_skeptic": GEMINI_FLASH_LITE_MODEL,
-    "council_judge": GEMINI_FLASH_LITE_MODEL,
+    "code_generation": DEEPSEEK_V4_PRO_MODEL,
+    "planning": DEEPSEEK_V4_FLASH_MODEL,
+    "reflection": DEEPSEEK_V4_FLASH_MODEL,
+    "conversation_intelligence": DEEPSEEK_V4_FLASH_MODEL,
+    "argument_population": DEEPSEEK_V4_FLASH_MODEL,
+    "goal_preprocessing": DEEPSEEK_V4_FLASH_MODEL,
+    "summarization": DEEPSEEK_V4_FLASH_MODEL,
+    "reviewing": DEEPSEEK_V4_PRO_MODEL,
+    "fact_extraction": DEEPSEEK_V4_FLASH_MODEL,
+    "tool_design": DEEPSEEK_V4_PRO_MODEL,
+    "tool_creation": DEEPSEEK_V4_PRO_MODEL,
+    "council_skeptic": DEEPSEEK_V4_PRO_MODEL,
+    "council_judge": DEEPSEEK_V4_PRO_MODEL,
 }
 
 REASONING_STRATEGIES: Dict[str, str] = {"default": "RAW"}
 
 # Number of recent conversational turns (user/AI exchanges) to include in LLM prompts for context
 CONVERSATION_HISTORY_TURNS = 5
+
+# Persistent rolling context compression for long conversations.
+CONTEXT_COMPRESSION_ENABLED = True
+CONTEXT_COMPRESSION_TRIGGER_TOKENS = 16_000
+CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS = 24_000
+CONTEXT_COMPRESSION_SUMMARY_TOKENS = 4_000
+CONTEXT_COMPRESSION_RECENT_MESSAGES = 12
 
 # Number of seconds to wait before re-executing the project plan.
 PROJECT_EXECUTION_INTERVAL_SECONDS = 900  # 15 minutes
@@ -164,7 +176,30 @@ GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
 
 # Load Deepseek API Key from environment variable DEEPSEEK_API_KEY
-DEEPSEEK_API_KEY: Optional[str] = os.environ.get('DEEPSEEK_API_KEY')
+def _load_orion_deepseek_key() -> str:
+    """Read Orion's user-scoped DeepSeek credential without copying it into this repo."""
+    candidates = [
+        os.environ.get("ORION_CONFIG_PATH"),
+        os.path.join(os.environ.get("APPDATA", ""), "orion-ai", "config.json"),
+    ]
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            with open(candidate, "r", encoding="utf-8") as handle:
+                value = json.load(handle).get("deepseekApiKey")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        except (OSError, ValueError, TypeError):
+            continue
+    return ""
+
+DEEPSEEK_API_KEY: Optional[str] = (
+    os.environ.get("DEEPSEEK_API_KEY")
+    if os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    and os.environ.get("DEEPSEEK_API_KEY", "").strip() != "your_deepseek_api_key_here"
+    else _load_orion_deepseek_key()
+)
 
 # --- ElevenLabs TTS Configuration ---
 ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY')
@@ -320,30 +355,30 @@ BROWSER_SLOW_MO = 100  # Milliseconds to slow down operations in Ghost Mode
 # =====================================================================
 # TASK ROUTING & PLUGGABLE LLM ARCHITECTURE
 # =====================================================================
-DEFAULT_LLM_PROVIDER = "gemini"
+DEFAULT_LLM_PROVIDER = LLM_PROVIDER
 
 TASK_PROFILES = {
     "chat": {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": DEEPSEEK_V4_FLASH_MODEL,
         "mode": "DIRECT",
         "endpoint": None
     },
     "coding": {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": DEEPSEEK_V4_PRO_MODEL,
         "mode": "DIRECT",
         "endpoint": None
     },
     "background_dreamer": {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": DEEPSEEK_V4_FLASH_MODEL,
         "mode": "DIRECT",
         "endpoint": None
     },
     "local_agent": {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": DEEPSEEK_V4_FLASH_MODEL,
         "mode": "DIRECT",
         "endpoint": None
     }

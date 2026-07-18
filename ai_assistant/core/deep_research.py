@@ -6,7 +6,7 @@ import aiohttp
 from typing import Dict, Any, List, Optional
 from ai_assistant.core.vision_service import VisionService
 from ai_assistant.custom_tools.search_tools import google_custom_search
-from ai_assistant.llm_interface.gemini_client import invoke_gemini_model_async
+from ai_assistant.core.llm.router import model_router
 from ai_assistant.config import DEFAULT_MODEL, DEEP_RESEARCH_MAX_URLS, DEEP_RESEARCH_TIMEOUT
 import ai_assistant.config as config
 from ai_assistant.tools.base import ToolBase
@@ -151,10 +151,9 @@ class DeepResearcher(ToolBase):
             f"If this page contains NO relevant information to the query, answer exactly 'SKIP'."
         )
 
-        response = await invoke_gemini_model_async(
+        response = await model_router.generate_response(
             prompt=f"Analyzing content from {url}\n\n{prompt}",
-            model_name=DEFAULT_MODEL,
-            task_name="deep_research_analyze_page"
+            task_name="chat",
         )
         return response.strip()
 
@@ -173,9 +172,8 @@ class DeepResearcher(ToolBase):
             f"Cite the sources (URLs) where appropriate in the text."
         )
 
-        response = await invoke_gemini_model_async(
+        response = await model_router.generate_response(
             prompt=f"Synthesizing research findings\n\n{prompt}",
-            model_name=DEFAULT_MODEL,
-            task_name="deep_research_synthesis"
+            task_name="chat",
         )
         return response.strip()

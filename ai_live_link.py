@@ -22,10 +22,7 @@ if sys.stderr is not None and hasattr(sys.stderr, 'reconfigure'):
 
 from datetime import datetime
 from typing import List, Optional
-import audioop # For Kill Switch RMS calculation
-import warnings
-if sys.version_info >= (3, 11):
-    warnings.warn("audioop is deprecated and will be removed in Python 3.13. Consider using numpy for RMS calculation.", DeprecationWarning)
+import numpy as np # For Kill Switch RMS calculation (replaces deprecated/removed audioop)
 
 import websockets
 import pyaudio
@@ -167,7 +164,9 @@ class LiveSession:
 
                 # --- Kill Switch Check ---
                 if self.auto_drive:
-                    rms = audioop.rms(data, 2) # Width=2 for paInt16
+                    # Calculate RMS using numpy (width=2 for 16-bit signed PCM audio)
+                    audio_data = np.frombuffer(data, dtype=np.int16)
+                    rms = int(np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))) if len(audio_data) > 0 else 0
                     if rms > self.voice_kill_threshold:
                         logger.info(f"KILL SWITCH TRIGGERED (RMS: {rms})")
                         self.auto_drive = False

@@ -87,7 +87,7 @@ async def test_final_answer_accepted_when_useful(monkeypatch):
         return '{"type":"final_answer","thought":"Simple arithmetic.","params":{"message":"2 + 2 is 4."}}'
 
     orch = _make_isolated_orchestrator()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
 
     state = ExecutionState(original_user_prompt="What is 2 + 2?")
@@ -163,7 +163,7 @@ async def test_low_quality_answer_forces_another_react_cycle(monkeypatch):
         return next(responses)
 
     orch = _make_isolated_orchestrator()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
 
     state = ExecutionState(original_user_prompt="Check the current system status")
@@ -188,7 +188,7 @@ async def test_quality_gate_max_cycles_exits_safely(monkeypatch):
 
     orch = _make_isolated_orchestrator()
     monkeypatch.setattr("ai_assistant.core.orchestrator.MAX_REACT_STEPS", 1)
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
 
     state = ExecutionState(original_user_prompt="Check the current system status")
@@ -220,7 +220,7 @@ async def test_repeated_search_stagnation_injects_control_observation(monkeypatc
 
     orch = _make_isolated_orchestrator()
     fake_tools = FakeSearchToolSystem()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
 
     state = ExecutionState(original_user_prompt="Can you see how far away the Claire hotel is from the Aronoff Center?")
@@ -255,7 +255,7 @@ async def test_near_max_cycles_with_observations_adds_finalization_pressure(monk
         return next(responses)
 
     orch = _make_isolated_orchestrator()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeSearchToolSystem())
 
     state = ExecutionState(original_user_prompt="Can you see how far away the Claire hotel is from the Aronoff Center?")
@@ -277,7 +277,7 @@ async def test_duplicate_successful_tool_call_short_circuits_to_final_answer(mon
 
     orch = _make_isolated_orchestrator()
     fake_tools = FakeToolSystem()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
 
     state = ExecutionState(original_user_prompt="Look up the latest updated branch for Self Evolving AI")
@@ -302,7 +302,7 @@ async def test_spawn_ephemeral_agent_gets_session_and_finishes_as_queued_backgro
 
     orch = _make_isolated_orchestrator()
     fake_tools = FakeAgentToolSystem()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
 
     state = ExecutionState(original_user_prompt="What is the LLM Call project about?")
@@ -325,7 +325,7 @@ async def test_react_prompt_includes_windows_execution_context(monkeypatch):
         return '{"type":"final_answer","thought":"Enough context.","params":{"message":"Done."}}'
 
     orch = _make_isolated_orchestrator()
-    monkeypatch.setattr("ai_assistant.core.orchestrator.invoke_gemini_model_async", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
     monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", FakeToolSystem())
 
     state = ExecutionState(original_user_prompt="Check the current repo branch")
@@ -335,3 +335,5 @@ async def test_react_prompt_includes_windows_execution_context(monkeypatch):
     assert any("This app is running on Windows" in prompt for prompt in prompts_seen)
     assert any("Do not use Unix-only commands" in prompt for prompt in prompts_seen)
     assert any("get_latest_git_branch_update" in prompt for prompt in prompts_seen)
+    assert any("html-dynamic" in prompt for prompt in prompts_seen)
+    assert any("Never include scripts" in prompt for prompt in prompts_seen)

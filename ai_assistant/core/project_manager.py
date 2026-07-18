@@ -212,7 +212,7 @@ def update_project_status(identifier: str, new_status: str) -> bool:
             project['updated_at'] = datetime.now(timezone.utc).isoformat()
             project_found = True
             break
-    
+
     if not project_found:
         print(color_text(f"Project '{identifier}' not found for status update.", CLIColors.ERROR_MESSAGE))
         return False
@@ -228,12 +228,12 @@ def get_all_projects_summary_status() -> str:
     projects = _load_projects()
     if not projects:
         return "No projects found."
-    
+
     status_counts: Dict[str, int] = {}
     for project in projects:
         status = project.get('status', 'unknown')
         status_counts[status] = status_counts.get(status, 0) + 1
-    
+
     summary_lines = [f"Total Projects: {len(projects)}"]
     for status, count in status_counts.items():
         summary_lines.append(f"  - {status.capitalize()}: {count}")

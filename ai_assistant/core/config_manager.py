@@ -30,7 +30,7 @@ class ConfigManager:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 saved_config = json.load(f)
-            
+
             # Update module variables
             for key, value in saved_config.items():
                 if hasattr(config_module, key):
@@ -38,7 +38,7 @@ class ConfigManager:
                     logger.info(f"Config loaded: {key} = {value}")
                 else:
                     logger.warning(f"Unknown config key in JSON: {key}")
-                    
+
         except Exception as e:
             logger.error(f"Failed to load config.json: {e}")
 
@@ -51,6 +51,11 @@ class ConfigManager:
             "TASK_MODELS": config_module.TASK_MODELS,
             "REASONING_STRATEGIES": config_module.REASONING_STRATEGIES,
             "CONVERSATION_HISTORY_TURNS": config_module.CONVERSATION_HISTORY_TURNS,
+            "CONTEXT_COMPRESSION_ENABLED": getattr(config_module, 'CONTEXT_COMPRESSION_ENABLED', True),
+            "CONTEXT_COMPRESSION_TRIGGER_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_TRIGGER_TOKENS', 16000),
+            "CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS', 24000),
+            "CONTEXT_COMPRESSION_SUMMARY_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_SUMMARY_TOKENS', 4000),
+            "CONTEXT_COMPRESSION_RECENT_MESSAGES": getattr(config_module, 'CONTEXT_COMPRESSION_RECENT_MESSAGES', 12),
             "AUTONOMOUS_LEARNING_ENABLED": config_module.AUTONOMOUS_LEARNING_ENABLED,
             "AUTO_APPROVE_DELAY_SECONDS": config_module.AUTO_APPROVE_DELAY_SECONDS,
             "GHOST_MODE": config_module.GHOST_MODE,
@@ -118,6 +123,14 @@ class ConfigManager:
 
         if key == "GEMINI_THINKING_BUDGET" and value not in {-1, 0} and not (512 <= value <= 24576):
             raise ValueError("Gemini 2.5 Flash-Lite thinking budget must be 0, -1, or between 512 and 24576")
+        if key == "CONTEXT_COMPRESSION_TRIGGER_TOKENS" and not (2000 <= value <= 500000):
+            raise ValueError("Context compression trigger must be between 2,000 and 500,000 tokens")
+        if key == "CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS" and not (2000 <= value <= 500000):
+            raise ValueError("Prepared context budget must be between 2,000 and 500,000 tokens")
+        if key == "CONTEXT_COMPRESSION_SUMMARY_TOKENS" and not (500 <= value <= 32000):
+            raise ValueError("Context summary budget must be between 500 and 32,000 tokens")
+        if key == "CONTEXT_COMPRESSION_RECENT_MESSAGES" and not (4 <= value <= 100):
+            raise ValueError("Recent verbatim message count must be between 4 and 100")
 
         return value
 
@@ -147,6 +160,11 @@ class ConfigManager:
             "TASK_MODELS": getattr(config_module, 'TASK_MODELS', {}),
             "REASONING_STRATEGIES": getattr(config_module, 'REASONING_STRATEGIES', {}),
             "CONVERSATION_HISTORY_TURNS": getattr(config_module, 'CONVERSATION_HISTORY_TURNS', 5),
+            "CONTEXT_COMPRESSION_ENABLED": getattr(config_module, 'CONTEXT_COMPRESSION_ENABLED', True),
+            "CONTEXT_COMPRESSION_TRIGGER_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_TRIGGER_TOKENS', 16000),
+            "CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS', 24000),
+            "CONTEXT_COMPRESSION_SUMMARY_TOKENS": getattr(config_module, 'CONTEXT_COMPRESSION_SUMMARY_TOKENS', 4000),
+            "CONTEXT_COMPRESSION_RECENT_MESSAGES": getattr(config_module, 'CONTEXT_COMPRESSION_RECENT_MESSAGES', 12),
             "AUTONOMOUS_LEARNING_ENABLED": getattr(config_module, 'AUTONOMOUS_LEARNING_ENABLED', True),
             "AUTO_APPROVE_DELAY_SECONDS": getattr(config_module, 'AUTO_APPROVE_DELAY_SECONDS', 600),
             "GHOST_MODE": getattr(config_module, 'GHOST_MODE', False),
@@ -191,6 +209,26 @@ class ConfigManager:
             "CONVERSATION_HISTORY_TURNS": {
                 "type": "integer",
                 "description": "How many recent turns to include in chat context.",
+            },
+            "CONTEXT_COMPRESSION_ENABLED": {
+                "type": "boolean",
+                "description": "Enable persistent rolling compression for long conversation histories.",
+            },
+            "CONTEXT_COMPRESSION_TRIGGER_TOKENS": {
+                "type": "integer",
+                "description": "History token count that triggers rolling context compression.",
+            },
+            "CONTEXT_COMPRESSION_MAX_PREPARED_TOKENS": {
+                "type": "integer",
+                "description": "Maximum tokens allocated to prepared conversation history.",
+            },
+            "CONTEXT_COMPRESSION_SUMMARY_TOKENS": {
+                "type": "integer",
+                "description": "Maximum token budget for the persistent rolling summary.",
+            },
+            "CONTEXT_COMPRESSION_RECENT_MESSAGES": {
+                "type": "integer",
+                "description": "Number of newest messages retained verbatim after compression.",
             },
             "AUTONOMOUS_LEARNING_ENABLED": {
                 "type": "boolean",
