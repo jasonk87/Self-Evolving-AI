@@ -9,7 +9,10 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path: # pragma: no cover
     sys.path.insert(0, project_root)
 
-from ai_assistant.custom_tools.code_execution_tools import execute_sandboxed_python_script
+from ai_assistant.custom_tools.code_execution_tools import (
+    execute_sandboxed_python_script,
+    run_terminal_command,
+)
 
 class TestExecuteSandboxedPythonScript(unittest.TestCase):
 
@@ -163,6 +166,43 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['stdout'], "Process finished")
         self.assertEqual(result['stderr'], "") # Stderr is indeed empty
         self.assertEqual(result['error_message'], "Script exited with code 5 but no stderr.")
+
+
+class TestRunTerminalCommand(unittest.TestCase):
+    @patch('ai_assistant.custom_tools.code_execution_tools.subprocess.Popen')
+    def test_server_command_requires_background_mode(self, mock_popen):
+        result = run_terminal_command('python web_app.py')
+
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['error_code'], 'long_running_command_requires_background')
+        mock_popen.assert_not_called()
+
+    @patch('ai_assistant.custom_tools.code_execution_tools.subprocess.Popen')
+    def test_server_command_can_start_in_background(self, mock_popen):
+        mock_popen.return_value.pid = 4321
+
+        result = run_terminal_command('python web_app.py', background=True)
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['background'])
+        self.assertEqual(result['process_id'], 4321)
+        mock_popen.assert_called_once()
+
+    @patch('ai_assistant.custom_tools.code_execution_tools._terminate_process_tree')
+    @patch('ai_assistant.custom_tools.code_execution_tools.subprocess.Popen')
+    def test_timeout_terminates_the_entire_process_tree(self, mock_popen, mock_terminate_tree):
+        process = mock_popen.return_value
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(cmd='slow command', timeout=1),
+            ('partial output', ''),
+        ]
+
+        result = run_terminal_command('slow command', timeout_seconds=1)
+
+        self.assertEqual(result['status'], 'timeout')
+        self.assertIn('process tree was terminated', result['error_message'])
+        self.assertEqual(result['stdout'], 'partial output')
+        mock_terminate_tree.assert_called_once_with(process)
 
 
 if __name__ == '__main__': # pragma: no cover

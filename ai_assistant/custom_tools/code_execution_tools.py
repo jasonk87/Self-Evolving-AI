@@ -1,5 +1,7 @@
 import shlex
 import os
+import re
+import signal
 import subprocess
 import tempfile
 import json
@@ -237,7 +239,50 @@ def install_python_package(package_name: str) -> Dict[str, Any]:
         return {'status': 'error', 'error_message': f'Unexpected error during installation: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 INSTALL_PYTHON_PACKAGE_SCHEMA = {'name': 'install_python_package', 'description': "Installs a Python package using the current environment's pip.", 'parameters': [{'name': 'package_name', 'type': 'str', 'description': 'The name of the package to install.'}], 'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}}
 
-def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional[str] = None) -> Dict[str, Any]:
+_LONG_RUNNING_SERVER_PATTERNS = (
+    r"^\s*(?:py(?:\.exe)?(?:\s+-\d+(?:\.\d+)?)?|python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+(?:\"[^\"]*[\\/]\")?web_app\.py(?:\s|$)",
+    r"^\s*(?:py(?:\.exe)?|python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+-m\s+http\.server(?:\s|$)",
+    r"^\s*flask(?:\.exe)?\s+run(?:\s|$)",
+    r"^\s*(?:uvicorn|gunicorn)(?:\.exe)?\s+",
+    r"^\s*(?:npm|pnpm|yarn)(?:\.cmd)?\s+(?:run\s+)?(?:dev|start|serve)(?:\s|$)",
+)
+
+
+def _looks_like_long_running_server_command(command: str) -> bool:
+    """Returns True for common server commands that should not run synchronously."""
+    normalized = str(command or "").strip()
+    return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in _LONG_RUNNING_SERVER_PATTERNS)
+
+
+def _terminate_process_tree(process: subprocess.Popen) -> None:
+    """Best-effort termination of a timed-out shell and all of its descendants."""
+    if process.poll() is not None:
+        return
+
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+        else:  # pragma: no cover - production host is Windows
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def run_terminal_command(
+    command: str,
+    timeout_seconds: int = 120,
+    cwd: Optional[str] = None,
+    background: bool = False,
+) -> Dict[str, Any]:
     """
     Executes a raw terminal/shell command on the host operating system.
     WARNING: Highly privileged tool. Grants complete access to the underlying OS.
@@ -246,6 +291,7 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
         command: The full command string to execute.
         timeout_seconds: Optional timeout in seconds (default 120).
         cwd: Optional Working directory to execute the command in.
+        background: Start a recognized long-running server without waiting for it.
         
     Returns:
         A dictionary containing "status", "stdout", "stderr", "return_code", and "error_message".
@@ -290,27 +336,80 @@ def run_terminal_command(command: str, timeout_seconds: int = 120, cwd: Optional
             'nearby_directories': nearby_directories,
         }
 
+    is_server_command = _looks_like_long_running_server_command(command)
+    if is_server_command and not background:
+        return {
+            'status': 'error',
+            'error_code': 'long_running_command_requires_background',
+            'error_message': (
+                'Refusing to run a long-running server in the foreground because it would block the task. '
+                'Retry with background=true only when the current user explicitly requested that the server be started.'
+            ),
+            'return_code': -1,
+            'stdout': '',
+            'stderr': '',
+        }
+
     try:
         emit_system_event('tool_status', {'tool': 'TerminalExecution', 'message': f'Running: {command[:50]}...', 'status': 'RUNNING'})
-        process_result = subprocess.run(
-            command, 
-            capture_output=True, 
-            text=True, 
-            timeout=timeout_seconds, 
-            shell=True,
-            cwd=cwd
+        popen_kwargs: Dict[str, Any] = {
+            'shell': True,
+            'cwd': cwd,
+            'text': True,
+        }
+        if os.name == 'nt':
+            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+            if background:
+                popen_kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        else:  # pragma: no cover - production host is Windows
+            popen_kwargs['start_new_session'] = True
+
+        if background:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                **popen_kwargs,
+            )
+            emit_system_event('tool_status', {'tool': 'TerminalExecution', 'message': 'Background process started.', 'status': 'COMPLETED'})
+            return {
+                'status': 'success',
+                'return_code': None,
+                'stdout': '',
+                'stderr': '',
+                'background': True,
+                'process_id': process.pid,
+            }
+
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **popen_kwargs,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            _terminate_process_tree(process)
+            stdout, stderr = process.communicate()
+            return {
+                'status': 'timeout',
+                'error_message': f'Command execution timed out after {timeout_seconds}s; the process tree was terminated.',
+                'return_code': -1,
+                'stdout': (stdout or '').strip(),
+                'stderr': (stderr or '').strip(),
+            }
+
         emit_system_event('tool_status', {'tool': 'TerminalExecution', 'message': 'Execution finished.', 'status': 'COMPLETED'})
         
-        status = 'success' if process_result.returncode == 0 else 'error'
+        status = 'success' if process.returncode == 0 else 'error'
         return {
             'status': status, 
-            'return_code': process_result.returncode, 
-            'stdout': process_result.stdout.strip(), 
-            'stderr': process_result.stderr.strip()
+            'return_code': process.returncode,
+            'stdout': (stdout or '').strip(),
+            'stderr': (stderr or '').strip(),
         }
-    except subprocess.TimeoutExpired:
-        return {'status': 'timeout', 'error_message': f'Command execution timed out after {timeout_seconds}s.', 'return_code': -1, 'stdout': '', 'stderr': ''}
     except Exception as e:
         return {'status': 'error', 'error_message': f'Unexpected error executing command: {str(e)}', 'return_code': -1, 'stdout': '', 'stderr': ''}
 
@@ -324,7 +423,15 @@ RUN_TERMINAL_COMMAND_SCHEMA = {
     'parameters': [
         {'name': 'command', 'type': 'str', 'description': 'The command string to execute.'},
         {'name': 'timeout_seconds', 'type': 'int', 'description': 'Optional. Timeout in seconds. Default 120.'},
-        {'name': 'cwd', 'type': 'str', 'description': 'Optional. Expected working directory.'}
+        {'name': 'cwd', 'type': 'str', 'description': 'Optional. Expected working directory.'},
+        {
+            'name': 'background',
+            'type': 'bool',
+            'description': (
+                'Optional. Start a recognized long-running server without blocking. '
+                'Use only when the current user explicitly asked to start that server.'
+            ),
+        },
     ], 
     'returns': {'type': 'dict', 'description': "A dict with 'status', 'return_code', 'stdout', 'stderr'."}
 }
