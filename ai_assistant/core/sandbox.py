@@ -81,6 +81,14 @@ class SandboxManager:
                 timeout=timeout
             )
 
+            if process.returncode == 5:
+                message = (
+                    "Sandbox validation infrastructure failed: the generated pytest script "
+                    "collected zero tests. Production code was not proven defective."
+                )
+                stderr = "\n".join(part for part in (process.stderr.strip(), message) if part)
+                return False, process.stdout, stderr
+
             success = process.returncode == 0
             return success, process.stdout, process.stderr
 

@@ -70,7 +70,8 @@ class AnswerQualityGate:
         "inspect", "verify", "current", "latest", "today", "status", "health",
         "file", "files", "project", "github", "branch", "test", "tests",
         "image", "photo", "screenshot", "screen", "why", "what happened",
-        "what is going on", "how many",
+        "what is going on", "how is it going", "what are you doing",
+        "are you working", "what are you working on", "how many",
     }
     _UNCERTAINTY_TERMS = {
         "i don't know", "i do not know", "not sure", "maybe", "probably",
@@ -91,6 +92,10 @@ class AnswerQualityGate:
         "fix", "debug", "review", "analyze", "plan", "design", "implement",
         "tell me", "help me", "show me",
     }
+    _CURRENT_ACTIVITY_TERMS = {
+        "how is it going", "what are you doing", "are you working",
+        "what are you working on",
+    }
 
     def evaluate(
         self,
@@ -106,6 +111,12 @@ class AnswerQualityGate:
         answer_key = re.sub(r"[^a-z0-9']+", " ", answer_text).strip()
         has_context = bool(str(context or "").strip())
         has_tool_observation = "result:" in self._normalize(execution_history)
+        requires_current_activity = any(term in prompt_text for term in self._CURRENT_ACTIVITY_TERMS)
+        normalized_history = self._normalize(execution_history)
+        has_current_activity_observation = any(
+            f"action: {tool_name}" in normalized_history
+            for tool_name in ("get_system_status_summary", "get_self_awareness_info_and_converse")
+        )
         has_evidence = has_context or has_tool_observation
         needs_evidence = any(term in prompt_text for term in self._EVIDENCE_SEEKING_TERMS)
         casual_conversation = any(term in prompt_text for term in self._CASUAL_CONVERSATION_TERMS)
@@ -120,6 +131,16 @@ class AnswerQualityGate:
 
         if not answer_text:
             return self._reject("empty_final_answer", "Final answer was empty.")
+
+        if requires_current_activity and not has_current_activity_observation:
+            return self._reject(
+                "current_activity_tool_needed",
+                "Current activity claims require a live system-status tool observation.",
+                answered_request=not too_generic,
+                used_available_context=False,
+                should_retrieve_more_context=True,
+                too_generic=too_generic,
+            )
 
         if needs_evidence and not has_evidence:
             return self._reject(
@@ -708,6 +729,8 @@ class DynamicOrchestrator:
                 "do NOT execute it directly. Instead, automatically spawn a user-scoped persistent agent to handle "
                 "the task in the background, and report back to the user when you have received their payload. Check your roster first using list_active_agents. "
                 "A roster workspace marked available is NOT an active task. Never say an agent is working unless a tool result includes a queued or running durable goal. "
+                "Questions about what you are doing, how work is going, or current system activity require a get_system_status_summary tool call. "
+                "Never invent activity, environmental conditions, project names, or progress for humor. State only status supported by tool observations. "
                 "To assign an available persistent workspace, call wake_agent. To create a new background goal, call spawn_background_agent. "
                 "Every user-requested creation or modification of an agent tool must be delegated to a background agent; "
                 "never run a meta-programming tool directly in USER CHAT."

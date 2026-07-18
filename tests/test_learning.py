@@ -497,6 +497,29 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(agent.insights[0].metadata["merged_duplicate_count"], 1)
 
+    async def test_hypothetical_scenario_waits_for_manual_review(self):
+        agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+        agent.action_executor = mock.AsyncMock()
+        insight = ActionableInsight(
+            type=InsightType.HYPOTHETICAL_SCENARIO,
+            description="Synthetic null-byte scenario failed for build_project.",
+            source_reflection_entry_ids=[],
+            related_tool_name="build_project",
+            status="NEW",
+            metadata={"source": "dream_mode"},
+        )
+        agent.insights.append(insight)
+
+        result = await agent.review_and_propose_next_action()
+
+        self.assertIsNotNone(result)
+        proposed_action, executed = result
+        self.assertEqual(proposed_action["action_type"], "REVIEW_MANUALLY")
+        self.assertFalse(executed)
+        self.assertEqual(insight.status, "PENDING_MANUAL_REVIEW")
+        self.assertTrue(insight.metadata["synthetic_evidence"])
+        agent.action_executor.execute_action.assert_not_awaited()
+
     async def test_review_and_propose_next_action_selects_highest_priority(self):
         # Instantiate agent here to allow easier mocking of its action_executor
         agent = LearningAgent(insights_filepath=self.temp_insights_filepath)

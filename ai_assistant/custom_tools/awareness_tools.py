@@ -1,3 +1,5 @@
+import os
+
 from ai_assistant.core.task_manager import TaskManager, ActiveTaskStatus, ActiveTaskType
 from ai_assistant.core.notification_manager import (
     NotificationManager,

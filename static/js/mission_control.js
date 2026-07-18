@@ -31,6 +31,7 @@ const missionControl = {
     lastStatusAtMs: null,
     snapshotSchemaVersion: null,
     actionAuditFilter: 'all',
+    _refreshDebounceTimer: null,
 
     init: function () {
         console.log("Mission Control Initialized");
@@ -47,18 +48,7 @@ const missionControl = {
         this.startStatusPolling();
 
         if (this.refreshBtn) {
-            this.refreshBtn.addEventListener('click', () => {
-                this.fetchTasks();
-                this.fetchStatusSnapshot();
-                this.fetchHealthAudit();
-                this.fetchBackgroundCadence();
-                this.fetchReflectionSuggestions();
-                this.fetchSLOMetrics();
-                this.fetchRunSpine();
-                this.fetchActionAudit();
-                this.fetchExperimentScoreboard();
-                this.fetchToolLifecycle();
-            });
+            this.refreshBtn.addEventListener('click', () => this.fullRefresh());
         }
 
         // Initialize background kill switches
@@ -71,15 +61,7 @@ const missionControl = {
                 this.stopStatusPolling();
             } else {
                 this.startStatusPolling();
-                this.fetchStatusSnapshot();
-                this.fetchHealthAudit();
-                this.fetchBackgroundCadence();
-                this.fetchReflectionSuggestions();
-                this.fetchSLOMetrics();
-                this.fetchRunSpine();
-                this.fetchActionAudit();
-                this.fetchExperimentScoreboard();
-                this.fetchToolLifecycle();
+                this.fullRefresh();
             }
         });
 
@@ -87,15 +69,10 @@ const missionControl = {
         if (typeof socket !== 'undefined') {
             socket.on('task_update', (taskData) => {
                 this.handleTaskUpdate(taskData);
-                this.fetchStatusSnapshot();
-                this.fetchHealthAudit();
-                this.fetchBackgroundCadence();
-                this.fetchReflectionSuggestions();
-                this.fetchSLOMetrics();
-                this.fetchRunSpine();
-                this.fetchActionAudit();
-                this.fetchExperimentScoreboard();
-                this.fetchToolLifecycle();
+                // Debounce: collapse rapid-fire task_update events into a single
+                // refresh burst, avoiding 10+ simultaneous fetches per event.
+                clearTimeout(this._refreshDebounceTimer);
+                this._refreshDebounceTimer = setTimeout(() => this.fullRefresh(), 500);
             });
         }
     },
@@ -210,6 +187,20 @@ const missionControl = {
             clearInterval(this.staleCheckTimer);
             this.staleCheckTimer = null;
         }
+    },
+
+    // Refresh all panels — used by socket debouncer and manual refresh button
+    fullRefresh: function () {
+        this.fetchTasks();
+        this.fetchStatusSnapshot();
+        this.fetchHealthAudit();
+        this.fetchBackgroundCadence();
+        this.fetchReflectionSuggestions();
+        this.fetchSLOMetrics();
+        this.fetchRunSpine();
+        this.fetchActionAudit();
+        this.fetchExperimentScoreboard();
+        this.fetchToolLifecycle();
     },
 
     updateStaleState: function () {

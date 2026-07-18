@@ -292,11 +292,19 @@ def _launch_delegated_code_task(task_id: str, session_id: str, delegated_prompt:
             response_images = []
 
             # Find the final answer from the orchestrator
-            if execution_state.tool_results and len(execution_state.tool_results) > 0:
-                 last_result = execution_state.tool_results[-1]
-                 if last_result.get("action_name") == "orchestrator_final_answer":
-                     response_text = last_result.get("result", "")
-                     response_images = last_result.get("collected_images", [])
+            if execution_state.tool_results:
+                final_result = next(
+                    (r for r in reversed(execution_state.tool_results)
+                     if r.get("action_name") == "orchestrator_final_answer"),
+                    None
+                )
+                if final_result is not None:
+                    response_text = final_result.get("result", "")
+                    response_images = final_result.get("collected_images", [])
+                else:
+                    last = execution_state.tool_results[-1]
+                    response_text = last.get("result", "")
+                    response_images = last.get("collected_images", [])
 
             if execution_state.current_status == "completed":
                 app_globals.task_manager.update_task_status(
@@ -964,48 +972,74 @@ def chat():
 
     if not app_globals.controller:
         return jsonify({"error": "SystemController not initialized", "success": False, "session_id": session_id}), 500
-    
-    try:
-        import asyncio
-        future = asyncio.run_coroutine_threadsafe(
-            app_globals.controller.handle_user_request(
-                prompt=full_message,
-                conversation_history=current_history_list,
-                session_id=session_id,
-                images=images,
-                context_source="USER"
-            ),
-            app_globals.ai_loop
-        )
 
-        execution_state = future.result()
+    def _run_and_emit_chat_response():
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                app_globals.controller.handle_user_request(
+                    prompt=full_message,
+                    conversation_history=current_history_list,
+                    session_id=session_id,
+                    images=images,
+                    context_source="USER"
+                ),
+                app_globals.ai_loop
+            )
 
-        # Unpack from the new unified execution state
-        success = execution_state.current_status == "completed"
+            execution_state = future.result()
 
-        # Find the final answer in the tool results (which includes the orchestrator response for now)
-        response = ""
-        collected_images = []
-        if execution_state.tool_results and len(execution_state.tool_results) > 0:
-             last_result = execution_state.tool_results[-1]
-             if last_result.get("action_name") == "orchestrator_final_answer":
-                 response = last_result.get("result", "")
-                 collected_images = last_result.get("collected_images", [])
+            # Unpack from the new unified execution state
+            success = execution_state.current_status == "completed"
 
-        if not success and not response:
-             # Include execution state errors in the response string if it failed without a final message
-             response = "Task encountered errors:\n" + "\n".join(execution_state.errors)
+            # Find the final answer in tool_results.
+            # Strategy: prefer orchestrator_final_answer (search from the end);
+            # fall back to the last result's text if none is found.
+            response = ""
+            collected_images = []
+            if execution_state.tool_results:
+                # 1. Look for an explicit final-answer action (newest first)
+                final_result = next(
+                    (r for r in reversed(execution_state.tool_results)
+                     if r.get("action_name") == "orchestrator_final_answer"),
+                    None
+                )
+                if final_result is not None:
+                    response = final_result.get("result", "")
+                    collected_images = final_result.get("collected_images", [])
+                else:
+                    # 2. Fallback: use whatever the last tool returned as a best-effort reply
+                    last = execution_state.tool_results[-1]
+                    response = last.get("result", "")
+                    collected_images = last.get("collected_images", [])
 
-        if response:
-             updated_session = app_globals.chat_manager.add_message(session_id, "assistant", response, images=collected_images)
-        
-        return jsonify({
-            "response": response,
-            "session_id": session_id,
-            "success": success,
-            "images": collected_images,
-            "system_status": execution_state.current_status
-        })
-    except Exception as e:
-        logger.error(f"Error processing prompt via Controller: {e}", exc_info=True)
-        return jsonify({"error": str(e), "success": False}), 500
+            if not success and not response:
+                 # Include execution state errors in the response string if it failed without a final message
+                 response = "Task encountered errors:\n" + "\n".join(execution_state.errors)
+
+            if response:
+                 app_globals.chat_manager.add_message(session_id, "assistant", response, images=collected_images)
+
+            app_globals.socketio.emit('chat_response', {
+                "response": response,
+                "session_id": session_id,
+                "success": success,
+                "images": collected_images,
+                "system_status": execution_state.current_status
+            })
+        except Exception as e:
+            logger.error(f"Error processing prompt via Controller: {e}", exc_info=True)
+            app_globals.socketio.emit('chat_response', {
+                "response": f"Error: {e}",
+                "session_id": session_id,
+                "success": False,
+                "images": [],
+                "system_status": "error"
+            })
+
+    app_globals.socketio.start_background_task(_run_and_emit_chat_response)
+
+    return jsonify({
+        "accepted": True,
+        "session_id": session_id,
+        "success": True
+    }), 202

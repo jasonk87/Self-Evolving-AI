@@ -1004,8 +1004,16 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
             "source_insight_id": selected_insight.insight_id,
             "action_type": "TBD", "details": {}
         }
+        execution_success = False
 
-        if selected_insight.type == InsightType.TOOL_BUG_SUSPECTED or selected_insight.type == InsightType.TOOL_ENHANCEMENT_SUGGESTED or selected_insight.type == InsightType.HYPOTHETICAL_SCENARIO:
+        if selected_insight.type == InsightType.HYPOTHETICAL_SCENARIO:
+            proposed_action["action_type"] = "REVIEW_MANUALLY"
+            selected_insight.metadata["review_reason"] = (
+                "Dream scenarios are synthetic evidence and require explicit human approval before repair work."
+            )
+            selected_insight.metadata["synthetic_evidence"] = True
+
+        elif selected_insight.type == InsightType.TOOL_BUG_SUSPECTED or selected_insight.type == InsightType.TOOL_ENHANCEMENT_SUGGESTED:
             # Check for Caller/usage errors first
             desc_lower = selected_insight.description.lower()
             is_caller_error = "takes" in desc_lower and "arguments but" in desc_lower and "given" in desc_lower

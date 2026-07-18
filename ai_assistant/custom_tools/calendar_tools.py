@@ -19,8 +19,11 @@ def check_calendar(date_str: str) -> str:
     Returns:
         str: A list of events for that day, or a message if no events found.
     """
+    if not isinstance(date_str, str) or not date_str.strip():
+        return "Error: Date must be 'today', 'tomorrow', or YYYY-MM-DD."
+    normalized_date = date_str.strip()
     manager = _get_manager()
-    return manager.get_day_agenda(date_str)
+    return manager.get_day_agenda(normalized_date)
 
 def schedule_event(summary: str, datetime_str: str, duration_mins: int = 60, description: str = "") -> str:
     """

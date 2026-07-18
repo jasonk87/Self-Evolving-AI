@@ -7,6 +7,35 @@ import { cyrb53, notifyIfHidden } from './utils.js';
 let currentSessionId = null;
 let lastResponseHash = "";
 let ghostPortalTimeout = null;
+let pendingChatRequest = null; // { sessionId, container } — set while awaiting an async 'chat_response'
+
+// The /chat POST route offloads AI processing to a background task and returns
+// immediately (202 accepted). The actual reply arrives later via this socket event,
+// keyed on session_id so a stale reply from a since-abandoned session is ignored.
+socket.on('chat_response', (data) => {
+    if (!pendingChatRequest || data.session_id !== pendingChatRequest.sessionId) {
+        return;
+    }
+    const { container } = pendingChatRequest;
+    pendingChatRequest = null;
+
+    removeTypingIndicator();
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.disabled = false;
+
+    if (data.session_id !== currentSessionId) {
+        // User navigated to a different session while this reply was in flight.
+        // The message is already persisted server-side, so there's nothing to render here.
+        return;
+    }
+
+    document.querySelectorAll('.app-layout .thought-bubble').forEach(el => el.remove());
+    document.querySelectorAll('.app-layout .message.status-log').forEach(el => el.remove());
+
+    lastResponseHash = cyrb53(data.response);
+    appendMessage(container, 'assistant', data.response, data.images);
+    notifyIfHidden("AI Assistant", data.response);
+});
 
 export function renderChatHome(container) {
     if (!container) return;
@@ -303,11 +332,13 @@ export function appendMessage(container, role, text, images = null) {
 
 export async function sendMessage(inputEl, container, editor, contextData = {}) {
     const message = inputEl.value.trim();
-    // Use images from contextData if passed, or manage global state? 
-    // Ideally pass image array in contextData.
     const images = contextData.images || [];
 
     if (!message && images.length === 0) return;
+
+    // Disable send controls while in-flight so the user can't double-submit
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.disabled = true;
 
     // Display
     appendMessage(container, 'user', message, [...images]);
@@ -346,16 +377,23 @@ export async function sendMessage(inputEl, container, editor, contextData = {}) 
             })
         });
         const data = await res.json();
+
+        // Update Session ID if new (applies whether the reply is sync or deferred)
+        if (data.session_id && currentSessionId !== data.session_id) {
+            currentSessionId = data.session_id;
+            if (contextData.onSessionChanged) contextData.onSessionChanged();
+        }
+
+        if (res.status === 202 && data.accepted) {
+            // AI work was handed off to a background task. Leave the typing
+            // indicator and disabled send button up until 'chat_response' fires.
+            pendingChatRequest = { sessionId: data.session_id, container };
+            return;
+        }
+
         removeTypingIndicator();
 
         if (data.success || data.response) {
-            // Update Session ID if new
-            if (data.session_id && currentSessionId !== data.session_id) {
-                currentSessionId = data.session_id;
-                // Callback to reload session list?
-                if (contextData.onSessionChanged) contextData.onSessionChanged();
-            }
-
             // Cleanup ephemeral
             document.querySelectorAll('.app-layout .thought-bubble').forEach(el => el.remove());
             document.querySelectorAll('.app-layout .message.status-log').forEach(el => el.remove());
@@ -364,10 +402,14 @@ export async function sendMessage(inputEl, container, editor, contextData = {}) 
             appendMessage(container, 'assistant', data.response, data.images);
             notifyIfHidden("AI Assistant", data.response);
 
+            if (sendBtn) sendBtn.disabled = false;
             return data.response;
         }
+
+        if (sendBtn) sendBtn.disabled = false;
     } catch (e) {
         removeTypingIndicator();
         appendMessage(container, 'assistant', 'Error sending.');
+        if (sendBtn) sendBtn.disabled = false;
     }
 }

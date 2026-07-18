@@ -156,6 +156,39 @@ def test_casual_conversational_answer_does_not_need_tool_context():
     assert result.should_retrieve_more_context is False
 
 
+def test_current_activity_question_requires_status_evidence():
+    gate = AnswerQualityGate()
+
+    result = gate.evaluate(
+        user_prompt="How is it going?",
+        answer="I am wrapping up a project in the background.",
+        context="Memory says the user owns an unrelated project.",
+        execution_history="",
+        remaining_cycles=2,
+    )
+
+    assert result.accepted is False
+    assert result.reason == "current_activity_tool_needed"
+    assert result.should_retrieve_more_context is True
+
+
+def test_current_activity_question_accepts_live_status_observation():
+    gate = AnswerQualityGate()
+
+    result = gate.evaluate(
+        user_prompt="What are you working on?",
+        answer="No background tasks are currently running.",
+        context="",
+        execution_history=(
+            "Cycle 1:\nAction: get_system_status_summary\n"
+            "Result: Active Tasks (0 total): No active tasks currently.\n"
+        ),
+        remaining_cycles=2,
+    )
+
+    assert result.accepted is True
+
+
 def test_generic_reply_to_substantive_non_tool_request_is_still_rejected():
     gate = AnswerQualityGate()
 

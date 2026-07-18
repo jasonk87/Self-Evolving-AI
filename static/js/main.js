@@ -12,6 +12,9 @@ import { notifyIfHidden } from './modules/utils.js';
 
 // Expose Globals
 window.confirmShutdown = UI.confirmShutdown;
+// Expose socket globally so non-module scripts (mission_control.js, approvals.js,
+// cortex.js, council.js, quarantine.js) can register socket event listeners.
+window.socket = socket;
 
 // Top-level startup log
 console.log("[System] Main.js initializing...");
@@ -527,7 +530,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentProject: Files.getCurrentProject(),
             currentFilePath: Files.getCurrentFilePath(),
             images: selectedImages,
-            onSessionChanged: () => Chat.loadSessions(chatSessionsList)
+            // Pass a full onSessionSelected callback so the refreshed session list
+            // remains clickable (previously passed no callback, making list items dead).
+            onSessionChanged: () => Chat.loadSessions(chatSessionsList, (sessionId) => {
+                Chat.loadChatSession(sessionId, chatContainer);
+                Layout.openMainView('view-chat', 'Chat');
+            })
         }).then((response) => {
             if (response !== undefined) {
                 selectedImages = [];
@@ -574,6 +582,92 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 6. New Chat (Handled via Event Delegation above)
+
+    // 7. Live / Ghost Mode toggle (LIVE UPLINK button + settings checkbox)
+    let liveMode = false;
+    const liveToggleBtn = document.getElementById('live-toggle-btn');
+    const ghostModeCheckbox = document.getElementById('setting-ghost-mode');
+
+    // Keep both controls in sync with the current state
+    const syncLiveControls = () => {
+        if (liveToggleBtn) {
+            liveToggleBtn.textContent = liveMode ? 'DISCONNECT' : 'LIVE UPLINK';
+            liveToggleBtn.classList.toggle('active', liveMode);
+        }
+        if (ghostModeCheckbox) ghostModeCheckbox.checked = liveMode;
+    };
+
+    // Shared toggle action
+    const applyLiveMode = async (desiredState) => {
+        liveMode = desiredState;
+        if (liveToggleBtn) liveToggleBtn.disabled = true;
+        if (ghostModeCheckbox) ghostModeCheckbox.disabled = true;
+        try {
+            const res = await fetch('/toggle_live_mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: liveMode })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                liveMode = !liveMode; // revert on failure
+                UI.showAlert('Live Mode Error', data.error || 'Failed to toggle live mode.');
+            }
+        } catch (e) {
+            liveMode = !liveMode;
+            UI.showAlert('Live Mode Error', e.message);
+        } finally {
+            if (liveToggleBtn) liveToggleBtn.disabled = false;
+            if (ghostModeCheckbox) ghostModeCheckbox.disabled = false;
+            syncLiveControls();
+        }
+    };
+
+    // Sync with server state on load
+    fetch('/get_live_status')
+        .then(r => r.json())
+        .then(d => { liveMode = d.status === 'active'; syncLiveControls(); })
+        .catch(() => {});
+
+    if (liveToggleBtn) {
+        liveToggleBtn.addEventListener('click', () => applyLiveMode(!liveMode));
+    }
+    if (ghostModeCheckbox) {
+        ghostModeCheckbox.addEventListener('change', () => applyLiveMode(ghostModeCheckbox.checked));
+    }
+
+    // 8. Add Fact button (Memory sidebar)
+    document.getElementById('add-fact-btn')?.addEventListener('click', async () => {
+        const text = window.prompt('Enter a fact to save to memory:');
+        if (!text || !text.trim()) return;
+        try {
+            const res = await fetch('/api/memory/facts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text.trim() })
+            });
+            const data = await res.json();
+            if (data.success) {
+                Memory.loadMemory(
+                    document.getElementById('memory-list'),
+                    document.getElementById('episodes-list'),
+                    (sid) => {
+                        Chat.loadChatSession(sid, chatContainer);
+                        Layout.openMainView('view-chat', 'Chat');
+                    }
+                );
+            } else {
+                UI.showAlert('Memory Error', data.error || 'Failed to save fact.');
+            }
+        } catch (e) {
+            UI.showAlert('Memory Error', e.message);
+        }
+    });
+
+    // 9. Close File button (Editor header → returns to chat view)
+    document.getElementById('close-file-btn')?.addEventListener('click', () => {
+        Layout.openMainView('view-chat', 'Chat');
+    });
 
     // Memory Tabs Navigation
     document.addEventListener('click', (e) => {
@@ -716,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Default View
-    Layout.openMainView('view-mission-control', 'Home');
+    Layout.openMainView('view-chat', 'Chat');
 
     // --- Telemetry Polling ---
     function updateTokenTelemetry() {

@@ -404,9 +404,9 @@ class ActionExecutor:
                         fix_instruction = f"The previous modification attempt was REJECTED by the Council for the following reason:\n{reasoning}\n\nPlease provide a new, corrected implementation of the function that strictly addresses these criticisms."
 
                         fix_result = await self.code_service.modify_code(
-                            context="COUNCIL_REFINEMENT",
+                            context="SELF_FIX_TOOL",
                             modification_instruction=fix_instruction,
-                            existing_code=None,
+                            existing_code=current_proposed_code,
                             module_path=module_path,
                             function_name=function_name,
                             parent_task_id=action_task_id,
@@ -462,10 +462,8 @@ class ActionExecutor:
         except ImportError:
             logger.warning("CriticalReviewCoordinator not found. Skipping Council Debate.")
         except Exception as e:
-            logger.error(f"Error during Council Debate: {e}. Proceeding with caution (fail-open or fail-closed strategy? Fail-open for now to not block progress if LLM issues).")
-            # Fail-open behavior: If debate fails (e.g. API error), we proceed but log it.
-            # Ideally, for high risk, we might fail-closed.
-            pass
+            logger.error(f"Error during Council Debate: {e}. Blocking the modification until review is available.")
+            return False, f"Council review infrastructure failed: {e}", "COUNCIL_REVIEW_FAILED"
         # -------------------------------------------------------------
 
         # Variables moved up
@@ -540,7 +538,7 @@ class ActionExecutor:
                             fix_instruction = f"The previous modification was applied but failed the test suite.\nTest Output/Errors:\n{test_run_notes}\n\nPlease provide a new, corrected implementation of the function that passes these tests."
 
                             fix_result = await self.code_service.modify_code(
-                                context="TEST_FAILURE_REFINEMENT",
+                                context="SELF_FIX_TOOL",
                                 modification_instruction=fix_instruction,
                                 existing_code=current_code,
                                 module_path=module_path,

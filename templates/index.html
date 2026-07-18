@@ -309,23 +309,7 @@
                 </div>
 
                 <div id="chat-container">
-                    <section class="chat-home-card">
-                        <div class="chat-home-orb">W</div>
-                        <div class="chat-home-copy">
-                            <span class="mission-mode-label">Normal Mode</span>
-                            <h1>Weebo is ready.</h1>
-                            <p>Ask for anything. I will handle the work, track background agents, surface approvals, and report results back here.</p>
-                        </div>
-                        <div class="chat-home-actions">
-                            <button class="mission-action-btn" data-target="view-mission-control">Mission</button>
-                            <button class="mission-action-btn secondary" data-sidebar-target="view-sidebar-approvals">Approvals</button>
-                        </div>
-                        <div class="chat-home-status-row">
-                            <span>Agents report back here</span>
-                            <span>Approvals stay visible</span>
-                            <span>Debug is one layer down</span>
-                        </div>
-                    </section>
+                    <!-- Chat home card is rendered dynamically by chat.js renderChatHome() -->
                 </div>
 
                 <div class="input-area glass-panel">
@@ -607,8 +591,8 @@
                     </div>
 
                     <div class="setting-group">
-                        <label style="display: none;">Enable Ghost Mode (Visible Browser)</label>
-                        <div class="toggle-switch" style="display: none;">
+                        <label>Enable Ghost Mode (Visible Browser)</label>
+                        <div class="toggle-switch">
                             <input type="checkbox" id="setting-ghost-mode">
                             <label for="setting-ghost-mode"></label>
                         </div>

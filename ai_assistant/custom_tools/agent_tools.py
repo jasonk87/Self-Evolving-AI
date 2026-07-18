@@ -403,6 +403,13 @@ def wake_agent(agent_id: str, new_task: str, session_id: str = None) -> str:
     """
     Wakes up an existing persistent agent by creating a background goal routed directly to it.
     """
+    if not isinstance(agent_id, str) or not agent_id.strip():
+        return "Error: Agent ID must be a non-empty string."
+    if not isinstance(new_task, str) or not new_task.strip():
+        return "Error: New task must be a non-empty string."
+
+    agent_id = agent_id.strip()
+    new_task = new_task.strip()
     workspace_path = agent_manager.get_workspace_path(agent_id)
     if not os.path.exists(workspace_path):
         return f"Error: Agent '{agent_id}' does not exist or has been terminated."

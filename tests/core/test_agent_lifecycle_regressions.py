@@ -191,6 +191,18 @@ def test_wake_agent_queues_routed_goal_immediately(tmp_path, monkeypatch):
     assert "queued for execution" in result
 
 
+def test_wake_agent_rejects_empty_task_before_touching_workspace(monkeypatch):
+    monkeypatch.setattr(
+        agent_tools.agent_manager,
+        "get_workspace_path",
+        lambda _agent_id: (_ for _ in ()).throw(AssertionError("workspace lookup should not run")),
+    )
+
+    result = agent_tools.wake_agent("persistent-files", "   ")
+
+    assert result == "Error: New task must be a non-empty string."
+
+
 def test_autonomous_processor_bounds_concurrency_and_prioritizes_agent_launches(monkeypatch):
     goals = [
         {"id": "proposal-1", "description": "Proposal one", "status": "pending"},

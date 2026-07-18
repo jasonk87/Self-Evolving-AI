@@ -525,10 +525,20 @@ CRITICAL RULES:
                 else:
                     logger.warning(f"Sandbox tests failed. Output: {stdout}\nErrors: {stderr}")
                     is_approved = False
+                    zero_tests = "collected zero tests" in str(stderr).casefold() or "no tests ran" in str(stdout).casefold()
                     reviews = [{
-                        "status": "requires_changes",
-                        "comments": f"Sandbox Test Execution Failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
-                        "suggestions": "Please fix the code so it passes the generated unit tests."
+                        "status": "error" if zero_tests else "requires_changes",
+                        "comments": (
+                            "Sandbox test generation failed: pytest collected zero tests. "
+                            "This is validation infrastructure failure, not evidence that production code is wrong."
+                            if zero_tests
+                            else f"Sandbox Test Execution Failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+                        ),
+                        "suggestions": (
+                            "Regenerate a valid pytest test without changing the proposed production code."
+                            if zero_tests
+                            else "Please fix the code so it passes the generated unit tests."
+                        )
                     }]
 
             review_infrastructure_failed = any(

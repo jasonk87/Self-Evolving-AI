@@ -169,6 +169,63 @@ class TestActionExecutor(unittest.TestCase):
         self.debate_patcher.stop()
         core_global_reflection_log.log_entries = self.original_log_entries
 
+    @patch('ai_assistant.execution.action_executor.mark_suggestion_implemented')
+    @patch('ai_assistant.execution.action_executor.global_reflection_log.log_execution')
+    @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code', new_callable=AsyncMock)
+    @patch('ai_assistant.execution.action_executor.self_modification.get_function_source_code')
+    def test_council_rejection_refines_through_supported_context(
+        self, mock_get_source, mock_edit, mock_log, mock_mark_implemented
+    ):
+        mock_get_source.return_value = "def wake_agent():\n    return 'old'"
+        mock_edit.return_value = "Successfully modified function 'wake_agent'."
+        self.mock_execute_debate.side_effect = [
+            (False, "Use the correct absolute import."),
+            (True, "The corrected implementation is sound."),
+        ]
+        self.executor.code_service = mock.MagicMock()
+        self.executor.code_service.llm_provider = mock.MagicMock()
+        self.executor.code_service.modify_code = AsyncMock(return_value={
+            "status": "SUCCESS_CODE_GENERATED",
+            "modified_code_string": "def wake_agent():\n    return 'refined'",
+        })
+
+        success, _, failure_code = asyncio.run(self.executor._apply_test_and_revert_code(
+            module_path="ai_assistant.custom_tools.agent_tools",
+            function_name="wake_agent",
+            code_to_apply="def wake_agent():\n    return 'candidate'",
+            original_description="Repair wake_agent.",
+            source_insight_id="dream-test",
+            action_task_id=None,
+        ))
+
+        self.assertTrue(success)
+        self.assertIsNone(failure_code)
+        refine_kwargs = self.executor.code_service.modify_code.await_args.kwargs
+        self.assertEqual(refine_kwargs["context"], "SELF_FIX_TOOL")
+        self.assertIn("candidate", refine_kwargs["existing_code"])
+        self.assertIn("absolute import", refine_kwargs["modification_instruction"])
+        self.assertIn("refined", mock_edit.await_args.kwargs["new_code_string"])
+
+    @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code', new_callable=AsyncMock)
+    @patch('ai_assistant.execution.action_executor.self_modification.get_function_source_code')
+    def test_council_infrastructure_failure_blocks_source_edit(self, mock_get_source, mock_edit):
+        mock_get_source.return_value = "def tool():\n    return 'old'"
+        self.mock_execute_debate.side_effect = RuntimeError("review provider unavailable")
+
+        success, message, failure_code = asyncio.run(self.executor._apply_test_and_revert_code(
+            module_path="ai_assistant.custom_tools.example",
+            function_name="tool",
+            code_to_apply="def tool():\n    return 'candidate'",
+            original_description="Repair tool.",
+            source_insight_id="runtime-test",
+            action_task_id=None,
+        ))
+
+        self.assertFalse(success)
+        self.assertEqual(failure_code, "COUNCIL_REVIEW_FAILED")
+        self.assertIn("review provider unavailable", message)
+        mock_edit.assert_not_awaited()
+
     @patch('ai_assistant.execution.action_executor.self_modification.edit_function_source_code')
     @patch('ai_assistant.execution.action_executor.global_reflection_log.log_execution')
     @patch.object(ActionExecutor, '_run_post_modification_test', new_callable=AsyncMock)
@@ -205,6 +262,7 @@ class TestActionExecutor(unittest.TestCase):
     def test_tool_mod_via_codeservice_and_test_pass(self, mock_run_post_mod_test, mock_edit_code, mock_log_execution):
         # Mock the CodeService's modify_code method on the executor's instance
         self.executor.code_service = mock.AsyncMock(spec=CodeService)
+        self.executor.code_service.llm_provider = mock.MagicMock()
         self.executor.code_service.modify_code.return_value = {
             "status": "SUCCESS_CODE_GENERATED",
             "modified_code_string": "def new_llm_func(): return 'fixed_by_codeservice'"
@@ -289,6 +347,13 @@ class TestActionExecutor(unittest.TestCase):
     @patch.object(ActionExecutor, '_run_post_modification_test', new_callable=AsyncMock)
     def test_tool_mod_test_fails_and_reversion_succeeds(self, mock_run_post_mod_test, mock_edit_code,
                                                        mock_get_backup, mock_log_execution):
+        self.executor.code_service = mock.MagicMock()
+        self.executor.code_service.llm_provider = mock.MagicMock()
+        self.executor.code_service.modify_code = AsyncMock(return_value={
+            "status": "ERROR_LLM_NO_SUGGESTION",
+            "modified_code_string": None,
+            "error": "No safe refinement available.",
+        })
         mock_edit_code.side_effect = [
             "Successfully modified function 'test_func'.",
             "Successfully reverted function 'test_func'."
