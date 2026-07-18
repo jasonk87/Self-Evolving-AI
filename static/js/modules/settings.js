@@ -90,7 +90,7 @@ function renderSettingsForm(config, container) {
                                     <option value="gpt-4o-mini" ${profile.model === 'gpt-4o-mini' ? 'selected' : ''}>GPT-4o Mini</option>
                                     <option value="claude-3-5-sonnet-latest" ${profile.model === 'claude-3-5-sonnet-latest' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
                                     <option value="claude-3-haiku-20240307" ${profile.model === 'claude-3-haiku-20240307' ? 'selected' : ''}>Claude 3 Haiku</option>
-                                    ${!['deepseek-v4-pro','deepseek-v4-flash','gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro','gpt-4o','gpt-4o-mini','claude-3-5-sonnet-latest','claude-3-haiku-20240307'].includes(profile.model) ? \`<option value="${profile.model}" selected>${profile.model} (Custom)</option>\` : ''}
+                                    ${!['deepseek-v4-pro','deepseek-v4-flash','gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro','gpt-4o','gpt-4o-mini','claude-3-5-sonnet-latest','claude-3-haiku-20240307'].includes(profile.model) ? '<option value="' + profile.model + '" selected>' + profile.model + ' (Custom)</option>' : ''}
                                 </select>
                             </div>
                             <div style="flex: 1; min-width: 120px;">
