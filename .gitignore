@@ -7,9 +7,13 @@ venv/
 *.env
 *.pem
 logs/
+*.log
 *_output.txt
 git_*.txt
 static/scraped_images/
+.codex-remote-attachments/
+.orion/
+output-playwright-*.png
 
 # Runtime Artifacts
 debug.log
