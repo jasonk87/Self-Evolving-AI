@@ -788,7 +788,9 @@ class CodeService:
         existing_code: Optional[str] = None, language: str = "python",
         module_path: Optional[str] = None, function_name: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
-        additional_context: Optional[Dict[str, Any]] = None
+        additional_context: Optional[Dict[str, Any]] = None,
+        parent_task_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         task_id: Optional[str] = None
         result: Dict[str, Any] = {}
@@ -800,7 +802,13 @@ class CodeService:
             task = self.task_manager.add_task(
                 description=task_desc, # Corrected order
                 task_type=ActiveTaskType.AGENT_TOOL_MODIFICATION,
-                related_item_id=related_id
+                related_item_id=related_id,
+                details={
+                    "parent_task_id": parent_task_id,
+                    "suppress_failure_alert": bool(parent_task_id),
+                    "suppress_terminal_notification": bool(parent_task_id),
+                },
+                session_id=session_id,
             )
             task_id = task.task_id
 

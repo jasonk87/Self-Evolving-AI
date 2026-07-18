@@ -5,6 +5,22 @@ from typing import Optional, Dict, Any
 from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
 from ai_assistant.config import get_model_for_task
 
+
+def _extract_review_json(response_text: str) -> Optional[Dict[str, Any]]:
+    """Extract the first valid JSON object without consuming trailing prose or sibling objects."""
+    cleaned = str(response_text or "").strip()
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(cleaned):
+        if character != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
 REVIEW_CODE_PROMPT_TEMPLATE = """
 You are a **PRAGMATIC** AI code reviewer. Your goal is to ensure code is SAFE, FUNCTIONAL, and BETTER than before. You should catch bugs and security issues, but **avoid** blocking progress for minor style preferences.
 
@@ -197,43 +213,7 @@ class ReviewerAgent:
             cleaned_response_str = cleaned_response_str.replace('</think>', '')
             cleaned_response_str = cleaned_response_str.strip()
 
-            review_data = None
-
-            # 2. Strategy A: Markdown Code Block Extraction (Priority)
-            # We explicitly ask for ```json in the prompt, so this should be the first place we look.
-            try:
-                if "```json" in cleaned_response_str:
-                    temp_clean = cleaned_response_str.split("```json")[1]
-                    if "```" in temp_clean:
-                        temp_clean = temp_clean.split("```")[0]
-                    review_data = json.loads(temp_clean.strip())
-                elif "```" in cleaned_response_str:
-                    # Fallback for generic code blocks
-                    content_parts = cleaned_response_str.split("```")
-                    # Should probably look for the one that looks like JSON or check the second part
-                    if len(content_parts) >= 2:
-                        potential_json_block = content_parts[1]
-                        try:
-                            review_data = json.loads(potential_json_block.strip())
-                        except json.JSONDecodeError:
-                            pass
-            except (json.JSONDecodeError, IndexError):
-                pass
-
-            # 3. Strategy B: Naive JSON Block Searching (Fallback)
-            # Only do this if Strategy A failed.
-            if not review_data and "{" in cleaned_response_str and "}" in cleaned_response_str:
-                # Find the *first* { and *last* }
-                # Note: This is risky if the intro text contains {}, e.g. "I checked the {code}."
-                # To mitigte, we could look for the LAST { if the first one fails?
-                # For now, keep simple but strict.
-                potential_json = cleaned_response_str[cleaned_response_str.find("{"):cleaned_response_str.rfind("}") + 1]
-                try:
-                    review_data = json.loads(potential_json)
-                except json.JSONDecodeError:
-                    # If this fails, maybe there are multiple JSON-like objects.
-                    # Try to find the *last* complete JSON object if possible, or just fail.
-                    pass
+            review_data = _extract_review_json(cleaned_response_str)
 
             if not review_data:
                 return {

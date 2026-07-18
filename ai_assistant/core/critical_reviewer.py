@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import List, Dict, Any, Tuple, Optional
 
 # Attempt to import ReviewerAgent with fallback for different execution contexts
@@ -166,11 +167,11 @@ class CriticalReviewCoordinator:
         {skeptic_response}
 
         Your Goal: Weigh the proposal against the critique.
-        - If the critique highlights a critical flaw (security risk, system-breaking bug), REJECT.
+        - If the critique highlights any unresolved security flaw (including XSS, injection, unsafe CSS/HTML, arbitrary code execution, or path traversal), REJECT.
+        - Do not rely on a downstream browser, sanitizer, caller, or deprecated-browser assumption to excuse unsafe output from the proposed code.
         - If the critique is minor, nitpicky, or theoretical (e.g. "caller should be fixed"), APPROVE.
         - If the change improves ROBUSTNESS (e.g. handling more inputs, fixing crashes), APPROVE IT.
         - If the Skeptic complains about "security" for standard input handling, OVERRULE and APPROVE.
-        - If the code looks safe and correct, APPROVE.
         - If the code looks safe and correct, APPROVE.
 
         Output Format:
@@ -189,10 +190,31 @@ class CriticalReviewCoordinator:
         if "Status: APPROVED" in judge_response or "Status: APPROVE" in judge_response:
              is_approved = True
 
+        unresolved_security_patterns = (
+            r"\bxss\s+(?:risk|vector|vulnerability)",
+            r"\bcross-site scripting\b",
+            r"\b(?:command|sql|code|html|css) injection\b",
+            r"\barbitrary code execution\b",
+            r"\bpath traversal\b",
+            r"\bpermissive\b.{0,80}\bexpression\s*\(",
+            r"\bunsafe\s+(?:eval|exec|html|css|deserialization)\b",
+        )
+        security_veto = any(
+            re.search(pattern, str(skeptic_response or ""), flags=re.IGNORECASE | re.DOTALL)
+            for pattern in unresolved_security_patterns
+        )
+        if security_veto:
+            is_approved = False
+
         # Clean reasoning extraction
         reasoning = judge_response.replace("Status: APPROVED", "").replace("Status: APPROVE", "").replace("Status: REJECTED", "").strip()
         if reasoning.startswith("Reasoning:"):
             reasoning = reasoning[10:].strip()
+        if security_veto:
+            reasoning = (
+                "Deterministic security veto: the Skeptic identified an unresolved security risk. "
+                "The proposal must remove that risk before approval. " + reasoning
+            ).strip()
 
         emit_system_event("council_judge_verdict", {
             "approved": is_approved,

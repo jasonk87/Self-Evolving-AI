@@ -295,6 +295,10 @@ class ReactLoopControl:
         return len(left & right) / len(left | right)
 
 class DynamicOrchestrator:
+    _USER_TOOL_CHANGE_TOOLS = {
+        "generate_new_tool_from_description",
+        "stage_agent_tool_modification",
+    }
     """
     Orchestrates the dynamic planning and execution of user prompts.
     Uses a direct single-call ReAct loop.
@@ -704,7 +708,9 @@ class DynamicOrchestrator:
                 "do NOT execute it directly. Instead, automatically spawn a user-scoped persistent agent to handle "
                 "the task in the background, and report back to the user when you have received their payload. Check your roster first using list_active_agents. "
                 "A roster workspace marked available is NOT an active task. Never say an agent is working unless a tool result includes a queued or running durable goal. "
-                "To assign an available persistent workspace, call wake_agent. To create a new background goal, call spawn_background_agent."
+                "To assign an available persistent workspace, call wake_agent. To create a new background goal, call spawn_background_agent. "
+                "Every user-requested creation or modification of an agent tool must be delegated to a background agent; "
+                "never run a meta-programming tool directly in USER CHAT."
             )
 
         host_os_guide = (
@@ -998,6 +1004,21 @@ Return STRICT JSON only using the schema described earlier.
                     args = tool_call.get("args", [])
                     kwargs = tool_call.get("kwargs", {})
                     thought = tool_call.get("thought", "")
+                    if context_source == "USER" and tool_name in self._USER_TOOL_CHANGE_TOOLS:
+                        delegated_tool_name = tool_name
+                        tool_name = "spawn_background_agent"
+                        args = []
+                        kwargs = {
+                            "task_description": (
+                                "Perform the requested agent-tool change in the background. Use the normal review, test, "
+                                "and approval safeguards; do not modify core files without explicit user approval. "
+                                f"Original request: {state.original_user_prompt}\n"
+                                f"Requested operation: {delegated_tool_name} with parameters {kwargs}"
+                            )
+                        }
+                        if session_id:
+                            kwargs["session_id"] = session_id
+                        thought = f"Delegating {delegated_tool_name} to a background agent so chat remains responsive."
                     cycle_record["selected_type"] = "tool_call"
                     cycle_record["tool_name"] = tool_name
                     cycle_record["thought"] = thought

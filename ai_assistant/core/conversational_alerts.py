@@ -35,6 +35,9 @@ def should_send_task_failure_alert(task: "ActiveTask") -> bool:
     task_type = getattr(getattr(task, "task_type", None), "name", "")
     status_name = getattr(getattr(task, "status", None), "name", "")
     reason = str(getattr(task, "status_reason", "") or "")
+    details = getattr(task, "details", {}) or {}
+    if isinstance(details, dict) and details.get("suppress_failure_alert"):
+        return False
     if (
         task_type == "AGENT_TOOL_MODIFICATION"
         and status_name == "FAILED_PRE_REVIEW"

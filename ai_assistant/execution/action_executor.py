@@ -408,7 +408,8 @@ class ActionExecutor:
                             modification_instruction=fix_instruction,
                             existing_code=None,
                             module_path=module_path,
-                            function_name=function_name
+                            function_name=function_name,
+                            parent_task_id=action_task_id,
                         )
 
                         if fix_result.get("status") == "SUCCESS_CODE_GENERATED":
@@ -543,7 +544,8 @@ class ActionExecutor:
                                 modification_instruction=fix_instruction,
                                 existing_code=current_code,
                                 module_path=module_path,
-                                function_name=function_name
+                                function_name=function_name,
+                                parent_task_id=action_task_id,
                             )
 
                             if fix_result.get("status") == "SUCCESS_CODE_GENERATED":
@@ -1086,7 +1088,9 @@ class ActionExecutor:
                         modification_instruction=context_prompt,
                         existing_code=None, # CodeService fetches current file content
                         module_path=module_path,
-                        function_name=function_name
+                        function_name=function_name,
+                        parent_task_id=action_task_id,
+                        session_id=session_id,
                     )
                     
                     if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":
@@ -1413,7 +1417,9 @@ class ActionExecutor:
                     modification_instruction=modification_instruction,
                     existing_code=original_content,
                     module_path=None, # Whole file context
-                    function_name=None
+                    function_name=None,
+                    parent_task_id=action_task_id,
+                    session_id=session_id,
                 )
 
                 if code_service_result.get("status") == "SUCCESS_CODE_GENERATED":

@@ -81,6 +81,27 @@ class FakeAgentToolSystem:
         }
 
 
+class FakeBackgroundToolSystem:
+    def __init__(self):
+        self.calls = []
+
+    def get_tools_description(self):
+        return "generate_new_tool_from_description, spawn_background_agent"
+
+    async def execute_tool(self, tool_name, **kwargs):
+        self.calls.append({"tool_name": tool_name, **kwargs})
+        assert tool_name == "spawn_background_agent"
+        return {
+            "success": True,
+            "result": {
+                "agent_id": "agent-tool-builder",
+                "goal_status": "pending",
+                "queued": True,
+                "message": "Tool change queued for background agent.",
+            },
+        }
+
+
 @pytest.mark.asyncio
 async def test_final_answer_accepted_when_useful(monkeypatch):
     async def fake_invoke(*args, **kwargs):
@@ -383,3 +404,38 @@ def test_explicit_outer_request_can_authorize_server_start():
     )
 
     assert blocked is False
+
+
+@pytest.mark.asyncio
+async def test_user_tool_creation_is_deterministically_delegated(monkeypatch):
+    responses = iter(
+        [
+            '{"type":"tool_call","thought":"Create the tool.",'
+            '"name":"generate_new_tool_from_description",'
+            '"params":{"tool_description":"Create a safe bar chart."}}',
+            '{"type":"final_answer","thought":"Delegated.",'
+            '"params":{"message":"A background agent is handling the tool change."}}',
+        ]
+    )
+
+    async def fake_invoke(*args, **kwargs):
+        return next(responses)
+
+    fake_tools = FakeBackgroundToolSystem()
+    orch = _make_isolated_orchestrator()
+    monkeypatch.setattr("ai_assistant.core.orchestrator.model_router.generate_response", fake_invoke)
+    monkeypatch.setattr("ai_assistant.core.orchestrator.tool_system_instance", fake_tools)
+
+    state = ExecutionState(original_user_prompt="Create a safe bar chart tool")
+    await orch._execute_universal_cycle_internal(state, state.original_user_prompt, "", [], "chat-7", "USER", None)
+
+    assert state.current_status == "completed"
+    assert len(fake_tools.calls) == 1
+    call = fake_tools.calls[0]
+    assert call["tool_name"] == "spawn_background_agent"
+    assert call["kwargs"]["session_id"] == "chat-7"
+    assert "generate_new_tool_from_description" in call["kwargs"]["task_description"]
+
+
+def test_system_tool_creation_is_not_forced_through_chat_delegation():
+    assert "generate_new_tool_from_description" in DynamicOrchestrator._USER_TOOL_CHANGE_TOOLS

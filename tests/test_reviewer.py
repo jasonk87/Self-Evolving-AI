@@ -82,6 +82,20 @@ class TestReviewerAgent(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Failed to parse review data from LLM response", result["comments"])
 
     @patch('ai_assistant.core.reviewer.invoke_ollama_model_async', new_callable=AsyncMock)
+    async def test_review_code_extracts_json_without_swallowing_trailing_prose(self, mock_invoke_llm):
+        mock_invoke_llm.return_value = (
+            '<think>private reasoning</think>\n'
+            'Review follows: {"status":"requires_changes","comments":"Fix the CSS width.",'
+            '"suggestions":"Use a nested track."}\nAdditional prose with {braces}.'
+        )
+
+        result = await self.reviewer.review_code("def f(): pass", "Fix chart rendering")
+
+        self.assertEqual(result["status"], "requires_changes")
+        self.assertEqual(result["comments"], "Fix the CSS width.")
+        self.assertEqual(result["suggestions"], "Use a nested track.")
+
+    @patch('ai_assistant.core.reviewer.invoke_ollama_model_async', new_callable=AsyncMock)
     async def test_review_code_llm_empty_response(self, mock_invoke_llm):
         mock_invoke_llm.return_value = ""
         result = await self.reviewer.review_code("def f(): pass", "reqs")

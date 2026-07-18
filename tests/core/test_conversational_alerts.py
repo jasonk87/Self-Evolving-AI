@@ -102,6 +102,21 @@ def test_emit_task_failure_alert_ignores_internal_tool_modification_precondition
     assert payload is None
 
 
+def test_emit_task_failure_alert_ignores_suppressed_child_task(monkeypatch):
+    task = _make_task(status=ActiveTaskStatus.FAILED_CODE_GENERATION)
+    task.details = {"parent_task_id": "task-parent", "suppress_failure_alert": True}
+
+    chat_mgr = SimpleNamespace(
+        add_message=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not add message")),
+        list_sessions=lambda: [],
+        create_session=lambda title: "new-session",
+    )
+    monkeypatch.setattr(app_globals, "chat_manager", chat_mgr)
+    monkeypatch.setattr(app_globals, "socketio", SimpleNamespace(emit=lambda *a, **k: None))
+
+    assert conversational_alerts.emit_task_failure_alert(task) is None
+
+
 def test_emit_startup_interrupted_tasks_digest_emits_socket_without_chat_message(monkeypatch):
     task_a = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)
     task_b = _make_task(status=ActiveTaskStatus.FAILED_INTERRUPTED)

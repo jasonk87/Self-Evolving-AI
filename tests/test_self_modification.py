@@ -6,12 +6,23 @@ import sys
 
 # Ensure the 'ai_assistant' module can be imported
 try:
-    from ai_assistant.core.self_modification import edit_function_source_code
+    from ai_assistant.core.self_modification import _run_pylint_check, edit_function_source_code
 except ImportError: # pragma: no cover
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from ai_assistant.core.self_modification import edit_function_source_code
+    from ai_assistant.core.self_modification import _run_pylint_check, edit_function_source_code
+
+
+class TestStaticAnalysisPreparation(unittest.TestCase):
+    @patch('ai_assistant.core.self_modification.tempfile.NamedTemporaryFile')
+    def test_tempfile_failure_blocks_review_instead_of_silently_passing(self, mock_tempfile):
+        mock_tempfile.side_effect = OSError("temporary directory unavailable")
+
+        result = _run_pylint_check("def sample():\n    return True\n")
+
+        self.assertIn("Static Analysis Infrastructure Failed", result)
+        self.assertIn("temporary file", result)
 
 class TestSelfModificationWithReview(unittest.TestCase):
     def setUp(self):

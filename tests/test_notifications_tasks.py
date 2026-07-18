@@ -47,3 +47,29 @@ def test_system_status_summary_uses_isolated_task_storage(tmp_path):
     assert "COMPLETED_SUCCESSFULLY" in summary
     assert (tmp_path / "active_tasks.json").exists()
     assert (tmp_path / "notifications.json").exists()
+
+
+def test_suppressed_child_failure_does_not_create_duplicate_notification(tmp_path, monkeypatch):
+    notification_manager = NotificationManager(filepath=str(tmp_path / "notifications.json"))
+    task_manager = TaskManager(
+        notification_manager=notification_manager,
+        filepath=str(tmp_path / "active_tasks.json"),
+    )
+    monkeypatch.setattr("ai_assistant.core.conversational_alerts.emit_task_failure_alert", lambda task: None)
+
+    child = task_manager.add_task(
+        "Internal code-generation child",
+        ActiveTaskType.AGENT_TOOL_MODIFICATION,
+        details={
+            "parent_task_id": "task-parent",
+            "suppress_failure_alert": True,
+            "suppress_terminal_notification": True,
+        },
+    )
+    task_manager.update_task_status(
+        child.task_id,
+        ActiveTaskStatus.FAILED_CODE_GENERATION,
+        reason="Parent task will report this failure.",
+    )
+
+    assert notification_manager.notifications == []

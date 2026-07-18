@@ -7,6 +7,7 @@ import shutil
 import logging
 import sys
 import subprocess
+import tempfile
 from .diff_utils import generate_diff
 from .change_policy import GovernanceTier, decide_governance
 from .critical_reviewer import CriticalReviewCoordinator
@@ -34,7 +35,7 @@ def _run_pylint_check(code_str: str) -> Optional[str]:
             tmp_path = tmp.name
     except Exception as e:
         logger.warning(f"Failed to create temp file for Pylint: {e}")
-        return None
+        return f"Static Analysis Infrastructure Failed: unable to create temporary file: {e}"
 
     try:
         # Check for E0602 (undefined variable) and E0401 (import error)
@@ -42,7 +43,10 @@ def _run_pylint_check(code_str: str) -> Optional[str]:
         # Modified to use sys.executable for robustness per user feedback
         result = subprocess.run(
             [sys.executable, '-m', 'pylint', '--disable=all', '--enable=E0602,E0401', '--score=n', '--output-format=text', tmp_path],
-            capture_output=True, text=True, check=False
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
         )
         # Pylint returns non-zero on issues.
         if result.returncode != 0:
@@ -55,6 +59,9 @@ def _run_pylint_check(code_str: str) -> Optional[str]:
     except FileNotFoundError:
         logger.warning("Pylint not found. Skipping static analysis.")
         return None
+    except subprocess.TimeoutExpired:
+        logger.warning("Pylint timed out after 30 seconds.")
+        return "Static Analysis Infrastructure Failed: Pylint timed out after 30 seconds."
     except Exception as e:
         logger.warning(f"Pylint check failed to run: {e}")
         return None
@@ -523,6 +530,17 @@ CRITICAL RULES:
                         "comments": f"Sandbox Test Execution Failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
                         "suggestions": "Please fix the code so it passes the generated unit tests."
                     }]
+
+            review_infrastructure_failed = any(
+                str(review.get("status") or "").casefold() == "error"
+                for review in reviews
+            )
+            if review_infrastructure_failed and attempt < max_refinement_attempts:
+                logger.warning(
+                    "Critical review infrastructure failed; retrying the same code without sending parser/provider errors to the refiner."
+                )
+                await asyncio.sleep(min(0.5 * (attempt + 1), 1.5))
+                continue
 
             # If not approved (either by static analysis, critic, or sandbox), check if we can refine
             if attempt < max_refinement_attempts:

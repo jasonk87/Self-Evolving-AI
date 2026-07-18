@@ -558,7 +558,11 @@ class TaskManager:
             ]
             if new_status in terminal_statuses:
                 print(f"TaskManager: Task {task_id} reached terminal status: {new_status.name}. Archiving.")
-                if self.notification_manager:
+                suppress_terminal_notification = bool(
+                    isinstance(task.details, dict)
+                    and task.details.get("suppress_terminal_notification")
+                )
+                if self.notification_manager and not suppress_terminal_notification:
                     notif_type = NotificationType.GENERAL_INFO
                     if new_status == ActiveTaskStatus.COMPLETED_SUCCESSFULLY:
                         notif_type = NotificationType.TASK_COMPLETED_SUCCESSFULLY
@@ -589,7 +593,10 @@ class TaskManager:
                         details_payload={"task_type": task.task_type.name, "description": task.description}
                     )
 
-                if new_status not in [ActiveTaskStatus.COMPLETED_SUCCESSFULLY, ActiveTaskStatus.USER_CANCELLED]:
+                if (
+                    new_status not in [ActiveTaskStatus.COMPLETED_SUCCESSFULLY, ActiveTaskStatus.USER_CANCELLED]
+                    and not suppress_terminal_notification
+                ):
                     try:
                         from .conversational_alerts import emit_task_failure_alert
                         emit_task_failure_alert(task)
