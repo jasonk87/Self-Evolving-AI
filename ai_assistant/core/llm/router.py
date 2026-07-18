@@ -3,6 +3,7 @@ from ai_assistant import config
 from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.core.llm.gemini_provider import GeminiProvider
 from ai_assistant.core.llm.ollama_provider import OllamaProvider
+from ai_assistant.core.llm.deepseek_provider import DeepseekProvider
 
 class ModelRouter:
     """Routes tasks to the appropriate LLM provider and direct-call mode."""
@@ -10,7 +11,8 @@ class ModelRouter:
     def __init__(self):
         self._providers: Dict[str, LLMProvider] = {
             "gemini": GeminiProvider(),
-            "ollama": OllamaProvider()
+            "ollama": OllamaProvider(),
+            "deepseek": DeepseekProvider()
         }
 
     def get_route(self, task_name: str) -> Tuple[LLMProvider, str, str, str]:

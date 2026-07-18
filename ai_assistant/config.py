@@ -134,6 +134,24 @@ VERBOSE_LLM_LOGGING = _env_flag("VERBOSE_LLM_LOGGING", default=not IS_PRODUCTION
 
 # --- Google Custom Search API Configuration ---
 # IMPORTANT: For security, it is recommended to set your GOOGLE_API_KEY and
+
+# --- Auto-Approval Configuration ---
+# Wait time (in seconds) before the AI auto-executes pending requests for Self-Evolving activities.
+# Default: 600 (10 minutes) - gives the user a short window, then the AI reviews and decides.
+AUTO_APPROVE_DELAY_SECONDS = 600
+
+# --- Fresh Start Configuration ---
+# If True, the application should attempt to clear existing knowledge (context, memory, reflections, suggestions, learned facts etc.) on startup.
+CLEAR_EXISTING_KNOWLEDGE_ON_STARTUP = False # Default to False to preserve data
+
+# Debug mode flag (set in config file)
+DEBUG_MODE = _env_flag("DEBUG_MODE", default=not IS_PRODUCTION)
+
+# Verbose Logging for LLM (Prints full prompts and responses to console)
+VERBOSE_LLM_LOGGING = _env_flag("VERBOSE_LLM_LOGGING", default=not IS_PRODUCTION)
+
+# --- Google Custom Search API Configuration ---
+# IMPORTANT: For security, it is recommended to set your GOOGLE_API_KEY and
 # GOOGLE_CSE_ID as environment variables in your deployment environment.
 # The application will try to load them from there.
 # Example (in bash):
@@ -144,6 +162,9 @@ VERBOSE_LLM_LOGGING = _env_flag("VERBOSE_LLM_LOGGING", default=not IS_PRODUCTION
 GOOGLE_API_KEY: Optional[str] = os.environ.get('GOOGLE_API_KEY')
 # Load Google Custom Search Engine ID from environment variable GOOGLE_CSE_ID
 GOOGLE_CSE_ID: Optional[str] = os.environ.get('GOOGLE_CSE_ID')
+
+# Load Deepseek API Key from environment variable DEEPSEEK_API_KEY
+DEEPSEEK_API_KEY: Optional[str] = os.environ.get('DEEPSEEK_API_KEY')
 
 # --- ElevenLabs TTS Configuration ---
 ELEVENLABS_API_KEY: Optional[str] = os.environ.get('ELEVENLABS_API_KEY')
@@ -303,26 +324,26 @@ DEFAULT_LLM_PROVIDER = "gemini"
 
 TASK_PROFILES = {
     "chat": {
-        "provider": "gemini",
-        "model": GEMINI_FLASH_LITE_MODEL,
+        "provider": "deepseek",
+        "model": "deepseek-v4",
         "mode": "DIRECT",
         "endpoint": None
     },
     "coding": {
-        "provider": "gemini",
-        "model": GEMINI_FLASH_LITE_MODEL,
+        "provider": "deepseek",
+        "model": "deepseek-v4",
         "mode": "DIRECT",
         "endpoint": None
     },
     "background_dreamer": {
-        "provider": "gemini",
-        "model": GEMINI_FLASH_LITE_MODEL,
+        "provider": "deepseek",
+        "model": "deepseek-v4",
         "mode": "DIRECT",
         "endpoint": None
     },
     "local_agent": {
-        "provider": "gemini",
-        "model": GEMINI_FLASH_LITE_MODEL,
+        "provider": "deepseek",
+        "model": "deepseek-v4",
         "mode": "DIRECT",
         "endpoint": None
     }
