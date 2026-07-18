@@ -34,6 +34,23 @@ export function loadConfig() {
 function renderSettingsForm(config, container) {
     container.innerHTML = '';
 
+    if (!document.getElementById('available-models')) {
+        const datalist = document.createElement('datalist');
+        datalist.id = 'available-models';
+        datalist.innerHTML = `
+            <option value="deepseek-v4-pro">Deepseek V4 Pro</option>
+            <option value="deepseek-v4-flash">Deepseek V4 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o Mini</option>
+            <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+        `;
+        document.body.appendChild(datalist);
+    }
+
     // Sort keys mostly alphabetically, or define a specific order
     const hiddenKeys = new Set(['GHOST_MODE', 'AUTO_WEB_PIP']);
     const priorityKeys = ['DEFAULT_MODEL', 'LLM_PROVIDER', 'ENABLE_THINKING', 'SAFE_MODE'];
@@ -80,7 +97,7 @@ function renderSettingsForm(config, container) {
                             </div>
                             <div style="flex: 1; min-width: 120px;">
                                 <label style="font-size: 11px; color: var(--text-dim);">Model</label>
-                                <input type="text" class="profile-model" value="${profile.model || ''}" style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+                                <input type="text" list="available-models" class="profile-model" value="${profile.model || ''}" style="width: 100%; padding: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
                             </div>
                             <div style="flex: 1; min-width: 120px;">
                                 <label style="font-size: 11px; color: var(--text-dim);">Mode</label>
@@ -113,6 +130,9 @@ function renderSettingsForm(config, container) {
         } else if (typeof value === 'string') {
             input = document.createElement('input');
             input.type = 'text';
+            if (key === 'DEFAULT_MODEL') {
+                input.setAttribute('list', 'available-models');
+            }
             input.value = value;
         } else if (typeof value === 'object') {
             // Arrays or Objects -> TextArea JSON

@@ -325,25 +325,25 @@ DEFAULT_LLM_PROVIDER = "gemini"
 TASK_PROFILES = {
     "chat": {
         "provider": "deepseek",
-        "model": "deepseek-v4",
+        "model": "deepseek-v4-pro",
         "mode": "DIRECT",
         "endpoint": None
     },
     "coding": {
         "provider": "deepseek",
-        "model": "deepseek-v4",
+        "model": "deepseek-v4-pro",
         "mode": "DIRECT",
         "endpoint": None
     },
     "background_dreamer": {
         "provider": "deepseek",
-        "model": "deepseek-v4",
+        "model": "deepseek-v4-pro",
         "mode": "DIRECT",
         "endpoint": None
     },
     "local_agent": {
         "provider": "deepseek",
-        "model": "deepseek-v4",
+        "model": "deepseek-v4-pro",
         "mode": "DIRECT",
         "endpoint": None
     }
