@@ -24,6 +24,28 @@ def _make_isolated_orchestrator():
     return orch
 
 
+@pytest.mark.asyncio
+async def test_gather_context_includes_canonical_facts_and_learned_guidance():
+    orch = _make_isolated_orchestrator()
+
+    class FakeMemoryManager:
+        async def retrieve_relevant_context(self, prompt, k):
+            return [{"text": "The project uses Python."}]
+
+        def retrieve_relevant_heuristics(self, prompt, k):
+            return [{"heuristic": "Run tests before reporting a coding fix."}]
+
+    orch.memory_manager = FakeMemoryManager()
+
+    context, metadata = await orch._gather_context("Fix the parser bug")
+
+    assert "Learned Facts:\n- The project uses Python." in context
+    assert "Learned Behavioral Guidance" in context
+    assert "Run tests before reporting a coding fix." in context
+    assert metadata["rag_count"] == 1
+    assert metadata["heuristic_count"] == 1
+
+
 class FakeToolSystem:
     def __init__(self):
         self.calls = []

@@ -88,3 +88,31 @@ class RAGSystem:
                 if i + batch_size < len(all_facts):
                     # Slight delay between batches to respect rate limits if needed
                     await asyncio.sleep(0.5)
+
+    async def reconcile_facts(self, canonical_facts: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Make the learned-facts collection match the canonical JSON store."""
+        normalized = [
+            fact for fact in (canonical_facts or [])
+            if isinstance(fact, dict) and str(fact.get("text") or "").strip()
+        ]
+        canonical_by_id = {
+            self.generate_id(str(fact["text"]).strip()): fact
+            for fact in normalized
+        }
+        indexed = self.vector_store.get_all()
+        indexed_ids = {str(item.get("id")) for item in indexed if item.get("id")}
+        stale_ids = sorted(indexed_ids - set(canonical_by_id))
+        missing_ids = set(canonical_by_id) - indexed_ids
+
+        if stale_ids:
+            self.vector_store.delete(stale_ids)
+        missing_facts = [canonical_by_id[fact_id] for fact_id in sorted(missing_ids)]
+        if missing_facts:
+            await self.sync_existing_facts(missing_facts)
+
+        logger.info(
+            "RAG reconciliation complete: %s added, %s stale removed.",
+            len(missing_facts),
+            len(stale_ids),
+        )
+        return {"added": len(missing_facts), "removed": len(stale_ids)}

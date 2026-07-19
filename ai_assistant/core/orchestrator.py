@@ -1412,7 +1412,23 @@ Return STRICT JSON only using the schema described earlier.
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
 
-        # 2. Project Context (Simplified & Proactive)
+        # 2. Learned behavioral guidance
+        if self.memory_manager and hasattr(self.memory_manager, "retrieve_relevant_heuristics"):
+            heuristics = self.memory_manager.retrieve_relevant_heuristics(prompt, k=6)
+            if heuristics:
+                guidance = [
+                    f"- {item.get('heuristic', '')}"
+                    for item in heuristics
+                    if item.get("heuristic")
+                ]
+                if guidance:
+                    context_parts.append(
+                        "Learned Behavioral Guidance (current user request overrides conflicts):\n"
+                        + "\n".join(guidance)
+                    )
+                    metadata["heuristic_count"] = len(guidance)
+
+        # 3. Project Context (Simplified & Proactive)
         prompt_lower = prompt.lower()
         file_mentions = re.findall(r'[\w./-]+\.py', prompt)
 

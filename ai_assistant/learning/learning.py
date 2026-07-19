@@ -990,7 +990,15 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
 
     async def review_and_propose_next_action(self) -> Optional[Tuple[Dict[str, Any], bool]]:
         self._supersede_stale_failure_insights()
-        actionable_new_insights = [insight for insight in self.insights if insight.status == "NEW"]
+        actionable_new_insights = [
+            insight
+            for insight in self.insights
+            if insight.status == "NEW"
+            or (
+                insight.status == "APPROVED_BY_USER"
+                and insight.type != InsightType.TOOL_BUG_SUSPECTED
+            )
+        ]
         if not actionable_new_insights:
             # print("LearningAgent: No new actionable insights to review.")
             return None
@@ -1323,7 +1331,7 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
         bug_insights = [
             insight for insight in self.insights
             if insight.type == InsightType.TOOL_BUG_SUSPECTED
-            and insight.status == "NEW"
+            and insight.status in {"NEW", "APPROVED_BY_USER"}
             and insight.related_tool_name # Must have a tool target
         ]
 
@@ -1334,7 +1342,11 @@ CRITICAL: Do NOT return internal system action names (like "PROPOSE_TOOL_MODIFIC
 
         processed_count = 0
         for insight in bug_insights:
-            await self.execute_self_healing_for_insight(insight)
+            approved_by_user = insight.status == "APPROVED_BY_USER"
+            await self.execute_self_healing_for_insight(
+                insight,
+                apply_immediately=approved_by_user,
+            )
             processed_count += 1
         
         return processed_count

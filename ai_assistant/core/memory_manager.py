@@ -3,6 +3,8 @@ import datetime
 import uuid
 import logging
 import asyncio # Added for async operations
+import json
+import os
 import re
 from ai_assistant.memory.persistent_memory import (
     load_learned_facts, save_learned_facts,
@@ -12,6 +14,7 @@ from ai_assistant.memory.persistent_memory import (
 # Integration with RAG
 from ai_assistant.memory.rag_system import RAGSystem
 from ai_assistant.llm_interface.ollama_client import OllamaProvider
+from ai_assistant.config import get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +60,7 @@ class MemoryManager:
             # user-specific categories in a useful order and exclude internal
             # configuration/debugging memories.
             if self.rag_system:
-                self._schedule_missing_fact_sync(facts)
+                self._schedule_fact_reconciliation(facts)
             return self._user_memory_inventory(facts)
 
         semantic_results: List[Dict[str, Any]] = []
@@ -66,12 +69,64 @@ class MemoryManager:
                 semantic_results = await self.rag_system.retrieve_context(query_text, k=k)
             except Exception as exc:
                 logger.warning("Semantic fact retrieval failed; using local fallback: %s", exc)
-            self._schedule_missing_fact_sync(facts)
+            canonical_texts = {fact["text"].casefold() for fact in facts}
+            semantic_results = [
+                result for result in semantic_results
+                if str(result.get("text") or "").strip().casefold() in canonical_texts
+            ]
+            self._schedule_fact_reconciliation(facts)
 
         fallback_results = self._rank_facts_locally(query_text, facts, k=k)
         if self._is_location_dependent_query(query_text):
             semantic_results = self._user_location_context(facts) + semantic_results
         return self._merge_retrieval_results(semantic_results, fallback_results, k=k)
+
+    def retrieve_relevant_heuristics(self, query: str, k: int = 6) -> List[Dict[str, Any]]:
+        """Return a small, ranked set of learned behavioral/planning rules."""
+        heuristics_path = os.path.join(get_data_dir(), "planning_heuristics.json")
+        try:
+            with open(heuristics_path, "r", encoding="utf-8") as handle:
+                raw_items = json.load(handle)
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(raw_items, list):
+            return []
+
+        query_terms = self._search_terms(str(query or ""))
+        ranked = []
+        seen = set()
+        for position, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("heuristic") or "").strip()
+            key = text.casefold()
+            if not text or key in seen:
+                continue
+            seen.add(key)
+
+            trigger = str(item.get("trigger_context") or "general_planning").strip().casefold()
+            text_terms = self._search_terms(text)
+            overlap = len(query_terms & text_terms)
+            score = overlap / max(len(query_terms), 1)
+            if trigger == "always_active":
+                score += 0.2
+            elif trigger not in {"general_planning", "general"}:
+                trigger_terms = self._search_terms(trigger)
+                if query_terms & trigger_terms:
+                    score += 0.5
+            if overlap == 0 and trigger != "always_active":
+                continue
+
+            ranked.append((score, str(item.get("created_at") or ""), position, {
+                "heuristic": text[:600],
+                "trigger_context": trigger,
+                "source": item.get("source"),
+                "created_at": item.get("created_at"),
+            }))
+
+        ranked.sort(key=lambda entry: (entry[0], entry[1], entry[2]), reverse=True)
+        return [entry[3] for entry in ranked[:max(1, int(k))]]
 
     @staticmethod
     def _normalized_facts(raw_facts: List[Any]) -> List[Dict[str, Any]]:
@@ -237,7 +292,7 @@ class MemoryManager:
                 break
         return merged
 
-    def _schedule_missing_fact_sync(self, facts: List[Dict[str, Any]]) -> None:
+    def _schedule_fact_reconciliation(self, facts: List[Dict[str, Any]]) -> None:
         if not self.rag_system:
             return
         if self._rag_sync_task and not self._rag_sync_task.done():
@@ -257,30 +312,50 @@ class MemoryManager:
                 fact for fact in facts
                 if fact["text"].casefold() not in indexed_text
             ]
-            if not missing:
+            canonical_text = {fact["text"].casefold() for fact in facts}
+            stale_ids = sorted(
+                str(item.get("id")) for item in indexed
+                if str(item.get("text") or "").strip().casefold() not in canonical_text
+                and item.get("id")
+            )
+            if not missing and not stale_ids:
                 return
-            signature = hash(tuple(sorted(fact["text"].casefold() for fact in missing)))
+            signature = hash((
+                tuple(sorted(fact["text"].casefold() for fact in missing)),
+                tuple(stale_ids),
+            ))
             if signature == getattr(self, "_rag_sync_attempted_signature", None):
                 return
             self._rag_sync_attempted_signature = signature
             loop = asyncio.get_running_loop()
-            self._rag_sync_task = loop.create_task(
-                self.rag_system.sync_existing_facts(missing),
-                name="memory-rag-fact-sync",
-            )
+            if hasattr(self.rag_system, "reconcile_facts"):
+                operation = self.rag_system.reconcile_facts(facts)
+            else:  # Compatibility for alternate RAG implementations.
+                operation = self.rag_system.sync_existing_facts(missing)
+            self._rag_sync_task = loop.create_task(operation, name="memory-rag-fact-reconcile")
             self._rag_sync_task.add_done_callback(self._log_rag_sync_result)
-            logger.info("Scheduled background RAG synchronization for %s facts.", len(missing))
+            logger.info(
+                "Scheduled background RAG reconciliation (%s missing, %s stale).",
+                len(missing),
+                len(stale_ids),
+            )
         except Exception as exc:
             logger.warning("Could not schedule RAG fact synchronization: %s", exc)
 
-    @staticmethod
-    def _log_rag_sync_result(task: asyncio.Task) -> None:
+    def _log_rag_sync_result(self, task: asyncio.Task) -> None:
         try:
             task.result()
         except asyncio.CancelledError:
+            self._rag_sync_attempted_signature = None
             logger.info("Background RAG fact synchronization was cancelled.")
         except Exception as exc:
+            # A transient embedding/provider failure must be retryable on the
+            # next request instead of disabling reconciliation for the process.
+            self._rag_sync_attempted_signature = None
             logger.error("Background RAG fact synchronization failed: %s", exc)
+        finally:
+            if self._rag_sync_task is task:
+                self._rag_sync_task = None
 
     async def add_fact_with_rag(self, text: str, category: str = "manual", source: str = "user_interface", permanence: str = "permanent") -> Dict[str, Any]:
         """

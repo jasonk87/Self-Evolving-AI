@@ -126,6 +126,13 @@ class PlannerAgent:
                         memory_lines.append(f"- {text}")
                     relevant_memory_section = "\n".join(memory_lines) + "\n"
                     print(f"PlannerAgent (Wisdom): Retrieved {len(context_results)} relevant memories.")
+                if hasattr(self.memory_manager, "retrieve_relevant_heuristics"):
+                    heuristics = self.memory_manager.retrieve_relevant_heuristics(goal_description, k=6)
+                    if heuristics:
+                        relevant_memory_section += "Relevant Learned Planning Guidance:\n"
+                        relevant_memory_section += "\n".join(
+                            f"- {item.get('heuristic', '')}" for item in heuristics if item.get("heuristic")
+                        ) + "\n"
             except Exception as e:
                 print(f"PlannerAgent (Wisdom): Failed to retrieve memory context: {e}")
         # ---------------------------------

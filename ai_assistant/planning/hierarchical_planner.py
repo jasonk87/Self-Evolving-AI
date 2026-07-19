@@ -155,21 +155,30 @@ class HierarchicalPlanner:
         Returns a formatted string of facts.
         """
         try:
-            if self.memory_manager and hasattr(self.memory_manager, 'rag_system'):
-                # Use real semantic search
-                results = await self.memory_manager.rag_system.retrieve_context(query, k=10)
+            heuristic_context = ""
+            if self.memory_manager and hasattr(self.memory_manager, "retrieve_relevant_heuristics"):
+                heuristics = self.memory_manager.retrieve_relevant_heuristics(query, k=6)
+                if heuristics:
+                    heuristic_context = "Relevant Learned Planning Guidance:\n" + "\n".join(
+                        f"- {item.get('heuristic', '')}" for item in heuristics if item.get("heuristic")
+                    ) + "\n"
+
+            if self.memory_manager and hasattr(self.memory_manager, "retrieve_relevant_context"):
+                # Route through MemoryManager so semantic results are reconciled
+                # against the canonical fact store before entering a prompt.
+                results = await self.memory_manager.retrieve_relevant_context(query, k=10)
                 if not results:
-                    return ""
+                    return heuristic_context
 
                 formatted_facts = "Relevant Learned Facts (Context):\n"
                 for res in results:
                     formatted_facts += f"- {res.get('text', '')}\n"
-                return formatted_facts
+                return formatted_facts + heuristic_context
 
             # Fallback to naive logic if RAG isn't wired up
             all_facts = load_learned_facts()
             if not all_facts:
-                return ""
+                return heuristic_context
 
             query_words = set(re.findall(r'\w+', query.lower()))
             stop_words = {"a", "an", "the", "in", "on", "for", "with", "to", "of", "and", "is", "are"}
@@ -186,12 +195,12 @@ class HierarchicalPlanner:
                         relevant_facts.append(fact_text)
 
             if not relevant_facts:
-                return ""
+                return heuristic_context
 
             formatted_facts = "Relevant Learned Facts (Context):\n"
             for fact in relevant_facts[:10]:
                 formatted_facts += f"- {fact}\n"
-            return formatted_facts
+            return formatted_facts + heuristic_context
 
         except Exception as e:
             print(f"HierarchicalPlanner: Error retrieving facts via RAG: {e}")

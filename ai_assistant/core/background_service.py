@@ -74,6 +74,7 @@ _last_project_execution_scan_time: float = 0.0
 _last_reflection_analyzed_timestamp: float = 0.0
 _last_self_healing_time: float = 0.0
 _self_healing_interval_seconds = 3600 # Self-healing: 1 hour (was 10 mins)
+_general_insight_interval_seconds = 60
 _last_architect_audit_timestamp: float = 0.0
 _architect_audit_interval_seconds = 7200 # Architect: 2 hours (was 15 mins)
 ARCHITECT_STATE_FILE = "architect_state.json"
@@ -188,7 +189,9 @@ _last_dream_status: str = "No dreams realized yet."
 _last_architect_status: str = "No architectural audits performed yet."
 
 # --- User Activity Beacon ---
-_last_user_activity_ts: float = 0.0
+# Treat startup as activity. A zero timestamp put every fresh process directly
+# into deep sleep, so lightweight learning never received its first cycle.
+_last_user_activity_ts: float = time.time()
 # Default threshold: 5 minutes (300 seconds)
 BACKGROUND_IDLE_THRESHOLD_SECONDS = 300
 # Deep Sleep threshold: 1 hour (3600 seconds)
@@ -693,6 +696,7 @@ async def _background_loop_async():
     next_fact_curation_run_time = time.time() + FACT_CURATION_INTERVAL_SECONDS # Use config value
     next_project_execution_run_time = time.time() + PROJECT_EXECUTION_INTERVAL_SECONDS
     next_self_healing_run_time = time.time() + _self_healing_interval_seconds
+    next_general_insight_run_time = time.time() + _general_insight_interval_seconds
     next_auto_approve_check_time = time.time() + _auto_approve_check_interval_seconds
     next_visual_audit_run_time = time.time() + _visual_audit_interval_seconds
     next_autonomous_goal_check_time = time.time() + _autonomous_goal_check_interval_seconds
@@ -1174,12 +1178,13 @@ async def _background_loop_async():
 
         # --- General Insight Processing (Learning - Always Run) ---
         # Checks for NEW insights (Frustrations, Preferences) and proposes actions
-        if learning_agent and current_loop_time >= next_self_healing_run_time + 5: # Offset slightly from self-healing
+        if learning_agent and current_loop_time >= next_general_insight_run_time:
              try:
                  # Process one insight per cycle to avoid flooding
                  await learning_agent.review_and_propose_next_action()
              except Exception as e:
                  logger.error(f"BackgroundService: Error during general insight processing: {e}", exc_info=True)
+             next_general_insight_run_time = time.time() + _general_insight_interval_seconds
 
 
         # --- Evolutionary Architect Audit Task (Heavy) ---
@@ -1418,12 +1423,13 @@ async def _background_loop_async():
         time_until_next_curation = max(0, next_fact_curation_run_time - time.time())
         time_until_next_project_exec = max(0, next_project_execution_run_time - time.time()) if PROJECT_TOOLS_AVAILABLE else float('inf')
         time_until_next_healing = max(0, next_self_healing_run_time - time.time()) if learning_agent else float('inf')
+        time_until_next_general_insight = max(0, next_general_insight_run_time - time.time()) if learning_agent else float('inf')
         time_until_next_audit = max(0, next_architect_audit_run_time - time.time())
         time_until_next_auto_approve = max(0, next_auto_approve_check_time - time.time())
         time_until_next_visual_audit = max(0, next_visual_audit_run_time - time.time())
         time_until_next_goal_check = max(0, next_autonomous_goal_check_time - time.time())
 
-        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, time_until_next_goal_check, 10)
+        sleep_duration = min(time_until_next_reflection, time_until_next_curation, time_until_next_project_exec, time_until_next_healing, time_until_next_general_insight, time_until_next_audit, time_until_next_auto_approve, time_until_next_visual_audit, time_until_next_goal_check, 10)
 
         try:
             if is_debug_mode(): # pragma: no cover

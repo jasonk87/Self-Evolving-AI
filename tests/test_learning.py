@@ -592,5 +592,45 @@ class TestLearningAgent(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(action_result_tuple_3)
         agent.action_executor.execute_action.assert_not_called() # Should not be called if no insights
 
+    async def test_approved_preference_is_consumed_by_general_learning(self):
+        agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+        agent.action_executor = mock.AsyncMock()
+        agent.action_executor.execute_action.return_value = True
+        insight = ActionableInsight(
+            type=InsightType.USER_PREFERENCE_LEARNED,
+            description="User prefers concise progress updates.",
+            source_reflection_entry_ids=[],
+            status="APPROVED_BY_USER",
+        )
+        agent.insights.append(insight)
+
+        result = await agent.review_and_propose_next_action()
+
+        self.assertIsNotNone(result)
+        action, executed = result
+        self.assertEqual(action["action_type"], "ADD_PLANNING_HEURISTIC")
+        self.assertTrue(executed)
+        self.assertEqual(insight.status, "ACTION_SUCCESSFUL")
+
+    async def test_approved_tool_bug_is_applied_by_self_healing(self):
+        agent = LearningAgent(insights_filepath=self.temp_insights_filepath)
+        insight = ActionableInsight(
+            type=InsightType.TOOL_BUG_SUSPECTED,
+            description="Confirmed parser failure.",
+            source_reflection_entry_ids=[],
+            related_tool_name="test_tool",
+            status="APPROVED_BY_USER",
+        )
+        agent.insights.append(insight)
+        agent.execute_self_healing_for_insight = mock.AsyncMock(return_value=True)
+
+        processed = await agent.process_self_healing_insights()
+
+        self.assertEqual(processed, 1)
+        agent.execute_self_healing_for_insight.assert_awaited_once_with(
+            insight,
+            apply_immediately=True,
+        )
+
 if __name__ == '__main__': # pragma: no cover
     unittest.main()
