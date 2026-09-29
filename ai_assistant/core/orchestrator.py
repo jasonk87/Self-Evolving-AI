@@ -488,6 +488,7 @@ class DynamicOrchestrator:
 
             # 2. Context Gathering (RAG, Project Context)
             full_context_str, context_metadata = await self._gather_context(prompt_with_context)
+            state.context_limits["context_metadata"] = context_metadata
 
             logger.info(f"DynamicOrchestrator: Starting direct ReAct cycle for prompt: {state.original_user_prompt[:50]}...")
             print(color_text("--> Strategy: Direct ReAct", CLIColors.SYSTEM_MESSAGE))
@@ -1409,6 +1410,15 @@ Return STRICT JSON only using the schema described earlier.
 
                     context_parts.append(rag_text)
                     metadata['rag_count'] = len(rag_results)
+                    metadata['rag_sources'] = [
+                        {
+                            "id": result.get("id"),
+                            "text": str(result.get("text") or "")[:500],
+                            "score": result.get("score"),
+                            "category": (result.get("metadata") or {}).get("category"),
+                        }
+                        for result in rag_results[:20]
+                    ]
             except Exception as e:
                 logger.error(f"RAG failed: {e}")
 

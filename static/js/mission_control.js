@@ -86,6 +86,11 @@ const missionControl = {
 
         if (!d_switch || !m_switch || !a_switch) return;
 
+        const syncToggleStatus = (input, statusId) => {
+            const status = document.getElementById(statusId);
+            if (status) status.textContent = input.checked ? 'Enabled' : 'Disabled';
+        };
+
         try {
             const res = await fetch('/api/config');
             const config = await res.json();
@@ -94,6 +99,11 @@ const missionControl = {
             m_switch.checked = config.ALLOW_MEMORY_LEARNING !== false;
             a_switch.checked = config.ALLOW_AUTO_FIXING !== false;
             if (arch_switch) arch_switch.checked = config.ALLOW_ARCHITECT === true;
+
+            syncToggleStatus(d_switch, 'status-allow-dreamer');
+            syncToggleStatus(m_switch, 'status-allow-memory');
+            syncToggleStatus(a_switch, 'status-allow-autofix');
+            if (arch_switch) syncToggleStatus(arch_switch, 'status-allow-architect');
 
         } catch(e) { console.error("Could not init switches", e); }
 
@@ -109,13 +119,21 @@ const missionControl = {
 
         d_switch.addEventListener('change', () => {
             toggleConfig('ENABLE_DREAM_MODE', d_switch.checked);
+            syncToggleStatus(d_switch, 'status-allow-dreamer');
             this.fetchBackgroundCadence();
         });
-        m_switch.addEventListener('change', () => toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked));
-        a_switch.addEventListener('change', () => toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked));
+        m_switch.addEventListener('change', () => {
+            toggleConfig('ALLOW_MEMORY_LEARNING', m_switch.checked);
+            syncToggleStatus(m_switch, 'status-allow-memory');
+        });
+        a_switch.addEventListener('change', () => {
+            toggleConfig('ALLOW_AUTO_FIXING', a_switch.checked);
+            syncToggleStatus(a_switch, 'status-allow-autofix');
+        });
         if (arch_switch) {
             arch_switch.addEventListener('change', () => {
                 toggleConfig('ALLOW_ARCHITECT', arch_switch.checked);
+                syncToggleStatus(arch_switch, 'status-allow-architect');
                 this.fetchBackgroundCadence();
             });
         }
@@ -279,6 +297,7 @@ const missionControl = {
             const dreamModeLabel = cadence.dream_mode_enabled
                 ? (dreamerAllowed ? 'On' : 'Blocked')
                 : 'Off';
+            const dreamStatus = recent.last_dream_status || 'No dreams realized yet.';
             this.cadencePanel.innerHTML = `
                 <div class="mission-status-header-row">
                     <div class="mission-status-header">Background Cadence</div>
@@ -296,6 +315,7 @@ const missionControl = {
                     · Last Visual Audit: ${this.escapeHtml(this.formatTimestamp(recent.last_visual_audit_timestamp))}
                     · Last Self-Healing: ${this.escapeHtml(this.formatTimestamp(recent.last_self_healing_timestamp))}
                 </div>
+                <div class="mission-status-meta mission-dream-status">Dream Status: ${this.escapeHtml(dreamStatus)}</div>
             `;
         } catch (e) {
             this.cadencePanel.innerHTML = `<div class="error">Cadence link failure: ${this.escapeHtml(e.message)}</div>`;
@@ -540,7 +560,7 @@ const missionControl = {
                     <span>${this.escapeHtml(verdict)}</span>
                 </div>
                 <div class="mission-audit-detail">
-                    Tests: ${testsPassed}/${testsRun} · Risk: ${this.escapeHtml(scorecard.risk_level || 'low')}${route}${failure}
+                    Tests: ${testsPassed}/${testsRun} · Risk: ${this.escapeHtml(scorecard.risk_level || 'low')}${this.escapeHtml(route)}${this.escapeHtml(failure)}
                 </div>
                 <div class="mission-audit-detail">
                     ${files.length ? `Files: ${this.escapeHtml(files.join(', '))}` : 'Files: none recorded'}
@@ -938,12 +958,12 @@ const missionControl = {
                 this.renderTasks(data.tasks);
                 this.renderNormalWork(data.tasks || []);
             } else {
-                this.board.innerHTML = `<div class="error">Failed to fetch directives: ${data.error}</div>`;
+                this.board.innerHTML = `<div class="error">Failed to fetch directives: ${this.escapeHtml(data.error || 'unknown error')}</div>`;
                 if (this.normalWorkPanel) this.normalWorkPanel.innerHTML = '<div class="normal-empty-state">Current work is unavailable.</div>';
             }
         } catch (e) {
             console.error("Fetch tasks error:", e);
-            this.board.innerHTML = `<div class="error">Comm link failure: ${e.message}</div>`;
+            this.board.innerHTML = `<div class="error">Comm link failure: ${this.escapeHtml(e.message)}</div>`;
             if (this.normalWorkPanel) this.normalWorkPanel.innerHTML = '<div class="normal-empty-state">Current work is unavailable.</div>';
         }
     },
@@ -1005,13 +1025,15 @@ const missionControl = {
 
     createTaskCard: function (task) {
         const div = document.createElement('div');
-        div.className = `task-card status-${task.status}`;
+        const rawStatus = String(task.status || 'DEFAULT');
+        const safeStatus = rawStatus.replace(/[^A-Za-z0-9_-]/g, '_');
+        div.className = `task-card status-${safeStatus}`;
         div.id = `task-${task.task_id}`;
 
         let statusClass = 'status-DEFAULT';
-        if (task.status.includes('FAIL')) statusClass = 'status-FAILED';
-        else if (task.status.includes('SUCCESS')) statusClass = 'status-SUCCESS';
-        else if (task.status === 'PLANNING' || task.status === 'GENERATING_CODE') statusClass = 'status-ACTIVE';
+        if (rawStatus.includes('FAIL')) statusClass = 'status-FAILED';
+        else if (rawStatus.includes('SUCCESS')) statusClass = 'status-SUCCESS';
+        else if (rawStatus === 'PLANNING' || rawStatus === 'GENERATING_CODE') statusClass = 'status-ACTIVE';
 
         const progressHtml = task.progress_percentage !== null
             ? `<div class="task-progress">
@@ -1034,14 +1056,14 @@ const missionControl = {
             <div class="task-header">
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span class="task-expand-icon">▼</span>
-                    <span class="task-id">${task.task_id.substring(0, 8)}</span>
+                    <span class="task-id">${this.escapeHtml(String(task.task_id || '').substring(0, 8))}</span>
                 </div>
-                <span class="task-status-badge ${statusClass}">${task.status.replace(/_/g, ' ')}</span>
+                <span class="task-status-badge ${statusClass}">${this.escapeHtml(rawStatus.replace(/_/g, ' '))}</span>
             </div>
             <div class="task-body">
-                <div class="task-desc">${task.description}</div>
+                <div class="task-desc">${this.escapeHtml(task.description || '')}</div>
                 ${delegateMeta}
-                ${task.current_step_description ? `<div class="task-current-step">▶ ${task.current_step_description}</div>` : ''}
+                ${task.current_step_description ? `<div class="task-current-step">▶ ${this.escapeHtml(task.current_step_description)}</div>` : ''}
                 ${task.output_preview ? `<div class="task-preview"><code>${this.escapeHtml(task.output_preview)}</code></div>` : ''}
             </div>
             ${progressHtml}

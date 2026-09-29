@@ -7,21 +7,14 @@ import importlib.util
 import json
 import os
 
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "deepseek").strip().lower()
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(project_root, '.env')
 
 GEMINI_FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
 GEMINI_VISION_FALLBACK_MODEL = "gemini-2.5-flash"
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
 DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
-DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", DEEPSEEK_V4_FLASH_MODEL)
-
-# Gemini 2.5 Flash-Lite does not think by default. Set a budget to enable it.
-# Use 0 to disable, -1 for dynamic thinking, or 512-24576 for a manual budget.
-GEMINI_THINKING_BUDGET = int(os.environ.get("GEMINI_THINKING_BUDGET", 24576))
-
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env_path = os.path.join(project_root, '.env')
 
 def _load_env_file(path: str) -> None:
     """Load environment values from a .env file when python-dotenv is available."""
@@ -35,6 +28,13 @@ def _load_env_file(path: str) -> None:
         load_dotenv(path)
 
 _load_env_file(env_path)
+
+# Read provider/model values after loading .env so local configuration is honored.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "deepseek").strip().lower()
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", DEEPSEEK_V4_FLASH_MODEL)
+# Gemini 2.5 Flash-Lite does not think by default. Set a budget to enable it.
+# Use 0 to disable, -1 for dynamic thinking, or 512-24576 for a manual budget.
+GEMINI_THINKING_BUDGET = int(os.environ.get("GEMINI_THINKING_BUDGET", 24576))
 from typing import Optional, Dict
 
 # Runtime environment profile

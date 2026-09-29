@@ -8,7 +8,8 @@ import sys # Added for subprocess execution
 
 import re
 import logging
-from typing import Optional
+from concurrent.futures import Future as ConcurrentFuture, TimeoutError as FutureTimeoutError
+from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ from ai_assistant.core.task_manager import TaskManager
 from ai_assistant.core.notification_manager import NotificationManager
 from ai_assistant.core.approval_manager import approval_manager
 from ai_assistant.core.memory_maintenance_service import MemoryMaintenanceService # Added
+from ai_assistant.core.persistence import atomic_write_json
 
 
 # Added for Evolutionary Architect
@@ -67,7 +69,7 @@ except ImportError: # pragma: no cover
 
 # --- Service State ---
 _background_service_active = False
-_background_task: Optional[asyncio.Task] = None
+_background_task: Optional[Union[asyncio.Task, ConcurrentFuture]] = None
 _polling_interval_seconds = 3600  # Self-reflection: 1 hour
 _last_fact_curation_time: float = 0.0
 _last_project_execution_scan_time: float = 0.0
@@ -113,6 +115,26 @@ def _is_dream_provider_failure(error: Exception) -> bool:
             or "rate limit" in detail
             or "connection" in detail
         ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _is_permanent_dream_provider_failure(error: Exception) -> bool:
+    """Return True when retrying cannot help until provider configuration changes."""
+    current: Optional[BaseException] = error
+    while current:
+        detail = str(current).casefold()
+        if any(token in detail for token in (
+            "402",
+            "payment required",
+            "401",
+            "unauthorized",
+            "invalid api key",
+            "invalid_api_key",
+            "403",
+            "forbidden",
+        )):
             return True
         current = current.__cause__ or current.__context__
     return False
@@ -345,6 +367,7 @@ def get_service_status():
         "last_self_healing_timestamp": _last_self_healing_time,
         "last_architect_audit_timestamp": _last_architect_audit_timestamp,
         "last_dream_timestamp": _last_dream_time if '_last_dream_time' in globals() else 0,
+        "last_dream_status": globals().get('_last_dream_status', 'No dreams realized yet.'),
         "last_visual_audit_timestamp": _last_visual_audit_time,
         "autonomous_learning_enabled": globals().get('AUTONOMOUS_LEARNING_ENABLED', False)
     }
@@ -660,13 +683,12 @@ def _load_architect_state():
 def _save_architect_state():
     state_file = os.path.join(get_data_dir(), ARCHITECT_STATE_FILE)
     try:
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump({"last_audit_timestamp": _last_architect_audit_timestamp}, f)
+        atomic_write_json(state_file, {"last_audit_timestamp": _last_architect_audit_timestamp})
     except Exception as e:
         logger.error(f"BackgroundService: Failed to save architect state: {e}")
 
 async def _background_loop_async():
-    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time, _last_autonomous_goal_check_time, _last_reminder_check_time, _last_memory_maintenance_time, _last_conversation_scan_time
+    global _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time, _last_architect_audit_timestamp, _last_auto_approve_check_time, _last_visual_audit_time, _last_autonomous_goal_check_time, _last_reminder_check_time, _last_memory_maintenance_time, _last_conversation_scan_time, _last_reflection_analyzed_timestamp, _last_facts_file_mtime
     print("BackgroundService: Async loop started.")
     _last_fact_curation_time = time.time()
     _last_project_execution_scan_time = time.time()
@@ -1321,9 +1343,13 @@ async def _background_loop_async():
                     else f"Dream Mode runner failure: {details}"
                 )
                 if provider_failure:
-                    # Retry transient provider failures after 15 minutes instead
-                    # of waiting for the full daily Dream Mode interval.
-                    dream_retry_delay_seconds = min(900, _dream_interval_seconds)
+                    # Authentication, billing, and permission failures are not
+                    # transient. Keep Dream Mode quiet until the user changes
+                    # provider configuration instead of retrying noisily.
+                    if _is_permanent_dream_provider_failure(e):
+                        dream_retry_delay_seconds = _dream_interval_seconds
+                    else:
+                        dream_retry_delay_seconds = min(900, _dream_interval_seconds)
 
 
             _last_dream_time = time.time() - max(
@@ -1454,7 +1480,7 @@ def start_background_services():
     global _background_service_active, _background_task, _last_fact_curation_time, _last_project_execution_scan_time, _last_self_healing_time
     # Ensure is_debug_mode is available or imported if used here
 
-    if _background_service_active and isinstance(_background_task, asyncio.Task) and not _background_task.done():
+    if _background_service_active and isinstance(_background_task, (asyncio.Task, ConcurrentFuture)) and not _background_task.done():
         logger.info("BackgroundService: Service is already running or starting.") # pragma: no cover
         return
 
@@ -1482,22 +1508,30 @@ def start_background_services():
 async def stop_background_services():
     global _background_service_active, _background_task
 
-    if not _background_service_active or not isinstance(_background_task, asyncio.Task): # pragma: no cover
+    task = _background_task
+    if task is None:
+        _background_service_active = False
         logger.info("BackgroundService: Service is not running or task not found.")
         return
 
     logger.info("BackgroundService: Attempting to stop service...")
     _background_service_active = False
 
-    if _background_task and not _background_task.done(): # pragma: no branch
-        _background_task.cancel()
-        try:
-            await _background_task
-            logger.info("BackgroundService: Service task successfully cancelled and awaited.") # pragma: no cover
-        except asyncio.CancelledError: # pragma: no cover
-            logger.info("BackgroundService: Service task explicitly cancelled.")
-        except Exception as e: # pragma: no cover
-            logger.error(f"BackgroundService: Error while awaiting cancelled task: {e}", exc_info=True)
+    if not task.done(): # pragma: no branch
+        task.cancel()
+        if isinstance(task, asyncio.Task):
+            try:
+                await task
+                logger.info("BackgroundService: Service task successfully cancelled and awaited.") # pragma: no cover
+            except asyncio.CancelledError: # pragma: no cover
+                logger.info("BackgroundService: Service task explicitly cancelled.")
+            except Exception as e: # pragma: no cover
+                logger.error(f"BackgroundService: Error while awaiting cancelled task: {e}", exc_info=True)
+        else:
+            # run_coroutine_threadsafe returns a concurrent.futures.Future.
+            # Its cancel() schedules cancellation of the underlying asyncio
+            # task; yielding lets that cancellation run on this loop.
+            await asyncio.sleep(0)
 
     _background_task = None
     logger.info("BackgroundService: Service stop procedure completed.")
@@ -1514,7 +1548,7 @@ def start_background_services_on_loop(loop):
     """
     global _background_service_active, _background_task
 
-    if _background_service_active:
+    if _background_service_active and isinstance(_background_task, (asyncio.Task, ConcurrentFuture)) and not _background_task.done():
         logger.warning("BackgroundService: Service already active. Ignoring request to start.")
         return
 
@@ -1522,11 +1556,31 @@ def start_background_services_on_loop(loop):
     _background_service_active = True
 
     try:
+        if not loop.is_running():
+            raise RuntimeError("provided asyncio loop is not running")
         # submit to the provided loop
         _background_task = asyncio.run_coroutine_threadsafe(_background_loop_async(), loop)
     except Exception as e:
         logger.error(f"BackgroundService: Failed to start background task on loop: {e}", exc_info=True)
         _background_service_active = False
+
+
+def stop_background_services_on_loop(loop, timeout_seconds: float = 5.0) -> bool:
+    """Stop the service from a thread that does not own the AI event loop."""
+    if loop is None or not loop.is_running():
+        return not _background_service_active
+
+    future = asyncio.run_coroutine_threadsafe(stop_background_services(), loop)
+    try:
+        future.result(timeout=max(0.1, float(timeout_seconds)))
+        return True
+    except FutureTimeoutError:
+        logger.error("BackgroundService: Timed out while stopping the service.")
+        future.cancel()
+        return False
+    except Exception as e:
+        logger.error("BackgroundService: Failed to stop service on loop: %s", e, exc_info=True)
+        return False
 
 if __name__ == '__main__': # pragma: no cover
     # Minimal __main__ for testing the background service loop structure manually

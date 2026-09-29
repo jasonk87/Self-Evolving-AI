@@ -94,7 +94,15 @@ Use this knowledge to provide context-aware responses. Be lively!
 def get_live_status():
     """Returns the current status of Live Mode (idle, listening, speaking)."""
     if ai_live_link is None:
-        return jsonify({"status": "unavailable", "success": False, "error": "Live mode unavailable: optional dependency missing."}), 503
+        # This is an optional capability, not a failed application request.
+        # Return a normal status payload so the cockpit can render a disabled
+        # control without producing a red network error on every page load.
+        return jsonify({
+            "status": "unavailable",
+            "success": True,
+            "available": False,
+            "error": "Live mode unavailable: optional dependency missing.",
+        })
 
     status = ai_live_link.get_status()
-    return jsonify({"status": status})
+    return jsonify({"status": status, "success": True, "available": True})

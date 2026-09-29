@@ -2,6 +2,7 @@ import json
 import os
 import logging
 import ai_assistant.config as config_module
+from ai_assistant.core.persistence import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ class ConfigManager:
             "DEFAULT_EXECUTION_MODE": {
                 "type": "string",
                 "description": "Default execution policy for new tasks.",
-                "enum": ["AUTO", "FAST_REACT", "DIRECT"],
+                "enum": ["AUTO", "THINKING_PRO", "FAST_REACT", "DIRECT"],
             },
             "DEFAULT_MODEL": {
                 "type": "string",
@@ -303,7 +304,6 @@ class ConfigManager:
 
     def _write_json(self, data):
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4)
+            atomic_write_json(self.config_path, data, indent=4)
         except Exception as e:
             logger.error(f"Failed to write config.json: {e}")

@@ -1,6 +1,7 @@
 
 // static/js/modules/terminal.js
 import { socket } from './socket_client.js';
+import { escapeHtml } from './ui.js';
 
 let isWaitingForTerminal = false;
 
@@ -22,7 +23,7 @@ export function handleTerminalResponse(responseText, outputDiv) {
 
     const outputLine = document.createElement('div');
     outputLine.className = 'line output';
-    outputLine.innerHTML = responseText.replace(/\n/g, '<br>');
+    outputLine.innerHTML = escapeHtml(responseText).replace(/\n/g, '<br>');
     outputDiv.appendChild(outputLine);
     outputDiv.scrollTop = outputDiv.scrollHeight;
 }
@@ -114,14 +115,14 @@ export async function sendTerminalCommand(inputEl, outputDiv, currentProject, cu
             if (data.stdout) {
                 const out = document.createElement('div');
                 out.className = 'line output';
-                out.innerHTML = data.stdout.replace(/\n/g, '<br>');
+                out.innerHTML = escapeHtml(data.stdout).replace(/\n/g, '<br>');
                 outputDiv.appendChild(out);
             }
             if (data.stderr) {
                 const err = document.createElement('div');
                 err.className = 'line output error';
                 err.style.color = '#ff6b6b';
-                err.innerHTML = data.stderr.replace(/\n/g, '<br>');
+                err.innerHTML = escapeHtml(data.stderr).replace(/\n/g, '<br>');
                 outputDiv.appendChild(err);
             }
             outputDiv.scrollTop = outputDiv.scrollHeight;

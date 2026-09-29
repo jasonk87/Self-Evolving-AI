@@ -21,6 +21,8 @@ def test_coerce_setting_value_validates_enum():
     value = manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "FAST_REACT")
     assert value == "FAST_REACT"
 
+    assert manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "THINKING_PRO") == "THINKING_PRO"
+
     try:
         manager.coerce_setting_value("DEFAULT_EXECUTION_MODE", "INVALID")
         assert False, "Expected ValueError for invalid enum"

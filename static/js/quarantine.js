@@ -1,11 +1,25 @@
 document.addEventListener('DOMContentLoaded', () => {
     const quarantineList = document.getElementById('quarantine-list');
     const refreshBtn = document.getElementById('refresh-quarantine-btn');
+    const quarantineView = document.getElementById('view-sidebar-quarantine');
 
-    // Poll every 10 seconds
-    setInterval(fetchQuarantine, 10000);
-    // Initial fetch
-    setTimeout(fetchQuarantine, 1000);
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    // Quarantine has no badge, so only refresh it while the view is open.
+    setInterval(() => {
+        if (!quarantineView || !quarantineView.classList.contains('hidden')) fetchQuarantine();
+    }, 10000);
+
+    if (quarantineView) {
+        new MutationObserver(() => {
+            if (!quarantineView.classList.contains('hidden')) fetchQuarantine();
+        }).observe(quarantineView, { attributes: true, attributeFilter: ['class'] });
+    }
 
     if (refreshBtn) {
         refreshBtn.addEventListener('click', fetchQuarantine);
@@ -40,7 +54,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const tools = Object.keys(blockedTools);
 
         if (tools.length === 0) {
-            quarantineList.innerHTML = '<div class="empty-state" style="opacity:0.5; text-align:center; margin-top:20px;">No quarantined tools.</div>';
+            quarantineList.innerHTML = '<div class="empty-state-panel"><strong>All tools are available</strong><span>Tools enter quarantine after repeated failures. You can unblock them here when needed.</span><button type="button" class="btn-xs" data-refresh-empty>Refresh</button></div>';
+            quarantineList.querySelector('[data-refresh-empty]')?.addEventListener('click', fetchQuarantine);
             return;
         }
 
@@ -53,24 +68,24 @@ document.addEventListener('DOMContentLoaded', () => {
             let contextHtml = '';
             if (info.context_data) {
                 const ctx = info.context_data;
-                if (ctx.goal) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Goal: <em>${ctx.goal}</em></div>`;
-                if (ctx.args && ctx.args.length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Args: <code>${JSON.stringify(ctx.args)}</code></div>`;
-                if (ctx.kwargs && Object.keys(ctx.kwargs).length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Kwargs: <code>${JSON.stringify(ctx.kwargs)}</code></div>`;
+                if (ctx.goal) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Goal: <em>${escapeHtml(ctx.goal)}</em></div>`;
+                if (ctx.args && ctx.args.length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Args: <code>${escapeHtml(JSON.stringify(ctx.args))}</code></div>`;
+                if (ctx.kwargs && Object.keys(ctx.kwargs).length > 0) contextHtml += `<div class="target-name" style="margin-top: 5px; font-size: 0.85em;">Kwargs: <code>${escapeHtml(JSON.stringify(ctx.kwargs))}</code></div>`;
             }
 
             card.innerHTML = `
                 <div class="approval-header">
                     <span class="approval-type type-quarantine" style="color: #ef4444; border-color: #ef4444;">QUARANTINED</span>
-                    <span class="approval-time">${info.timestamp ? new Date(info.timestamp * 1000).toLocaleTimeString() : ''}</span>
+                    <span class="approval-time">${escapeHtml(info.timestamp ? new Date(info.timestamp * 1000).toLocaleTimeString() : '')}</span>
                 </div>
                 <div class="approval-body">
-                    <div class="target-name">Tool: <code>${toolName}</code></div>
-                    <div class="target-name" style="margin-top: 5px;">Failures: <strong>${info.count}</strong></div>
-                    <p class="approval-desc" style="margin-top: 10px; word-break: break-all;">${info.reason || 'Repeated failures'}</p>
+                    <div class="target-name">Tool: <code>${escapeHtml(toolName)}</code></div>
+                    <div class="target-name" style="margin-top: 5px;">Failures: <strong>${escapeHtml(info.count)}</strong></div>
+                    <p class="approval-desc" style="margin-top: 10px; word-break: break-all;">${escapeHtml(info.reason || 'Repeated failures')}</p>
                     ${contextHtml ? `<div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px;"><strong>Failure Context:</strong>${contextHtml}</div>` : ''}
                 </div>
                 <div class="approval-actions">
-                    <button class="btn-approve" data-tool="${toolName}" style="width: 100%; border-color: #10b981; color: #10b981;">Unblock</button>
+                    <button class="btn-approve" data-tool="${escapeHtml(toolName)}" style="width: 100%; border-color: #10b981; color: #10b981;">Unblock</button>
                 </div>
             `;
 
@@ -84,7 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function unblockTool(toolName) {
-        const btn = document.querySelector(`button[data-tool="${toolName}"]`);
+        const btn = Array.from(document.querySelectorAll('button[data-tool]'))
+            .find(candidate => candidate.dataset.tool === toolName);
         if (btn) btn.disabled = true;
 
         try {

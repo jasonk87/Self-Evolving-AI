@@ -8,12 +8,14 @@ from ai_assistant.core.project_manager import find_project
 from ai_assistant.core.llm.router import model_router
 import json
 import asyncio
+import concurrent.futures
 from ai_assistant.custom_tools.reminder_tool import set_reminder, list_reminders, delete_reminder, update_reminder
 from ai_assistant.core.task_manager import ActiveTaskType, ActiveTaskStatus
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_NOTICE_SCOPE = "local_default"
+_CHAT_FUTURES = {}
 
 
 def _mark_active_chat_session(session_id: str) -> None:
@@ -821,6 +823,15 @@ from flask import Blueprint
 
 chat_bp = Blueprint('chat_bp', __name__)
 
+@chat_bp.route('/chat/<session_id>/cancel', methods=['POST'])
+def cancel_chat(session_id):
+    """Cancel the active controller future for a chat session, if present."""
+    future = _CHAT_FUTURES.get(str(session_id))
+    if not future or future.done():
+        return jsonify({"success": False, "cancelled": False, "error": "No active request for this session."}), 404
+    cancelled = future.cancel()
+    return jsonify({"success": bool(cancelled), "cancelled": bool(cancelled), "session_id": session_id}), (200 if cancelled else 409)
+
 @chat_bp.route('/chat', methods=['POST'])
 def chat():
     from ai_assistant.core.background_service import report_user_activity
@@ -985,6 +996,7 @@ def chat():
                 ),
                 app_globals.ai_loop
             )
+            _CHAT_FUTURES[str(session_id)] = future
 
             execution_state = future.result()
 
@@ -1016,15 +1028,38 @@ def chat():
                  # Include execution state errors in the response string if it failed without a final message
                  response = "Task encountered errors:\n" + "\n".join(execution_state.errors)
 
+            model_info = model_router.get_last_call_info()
+            context_metadata = execution_state.context_limits.get("context_metadata", {})
+            response_metadata = {
+                "model": model_info,
+                "memory": context_metadata,
+                "correlation_id": execution_state.correlation_id,
+                "status": execution_state.current_status,
+            }
             if response:
-                 app_globals.chat_manager.add_message(session_id, "assistant", response, images=collected_images)
+                app_globals.chat_manager.add_message(
+                    session_id,
+                    "assistant",
+                    response,
+                    images=collected_images,
+                    metadata=response_metadata,
+                )
 
             app_globals.socketio.emit('chat_response', {
                 "response": response,
                 "session_id": session_id,
                 "success": success,
                 "images": collected_images,
-                "system_status": execution_state.current_status
+                "system_status": execution_state.current_status,
+                "metadata": response_metadata,
+            })
+        except concurrent.futures.CancelledError:
+            app_globals.socketio.emit('chat_response', {
+                "response": "Request cancelled.",
+                "session_id": session_id,
+                "success": False,
+                "cancelled": True,
+                "images": [],
             })
         except Exception as e:
             logger.error(f"Error processing prompt via Controller: {e}", exc_info=True)
@@ -1035,6 +1070,8 @@ def chat():
                 "images": [],
                 "system_status": "error"
             })
+        finally:
+            _CHAT_FUTURES.pop(str(session_id), None)
 
     app_globals.socketio.start_background_task(_run_and_emit_chat_response)
 

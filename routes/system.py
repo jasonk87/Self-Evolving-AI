@@ -14,11 +14,12 @@ from ai_assistant.core.action_audit_ledger import get_recent_action_audit_events
 from ai_assistant.core.experiment_scoreboard import get_recent_experiment_scorecards
 from ai_assistant.core.patch_memory import get_recent_patch_lessons, search_patch_lessons
 from ai_assistant.core.tool_lifecycle import list_tool_lifecycle_records
-from ai_assistant.core.background_service import report_user_activity
+from ai_assistant.core.background_service import report_user_activity, stop_background_services_on_loop
 from ai_assistant.core.shutdown_manager import shutdown_manager
 from ai_assistant.voice.tts import generate_speech
 
 logger = logging.getLogger(__name__)
+SUPPORTED_SCRIPT_EXTENSIONS = {".py"}
 
 
 def _coerce_limit(raw_value, default: int, maximum: int) -> int:
@@ -34,6 +35,21 @@ def _safe_task_dict(task) -> dict:
         return task.to_dict()
     except Exception:  # pragma: no cover
         return {}
+
+
+def _is_within_root(root_path: str, candidate_path: str) -> bool:
+    """Return True only when candidate_path is inside root_path."""
+    try:
+        root = os.path.realpath(root_path)
+        candidate = os.path.realpath(candidate_path)
+        return os.path.commonpath([root, candidate]) == root
+    except (OSError, ValueError):
+        # ValueError covers paths on different Windows drives.
+        return False
+
+
+def _is_supported_script_path(path: str) -> bool:
+    return os.path.splitext(str(path or ""))[1].lower() in SUPPORTED_SCRIPT_EXTENSIONS
 
 
 def _pending_approval_summaries(limit: int) -> list[dict]:
@@ -212,9 +228,9 @@ def update_config():
 
 @api_bp.route('/run', methods=['POST'])
 def run_script():
-    """Executes a Python script."""
+    """Executes a supported source file from a registered project."""
     report_user_activity() # Signal user activity
-    data = request.json
+    data = request.get_json(silent=True) or {}
     path = data.get('path')
 
     if not path or not path.startswith('projects/'):
@@ -244,15 +260,25 @@ def run_script():
         if not root_path or not os.path.exists(root_path):
             return jsonify({"error": f"Project root path invalid for '{project_name}'.", "success": False}), 500
 
-        # Construct full path
-        full_path = os.path.abspath(os.path.join(root_path, file_relative_path))
+        # Construct the resolved path before validating it. realpath also
+        # prevents a symlink inside the project from escaping the project root.
+        full_path = os.path.realpath(os.path.join(root_path, file_relative_path))
 
         # Security check: ensure path is within root_path
-        if not full_path.startswith(os.path.abspath(root_path)):
+        if not _is_within_root(root_path, full_path):
              return jsonify({"error": "Access denied: Path traversal detected.", "success": False}), 403
 
         if not os.path.exists(full_path):
             return jsonify({"error": f"File not found: {full_path}", "success": False}), 404
+
+        if not _is_supported_script_path(file_relative_path):
+            return jsonify({
+                "error": (
+                    f"Cannot run '{file_relative_path}'. The editor currently runs Python files only; "
+                    "open this file for editing or preview it instead."
+                ),
+                "success": False,
+            }), 400
 
         # determine cwd (script's directory)
         cwd = os.path.dirname(full_path)
@@ -275,7 +301,11 @@ def run_script():
         if not output:
              output = "Script finished with no output."
 
-        return jsonify({"output": output, "success": True})
+        return jsonify({
+            "output": output,
+            "returncode": result.returncode,
+            "success": result.returncode == 0,
+        })
 
     except subprocess.TimeoutExpired:
         return jsonify({"output": "Error: Execution timed out (limit: 60s)", "success": False}), 200
@@ -292,7 +322,7 @@ def exec_terminal_command():
     if config.SAFE_MODE:
         return jsonify({"error": "Safe Mode is ENABLED. Arbitrary command execution is blocked.", "success": False}), 403
 
-    data = request.json
+    data = request.get_json(silent=True) or {}
     command = data.get('command')
     project_name = data.get('project_name')
     
@@ -328,7 +358,7 @@ def exec_terminal_command():
             "stderr": result.stderr,
             "returncode": result.returncode,
             "cwd": cwd,
-            "success": True
+            "success": result.returncode == 0
         })
 
     except subprocess.TimeoutExpired:
@@ -475,11 +505,17 @@ def system_shutdown():
         
         # Signal shutdown to stop new tasks
         shutdown_manager.request_shutdown(timeout_seconds=5)
-        
-        # We rely on TaskManager's synchronous WAL (Write-Ahead Log) to persist state safely.
-        # Wait just a moment for the response to clear and background threads to catch the signal.
-        logger.info("Shutdown: Tasks are persisted to WAL. Exiting immediately...")
-        time.sleep(2)
+
+        # Stop the service on the event loop that owns it before terminating
+        # the process.  This prevents background work from being abandoned and
+        # makes the shutdown path consistent with the normal service API.
+        loop = getattr(app_globals, "ai_loop", None)
+        stopped = stop_background_services_on_loop(loop, timeout_seconds=5)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(loop.stop)
+
+        logger.info("Shutdown: Background service stopped=%s; durable state was flushed.", stopped)
+        time.sleep(1)
 
         # Force exit
         os._exit(0)

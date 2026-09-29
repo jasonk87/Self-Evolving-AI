@@ -74,14 +74,28 @@ export function initTokenModal() {
 async function renderTokenBreakdown() {
     const totalSpentEl = document.getElementById('token-total-spent');
     const container = document.getElementById('token-bars-container');
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    const numberOrZero = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : 0;
+    };
 
     try {
         const res = await fetch('/api/telemetry');
         const usage = await res.json();
+        const estimatedCost = numberOrZero(usage && usage.estimated_cost);
+        const modelUsage = usage && usage.model_usage && typeof usage.model_usage === 'object'
+            ? usage.model_usage
+            : {};
 
-        totalSpentEl.textContent = `$${usage.estimated_cost.toFixed(4)}`;
+        totalSpentEl.textContent = `$${estimatedCost.toFixed(4)}`;
 
-        if (!usage.model_usage || Object.keys(usage.model_usage).length === 0) {
+        if (Object.keys(modelUsage).length === 0) {
             container.innerHTML = '<div style="color: var(--text-secondary); text-align: center;">No token usage recorded today.</div>';
             return;
         }
@@ -92,30 +106,31 @@ async function renderTokenBreakdown() {
         // Assuming we display what we have:
 
         let html = '';
-        let totalCostAll = usage.estimated_cost || 0.0001; // avoid div 0
-
-        for (const [model, stats] of Object.entries(usage.model_usage)) {
+        const overallTokens = Math.max(1, numberOrZero(usage.total_tokens));
+        for (const [model, rawStats] of Object.entries(modelUsage)) {
+            const stats = rawStats && typeof rawStats === 'object' ? rawStats : {};
+            const inputTokens = numberOrZero(stats.input_tokens);
+            const outputTokens = numberOrZero(stats.output_tokens);
             // Rough estimate of cost per model based on tokens (hardcoded approx for visualization)
             // Just visualize token percentage for now
-            const thinkingTokens = stats.thinking_tokens || 0;
-            const totalTokens = stats.total_tokens || (stats.input_tokens + stats.output_tokens + thinkingTokens);
-            const overallTokens = usage.total_tokens || 1;
+            const thinkingTokens = numberOrZero(stats.thinking_tokens);
+            const totalTokens = numberOrZero(stats.total_tokens) || (inputTokens + outputTokens + thinkingTokens);
             const pct = Math.min(100, (totalTokens / overallTokens) * 100).toFixed(1);
             const budgetText = stats.latest_thinking_budget === null || stats.latest_thinking_budget === undefined
                 ? 'Budget: n/a'
-                : `Budget: ${Number(stats.latest_thinking_budget).toLocaleString()}`;
+                : `Budget: ${numberOrZero(stats.latest_thinking_budget).toLocaleString()}`;
 
             html += `
                 <div style="margin-bottom: 15px;">
                     <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 5px;">
-                        <span>${model}</span>
+                        <span>${escapeHtml(model)}</span>
                         <span>${pct}% (${totalTokens.toLocaleString()} tokens)</span>
                     </div>
                     <div style="width: 100%; background: rgba(255,255,255,0.05); border-radius: 4px; height: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.02);">
                         <div style="height: 100%; width: ${pct}%; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); border-radius: 4px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);"></div>
                     </div>
                     <div style="font-size: 0.8em; color: var(--text-secondary); margin-top: 2px;">
-                        In: ${stats.input_tokens.toLocaleString()} | Out: ${stats.output_tokens.toLocaleString()} | Thinking: ${thinkingTokens.toLocaleString()} | ${budgetText}
+                        In: ${inputTokens.toLocaleString()} | Out: ${outputTokens.toLocaleString()} | Thinking: ${thinkingTokens.toLocaleString()} | ${escapeHtml(budgetText)}
                     </div>
                 </div>
             `;

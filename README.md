@@ -64,7 +64,7 @@ This project is a next-generation AI agent designed not just to execute tasks, b
 
 ## 📦 Requirements
 
-*   Python 3.12+
+*   Python 3.14+
 *   Core + dev dependencies via `requirements.txt` (safe default install).
 *   Optional integrations via `requirements-optional.txt` (e.g., `pyaudio`, `mss`, `chromadb`).
 *   **Ollama** (for local embeddings and optional LLM support).

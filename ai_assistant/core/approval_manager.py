@@ -6,6 +6,7 @@ import json
 import os
 from typing import Dict, Any, List, Optional, Callable
 from ai_assistant.config import get_data_dir
+from ai_assistant.core.persistence import atomic_write_json, json_path_lock
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class ApprovalManager:
             cls._instance.pending_requests = {}
             cls._instance.callbacks = {} # request_id -> callable
             cls._instance.filepath = os.path.join(get_data_dir(), "pending_approvals.json")
+            cls._instance.history_filepath = os.path.join(get_data_dir(), "approval_history.json")
             cls._instance._load_pending_requests()
         return cls._instance
 
@@ -38,8 +40,8 @@ class ApprovalManager:
     def _save_pending_requests(self):
         try:
             os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
-            with open(self.filepath, "w", encoding="utf-8") as f:
-                json.dump(list(self.pending_requests.values()), f, indent=2, default=str)
+            with json_path_lock(self.filepath):
+                atomic_write_json(self.filepath, list(self.pending_requests.values()), indent=2)
         except Exception as e:
             logger.error(f"Failed to save pending approvals: {e}")
 
@@ -144,12 +146,43 @@ class ApprovalManager:
         """Retrieves a specific request by ID."""
         return self.pending_requests.get(req_id)
 
-    async def approve_request(self, req_id: str) -> bool:
+    def _record_history(self, request: Dict[str, Any], action: str, feedback: Optional[str] = None) -> None:
+        try:
+            history = []
+            if os.path.exists(self.history_filepath):
+                with open(self.history_filepath, "r", encoding="utf-8") as handle:
+                    raw = json.load(handle)
+                    history = raw if isinstance(raw, list) else []
+            history.append({
+                "request_id": request.get("id"),
+                "type": request.get("type"),
+                "description": request.get("description"),
+                "action": action,
+                "feedback": str(feedback or "").strip(),
+                "timestamp": time.time(),
+            })
+            os.makedirs(os.path.dirname(self.history_filepath), exist_ok=True)
+            atomic_write_json(self.history_filepath, history[-500:], indent=2)
+        except Exception as exc:
+            logger.warning("Could not persist approval history: %s", exc)
+
+    async def approve_request(self, req_id: str, feedback: Optional[str] = None) -> bool:
         """Executes the callback associated with the request."""
         if req_id in self.pending_requests:
             logger.info(f"Approving request {req_id}")
 
             func = self.callbacks.get(req_id)
+            if func is None:
+                # A Python callback cannot be serialized into the pending JSON
+                # file.  Never claim success or delete the request when the app
+                # was restarted and the executable handler is unavailable.
+                logger.error(
+                    "Approval %s has no executable callback after reload; "
+                    "leaving it pending for explicit rehydration.",
+                    req_id,
+                )
+                return False
+
             success = True
 
             if func:
@@ -161,15 +194,19 @@ class ApprovalManager:
                     logger.error(f"Error executing approved request {req_id}: {e}")
                     success = False
 
+            if success:
+                self._record_history(self.pending_requests[req_id], "approved", feedback)
+
             # Clean up
             self._cleanup(req_id)
             return success
         return False
 
-    def deny_request(self, req_id: str) -> bool:
+    def deny_request(self, req_id: str, feedback: Optional[str] = None) -> bool:
         """Removes the request without executing."""
         if req_id in self.pending_requests:
             logger.info(f"Denying request {req_id}")
+            self._record_history(self.pending_requests[req_id], "denied", feedback)
             self._cleanup(req_id)
             return True
         return False

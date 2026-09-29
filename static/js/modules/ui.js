@@ -2,8 +2,7 @@
 // static/js/modules/ui.js
 
 export function escapeHtml(text) {
-    if (!text) return text;
-    return text
+    return String(text ?? '')
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")

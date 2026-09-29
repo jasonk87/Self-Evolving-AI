@@ -3,9 +3,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('cortex-graph');
     if (!container) return;
 
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
     let network = null;
     let nodes = new vis.DataSet([]);
     let edges = new vis.DataSet([]);
+    let nodeLimit = 250;
+    let showLabels = false;
 
     const options = {
         nodes: {
@@ -31,6 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 springLength: 95
             },
             minVelocity: 0.75
+        },
+        layout: {
+            improvedLayout: false
         },
         interaction: {
             tooltipDelay: 200,
@@ -80,33 +92,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Common fields
                 contentHtml += `<div class="detail-item">
                     <div class="detail-label">Type</div>
-                    <div class="detail-value">${node.group.toUpperCase()}</div>
+                    <div class="detail-value">${escapeHtml(node.group.toUpperCase())}</div>
                 </div>`;
 
                 if (node.group === 'fact') {
                     contentHtml += `<div class="detail-item">
                         <div class="detail-label">Fact Content</div>
-                        <div class="detail-value">${info.text}</div>
+                        <div class="detail-value">${escapeHtml(info.text)}</div>
                     </div>`;
                     const dateStr = info.timestamp ? new Date(info.timestamp).toLocaleString() : 'Unknown';
                     contentHtml += `<div class="detail-item">
                         <div class="detail-label">Created</div>
-                        <div class="detail-value">${dateStr}</div>
+                        <div class="detail-value">${escapeHtml(dateStr)}</div>
                     </div>`;
                 } else if (node.group === 'insight') {
                     contentHtml += `<div class="detail-item">
                         <div class="detail-label">Category</div>
-                        <div class="detail-value">${info.type}</div>
+                        <div class="detail-value">${escapeHtml(info.type)}</div>
                     </div>`;
                     contentHtml += `<div class="detail-item">
                         <div class="detail-label">Description</div>
-                        <div class="detail-value">${info.description}</div>
+                        <div class="detail-value">${escapeHtml(info.description)}</div>
                     </div>`;
 
                     if (info.suggestion) {
                         contentHtml += `<div class="detail-item">
                             <div class="detail-label">Suggestion</div>
-                            <div class="detail-value"><code>${info.suggestion}</code></div>
+                            <div class="detail-value"><code>${escapeHtml(info.suggestion)}</code></div>
                         </div>`;
                     }
                 }
@@ -142,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const newNode = {
                     id: nodeId,
-                    label: data.role || 'Thought',
+                    label: showLabels ? (data.role || 'Thought') : '',
                     title: data.thought ? data.thought.substring(0, 150) + "..." : "Processing...",
                     color: nodeColor,
                     group: 'live_thought',
@@ -193,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const anomalies = Array.isArray(activity.anomalies) ? activity.anomalies : [];
         if (anomalies.length > 0) {
             anomaliesEl.innerHTML = anomalies
-                .map(item => `<span class="summary-anomaly">${item.message || 'Memory anomaly detected'}</span>`)
+                .map(item => `<span class="summary-anomaly">${escapeHtml(item.message || 'Memory anomaly detected')}</span>`)
                 .join(' ');
         } else {
             anomaliesEl.innerHTML = '';
@@ -256,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Failed to load cortex data", e);
             container.innerHTML = `<div style="color: #ff4757; text-align: center; padding-top: 20px;">
                 <h3>Visual Cortex Error</h3>
-                <p>${e.message}</p>
+                <p>${escapeHtml(e.message)}</p>
                 <p>Check console for details.</p>
             </div>`;
         }
@@ -309,9 +321,28 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        const totalNodes = newNodes.length;
+        const sortedNodes = newNodes.sort((a, b) => {
+            const aTime = new Date(a._data?.created_at || a._data?.timestamp || 0).getTime();
+            const bTime = new Date(b._data?.created_at || b._data?.timestamp || 0).getTime();
+            return bTime - aTime;
+        });
+        const visibleNodes = nodeLimit === 'all' ? sortedNodes : sortedNodes.slice(0, Number(nodeLimit));
+        visibleNodes.forEach(node => {
+            node.label = showLabels ? node.label : '';
+            node.font = { size: 10, color: showLabels ? '#dbeafe' : 'transparent' };
+        });
+
+        const summary = document.getElementById('cortex-node-summary');
+        if (summary) {
+            summary.textContent = nodeLimit === 'all'
+                ? `Showing all ${totalNodes} memories`
+                : `Showing ${visibleNodes.length} of ${totalNodes} memories`;
+        }
+
         nodes.clear();
         edges.clear();
-        nodes.add(newNodes);
+        nodes.add(visibleNodes);
         edges.add(newEdges);
 
         if (!network) initNetwork();
@@ -320,11 +351,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hoursFilter = document.getElementById('cortex-hours-filter');
     const kindFilter = document.getElementById('cortex-kind-filter');
+    const nodeLimitFilter = document.getElementById('cortex-node-limit');
+    const showLabelsToggle = document.getElementById('cortex-show-labels');
     if (hoursFilter) {
         hoursFilter.addEventListener('change', fetchActivitySummary);
     }
     if (kindFilter) {
         kindFilter.addEventListener('change', fetchActivitySummary);
+    }
+    if (nodeLimitFilter) {
+        nodeLimitFilter.addEventListener('change', () => {
+            nodeLimit = nodeLimitFilter.value;
+            fetchData();
+        });
+    }
+    if (showLabelsToggle) {
+        showLabelsToggle.addEventListener('change', () => {
+            showLabels = showLabelsToggle.checked;
+            fetchData();
+        });
     }
 
     // Refresh button

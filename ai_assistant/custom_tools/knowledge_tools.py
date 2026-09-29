@@ -1,13 +1,36 @@
 
 import json
 import logging
-from typing import Optional, List
+from typing import Any, Optional, List, Dict
 from ai_assistant.memory.persistent_memory import load_learned_facts, save_learned_facts
-from ai_assistant.llm_interface.ollama_client import invoke_ollama_model_async
-from ai_assistant.config import get_model_for_task
+from ai_assistant.core.llm.router import model_router
 logger = logging.getLogger(__name__)
 FACT_DECISION_PROMPT_TEMPLATE = '\nYou are an AI Knowledge Base Curator. I want to add a new fact to my memory.\nCheck against the similar existing facts provided below and decide what to do.\n\nNEW FACT: "{new_fact}"\n\nSIMILAR EXISTING FACTS:\n{similar_facts_list}\n\nOPTIONS:\nA) ADD: The new fact is unique and contains new information not present in the existing facts.\nB) UPDATE: The new fact updates, corrects, or adds significant detail to an existing fact. (Specify which existing fact to replace).\nC) DISCARD: The new fact is already covered by the existing facts (duplicate) or is not worth saving (trivial/transient).\n\nResponse format:\nJSON object with keys:\n- "decision": "ADD", "UPDATE", or "DISCARD"\n- "reason": "Explanation..."\n- "target_id": "ID of the fact to update/replace" (Only for UPDATE, otherwise null)\n- "merged_fact": "The new merged text" (Only for UPDATE, otherwise null)\n\nRespond ONLY with the JSON object.\n'
 _rag_system_cache = None
+
+
+def _extract_decision_json(response: Any) -> Optional[Dict[str, Any]]:
+    """Extract the first JSON object from a fact-curator response.
+
+    Models may return a fenced object, a short explanation before the object,
+    or trailing text despite the strict prompt. ``raw_decode`` lets us recover
+    the complete object without the old, unsafe ``str.lstrip`` cleanup.
+    """
+    cleaned = str(response or '').strip()
+    if not cleaned:
+        return None
+
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(cleaned):
+        if character != '{':
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 async def _get_rag_system():
     """
@@ -61,15 +84,18 @@ async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool
             similar_facts_display.append(f"ID: {fact_id} | Text: {res['text']}")
         similar_facts_str = '\n'.join(similar_facts_display)
         prompt = FACT_DECISION_PROMPT_TEMPLATE.replace('{new_fact}', new_fact).replace('{similar_facts_list}', similar_facts_str)
-        model_name = get_model_for_task('fact_management') or get_model_for_task('reasoning')
-        response_str = await invoke_ollama_model_async(prompt, model_name=model_name)
         try:
-            cleaned_response = response_str.strip()
-            if cleaned_response.startswith('```json'):
-                cleaned_response = cleaned_response.lstrip('```json').rstrip('```').strip()
-            elif cleaned_response.startswith('```'):
-                cleaned_response = cleaned_response.lstrip('```').rstrip('```').strip()
-            decision_data = json.loads(cleaned_response)
+            response_str = await model_router.generate_response(
+                prompt,
+                task_name='fact_management',
+                system_instruction='Return exactly one valid JSON object and no surrounding commentary.',
+                temperature=0.0,
+                max_tokens=500,
+            )
+            decision_data = _extract_decision_json(response_str)
+            if not decision_data:
+                logger.warning('Fact curator returned no valid decision JSON; leaving the fact unchanged.')
+                continue
             decision = decision_data.get('decision', 'DISCARD').upper()
             if decision == 'ADD':
                 logger.info(f'Decision ADD: {new_fact}')
@@ -97,10 +123,8 @@ async def _curate_and_update_fact_store(newly_observed_facts: List[str]) -> bool
                     logger.warning('UPDATE decision missing target_id or merged_fact. Discarding update.')
             elif decision == 'DISCARD':
                 logger.info(f'Decision DISCARD: {new_fact}')
-        except json.JSONDecodeError:
-            logger.error(f'Failed to parse decision JSON: {cleaned_response}')
         except Exception as e:
-            logger.error(f'Error processing fact decision: {e}')
+            logger.warning(f'Fact curation decision unavailable; leaving the fact unchanged: {e}')
     if facts_changed:
         save_learned_facts(current_facts_list)
     return True

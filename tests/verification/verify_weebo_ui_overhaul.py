@@ -1,4 +1,5 @@
 import os
+import json
 
 from playwright.sync_api import sync_playwright
 
@@ -56,12 +57,26 @@ def verify_weebo_ui_overhaul():
             assert "Weebo is ready" in mobile.locator(".chat-home-card").inner_text()
             assert mobile.locator(".chat-home-status-row").is_visible()
 
+            mobile.route(
+                "**/chat",
+                lambda route: route.fulfill(
+                    status=202,
+                    content_type="application/json",
+                    body=json.dumps({"accepted": True, "session_id": "ui-verification-session"}),
+                ),
+            )
+            mobile.locator("#chat-input").fill("first mobile message")
+            mobile.locator("#send-btn").click()
+            mobile.locator(".chat-home-card").wait_for(state="detached", timeout=5000)
+            assert mobile.locator(".message.user").last.inner_text() == "first mobile message"
+
             mobile.locator("#mobile-menu-btn").click()
             mobile.locator("#sidebar-panel.active").wait_for(state="visible", timeout=5000)
             mobile.locator(".mobile-drawer-identity").wait_for(state="visible", timeout=5000)
             assert "Command Menu" in mobile.locator(".mobile-drawer-identity").inner_text()
-            assert mobile.locator(".mobile-sidebar-tab").count() == 5
+            assert mobile.locator(".mobile-sidebar-tab").count() == 6
             assert mobile.locator('.mobile-sidebar-tab[data-target="view-sidebar-approvals"]').is_visible()
+            assert mobile.locator('.mobile-sidebar-tab[data-target="view-sidebar-quarantine"]').is_visible()
             drawer_has_horizontal_overflow = mobile.evaluate(
                 """() => {
                     const drawer = document.querySelector('#sidebar-panel');

@@ -6,6 +6,7 @@ import datetime # Added for __main__ tests for ActionableInsights
 import uuid # Added missing import
 
 from ai_assistant.config import get_data_dir # Import the centralized function
+from ai_assistant.core.persistence import atomic_write_json
 
 def save_goals_to_file(filepath: str, goals_db: Dict[str, Any]) -> bool:
     """
@@ -24,8 +25,7 @@ def save_goals_to_file(filepath: str, goals_db: Dict[str, Any]) -> bool:
         if dir_path: # Only create if there is a directory part
             os.makedirs(dir_path, exist_ok=True)
             
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(goals_db, f, indent=4, ensure_ascii=False)
+        atomic_write_json(filepath, goals_db, indent=4)
         # print(f"Successfully saved goals to {filepath}") # CLI will provide user feedback
         return True
     except IOError as e:
@@ -99,8 +99,7 @@ def save_learned_facts(facts: List[Dict[str, Any]], filepath: str = LEARNED_FACT
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
             
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(facts, f, indent=4, ensure_ascii=False)
+        atomic_write_json(filepath, facts, indent=4)
         return True
     except IOError as e: # pragma: no cover
         print(f"IOError saving learned facts to {filepath}: {e}")
@@ -196,8 +195,7 @@ def save_actionable_insights(insights: List[Dict[str, Any]], filepath: str = ACT
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(insights, f, indent=4, ensure_ascii=False)
+        atomic_write_json(filepath, insights, indent=4)
         return True
     except IOError as e: # pragma: no cover
         print(f"IOError saving actionable insights to {filepath}: {e}")
@@ -255,8 +253,7 @@ def save_episodic_memories(episodes: List[Dict[str, Any]], filepath: str = EPISO
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(episodes, f, indent=4, ensure_ascii=False)
+        atomic_write_json(filepath, episodes, indent=4)
         return True
     except Exception as e:
         print(f"Error saving episodic memories: {e}")
@@ -517,8 +514,7 @@ def save_tools_to_file(filepath: str, tool_registry_data: Dict[str, Dict[str, An
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
             
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(tool_registry_data, f, indent=4, ensure_ascii=False)
+        atomic_write_json(filepath, tool_registry_data, indent=4)
         # print(f"Successfully saved tools to {filepath}") # Feedback handled by caller
         return True
     except IOError as e:

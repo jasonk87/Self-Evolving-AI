@@ -54,3 +54,12 @@ def test_runner_failure_preserves_actual_selected_tool():
 
 def test_empty_exception_text_still_has_useful_details():
     assert background_service._format_exception_details(asyncio.TimeoutError()) == "TimeoutError"
+
+
+def test_payment_provider_failure_is_not_retried_as_transient():
+    assert background_service._is_permanent_dream_provider_failure(
+        DeepseekError("402 Payment Required")
+    ) is True
+    assert background_service._is_permanent_dream_provider_failure(
+        DeepseekError("request timed out")
+    ) is False

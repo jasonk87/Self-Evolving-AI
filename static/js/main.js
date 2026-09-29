@@ -116,6 +116,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorContainer = document.getElementById('editor-container');
     const chatSessionsList = document.getElementById('chat-sessions-list');
     const fileTreeContainer = document.getElementById('file-tree');
+    const connectionStatus = document.getElementById('connection-status');
+    const mobileConnectionStatus = document.getElementById('mobile-connection-status');
+
+    const setConnectionStatus = (state, label) => {
+        [connectionStatus, mobileConnectionStatus].forEach(element => {
+            if (!element) return;
+            element.className = `connection-status is-${state}`;
+            element.textContent = label;
+            element.title = `Live connection: ${label}`;
+        });
+    };
+    socket.on('connect', () => setConnectionStatus('connected', 'Connected'));
+    socket.on('disconnect', () => setConnectionStatus('disconnected', 'Offline — retrying'));
+    socket.io?.on('reconnect_attempt', () => setConnectionStatus('connecting', 'Reconnecting'));
+    socket.io?.on('reconnect', () => setConnectionStatus('connected', 'Connected'));
 
     // Helper to sync sidebar tab active state on mobile
     function syncSidebarTabState(targetId) {
@@ -163,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1. Show Panel
             sidebarPanel.classList.remove('collapsed');
             sidebarPanel.classList.add('active'); // for mobile
+            document.getElementById('mobile-menu-btn')?.setAttribute('aria-expanded', 'true');
 
             // 2. Switch Content with Fade
             sidebarViews.forEach(v => {
@@ -196,12 +212,27 @@ document.addEventListener('DOMContentLoaded', () => {
         closeSidebar: () => {
             sidebarPanel.classList.add('collapsed');
             sidebarPanel.classList.remove('active');
+            document.getElementById('mobile-menu-btn')?.setAttribute('aria-expanded', 'false');
             document.querySelectorAll('.activity-item').forEach(i => i.classList.remove('active'));
             // Keep Chat icon active if we are in chat? No, they are separate now.
         },
 
-        openMainView: (viewId, tabLabel = "View") => {
+        openMainView: (viewId, tabLabel = "View", options = {}) => {
+            if (
+                Layout.currentMainView === 'view-settings' &&
+                viewId !== 'view-settings' &&
+                !options.skipSettingsGuard &&
+                Settings.hasUnsavedChanges()
+            ) {
+                Settings.confirmDiscardChanges(() => {
+                    Layout.openMainView(viewId, tabLabel, { ...options, skipSettingsGuard: true });
+                });
+                return false;
+            }
+
             Layout.currentMainView = viewId;
+
+            if (options.closeSidebar) Layout.closeSidebar();
 
             // 1. Switch View Container with Fade
             mainViews.forEach(v => {
@@ -246,7 +277,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetTab = document.createElement('div');
                 targetTab.className = 'main-tab active';
                 targetTab.dataset.target = activeViewId;
-                targetTab.innerHTML = `<span>${label}</span><span class="close-tab">×</span>`;
+                const labelEl = document.createElement('span');
+                labelEl.textContent = label;
+                const closeEl = document.createElement('span');
+                closeEl.className = 'close-tab';
+                closeEl.textContent = '×';
+                targetTab.append(labelEl, closeEl);
                 mainTabsHeader.appendChild(targetTab);
             }
             targetTab.classList.add('active');
@@ -268,6 +304,8 @@ document.addEventListener('DOMContentLoaded', () => {
             else bottomPanel.classList.toggle('collapsed');
 
             const mobileTerminalBtn = document.getElementById('mobile-terminal-btn');
+            const toggleButton = document.getElementById('toggle-bottom-panel');
+            toggleButton?.setAttribute('aria-expanded', String(!bottomPanel.classList.contains('collapsed')));
             if (mobileTerminalBtn) {
                 if (bottomPanel.classList.contains('collapsed')) {
                     mobileTerminalBtn.classList.remove('active');
@@ -310,6 +348,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const filename = path ? path.split('/').pop() : 'Editor';
         Layout.openMainView('view-editor-main', filename);
     });
+    Chat.restoreActiveSession(chatContainer).then(restored => {
+        if (!restored) Chat.renderChatHome(chatContainer);
+    });
     Chat.loadSessions(chatSessionsList, (sessionId) => {
         Chat.loadChatSession(sessionId, chatContainer);
     });
@@ -339,9 +380,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (item.classList.contains('active')) {
                     Layout.closeSidebar();
                 } else {
+                    if (Layout.currentMainView !== 'view-editor-main' || target !== 'view-sidebar-files') {
+                        Layout.openMainView('view-chat', 'Chat');
+                    }
                     Layout.openSidebarView(target);
                     loadSidebarData(target);
                 }
+            }
+        });
+        item.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                item.click();
             }
         });
     });
@@ -357,11 +407,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     : target;
                 const nextLabel = nextTarget === 'view-chat' ? 'Chat' : label;
 
-                Layout.openMainView(nextTarget, nextLabel);
+                Layout.openMainView(nextTarget, nextLabel, { closeSidebar: true });
 
                 if (nextTarget === 'view-settings') {
                     Settings.loadConfig();
                 }
+            }
+        });
+        item.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                item.click();
             }
         });
     });
@@ -397,6 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Mobile Menu & Navigation
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const mobileMenuBtnBottom = document.getElementById('mobile-menu-btn-bottom');
+    const mobileDrawerClose = document.getElementById('mobile-drawer-close');
     const mobileOverlay = document.getElementById('mobile-overlay');
 
     const toggleMobileMenu = () => {
@@ -416,6 +473,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', toggleMobileMenu);
     if (mobileMenuBtnBottom) mobileMenuBtnBottom.addEventListener('click', toggleMobileMenu);
+    if (mobileDrawerClose) mobileDrawerClose.addEventListener('click', () => {
+        sidebarPanel.classList.remove('active');
+        sidebarPanel.classList.add('collapsed');
+        mobileOverlay?.classList.remove('active');
+        mobileMenuBtn?.setAttribute('aria-expanded', 'false');
+    });
 
     if (mobileOverlay) {
         mobileOverlay.addEventListener('click', () => {
@@ -431,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const label = item.querySelector('span')?.textContent || 'View';
 
             if (targetId) {
-                Layout.openMainView(targetId, label);
+                Layout.openMainView(targetId, label, { closeSidebar: true });
                 Layout.toggleBottomPanel(false); // Collapsed on view switch
             }
         });
@@ -450,6 +513,9 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => {
             const target = tab.dataset.target;
             if (target) {
+                if (Layout.currentMainView !== 'view-editor-main' || target !== 'view-sidebar-files') {
+                    Layout.openMainView('view-chat', 'Chat');
+                }
                 Layout.openSidebarView(target);
                 loadSidebarData(target);
             }
@@ -565,9 +631,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 5. File Actions (Run/Save)
     document.getElementById('save-file-btn')?.addEventListener('click', Files.saveFile);
     document.getElementById('run-file-btn')?.addEventListener('click', () => {
-        Layout.toggleBottomPanel(true); // Open terminal
         Files.runFile(terminalOutput, () => {
-            // Callback usually switches view, but we handled it by opening panel
+            Layout.toggleBottomPanel(true);
         });
     });
 
@@ -585,20 +650,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 7. Live / Ghost Mode toggle (LIVE UPLINK button + settings checkbox)
     let liveMode = false;
+    let liveModeUnavailable = false;
     const liveToggleBtn = document.getElementById('live-toggle-btn');
     const ghostModeCheckbox = document.getElementById('setting-ghost-mode');
 
     // Keep both controls in sync with the current state
     const syncLiveControls = () => {
         if (liveToggleBtn) {
-            liveToggleBtn.textContent = liveMode ? 'DISCONNECT' : 'LIVE UPLINK';
+            liveToggleBtn.textContent = liveModeUnavailable ? 'LIVE UNAVAILABLE' : (liveMode ? 'DISCONNECT' : 'LIVE UPLINK');
             liveToggleBtn.classList.toggle('active', liveMode);
+            liveToggleBtn.disabled = liveModeUnavailable;
+            liveToggleBtn.title = liveModeUnavailable
+                ? 'Live Mode is unavailable because its optional desktop capture dependency is not installed.'
+                : 'Connect to The Watcher';
         }
-        if (ghostModeCheckbox) ghostModeCheckbox.checked = liveMode;
+        if (ghostModeCheckbox) {
+            ghostModeCheckbox.checked = liveMode;
+            ghostModeCheckbox.disabled = liveModeUnavailable;
+            ghostModeCheckbox.title = liveModeUnavailable
+                ? 'Live Mode is unavailable because its optional desktop capture dependency is not installed.'
+                : '';
+        }
     };
 
     // Shared toggle action
     const applyLiveMode = async (desiredState) => {
+        if (liveModeUnavailable) return;
         liveMode = desiredState;
         if (liveToggleBtn) liveToggleBtn.disabled = true;
         if (ghostModeCheckbox) ghostModeCheckbox.disabled = true;
@@ -626,7 +703,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sync with server state on load
     fetch('/get_live_status')
         .then(r => r.json())
-        .then(d => { liveMode = d.status === 'active'; syncLiveControls(); })
+        .then(d => {
+            liveModeUnavailable = d.available === false || d.status === 'unavailable';
+            liveMode = d.status === 'active';
+            syncLiveControls();
+        })
         .catch(() => {});
 
     if (liveToggleBtn) {
@@ -666,10 +747,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 9. Close File button (Editor header → returns to chat view)
     document.getElementById('close-file-btn')?.addEventListener('click', () => {
+        const runButton = document.getElementById('run-file-btn');
+        if (runButton) {
+            runButton.disabled = true;
+            runButton.title = 'Open a Python file to run';
+            runButton.setAttribute('aria-label', runButton.title);
+        }
+        const dirtyStatus = document.getElementById('editor-dirty-status');
+        if (dirtyStatus) dirtyStatus.textContent = '';
         Layout.openMainView('view-chat', 'Chat');
     });
 
     // Memory Tabs Navigation
+    const memorySearch = document.getElementById('memory-search');
+    const memorySort = document.getElementById('memory-sort');
+    const refreshMemoryView = () => Memory.filterMemory(memorySearch?.value || '', memorySort?.value || 'newest');
+    memorySearch?.addEventListener('input', refreshMemoryView);
+    memorySort?.addEventListener('change', refreshMemoryView);
+
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
             const targetTab = e.target.dataset.tab;
@@ -724,6 +819,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     let hasAutoOpenedTerminal = false;
+    let councilPaused = false;
+    let councilQueuedCount = 0;
+    const councilLogContainer = document.getElementById('council-logs');
+    const councilLogCount = document.getElementById('council-log-count');
+    const councilLogFilter = document.getElementById('council-log-filter');
+    const pauseCouncilButton = document.getElementById('pause-council-btn');
+    const clearCouncilButton = document.getElementById('clear-council-btn');
+
+    const updateCouncilCount = () => {
+        if (!councilLogCount) return;
+        const visibleEntries = councilLogContainer
+            ? councilLogContainer.querySelectorAll('.log-entry:not(.system)').length
+            : 0;
+        councilLogCount.textContent = councilQueuedCount > 0
+            ? `${visibleEntries} +${councilQueuedCount}`
+            : String(visibleEntries);
+    };
+
+    const applyCouncilFilter = () => {
+        const filter = councilLogFilter?.value || 'ALL';
+        councilLogContainer?.querySelectorAll('.log-entry').forEach(entry => {
+            entry.hidden = filter !== 'ALL' && !entry.classList.contains(filter);
+        });
+    };
+
+    councilLogFilter?.addEventListener('change', applyCouncilFilter);
+    pauseCouncilButton?.addEventListener('click', () => {
+        councilPaused = !councilPaused;
+        pauseCouncilButton.textContent = councilPaused ? '▶' : 'Ⅱ';
+        pauseCouncilButton.title = councilPaused ? 'Resume Council log' : 'Pause Council log';
+        pauseCouncilButton.setAttribute('aria-label', pauseCouncilButton.title);
+        pauseCouncilButton.setAttribute('aria-pressed', String(councilPaused));
+        if (!councilPaused) {
+            councilQueuedCount = 0;
+            updateCouncilCount();
+        }
+    });
+    clearCouncilButton?.addEventListener('click', () => {
+        if (councilLogContainer) {
+            councilLogContainer.innerHTML = '<div class="log-entry system">Council log cleared.</div>';
+        }
+        councilQueuedCount = 0;
+        updateCouncilCount();
+    });
 
 
     socket.on('assistant_alert', (data) => {
@@ -777,14 +916,20 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('log_event', (data) => {
         // 1. Append to Council Log
         const councilContainer = document.getElementById('council-logs');
-        if (councilContainer) {
+        if (councilContainer && !councilPaused) {
             const entry = document.createElement('div');
-            entry.className = `log-entry ${data.level || 'INFO'}`;
+            const logLevel = String(data.level || 'INFO').replace(/[^A-Za-z0-9_-]/g, '_');
+            entry.className = `log-entry ${logLevel}`;
             let icon = '';
             if (data.level === 'ERROR') icon = '❌';
             entry.innerHTML = `<span class="timestamp">${new Date().toLocaleTimeString()}</span> ${icon} <span class="log-msg">${UI.escapeHtml(data.message)}</span>`;
             councilContainer.appendChild(entry);
             councilContainer.scrollTop = councilContainer.scrollHeight;
+            applyCouncilFilter();
+            updateCouncilCount();
+        } else if (councilPaused) {
+            councilQueuedCount += 1;
+            updateCouncilCount();
         }
         // 2. Mirror to Terminal
         const terminalOutput = document.getElementById('terminal-output');
@@ -824,7 +969,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!badge) {
                         const toolbar = document.querySelector('.header-toolbar');
                         if (toolbar) {
-                            badge = document.createElement('div');
+                            badge = document.createElement('button');
+                            badge.type = 'button';
+                            badge.setAttribute('aria-label', 'Open token usage breakdown');
                             badge.id = 'token-usage-badge';
                             badge.className = 'toolbar-item token-badge';
                             badge.style.width = 'auto';
@@ -836,6 +983,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             badge.style.color = 'var(--text-secondary)';
                             badge.style.borderLeft = '1px solid var(--border-color)';
                             badge.style.cursor = 'pointer';
+                            const badgeLabel = document.createElement('span');
+                            badgeLabel.className = 'token-usage-label';
+                            badge.appendChild(badgeLabel);
                             badge.addEventListener('click', () => {
                                 // Trigger token modal
                                 if (window.openTokenModal) {
@@ -847,7 +997,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if (badge) {
                         const thinking = usage.total_thinking_tokens || 0;
-                        badge.textContent = `Tokens $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
+                        const badgeLabel = badge.querySelector('.token-usage-label') || badge;
+                        badgeLabel.textContent = `Tokens $${usage.estimated_cost.toFixed(4)} (${usage.total_calls} calls)`;
                         badge.title = `Input: ${usage.total_input_tokens} | Output: ${usage.total_output_tokens} | Thinking: ${thinking} (Click for Breakdown)`;
                     }
                 }
@@ -855,7 +1006,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(err => console.error("Telemetry error:", err));
     }
 
-    // Update every 10 seconds
-    setInterval(updateTokenTelemetry, 10000);
+    // Update every 10 seconds while the app is visible. Refresh immediately
+    // when the window becomes active again instead of polling in the background.
+    setInterval(() => {
+        if (!document.hidden) updateTokenTelemetry();
+    }, 10000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) updateTokenTelemetry();
+    });
     updateTokenTelemetry(); // Initial call
 });

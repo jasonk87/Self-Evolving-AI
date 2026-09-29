@@ -3,6 +3,7 @@ import os
 import uuid
 import time
 from typing import List, Dict, Optional, Any
+from ai_assistant.core.persistence import atomic_write_json
 
 class ChatSessionManager:
     def __init__(self, storage_dir: str):
@@ -43,14 +44,15 @@ class ChatSessionManager:
                         sessions.append({
                             "id": data.get("id"),
                             "title": data.get("title", "Untitled Chat"),
-                            "updated_at": data.get("updated_at", 0)
+                            "updated_at": data.get("updated_at", 0),
+                            "message_count": len(data.get("history") or []),
                         })
                 except Exception:
                     continue
         # Sort by updated_at desc
         return sorted(sessions, key=lambda x: x['updated_at'], reverse=True)
 
-    def add_message(self, session_id: str, role: str, content: str, images: Optional[List[str]] = None):
+    def add_message(self, session_id: str, role: str, content: str, images: Optional[List[str]] = None, metadata: Optional[Dict[str, Any]] = None):
         session = self.get_session(session_id)
         if not session:
             # If session doesn't exist, create it implicitly?
@@ -64,6 +66,8 @@ class ChatSessionManager:
         message_data = {"role": role, "content": content}
         if images:
             message_data["images"] = images
+        if metadata:
+            message_data["metadata"] = metadata
 
         session["history"].append(message_data)
         session["updated_at"] = time.time()
@@ -113,8 +117,7 @@ class ChatSessionManager:
 
     def _save_session(self, session_id: str, data: Dict):
         path = os.path.join(self.storage_dir, f"{session_id}.json")
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        atomic_write_json(path, data, indent=2)
 
 
 
@@ -134,8 +137,7 @@ class ChatSessionManager:
 
     def _save_session_pointers(self, pointers: Dict[str, str]):
         path = self._get_session_pointers_path()
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(pointers, f, indent=2)
+        atomic_write_json(path, pointers, indent=2)
 
     def list_identity_pointers(self, limit: int = 100) -> List[Dict[str, Any]]:
         pointers = self._load_session_pointers()
@@ -225,8 +227,7 @@ class ChatSessionManager:
 
     def _save_notices(self, notices: Dict[str, List[Dict[str, Any]]]):
         path = self._get_notices_path()
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(notices, f, indent=2)
+        atomic_write_json(path, notices, indent=2)
 
 
     def _compute_notice_state(self, item: Dict[str, Any], now_ts: Optional[float] = None) -> str:

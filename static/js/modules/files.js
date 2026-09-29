@@ -1,13 +1,41 @@
 
 // static/js/modules/files.js
-import { showAlert } from './ui.js';
+import { escapeHtml, showAlert } from './ui.js';
 
 let currentProject = null;
 let currentFilePath = null;
 let editorObj = null;
+let suppressEditorChange = false;
+let editorDirty = false;
+const RUNNABLE_EXTENSIONS = new Set(['.py']);
+
+export function isRunnableFile(path = currentFilePath) {
+    const extension = String(path || '').toLowerCase().match(/\.[^.\\/]+$/)?.[0] || '';
+    return RUNNABLE_EXTENSIONS.has(extension);
+}
+
+function updateRunControl(path) {
+    const runButton = document.getElementById('run-file-btn');
+    if (!runButton) return;
+    const runnable = isRunnableFile(path);
+    runButton.disabled = !runnable;
+    runButton.title = runnable ? 'Run Python file' : 'Run is available for Python files only';
+    runButton.setAttribute('aria-label', runButton.title);
+}
+
+function setEditorDirty(value) {
+    editorDirty = Boolean(value);
+    const status = document.getElementById('editor-dirty-status');
+    if (status) status.textContent = editorDirty ? 'Unsaved changes' : '';
+    const saveButton = document.getElementById('save-file-btn');
+    if (saveButton) saveButton.classList.toggle('is-dirty', editorDirty);
+}
 
 export function setEditor(cmInstance) {
     editorObj = cmInstance;
+    editorObj?.on('change', () => {
+        if (!suppressEditorChange) setEditorDirty(true);
+    });
 }
 
 export function getCurrentProject() { return currentProject; }
@@ -24,7 +52,7 @@ export async function loadProjects(container, onFileOpenCallback) {
             data.projects.forEach(p => {
                 const root = document.createElement('div');
                 root.className = 'tree-item project-root';
-                root.innerHTML = `<span class="icon">🚀</span> ${p.name}`;
+                root.innerHTML = `<span class="icon">🚀</span> ${escapeHtml(p.name)}`;
                 container.appendChild(root);
 
                 const childContainer = document.createElement('div');
@@ -41,14 +69,14 @@ export async function loadProjects(container, onFileOpenCallback) {
 }
 
 async function loadFiles(projName, path, container, onFileOpenCallback) {
-    const res = await fetch(`/api/files/list?project_name=${projName}&path=${path}`);
+    const res = await fetch(`/api/files/list?project_name=${encodeURIComponent(projName)}&path=${encodeURIComponent(path)}`);
     const data = await res.json();
     if (data.success) {
         container.innerHTML = '';
         data.directories.forEach(d => {
             const el = document.createElement('div');
             el.className = 'tree-item folder';
-            el.innerHTML = `<span class="icon">📂</span> ${d}`;
+            el.innerHTML = `<span class="icon">📂</span> ${escapeHtml(d)}`;
             container.appendChild(el);
             const sub = document.createElement('div');
             sub.style.paddingLeft = '15px'; sub.style.display = 'none';
@@ -62,7 +90,7 @@ async function loadFiles(projName, path, container, onFileOpenCallback) {
         data.files.forEach(f => {
             const el = document.createElement('div');
             el.className = 'tree-item file';
-            el.innerHTML = `<span class="icon">📄</span> ${f}`;
+            el.innerHTML = `<span class="icon">📄</span> ${escapeHtml(f)}`;
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('active'));
@@ -75,13 +103,19 @@ async function loadFiles(projName, path, container, onFileOpenCallback) {
 }
 
 export async function openFile(projName, path, callback) {
-    const res = await fetch(`/api/files/read?project_name=${projName}&path=${path}`);
+    const res = await fetch(`/api/files/read?project_name=${encodeURIComponent(projName)}&path=${encodeURIComponent(path)}`);
     const data = await res.json();
     if (data.success) {
         currentProject = projName;
         currentFilePath = path;
+        updateRunControl(path);
         document.getElementById('current-file-name').textContent = path;
-        if (editorObj) editorObj.setValue(data.content);
+        if (editorObj) {
+            suppressEditorChange = true;
+            editorObj.setValue(data.content);
+            suppressEditorChange = false;
+        }
+        setEditorDirty(false);
         if (callback) callback();
     }
 }
@@ -97,6 +131,7 @@ export async function saveFile() {
         });
         const data = await res.json();
         if (data.success) {
+            setEditorDirty(false);
             showAlert("Success", "File saved successfully.");
         } else {
             showAlert("Error", "Save failed: " + data.error);
@@ -106,10 +141,14 @@ export async function saveFile() {
 
 export async function runFile(termOutputDiv, switchToTerminalCallback) {
     if (!currentFilePath || !currentProject) return showAlert("Info", "No file open.");
+    if (!isRunnableFile()) {
+        showAlert("Unsupported file", "The editor currently runs Python files only. Open this file for editing or preview it instead.");
+        return null;
+    }
 
     if (switchToTerminalCallback) switchToTerminalCallback();
 
-    if (termOutputDiv) termOutputDiv.innerHTML += `<div class="line command">$ python ${currentFilePath}</div>`;
+    if (termOutputDiv) termOutputDiv.innerHTML += `<div class="line command">$ python ${escapeHtml(currentFilePath)}</div>`;
 
     const fullPath = `projects/${currentProject}/${currentFilePath}`;
 
@@ -125,7 +164,7 @@ export async function runFile(termOutputDiv, switchToTerminalCallback) {
 
         // Return output for passing to AI logic if needed
         if (termOutputDiv) {
-            const formattedOutput = outputText.replace(/\n/g, '<br>');
+            const formattedOutput = escapeHtml(outputText).replace(/\n/g, '<br>');
             termOutputDiv.innerHTML += `<div class="line output">${formattedOutput}</div>`;
             termOutputDiv.scrollTop = termOutputDiv.scrollHeight;
         }

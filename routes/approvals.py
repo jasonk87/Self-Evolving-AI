@@ -2198,6 +2198,10 @@ def mission_control_background_cadence():
         "last_visual_audit_timestamp": service_status.get("last_visual_audit_timestamp", 0),
         "last_self_healing_timestamp": service_status.get("last_self_healing_timestamp", 0),
     }
+    # Keep the status field additive so older service adapters and API
+    # consumers that only provide the timestamp fields remain compatible.
+    if "last_dream_status" in service_status:
+        recent["last_dream_status"] = service_status["last_dream_status"]
 
     return jsonify({
         "success": True,
@@ -2837,8 +2841,12 @@ def approve_request(req_id):
             if approval_req.get("type") == "architect_proposal":
                 result = _approve_architect_approval_manager_request(req_id, approval_req)
                 return jsonify(result), (200 if result.get("success") else 400)
-            success = _run_async(approval_manager.approve_request(req_id))
+            success = _run_async(approval_manager.approve_request(req_id, feedback=feedback))
             if success: return jsonify({"success": True})
+            return jsonify({
+                "success": False,
+                "error": "This approval is still pending, but its executable handler is unavailable after restart.",
+            }), 409
 
         # 2. Architect proposals can only be released from this user-facing route.
         from ai_assistant.custom_tools.agent_tools import _approve_source_change_proposal_from_ui
@@ -2907,7 +2915,7 @@ def deny_request(req_id):
         if approval_manager.get_request(req_id):
             if feedback:
                 logger.info(f"User denied request {req_id} with feedback: {feedback}")
-            success = approval_manager.deny_request(req_id)
+            success = approval_manager.deny_request(req_id, feedback=feedback)
             if success: return jsonify({"success": True})
 
         # 2. Denying an architect proposal is also an explicit human UI action.

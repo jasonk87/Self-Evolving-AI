@@ -5,6 +5,7 @@ duckduckgo_search
 prompt_toolkit
 flask
 flask-socketio
+Flask-Login
 python-dotenv
 numpy
 websockets
@@ -12,6 +13,8 @@ pillow
 nest_asyncio
 tiktoken
 pydantic
+beautifulsoup4
+bleach[css]
 python-json-logger
 opentelemetry-api
 opentelemetry-sdk

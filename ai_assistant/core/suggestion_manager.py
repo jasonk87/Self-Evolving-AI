@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional # TYPE_CHECKING removed
 from ai_assistant.config import get_data_dir
 from ai_assistant.utils.display_utils import CLIColors, color_text
 from .notification_manager import NotificationManager, NotificationType # NotificationManager added to direct imports
+from ai_assistant.core.persistence import atomic_write_json
 
 SUGGESTIONS_FILE_NAME = "suggestions.json"
 
@@ -58,8 +59,7 @@ def _save_suggestions(suggestions: List[Dict[str, Any]]) -> bool:
     filepath = get_suggestions_file_path()
     try:
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(suggestions, f, indent=4)
+        atomic_write_json(filepath, suggestions, indent=4)
         return True
     except IOError as e:
         print(color_text(f"Error saving suggestions: {e}", CLIColors.ERROR_MESSAGE))

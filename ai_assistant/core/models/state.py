@@ -33,9 +33,9 @@ class ExecutionState(BaseModel):
         description="An append-only list tracking the outcomes of previously executed tools.",
     )
 
-    context_limits: Dict[str, int] = Field(
+    context_limits: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Tracks current context or memory limits (e.g., max tokens, available memory) to guide agent outputs.",
+        description="Tracks context limits plus serializable context/model diagnostics for the UI.",
     )
 
     correlation_id: str = Field(

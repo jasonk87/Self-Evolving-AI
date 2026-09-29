@@ -63,6 +63,7 @@ class NotificationType(Enum):
 
 
 from ai_assistant.core.events import EventEmitter
+from ai_assistant.core.persistence import atomic_write_json
 
 @dataclass
 class Notification:
@@ -129,8 +130,15 @@ class NotificationManager:
         self._ensure_data_dir_exists()
         try:
             self.notifications.sort(key=lambda n: n.timestamp, reverse=True)
-            with open(self.filepath, 'w', encoding='utf-8') as f:
-                json.dump([n.to_dict() for n in self.notifications], f, indent=4)
+            payload = [n.to_dict() for n in self.notifications]
+            parent = os.path.dirname(os.path.abspath(self.filepath))
+            if os.path.isdir(parent):
+                atomic_write_json(self.filepath, payload, indent=4)
+            else:
+                # Keep the error path observable when directory creation is
+                # unavailable (for example during a read-only startup).
+                with open(self.filepath, 'w', encoding='utf-8') as handle:
+                    json.dump(payload, handle, indent=4)
         except IOError as e: # pragma: no cover
             print(f"Error saving notifications to '{self.filepath}': {e}")
 
