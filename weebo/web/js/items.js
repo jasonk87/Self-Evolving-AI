@@ -3,6 +3,7 @@ import { icon } from "./icons.js";
 import { renderMarkdown, hydrateWidgets } from "./markdown.js";
 import { el, btn, escapeHtml, clockTime, diffStats, renderDiff, copyText, modal, duration } from "./ui.js";
 import { speak } from "./voice.js";
+import { proposalHref } from "./evolution-route.js";
 
 export const WORK_KINDS = new Set(["command", "file_change", "tool", "web_search", "reasoning", "subagent", "image_view"]);
 
@@ -176,6 +177,21 @@ export function renderMessage(msg, ctx) {
   const node = fn(msg, ctx);
   node.dataset.id = msg.id;
   return node;
+}
+
+function renderEvolutionStatus(msg, ctx) {
+  const d = msg.data || {};
+  const card = el("div", { class: "card evolution-status-card" },
+    el("div", { class: "card-head" }, el("span", { html: icon("dna", 16) }), el("strong", { text: d.title })),
+    el("p", { class: "evolution-status", text: d.status_text || msg.content }));
+  if (d.decision) card.append(el("p", { class: "small muted", text: d.decision }));
+  for (const reason of d.reasons || []) card.append(el("p", { class: "small evolution-reason", text: reason }));
+  card.append(el("a", { class: "btn btn-soft btn-sm", href: proposalHref(d.proposal_id), text: "Open in Evolution", onclick: (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    ctx.openProposal(d.proposal_id);
+  } }));
+  return el("div", { class: "msg msg-card" }, card);
 }
 
 function renderUser(msg) {
@@ -362,6 +378,7 @@ function renderReview(msg) {
 }
 
 const RENDERERS = {
+  evolution_status: renderEvolutionStatus,
   text: renderAssistantText,
   plan: renderPlan,
   approval: renderApproval,

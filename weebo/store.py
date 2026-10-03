@@ -386,6 +386,8 @@ class Store:
         return self.query_one("SELECT * FROM messages WHERE id=?", (message_id,))
 
     def list_messages(self, conversation_id: str, limit: int = 300, before_seq: int | None = None) -> list[dict[str, Any]]:
+        # Reconcile old proposals and any update missed during a restart/reconnect.
+        self.list_proposal_messages(conversation_id)
         if before_seq:
             rows = self.query(
                 "SELECT * FROM messages WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT ?",
@@ -614,7 +616,9 @@ class Store:
             "meta": meta or {},
         }
         self._insert("proposals", proposal)
-        return self.get_proposal(proposal["id"])  # type: ignore[return-value]
+        stored = self.get_proposal(proposal["id"])
+        self.sync_proposal_message(stored)
+        return stored  # type: ignore[return-value]
 
     def get_proposal(self, proposal_id: str) -> dict[str, Any] | None:
         return self.query_one("SELECT * FROM proposals WHERE id=?", (proposal_id,))
@@ -622,7 +626,32 @@ class Store:
     def update_proposal(self, proposal_id: str, **values: Any) -> dict[str, Any] | None:
         values.setdefault("updated_at", time.time())
         self._update("proposals", "id", proposal_id, values)
-        return self.get_proposal(proposal_id)
+        proposal = self.get_proposal(proposal_id)
+        self.sync_proposal_message(proposal)
+        return proposal
+
+    def sync_proposal_message(self, proposal: dict | None) -> dict[str, Any] | None:
+        from .evolution.status import chat_status
+
+        if not proposal:
+            return None
+        conversation_id = (proposal.get("meta") or {}).get("conversation_id")
+        if not conversation_id or not self.get_conversation(conversation_id):
+            return None  # Never recreate a deleted chat.
+        message_id = f"evolution:{proposal['id']}"
+        data = chat_status(proposal)
+        existing = self.get_message(message_id)
+        if existing and existing["data"] == data:
+            return existing
+        return self.upsert_message(message_id, conversation_id, "assistant", "evolution_status",
+                                   data["status_text"], data=data)
+
+    def list_proposal_messages(self, conversation_id: str) -> list[dict[str, Any]]:
+        for proposal in self.query("SELECT * FROM proposals WHERE json_extract(meta, '$.conversation_id')=?",
+                                   (conversation_id,)):
+            self.sync_proposal_message(proposal)
+        return self.query("SELECT * FROM messages WHERE conversation_id=? AND kind='evolution_status' ORDER BY seq",
+                          (conversation_id,))
 
     def list_proposals(self, limit: int = 100, statuses: Iterable[str] | None = None) -> list[dict[str, Any]]:
         status_list = list(statuses or [])

@@ -239,7 +239,9 @@ async def propose_improvement(ctx: ToolContext, title: str, description: str, ra
     proposal = await ctx.app.evolution.propose(title, description, rationale, source=source,
                                                conversation_id=ctx.conversation_id)
     return ToolResult(f"Proposal {proposal['id']} \"{proposal['title']}\": {_evolution_state(ctx, proposal)} "
-                      "Describe exactly this state to the user; call evolution_status before claiming any progress.")
+                      f"[Open in Evolution](/#evolution/{proposal['id']}). "
+                      "The originating chat's status card updates automatically. "
+                      "Call evolution_status before claiming further progress.")
 
 
 def _evolution_state(ctx: ToolContext, proposal: dict[str, Any]) -> str:

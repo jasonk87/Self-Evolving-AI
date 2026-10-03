@@ -488,7 +488,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
                                              before_seq=int(before) if before else None)
         if conv.get("unread"):
             conv = weebo.store.update_conversation(conv_id, unread=0, updated_at=conv["updated_at"])
-        return _json({"conversation": conv, "messages": messages, "live": weebo.conversations.live_state(conv_id)})
+        return _json({"conversation": conv, "messages": messages, "live": weebo.conversations.live_state(conv_id),
+                      "evolution_messages": weebo.store.list_proposal_messages(conv_id) if not before else []})
 
     async def patch_conversation(request: web.Request) -> web.Response:
         conv_id = request.match_info["id"]

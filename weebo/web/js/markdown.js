@@ -5,6 +5,7 @@ import DOMPurify from "../vendor/purify.es.mjs";
 import hljs from "../vendor/highlight.min.js";
 import { api } from "./api.js";
 import { escapeHtml } from "./ui.js";
+import { proposalHref, proposalFromHash } from "./evolution-route.js";
 
 let widgetCounter = 0;
 
@@ -37,6 +38,15 @@ const WEB_LINK = /^(https?:|mailto:|#)/i;
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName !== "A" || !node.getAttribute("href")) return;
   const href = node.getAttribute("href");
+  try {
+    const url = new URL(href, location.href);
+    const proposal = proposalFromHash(url.hash);
+    if (url.origin === location.origin && url.pathname === "/" && proposal) {
+      node.setAttribute("href", proposalHref(proposal));
+      node.removeAttribute("target");
+      return;
+    }
+  } catch { /* Other links follow the existing web/file rules. */ }
   if (WEB_LINK.test(href)) {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
