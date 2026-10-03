@@ -50,6 +50,7 @@ class JsonRpcProcess:
         self._request_handler: RequestHandler | None = None
         self._tasks: list[asyncio.Task] = []
         self._handler_tasks: set[asyncio.Task] = set()
+        self._teardown_task: asyncio.Task | None = None
         self._notifications: asyncio.Queue = asyncio.Queue()
         self.closed = asyncio.Event()
         self.stderr_tail: list[str] = []
@@ -84,7 +85,8 @@ class JsonRpcProcess:
 
     @property
     def running(self) -> bool:
-        return self.proc is not None and self.proc.returncode is None and not self.closed.is_set()
+        return (self.proc is not None and self.proc.returncode is None
+                and self._teardown_task is None and not self.closed.is_set())
 
     async def request(self, method: str, params: Any = None, timeout: float | None = 120.0) -> Any:
         if not self.running:
@@ -166,14 +168,16 @@ class JsonRpcProcess:
     async def _notification_worker(self) -> None:
         while True:
             method, params = await self._notifications.get()
-            if self._notification_handler is None:
-                continue
             try:
+                if self._notification_handler is None:
+                    continue
                 result = self._notification_handler(method, params)
                 if asyncio.iscoroutine(result):
                     await result
             except Exception:
                 logger.exception("Notification handler failed for %s", method)
+            finally:
+                self._notifications.task_done()
 
     async def _serve_request(self, request_id: Any, method: str, params: dict[str, Any]) -> None:
         try:
@@ -209,12 +213,39 @@ class JsonRpcProcess:
     async def _wait_exit(self) -> None:
         assert self.proc
         self.returncode = await self.proc.wait()
-        self.closed.set()
+        self._begin_teardown()
+
+    def _begin_teardown(self) -> asyncio.Task:
+        if self._teardown_task is None:
+            self._teardown_task = asyncio.create_task(self._teardown(), name="codex-teardown")
+        return self._teardown_task
+
+    async def _teardown(self) -> None:
+        # Let the readers consume final replies and notifications before cancelling
+        # workers. Bound the drain in case a descendant still holds a pipe open.
+        try:
+            await asyncio.wait_for(asyncio.gather(*self._tasks[:2], return_exceptions=True), 1)
+        except asyncio.TimeoutError:
+            pass
         error = EngineClosed(f"Codex engine exited with code {self.returncode}")
         for future in list(self._pending.values()):
             if not future.done():
                 future.set_exception(error)
         self._pending.clear()
+
+        tasks = [*self._tasks, *self._handler_tasks]
+        for task in self._handler_tasks:
+            task.cancel()
+        # Preserve queued terminal notifications where possible, but a blocked
+        # listener must not keep this transport alive across engine generations.
+        try:
+            await asyncio.wait_for(self._notifications.join(), 1)
+        except asyncio.TimeoutError:
+            pass
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.closed.set()
 
     async def stop(self) -> None:
         if self.proc is None:
@@ -233,6 +264,7 @@ class JsonRpcProcess:
                 except ProcessLookupError:
                     pass
                 await self.proc.wait()
-        for task in self._tasks:
-            task.cancel()
-        self.closed.set()
+        self.returncode = self.proc.returncode
+        # Both exit and stop share one cleanup task. Shield it so cancelling a
+        # caller cannot strand the transport's workers or pending requests.
+        await asyncio.shield(self._begin_teardown())

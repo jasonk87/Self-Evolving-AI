@@ -105,6 +105,7 @@ class CodexEngine:
                 self._restart_attempts = 0
                 assert self.rpc is not None
                 await self.rpc.closed.wait()
+                await self.rpc.stop()
                 if self._stopping:
                     break
                 tail = "\n".join(self.rpc.stderr_tail[-5:])
