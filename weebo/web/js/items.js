@@ -165,6 +165,11 @@ export function summarizeWork(items) {
 }
 
 // ---------------------------------------------------------------- top-level messages
+/** A pending approval outside a chat (e.g. an agent's), drawn with the same card. */
+export function renderPendingApproval(summary, resolve) {
+  return renderApproval({ kind: "approval", status: "pending", data: summary }, { resolve });
+}
+
 export function renderMessage(msg, ctx) {
   const fn = RENDERERS[msg.kind] || (msg.role === "user" ? renderUser : renderNotice);
   if (msg.kind === "text" && msg.role === "user") return renderUser(msg, ctx);
@@ -222,6 +227,7 @@ function renderApproval(msg, ctx) {
   const titles = {
     command: "Weebo wants to run a command", file_change: "Weebo wants to change files",
     permissions: "Weebo is asking for more access", confirm: d.title || "Weebo wants to take an action",
+    elicitation: d.title || "A tool needs your OK",
   };
   const card = el("div", { class: `card approval-card${pending ? " pending" : ""}` });
   card.append(el("div", { class: "card-head" }, el("span", { class: "approval-ic", html: icon("hand", 17) }), el("strong", { text: titles[d.kind] || "Approval needed" })));
@@ -229,16 +235,24 @@ function renderApproval(msg, ctx) {
   if (d.files && d.files.length) card.append(el("ul", { class: "file-list" }, d.files.map((f) => el("li", { text: f }))));
   if (d.permissions) card.append(el("pre", { class: "tool-args", text: JSON.stringify(d.permissions, null, 2) }));
   if (d.reason) card.append(el("p", { class: "muted", text: d.reason }));
+  if (d.kind === "elicitation") {
+    const facts = [d.server && `From ${d.server}`, ...(d.details || []), d.risk === "high" && "High-risk app"].filter(Boolean);
+    if (facts.length) card.append(el("div", { class: "work-meta", text: facts.join(" · ") }));
+    if (d.url) card.append(el("a", { class: "btn btn-soft btn-sm", href: d.url, target: "_blank", rel: "noopener noreferrer", text: "Open the page it needs" }));
+  }
   if (d.cwd) card.append(el("div", { class: "work-meta", text: `in ${d.cwd}` }));
   if (pending) {
     const id = d.id;
     const actions = el("div", { class: "card-actions" },
       btn("Allow", { kind: "primary", icon: "check", onClick: () => ctx.resolve(id, "accept") }));
-    if (d.kind !== "confirm") actions.append(btn("Allow for this chat", { kind: "soft", onClick: () => ctx.resolve(id, "acceptForSession") }));
+    if (d.kind === "elicitation") {
+      if ((d.persist || []).includes("session")) actions.append(btn("Allow for this session", { kind: "soft", onClick: () => ctx.resolve(id, "acceptForSession") }));
+      if ((d.persist || []).includes("always")) actions.append(btn("Always allow", { kind: "soft", onClick: () => ctx.resolve(id, "acceptAlways") }));
+    } else if (d.kind !== "confirm") actions.append(btn("Allow for this chat", { kind: "soft", onClick: () => ctx.resolve(id, "acceptForSession") }));
     actions.append(btn("Deny", { kind: "danger-soft", icon: "x", onClick: () => ctx.resolve(id, "decline") }));
     card.append(actions);
   } else {
-    const label = { accept: "Allowed", acceptForSession: "Allowed for this chat", decline: "Denied", cancel: "Cancelled", expired: "Expired" }[d.decision || msg.status] || msg.status;
+    const label = { accept: "Allowed", acceptForSession: d.kind === "elicitation" ? "Allowed for this session" : "Allowed for this chat", acceptAlways: "Always allowed", decline: "Denied", cancel: "Cancelled", expired: "Expired" }[d.decision || msg.status] || msg.status;
     card.append(el("div", { class: `decision d-${d.decision || msg.status}`, text: label }));
   }
   return el("div", { class: "msg msg-card" }, card);

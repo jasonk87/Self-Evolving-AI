@@ -63,7 +63,7 @@ async def evolving(app, repo, monkeypatch):
         ok = state["gates"].pop(0) if state["gates"] else True
         return GateReport([GateResult("Tests", ok, "" if ok else "1 failed: test_thing")])
 
-    async def fake_review(worktree, base_ref):
+    async def fake_review(worktree, base_ref, count=True):
         note_stage()
         assert git(repo, "rev-parse", base_ref) == app.store.get_proposal(app.evolution.current)["base_commit"]
         return state["reviews"].pop(0) if state["reviews"] else {"text": "LGTM", "blocking": False}
@@ -439,3 +439,18 @@ async def test_merge_waits_for_running_build_before_restarting(evolving, repo):
     await wait_status(app, other["id"], ("ready", "failed"))
     await asyncio.sleep(0.1)
     assert state["restarts"] == ["Applying a self-upgrade"] and app.evolution.restart_after_build is None
+
+
+async def test_user_requested_builds_dont_spend_the_proactive_budget(app, monkeypatch):
+    calls = []
+
+    async def fake_start_review(thread_id, target):
+        calls.append(thread_id)
+        await app.engine.emit(thread_id, "turn/completed", {"turn": {"id": "r", "status": "completed"}})
+
+    monkeypatch.setattr(app.engine, "start_review", fake_start_review)
+    before = app.background_turns_today()
+    await app.evolution._codex_review(Path("."), "weebo/base-x", count=False)
+    assert app.background_turns_today() == before
+    await app.evolution._codex_review(Path("."), "weebo/base-x")
+    assert app.background_turns_today() == before + 1 and len(calls) == 2

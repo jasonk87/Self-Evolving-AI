@@ -314,3 +314,62 @@ async def test_message_sent_while_thread_is_created_steers(app, fake_engine, mon
     await first
     assert len(fake_engine.turns) == 1 and len(fake_engine.threads) == 1
     assert second["data"].get("steered") is True
+
+
+COMPUTER_USE_ASK = {  # what Codex's Computer Use helper sends before touching an app for the first time
+    "serverName": "node_repl", "turnId": "t", "mode": "form", "message": "Allow Codex to use Notepad?",
+    "requestedSchema": {"type": "object", "properties": {}},
+    "_meta": {"codex_approval_kind": "mcp_tool_call", "connector_id": "computer-use", "connector_name": "Computer Use",
+              "persist": ["session", "always"], "riskLevel": "low", "tool_params": {"app": "notepad.exe"},
+              "tool_params_display": [{"name": "app", "display_name": "App", "value": "Notepad"}]},
+}
+
+
+async def _answer(app, decision):
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        pending = app.interactions.list()
+        if pending:
+            app.interactions.resolve(pending[0]["id"], decision)
+            return pending[0]
+
+
+async def test_computer_use_app_approval_reaches_the_user(app, fake_engine):
+    """Regression: Weebo auto-declined every MCP elicitation, so Computer Use said 'not approved to use Notepad'."""
+    conv = app.conversations.create()
+    await app.conversations.send(conv["id"], "type hello in notepad")
+    tid = fake_engine.turns[0]["thread_id"]
+    asked = asyncio.create_task(_answer(app, "acceptAlways"))
+    response = await fake_engine.request(tid, "mcpServer/elicitation/request", COMPUTER_USE_ASK)
+    assert response == {"action": "accept", "content": {}, "_meta": {"persist": "always"}}
+    summary = await asked
+    assert summary["kind"] == "elicitation" and summary["title"] == "Allow Codex to use Notepad?"
+    assert summary["server"] == "Computer Use" and summary["details"] == ["App: Notepad"]
+    card = [m for m in app.store.list_messages(conv["id"]) if m["kind"] == "approval"][0]
+    assert card["status"] == "acceptAlways"
+
+    asyncio.create_task(_answer(app, "accept"))
+    once = await fake_engine.request(tid, "mcpServer/elicitation/request", COMPUTER_USE_ASK)
+    assert once == {"action": "accept", "content": {}}  # plain Allow: no persistence requested
+    asyncio.create_task(_answer(app, "decline"))
+    assert (await fake_engine.request(tid, "mcpServer/elicitation/request", COMPUTER_USE_ASK))["action"] == "decline"
+
+
+async def test_elicitation_edge_cases(app, fake_engine):
+    conv = app.conversations.create()
+    await app.conversations.send(conv["id"], "x")
+    tid = fake_engine.turns[0]["thread_id"]
+    # An app that can't be approved permanently never gets "always", even if asked.
+    no_persist = {**COMPUTER_USE_ASK, "_meta": {**COMPUTER_USE_ASK["_meta"], "persist": ["session"]}}
+    asyncio.create_task(_answer(app, "acceptAlways"))
+    assert await fake_engine.request(tid, "mcpServer/elicitation/request", no_persist) == {"action": "accept", "content": {}}
+    # Form fields get sensible values on accept.
+    form = {"serverName": "x", "mode": "form", "message": "Confirm?", "requestedSchema": {"type": "object", "properties": {
+        "ok": {"type": "boolean"}, "size": {"type": "string", "enum": ["small", "large"]}, "note": {"type": "string", "default": "hi"}}}}
+    asyncio.create_task(_answer(app, "accept"))
+    answer = await fake_engine.request(tid, "mcpServer/elicitation/request", form)
+    assert answer["content"] == {"ok": True, "size": "small", "note": "hi"}
+    # Device-verified approvals can only be proven by Codex's own apps: declined without a dead card.
+    verify = {"serverName": "x", "mode": "openai/userVerification", "challenge": "c", "description": "d", "title": "t"}
+    assert await fake_engine.request(tid, "mcpServer/elicitation/request", verify) == {"action": "decline", "content": None}
+    assert app.interactions.list() == []

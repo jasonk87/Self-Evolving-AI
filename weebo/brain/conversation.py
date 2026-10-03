@@ -430,8 +430,6 @@ class ConversationManager:
                               trigger=session.turn.trigger if session.turn else "event")
             result = await registry.call(ctx, params.get("tool", ""), params.get("arguments") or {})
             return result.to_codex()
-        if method == "mcpServer/elicitation/request":
-            return {"action": "decline", "content": None}
         return await self.app.interactions.ask(method, params, conversation_id=conv_id)
 
     def _on_event(self, conv_id: str, method: str, params: dict[str, Any]) -> None:

@@ -326,8 +326,6 @@ class AgentManager:
             result = await registry.call(ctx, params.get("tool", ""), params.get("arguments") or {})
             self._event(run, "tool", f"{params.get('tool')} → {'ok' if result.success else 'failed'}")
             return result.to_codex()
-        if method == "mcpServer/elicitation/request":
-            return {"action": "decline", "content": None}
         if method == "item/tool/requestUserInput":
             # Agents run unattended: answer with no input so they proceed on assumptions.
             return {"answers": {}}

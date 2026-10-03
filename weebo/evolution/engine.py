@@ -336,9 +336,11 @@ class EvolutionEngine:
             self._stage(proposal_id, "checking", "testing", round_number)
             gate_report = await run_gates(worktree, changed, self.app.settings.get("evolution.test_command"))
             self._stage(proposal_id, "checking", "reviewing", round_number)
-            review = await self._codex_review(worktree, base_ref)
+            # Work the user asked for doesn't spend Weebo's proactive (background) budget.
+            counted = proposal.get("source") not in council.USER_SOURCES
+            review = await self._codex_review(worktree, base_ref, count=counted)
             if review.get("error"):
-                review = await self._codex_review(worktree, base_ref)  # one retry, then fail closed
+                review = await self._codex_review(worktree, base_ref, count=counted)  # one retry, then fail closed
             round_info = {"round": round_number, "gates_ok": gate_report.ok, "review_blocking": review.get("blocking"),
                           "task_id": task["id"]}
             meta = dict(self._get(proposal_id).get("meta") or {})
@@ -428,7 +430,7 @@ class EvolutionEngine:
         autonomous = bool(files) and all(f["tier"] == "autonomous" for f in files)
         return {"autonomous": autonomous, "files": files}
 
-    async def _codex_review(self, worktree: Path, base_ref: str) -> dict[str, Any]:
+    async def _codex_review(self, worktree: Path, base_ref: str, count: bool = True) -> dict[str, Any]:
         """Codex's built-in code review of the agent's change (everything since ``base_ref``).
         Findings tagged P0/P1 block the merge. A review that doesn't finish returns ``error``."""
         engine = self.app.engine
@@ -465,7 +467,8 @@ class EvolutionEngine:
         finally:
             engine.unroute(thread_id)
             engine.loaded_threads.discard(thread_id)
-            self.app.count_background_turn("review")
+            if count:
+                self.app.count_background_turn("review")
         text = (state["review"] or "\n\n".join(state["messages"])).strip()
         if state["status"] != "completed" or not text:
             reason = f"review turn {state['status']}" if state["status"] != "completed" else "review was empty"

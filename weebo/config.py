@@ -31,7 +31,7 @@ DEFAULTS: dict[str, Any] = {
         "level": "balanced",  # cautious | balanced | full
         "proactive": True,
         "usage_ceiling_percent": 70,
-        "max_background_turns_per_day": 12,
+        "max_background_turns_per_day": 30,
         "quiet_hours_start": "23:00",
         "quiet_hours_end": "07:00",
         "daily_brief": True,

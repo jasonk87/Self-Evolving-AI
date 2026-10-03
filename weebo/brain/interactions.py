@@ -16,13 +16,14 @@ if TYPE_CHECKING:
 logger = log.get("interactions")
 
 LEGACY_DECISIONS = {"accept": "approved", "acceptForSession": "approved_for_session", "decline": "denied", "cancel": "abort"}
-DECISIONS = ("accept", "acceptForSession", "decline", "cancel")
+DECISIONS = ("accept", "acceptForSession", "acceptAlways", "decline", "cancel")
+ELICITATION = "mcpServer/elicitation/request"
 
 
 @dataclass
 class Pending:
     id: str
-    kind: str  # command | file_change | permissions | question
+    kind: str  # command | file_change | permissions | question | confirm | elicitation
     method: str
     params: dict[str, Any]
     thread_id: str
@@ -50,6 +51,8 @@ class Pending:
             detail.update(questions=p.get("questions") or [])
         elif self.kind == "confirm":
             detail.update(title=p.get("title"))
+        elif self.kind == "elicitation":
+            detail.update(_elicitation_detail(p))
         return {
             "id": self.id, "kind": self.kind, "conversation_id": self.conversation_id, "task_id": self.task_id,
             "message_id": self.message_id, "created_at": self.created_at, **detail,
@@ -65,7 +68,47 @@ def _kind_for(method: str) -> str:
         return "permissions"
     if method == "weebo/confirm":
         return "confirm"
+    if method == ELICITATION:
+        return "elicitation"
     return "question"
+
+
+def _elicitation_detail(params: dict[str, Any]) -> dict[str, Any]:
+    """An MCP server (e.g. Computer Use: "Allow Codex to use Notepad?") asking the user to approve or fill in
+    something. Codex's own clients show these as approval prompts; so does Weebo."""
+    meta = params.get("_meta") or {}
+    persist = meta.get("persist") if isinstance(meta.get("persist"), list) else []
+    shown = [f"{item.get('display_name') or item.get('name')}: {item.get('value')}"
+             for item in meta.get("tool_params_display") or [] if isinstance(item, dict)]
+    return {
+        "title": params.get("message") or params.get("title") or f"{params.get('serverName', 'A tool')} needs your OK",
+        "reason": params.get("description") or "",
+        "server": meta.get("connector_name") or params.get("serverName"),
+        "mode": params.get("mode"),
+        "url": params.get("url") if params.get("mode") == "url" else None,
+        "details": shown,
+        "risk": meta.get("riskLevel"),
+        "persist": [p for p in persist if p in ("session", "always")],
+        # Device-verified approvals need a proof only Codex's own apps can produce.
+        "supported": params.get("mode") != "openai/userVerification",
+    }
+
+
+def _form_content(schema: Any) -> dict[str, Any]:
+    """Content for an accepted form elicitation: each requested field's default (or a yes for booleans)."""
+    content: dict[str, Any] = {}
+    properties = (schema or {}).get("properties") if isinstance(schema, dict) else None
+    for name, spec in (properties or {}).items():
+        spec = spec if isinstance(spec, dict) else {}
+        if "default" in spec and spec["default"] is not None:
+            content[name] = spec["default"]
+        elif spec.get("type") == "boolean":
+            content[name] = True
+        elif spec.get("enum"):
+            content[name] = spec["enum"][0]
+        elif spec.get("oneOf"):
+            content[name] = (spec["oneOf"][0] or {}).get("const")
+    return content
 
 
 class Interactions:
@@ -75,6 +118,10 @@ class Interactions:
 
     async def ask(self, method: str, params: dict[str, Any], conversation_id: str | None = None,
                   task_id: str | None = None) -> dict[str, Any]:
+        if method == ELICITATION and params.get("mode") == "openai/userVerification":
+            logger.info("Declined a device-verified approval from %s (only Codex's own apps can verify).",
+                        params.get("serverName"))
+            return {"action": "decline", "content": None}
         pending = Pending(
             id=new_id("ask"), kind=_kind_for(method), method=method, params=params,
             thread_id=params.get("threadId") or params.get("conversationId") or "",
@@ -152,6 +199,15 @@ class Interactions:
             return {"answers": {qid: {"answers": list(values)} for qid, values in (answers or {}).items()}}
         if pending.method in ("execCommandApproval", "applyPatchApproval"):
             return {"decision": LEGACY_DECISIONS.get(decision, "denied")}
+        if pending.kind == "elicitation":
+            if decision not in ("accept", "acceptForSession", "acceptAlways"):
+                return {"action": "cancel" if decision == "cancel" else "decline", "content": None}
+            response: dict[str, Any] = {"action": "accept", "content": _form_content(pending.params.get("requestedSchema"))}
+            offered = _elicitation_detail(pending.params)["persist"]
+            persist = {"acceptForSession": "session", "acceptAlways": "always"}.get(decision)
+            if persist and persist in offered:
+                response["_meta"] = {"persist": persist}
+            return response
         if pending.kind == "permissions":
             if decision in ("accept", "acceptForSession"):
                 return {"permissions": pending.params.get("permissions") or {},
@@ -167,4 +223,6 @@ def _describe(summary: dict[str, Any]) -> str:
         return "Edit: " + ", ".join(summary["files"][:5])
     if summary.get("questions"):
         return summary["questions"][0].get("question", "A question")
+    if summary.get("kind") == "elicitation":
+        return summary.get("title") or "A tool needs your OK"
     return summary.get("reason") or "Review the request in Weebo."

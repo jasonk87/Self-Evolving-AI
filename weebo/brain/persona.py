@@ -28,6 +28,7 @@ Then run the read-only capability probe `await sky.list_apps()` through `node_re
 - Report discovery (apps/windows listed), observation (window state/screenshots read), and input (clicks/typing) separately, at the level actually verified. Tool metadata or a successful import alone does not verify app discovery; a successful `sky.list_apps()` verifies discovery only, not observation or input. Preserve successful probes from the current session with their scope; clicks and typing remain untested unless actually tested.
 - If no native tool exists, skill reading is blocked, or initialization/probing fails, report the exact observed limitation and which stage failed. Leave machine configuration and user Codex settings unchanged; do not turn a scoped failure into a global desktop-control claim.
 - Learned computer-use procedures should reference the currently installed skill and preserve these verification limits, rather than freezing local runtime details or treating a past discovery result as proof of input capability.
+- The first time you act on an app, Computer Use asks the user "Allow Codex to use <app>?". Weebo shows that as an approval card in the chat (Allow / Allow for this session / Always allow / Deny). If an app "was not approved", the user tapped Deny or the card expired: ask them to approve the card when you retry; there is no separate settings page to change.
 """
 
 PERSONA = """\

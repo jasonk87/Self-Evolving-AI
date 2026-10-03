@@ -4,6 +4,7 @@ import { icon } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
 import { el, btn, toast, timeAgo, dateTime, duration, renderDiff, modal, confirmDialog, debounce, escapeHtml, copyText } from "./ui.js";
 import { listVoices, speak, voiceSupport } from "./voice.js";
+import { renderPendingApproval } from "./items.js";
 
 const PANELS = {
   agents: { title: "Agents", icon: "bot" },
@@ -128,7 +129,7 @@ export class Panels {
   notify(type) {
     if (!this.current) return;
     const interest = {
-      agents: ["task."], evolution: ["evolution.", "skills."], memory: ["memory."], schedule: ["reminder."],
+      agents: ["task.", "interaction."], evolution: ["evolution.", "skills."], memory: ["memory."], schedule: ["reminder."],
       activity: ["weebo.activity", "notify", "legacy."], settings: ["engine.", "settings.", "legacy."],
     }[this.current] || [];
     if (interest.some((p) => type.startsWith(p))) {
@@ -208,6 +209,10 @@ export class Panels {
     if (task.finished_at) meta.push(`took ${duration(task.finished_at - (task.started_at || task.created_at))}`);
     wrap.append(el("div", { class: "task-meta", text: meta.join(" · ") }));
     if (task.status === "running") {
+      const { pending } = await api.get("/api/interactions");
+      for (const ask of pending.filter((p) => p.task_id === task.id)) {
+        wrap.append(renderPendingApproval(ask, async (id, decision) => { await this.app.resolveInteraction(id, decision); this.refresh(); }));
+      }
       const steer = el("input", { class: "input", placeholder: "Send the agent extra instructions…" });
       wrap.append(el("div", { class: "live-progress", text: live.progress || "Working…" }),
         el("div", { class: "row" }, steer,
