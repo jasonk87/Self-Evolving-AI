@@ -66,6 +66,7 @@ class WeeboApp:
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
         self.conversations.recover_after_restart()
+        self.scheduler.recover_after_restart()
         self.agents.recover_after_restart()
         if not os.environ.get("WEEBO_SKIP_LEGACY_IMPORT"):
             try:

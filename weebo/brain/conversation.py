@@ -36,6 +36,7 @@ MAX_DIFF = 200_000
 @dataclass
 class TurnState:
     trigger: str = "user"
+    occurrence_id: str | None = None
     turn_id: str | None = None
     started_at: float = field(default_factory=time.time)
     streams: dict[str, str] = field(default_factory=dict)
@@ -53,7 +54,7 @@ class Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     turn: TurnState | None = None
     pending_context: list[str] = field(default_factory=list)
-    followups: list[tuple[str, str]] = field(default_factory=list)  # (prompt, notice)
+    followups: list[dict[str, Any]] = field(default_factory=list)
 
 
 def tools_hash(scope: str = "chat") -> str:
@@ -286,24 +287,41 @@ class ConversationManager:
         return message
 
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
-                        notice_kind: str = "notice", notice_data: dict | None = None) -> None:
+                        notice_kind: str = "notice", notice_data: dict | None = None,
+                        occurrence_id: str | None = None) -> str:
         """Run a turn Weebo starts itself (routine, agent report, brief). The prompt is hidden;
-        the UI shows ``notice`` instead of a user bubble."""
+        the UI shows ``notice`` instead of a user bubble. Return the dispatch outcome
+        so a caught startup error cannot be mistaken for an accepted turn."""
         conv = self.app.store.get_conversation(conv_id)
         if conv is None:
-            return
+            if occurrence_id:
+                self.app.scheduler.delivery_interrupted(occurrence_id, "The routine's conversation was deleted.")
+            return "failed"
         session = self.session(conv_id)
-        if session.turn:
-            session.followups.append((prompt, notice))
-            return
         async with session.lock:
+            if occurrence_id:
+                occurrence = self.app.store.get_routine(occurrence_id)
+                if not occurrence:
+                    return "failed"
+                if occurrence["status"] not in ("queued", "failed"):
+                    return occurrence["status"]
             if session.turn:
-                session.followups.append((prompt, notice))
-                return
+                if not occurrence_id or not any(f.get("occurrence_id") == occurrence_id for f in session.followups):
+                    session.followups.append({"prompt": prompt, "notice": notice, "trigger": trigger,
+                                              "notice_kind": notice_kind, "notice_data": notice_data,
+                                              "occurrence_id": occurrence_id})
+                return "queued"
+            if occurrence_id and not self.app.scheduler.delivery_starting(occurrence_id):
+                return occurrence["status"]
+            # A scheduler tick can start a durable queue entry before its in-memory
+            # followup is drained (for example after an interrupted foreground turn).
+            if occurrence_id:
+                session.followups[:] = [f for f in session.followups if f.get("occurrence_id") != occurrence_id]
             if notice:
                 note = self.app.store.add_message(conv_id, "event", notice, kind=notice_kind, data=notice_data or {})
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
-            await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt)
+            return await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt,
+                                          occurrence_id=occurrence_id)
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
@@ -325,19 +343,28 @@ class ConversationManager:
 
     # ------------------------------------------------------------------ turns
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
-                          trigger: str, query: str) -> None:
-        session.turn = TurnState(trigger=trigger)
+                          trigger: str, query: str, occurrence_id: str | None = None) -> str:
+        state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
+        requested = False
         try:
             thread_id = await self._ensure_thread(session, conv)
             conv = self.app.store.get_conversation(conv["id"]) or conv
             extra = list(session.pending_context)
             session.pending_context.clear()
             context, used = persona.turn_context(self.app, conv, query, extra)
-            session.turn.used_memories = used
-            turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **self._turn_overrides(conv))
+            state.used_memories = used
+            overrides = self._turn_overrides(conv)
+            await self.app.engine.ensure_ready()
+            requested = True
+            turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
+            if not turn.get("id"):
+                raise ValueError("The engine did not confirm a turn id.")
+            if occurrence_id:
+                self.app.scheduler.delivery_started(occurrence_id, turn["id"])
             if session.turn and not session.turn.turn_id:
                 session.turn.turn_id = turn["id"]
+            return "started"
         except Exception as exc:
             message = str(exc) or type(exc).__name__
             logger.warning("Could not start turn in %s: %s", conv["id"], message)
@@ -346,7 +373,26 @@ class ConversationManager:
             self.app.diagnostics.record("turn_start_failed", message)
             err = self.app.store.add_message(conv["id"], "event", message, kind="error")
             self.app.bus.publish("conv.message", {"conversation_id": conv["id"], "message": err})
-            self._finish_turn(conv["id"], "failed", None, publish_error=False)
+            outcome = "failed"
+            if occurrence_id:
+                if state.turn_id:
+                    # A notification already confirmed acceptance, even if the
+                    # request response was lost. Never retry this occurrence.
+                    occurrence = self.app.store.get_routine(occurrence_id)
+                    if occurrence and occurrence["status"] == "started" and occurrence["finished_at"]:
+                        outcome = "started"
+                    else:
+                        outcome = "interrupted"
+                        self.app.scheduler.delivery_interrupted(occurrence_id,
+                                                                "Routine started but its engine response was lost: " + message)
+                elif requested and not isinstance(exc, RpcError):
+                    outcome = "interrupted"
+                    self.app.scheduler.delivery_interrupted(occurrence_id, "Routine startup was not confirmed: " + message)
+                else:
+                    self.app.scheduler.delivery_failed(occurrence_id, message)
+            if session.turn is state:
+                self._finish_turn(conv["id"], "failed", None, publish_error=False)
+            return outcome
 
     async def _ensure_thread(self, session: Session, conv: dict[str, Any]) -> str:
         engine = self.app.engine
@@ -448,9 +494,14 @@ class ConversationManager:
                 session.turn = TurnState(trigger="external")
                 bus.publish("conv.turn.started", {"conversation_id": conv_id, "trigger": "external"})
             session.turn.turn_id = (params.get("turn") or {}).get("id") or session.turn.turn_id
+            if session.turn.occurrence_id:
+                self.app.scheduler.delivery_started(session.turn.occurrence_id, session.turn.turn_id)
             return
         if method == "engine/closed":
             if session.turn:
+                if session.turn.occurrence_id:
+                    self.app.scheduler.delivery_interrupted(session.turn.occurrence_id,
+                                                            "The Codex engine stopped while the routine may have been running.")
                 err = store.add_message(conv_id, "event", "The Codex engine stopped mid-turn. It restarts on its own; "
                                         "send your message again in a moment.", kind="error")
                 bus.publish("conv.message", {"conversation_id": conv_id, "message": err})
@@ -570,6 +621,10 @@ class ConversationManager:
         turn = session.turn
         session.turn = None
         store = self.app.store
+        if turn and turn.occurrence_id:
+            occurrence = store.get_routine(turn.occurrence_id)
+            if occurrence and occurrence["status"] == "started":
+                store.update_routine(turn.occurrence_id, finished_at=time.time())
         conv = store.get_conversation(conv_id)
         if turn and conv and conv.get("thread_id"):
             self.app.interactions.cancel_turn(conv["thread_id"], turn.turn_id)
@@ -606,8 +661,8 @@ class ConversationManager:
         if turn:
             self.app.on_turn_finished(conv_id, turn, status)
         if session.followups and status != "interrupted":
-            prompt, notice = session.followups.pop(0)
-            asyncio.create_task(self.run_event(conv_id, prompt, notice, trigger="followup"))
+            event = session.followups.pop(0)
+            asyncio.create_task(self.run_event(conv_id, **event))
 
     def _name_thread_once(self, conv: dict[str, Any]) -> None:
         """Codex persists a thread on its first turn; name it then so it reads well in the Codex app."""
