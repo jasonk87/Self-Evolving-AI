@@ -81,6 +81,149 @@ async def test_scheduler_rejects_past_and_too_frequent_routines(app):
 
 
 # ---------------------------------------------------------------- agents
+@pytest.mark.parametrize("parallel", [1, 2, 3])
+async def test_agent_restart_restores_fifo_payloads_once_and_respects_limit(app, fake_engine, tmp_path, parallel):
+    app.settings.update({"agents.max_parallel": parallel, "agents.auto_followup": False})
+    conv = app.conversations.create()
+    queued = []
+    for i in range(5):
+        cwd = tmp_path / f"job-{i}"
+        cwd.mkdir()
+        task = app.store.create_task(
+            f"Job {i}", f"Original prompt {i}\nwith details", cwd=str(cwd), conversation_id=conv["id"],
+            meta={"effort": "high", "tools_scope": "agent", "developer_instructions": f"Instructions {i}",
+                  "output_schema": {"type": "object"}, "sandbox_mode": "workspace-write-auto", "custom": {"job": i}},
+        )
+        # Include equal timestamps: insertion order must break ties, not random task ids.
+        queued.append(app.store.update_task(task["id"], created_at=100 + i // 2))
+    ids = [task["id"] for task in queued]
+    updates, events = [], []
+    app.bus.subscribe("task.updated", lambda t, d: updates.append(d["task"]))
+    app.bus.subscribe("task.event", lambda t, d: events.append(d))
+
+    fake_engine.status = "starting"
+    app.agents.recover_after_restart()
+    app.agents.recover_after_restart()
+    assert list(app.agents.queue) == ids
+    assert [app.store.get_task(task["id"]) for task in queued] == queued
+    # Settings changes also call the pump, but must not launch recovery before readiness.
+    app.settings.update({"agents.max_parallel": parallel})
+    app.agents._pump()
+    await drain(10)
+    assert not fake_engine.threads and not fake_engine.turns and not app.agents.runs
+
+    fake_engine.status = "ready"
+    app.bus.publish("engine.status", {"status": "ready"})
+    await drain(10)
+    assert len(fake_engine.turns) == parallel
+    assert list(app.agents.runs) == ids[:parallel]
+    assert list(app.agents.queue) == ids[parallel:]
+
+    for i, original in enumerate(queued):
+        app.agents.recover_after_restart()
+        app.bus.publish("engine.status", {"status": "ready"})
+        await drain(10)
+        assert len(app.agents.runs) <= parallel
+        assert len(fake_engine.turns) == min(len(ids), i + parallel)
+        turn = fake_engine.turns[i]
+        thread = fake_engine.threads[i]
+        assert f"Agent task id: {original['id']}\n" in turn["context"]
+        assert turn["input"][0]["text"] == original["prompt"]
+        assert thread["cwd"] == original["cwd"]
+        assert thread["developerInstructions"] == original["meta"]["developer_instructions"]
+        assert turn["effort"] == "high" and turn["outputSchema"] == original["meta"]["output_schema"]
+        assert turn["sandboxPolicy"]["writableRoots"] == [original["cwd"]]
+        saved = app.store.get_task(original["id"])
+        assert saved["status"] == "running" and saved["started_at"] is not None
+        for key in ("id", "title", "prompt", "cwd", "conversation_id", "meta", "created_at"):
+            assert saved[key] == original[key]
+        await fake_engine.finish_turn(turn["thread_id"], turn["turn_id"], f"Report {i}")
+        assert (await app.agents.wait(original["id"], timeout=2))["status"] == "completed"
+        await drain(10)
+
+    app.agents.recover_after_restart()
+    app.bus.publish("engine.status", {"status": "ready"})
+    await drain(10)
+    assert not app.agents.queue and not app.agents.runs
+    assert len(fake_engine.turns) == len(ids)
+    assert [task["id"] for task in updates if task["status"] == "running"] == ids
+    assert [event["task_id"] for event in events if event["kind"] == "recovered"] == ids
+    assert [event["task_id"] for event in events if event["kind"] == "started"] == ids
+    for task_id in ids:
+        kinds = [event["kind"] for event in app.store.list_task_events(task_id)]
+        assert kinds == ["recovered", "started", "message", "finished"]
+
+
+async def test_agent_restart_does_not_replay_running_or_other_owned_work(app, fake_engine):
+    app.settings.update({"agents.auto_followup": False})
+    stale = []
+    for kind, status in (("agent", "running"), ("evolution", "queued"), ("evolution", "running"),
+                         ("other", "queued"), ("other", "running")):
+        task = app.store.create_task(f"{kind} {status}", "Must not replay", kind=kind, meta={"owner": kind})
+        stale.append(app.store.update_task(task["id"], status=status, thread_id="old-thread"))
+    proposal = app.store.add_proposal("Owned upgrade", "Existing recovery owner")
+    proposal = app.store.update_proposal(proposal["id"], status="building")
+    completed = app.store.create_task("Done", "Already finished")
+    completed = app.store.update_task(completed["id"], status="completed", summary="Done")
+    app.agents.recover_after_restart()
+    interrupted = [app.store.get_task(task["id"]) for task in stale]
+    app.agents.recover_after_restart()
+    app.agents._pump()
+    await drain(10)
+    assert not app.agents.queue and not fake_engine.turns
+    assert [app.store.get_task(task["id"]) for task in stale] == interrupted
+    for task in interrupted:
+        assert task["status"] == "interrupted" and task["finished_at"] is not None
+        assert "restarted" in task["error"] and task["thread_id"] == "old-thread"
+    assert app.store.get_task(completed["id"]) == completed
+    assert app.store.get_proposal(proposal["id"]) == proposal
+
+
+async def test_agent_restart_recovers_all_pending_tasks_beyond_200(app, fake_engine):
+    queued = [app.store.create_task(f"Queued {i}", f"Prompt {i}") for i in range(225)]
+    running = [app.store.create_task(f"Running {i}", "Never replay") for i in range(225)]
+    for task in running:
+        app.store.update_task(task["id"], status="running")
+    app.agents.recover_after_restart()
+    app.agents.recover_after_restart()
+    assert list(app.agents.queue) == [task["id"] for task in queued]
+    assert all(app.store.get_task(task["id"])["status"] == "queued" for task in queued)
+    assert all(app.store.get_task(task["id"])["status"] == "interrupted" for task in running)
+    assert not fake_engine.turns
+
+
+@pytest.mark.parametrize("engine_ready", [False, True])
+async def test_agent_restart_startup_waits_for_ready_engine(fake_engine, engine_ready):
+    from weebo.app import WeeboApp
+
+    original = WeeboApp()
+    task = original.store.create_task("Persisted job", "Original instructions", cwd=str(original.skills.root))
+    original.store.close()
+    restarted = WeeboApp()
+    restarted.engine = fake_engine
+    fake_engine.status = "ready" if engine_ready else "starting"
+    restarted.settings.update({"agents.auto_followup": False})
+    try:
+        await restarted.start(with_background=False)
+        await drain(10)
+        if not engine_ready:
+            assert list(restarted.agents.queue) == [task["id"]]
+            assert restarted.store.get_task(task["id"])["status"] == "queued"
+            assert not fake_engine.turns
+            fake_engine.status = "ready"
+            restarted.bus.publish("engine.status", {"status": "ready"})
+            await drain(10)
+        assert len(fake_engine.turns) == 1
+        turn = fake_engine.turns[0]
+        assert f"Agent task id: {task['id']}\n" in turn["context"]
+        assert turn["input"][0]["text"] == task["prompt"]
+        await fake_engine.finish_turn(turn["thread_id"], turn["turn_id"])
+        assert (await restarted.agents.wait(task["id"], timeout=2))["status"] == "completed"
+        await drain(10)
+    finally:
+        await restarted.stop()
+
+
 async def test_agents_run_in_parallel_up_to_limit_and_report(app, fake_engine):
     app.settings.update({"agents.max_parallel": 2, "agents.auto_followup": False})
     conv = app.conversations.create()

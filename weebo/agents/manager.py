@@ -162,13 +162,30 @@ class AgentManager:
         return "\n".join(f"{t['id']} [{t['status']}] {t['title']}" for t in tasks)
 
     def recover_after_restart(self) -> None:
-        """Agents that were running when Weebo stopped cannot resume; mark them so."""
-        for task in self.app.store.list_tasks(limit=200, statuses=ACTIVE):
-            self.app.store.update_task(task["id"], status="interrupted", finished_at=time.time(),
-                                       error="Weebo restarted while this agent was running.")
+        """Restore unstarted ordinary agents; running work must never be replayed."""
+        known = set(self.queue) | self.runs.keys()
+        tasks = self.app.store.query(
+            "SELECT * FROM tasks WHERE status IN ('queued', 'running') ORDER BY created_at, rowid"
+        )
+        for task in tasks:
+            task_id = task["id"]
+            if task_id in known:
+                continue
+            if task["kind"] == "agent" and task["status"] == "queued":
+                self.queue.append(task_id)
+                known.add(task_id)
+                event = self.app.store.add_task_event(task_id, "recovered", "Restored to the queue after restart.")
+                self.app.bus.publish("task.event", {"task_id": task_id, **event})
+            else:
+                # Other kinds retain their existing recovery rules (e.g. evolution owns rebuilding).
+                task = self.app.store.update_task(task_id, status="interrupted", finished_at=time.time(),
+                                                  error="Weebo restarted while this agent was running.")
+            self.app.bus.publish("task.updated", {"task": task})
 
     # ------------------------------------------------------------------ internals
     def _pump(self) -> None:
+        if self.app.engine.status != "ready":
+            return
         limit = int(self.app.settings.get("agents.max_parallel") or 3)
         while self.queue and len(self.runs) < limit:
             task_id = self.queue.popleft()
@@ -185,6 +202,7 @@ class AgentManager:
         engine = self.app.engine
         settings = self.app.settings
         self.app.bus.publish("task.updated", {"task": task})
+        self._event(run, "started", "Agent started.")
         self.app.bus.publish("weebo.mood", {"mood": "delegating", "task_id": run.task_id})
         try:
             model = engine.default_model(settings.get("codex.model"))
