@@ -7,6 +7,7 @@ import { Panels } from "./panels.js";
 import { el, btn, toast, modal, timeAgo, confirmDialog, $ } from "./ui.js";
 import { configureVoice, speak } from "./voice.js";
 import { setWorkspaceRoot } from "./markdown.js";
+import { proposalHref, proposalFromHash } from "./evolution-route.js";
 
 const ACTIVE_KEY = "weebo.activeConversation";
 const THEME_KEY = "weebo.theme";
@@ -66,11 +67,14 @@ class App {
     const target = this.state.conversations.find((c) => c.id === saved) ? saved : null;
     if (target) await this.openConversation(target);
     else await this.newChat();
+    this.routeProposal();
     director.setBase(this.restingMood());
   }
 
   // ------------------------------------------------------------------ chrome
   bindChrome() {
+    window.addEventListener("hashchange", () => this.routeProposal());
+    window.addEventListener("popstate", () => this.routeProposal());
     document.querySelectorAll("[data-icon]").forEach((n) => n.insertAdjacentHTML("afterbegin", icon(n.dataset.icon, Number(n.dataset.iconSize || 18))));
     $("#new-chat").addEventListener("click", () => this.newChat());
     $("#menu-btn").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
@@ -300,8 +304,12 @@ class App {
 
   // ------------------------------------------------------------------ live events
   bindEvents() {
+    on("hello", () => this.reconcileEvolution());
     on("conv.message", ({ conversation_id, message }) => {
-      if (conversation_id === this.currentConvId) this.chat.upsert(message);
+      if (conversation_id === this.currentConvId) {
+        const existing = this.chat.byId.get(message.id);
+        if (message.kind !== "evolution_status" || !existing || message.updated_at >= existing.updated_at) this.chat.upsert(message);
+      }
       const conv = this.conversation(conversation_id);
       if (conv) {
         conv.updated_at = message.updated_at || Date.now() / 1000;
@@ -442,6 +450,42 @@ class App {
       setTimeout(poll, 1000);
     };
     setTimeout(poll, 1000);
+  }
+
+  async reconcileEvolution() {
+    if (!this.currentConvId) return; // Initial bootstrap loads the persisted cards.
+    const id = this.currentConvId;
+    try {
+      const [data, { proposals }] = await Promise.all([
+        api.get(`/api/conversations/${encodeURIComponent(id)}`), api.get("/api/proposals"),
+      ]);
+      if (this.currentConvId === id) {
+        for (const msg of data.evolution_messages || []) {
+          const existing = this.chat.byId.get(msg.id);
+          if (!existing && this.chat.messages.length && msg.seq < this.chat.messages[0].seq) continue;
+          if (!existing || msg.updated_at >= existing.updated_at) this.chat.upsert(msg);
+        }
+      }
+      this.state.proposals = proposals;
+      this.readyProposals = proposals.filter((p) => p.status === "ready").length;
+      this.evolving = proposals.some((p) => ["building", "checking", "merging"].includes(p.status));
+      this.renderBadges();
+      this.panels.notify("evolution.updated");
+    } catch { /* The next reconnect or chat load reconciles again. */ }
+  }
+
+  routeProposal() {
+    const id = proposalFromHash(location.hash);
+    if (id) {
+      if (this.panels.current !== "evolution" || this.panels.opts.proposal !== id) this.panels.open("evolution", { proposal: id });
+    } else if (this.panels.current === "evolution" && this.panels.opts.proposal) this.panels.close();
+  }
+
+  setProposalRoute(id) {
+    const hash = id ? proposalHref(id).slice(1) : "";
+    if (id && !proposalFromHash(hash)) return;
+    if (!id && !proposalFromHash(location.hash)) return;
+    if (location.hash !== hash) history.pushState(null, "", `${location.pathname}${location.search}${hash}`);
   }
 
   openPanel(name, opts) { this.panels.open(name, opts); }

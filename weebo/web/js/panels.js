@@ -107,6 +107,7 @@ export class Panels {
 
   open(name, opts = {}) {
     if (!PANELS[name]) return;
+    this.app.setProposalRoute(name === "evolution" ? opts.proposal : null);
     this.current = name;
     this.opts = opts;
     this.title.innerHTML = `${icon(PANELS[name].icon, 18)}<span>${PANELS[name].title}</span>`;
@@ -117,6 +118,7 @@ export class Panels {
   }
 
   close() {
+    this.app.setProposalRoute(null);
     this.current = null;
     this.drawer.classList.remove("open");
     document.body.classList.remove("drawer-open");
@@ -142,13 +144,15 @@ export class Panels {
   async refresh() {
     const name = this.current;
     if (!name) return;
+    const opts = this.opts;
     const scrollTop = this.body.scrollTop;
     try {
-      const content = await this[`render_${name}`](this.opts);
-      if (this.current !== name) return;
+      const content = await this[`render_${name}`](opts);
+      if (this.current !== name || this.opts !== opts) return;
       this.body.replaceChildren(content);
       this.body.scrollTop = scrollTop;
     } catch (err) {
+      if (this.current !== name || this.opts !== opts) return;
       this.body.replaceChildren(empty(`Couldn't load: ${err.message}`, "alert"));
     }
   }
@@ -266,7 +270,7 @@ export class Panels {
     form.append(t, d, el("div", { class: "row end" }, btn("Cancel", { onClick: () => { form.hidden = true; } }), btn("Propose", { kind: "primary", icon: "sparkles", onClick: () => form.requestSubmit() })));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try { const { proposal } = await api.post("/api/proposals", { title: t.value, description: d.value }); this.opts = { proposal: proposal.id }; this.refresh(); }
+      try { const { proposal } = await api.post("/api/proposals", { title: t.value, description: d.value }); this.open("evolution", { proposal: proposal.id }); }
       catch (err) { toast("Couldn't propose", err.message, { kind: "error" }); }
     });
     wrap.append(el("div", { class: "row" }, btn("Suggest an upgrade", { kind: "primary", icon: "plus", onClick: () => { form.hidden = false; t.focus(); } })), form);
@@ -276,7 +280,7 @@ export class Panels {
     const history = proposals.filter((p) => !needs.includes(p) && !progress.includes(p));
     const card = (p) => {
       const step = proposalStep(p);
-      return el("button", { class: `proposal-card st-${p.status}`, type: "button", onclick: () => { this.opts = { proposal: p.id }; this.refresh(); } },
+      return el("button", { class: `proposal-card st-${p.status}`, type: "button", onclick: () => this.open("evolution", { proposal: p.id }) },
         el("div", { class: "task-top" }, el("span", { html: icon(p.id === current ? "gear" : "dna", 16, p.id === current ? "spinning" : "") }), el("strong", { text: p.title }), pill(p.status)),
         step ? el("div", { class: "task-progress", text: step }) : null,
         el("div", { class: "task-meta", text: `${p.source === "user" ? "you asked" : p.source} · ${timeAgo(p.created_at)}${p.diff_stat ? " · " + p.diff_stat.split("\n").pop().trim() : ""}` }));
@@ -301,7 +305,7 @@ export class Panels {
     const { proposal: p } = await api.get(`/api/proposals/${encodeURIComponent(id)}`);
     const meta = p.meta || {};
     const wrap = el("div", { class: "panel" });
-    wrap.append(btn("All upgrades", { kind: "link", icon: "chevronLeft", onClick: () => { this.opts = {}; this.refresh(); } }));
+    wrap.append(btn("All upgrades", { kind: "link", icon: "chevronLeft", onClick: () => this.open("evolution") }));
     wrap.append(el("div", { class: "task-title" }, el("h3", { text: p.title }), pill(p.status)));
     wrap.append(el("div", { class: "task-meta", text: `from ${p.source === "user" ? "you" : p.source} · ${timeAgo(p.created_at)}${p.branch ? " · " + p.branch : ""}` }));
     const steps = stepper(p);

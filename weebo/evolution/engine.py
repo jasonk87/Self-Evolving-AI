@@ -152,7 +152,7 @@ class EvolutionEngine:
             meta["verified_at"] = time.time()
             self.app.store.update_proposal(proposal_id, meta=meta)
             self.app.store.journal("evolution", "Upgrade is live", proposal["title"])
-            self.app.bus.publish("evolution.updated", {"proposal": self.app.store.get_proposal(proposal_id)})
+            self._publish(proposal_id)
 
     async def _work(self) -> None:
         while True:
@@ -187,7 +187,7 @@ class EvolutionEngine:
         proposal = self.app.store.add_proposal(title, description, rationale.strip(), source,
                                                meta={"conversation_id": conversation_id, **(meta or {})})
         self.app.store.journal("evolution", f"New self-improvement idea: {title}", rationale[:400], {"proposal_id": proposal["id"]})
-        self.app.bus.publish("evolution.updated", {"proposal": proposal})
+        self._publish(proposal["id"])
         if self.app.settings.get("evolution.mode") == "off":
             return proposal
         if council.needs_council(source):
@@ -663,3 +663,6 @@ class EvolutionEngine:
             meta.pop("diff", None)
             slim["meta"] = meta
             self.app.bus.publish("evolution.updated", {"proposal": slim})
+            message = self.app.store.sync_proposal_message(proposal)
+            if message:
+                self.app.bus.publish("conv.message", {"conversation_id": message["conversation_id"], "message": message})
