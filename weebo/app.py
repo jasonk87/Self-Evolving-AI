@@ -86,6 +86,7 @@ class WeeboApp:
             self.legacy.start()
             asyncio.create_task(self.remote.start(), name="tailnet")
         self.store.journal("system", f"Weebo {__version__} started")
+        self.agents._pump()  # Also handles an engine that was already ready at startup.
 
     async def stop(self) -> None:
         for component in (self.scheduler, self.heartbeat, self.evolution):
@@ -123,6 +124,7 @@ class WeeboApp:
 
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
         if data.get("status") == "ready":
+            self.agents._pump()
             await self.skills.sync_with_codex()
 
     # ------------------------------------------------------------------ helpers used across subsystems
