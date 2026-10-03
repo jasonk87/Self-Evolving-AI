@@ -17,7 +17,26 @@ from typing import Any, Iterable
 
 from . import paths
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+ROUTINE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS routine_occurrences (
+    id TEXT PRIMARY KEY,
+    reminder_id TEXT NOT NULL,
+    due_at REAL NOT NULL,
+    conversation_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at REAL NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    started_at REAL,
+    finished_at REAL,
+    data TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(reminder_id, due_at)
+);
+CREATE INDEX IF NOT EXISTS idx_routines_pending ON routine_occurrences(status, next_attempt_at);
+"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -224,6 +243,8 @@ class Store:
             version = self._conn.execute("PRAGMA user_version").fetchone()[0]
             if version < 1:
                 self._conn.executescript(SCHEMA)
+            if version < 2:
+                self._conn.executescript(ROUTINE_SCHEMA)
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -554,6 +575,29 @@ class Store:
 
     def due_reminders(self, now: float) -> list[dict[str, Any]]:
         return self.query("SELECT * FROM reminders WHERE status='pending' AND due_at<=? ORDER BY due_at", (now,))
+
+    def queue_routine(self, reminder: dict[str, Any], conversation_id: str, data: dict) -> dict[str, Any] | None:
+        """Persist before advancing the schedule; only the first tick owns this occurrence."""
+        occurrence_id = new_id("ro")
+        inserted = self.execute(
+            "INSERT OR IGNORE INTO routine_occurrences (id, reminder_id, due_at, conversation_id, created_at, data) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (occurrence_id, reminder["id"], reminder["due_at"], conversation_id, time.time(), _dumps(data)),
+        )
+        return self.get_routine(occurrence_id) if inserted.rowcount else None
+
+    def get_routine(self, occurrence_id: str) -> dict[str, Any] | None:
+        return self.query_one("SELECT * FROM routine_occurrences WHERE id=?", (occurrence_id,))
+
+    def update_routine(self, occurrence_id: str, **values: Any) -> dict[str, Any] | None:
+        self._update("routine_occurrences", "id", occurrence_id, values)
+        return self.get_routine(occurrence_id)
+
+    def pending_routines(self, now: float, max_attempts: int) -> list[dict[str, Any]]:
+        return self.query(
+            "SELECT * FROM routine_occurrences WHERE status IN ('queued','failed') "
+            "AND attempts<? AND next_attempt_at<=? ORDER BY created_at, rowid", (max_attempts, now),
+        )
 
     # -- evolution proposals ----------------------------------------------
     def add_proposal(self, title: str, description: str, rationale: str = "", source: str = "user",
