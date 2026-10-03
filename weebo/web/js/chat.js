@@ -240,6 +240,9 @@ export class ChatView {
     this._raf = requestAnimationFrame(() => {
       this._raf = 0;
       for (const id of this._dirtyStreams) {
+        // Completion can replace the node and clear its stream before this frame runs.
+        // The persisted reply must take precedence over a queued partial paint.
+        if (this.byId.get(id)?.status !== "streaming") continue;
         const record = this.nodes.get(id);
         const md = record?.node?.querySelector(".md");
         if (md) md.innerHTML = renderMarkdown(this.streams.get(id) || "");
