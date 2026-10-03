@@ -20,6 +20,135 @@ except ImportError: # pragma: no cover
     def emit_system_event(*args, **kwargs): pass
 
 
+async def council_debate(
+    proposed_code: str,
+    proposal_description: str,
+    original_code: str,
+    module_path: str,
+    llm_provider: Any # Using Any to avoid import cycles, assumes it matches provider interface
+) -> Tuple[bool, str]:
+    """
+    Executes an adversarial 'Council Debate' for high-risk self-modification.
+
+    Roles:
+    - The Skeptic: Attacks the proposal looking for safety/security risks.
+    - The Judge: Decides whether to proceed based on the proposal and critique.
+
+    Returns:
+        Tuple[bool, str]: (is_approved, reasoning_summary)
+    """
+    from ai_assistant.config import get_model_for_task # Imported here to avoid circular imports if moved
+
+    emit_system_event("council_session_started", {
+        "message": "High-risk task detected. Convening The Council for adversarial debate."
+    })
+
+    # 1. The Skeptic
+    skeptic_model = get_model_for_task("council_skeptic")
+    skeptic_prompt = f"""
+    You are 'The Skeptic', a highly critical security and reliability auditor for an AI system.
+
+    Context: The AI is attempting to modify its own code (Self-Modification).
+    Module: `{module_path}`
+    Proposal: {proposal_description}
+
+    Existing Code:
+    ```python
+    {original_code}
+    ```
+
+    Proposed New Code:
+    ```python
+    {proposed_code}
+    ```
+
+    Your Goal: Find CRITICAL flaws (security, infinite loops), but prioritization SUCCESS.
+    - SECURITY: Check for execution of arbitrary code from external strings. Standard function calls are SAFE.
+    - INFINITE LOOPS: Check for while loops without exits.
+    - ROBUSTNESS: If the change fixes a crash or bug, it is HIGH VALUE. Approve it even if there are minor style issues or if you think the caller should be fixed instead.
+    - DIFFS: Do NOT reject based on "incomplete diffs" if the intention is clear.
+    - FUNCTIONALITY: If the code runs and fixes the problem, biased towards APPROVAL.
+    - Nitpicking is allowed but should result in APPROVAL unless the flaw is fatal.
+
+    Output your critique concisely.
+    """
+
+    emit_system_event("council_skeptic_thinking", {"message": "The Skeptic is analyzing risks..."})
+    if hasattr(llm_provider, 'invoke_ollama_model_async'):
+         skeptic_response = await llm_provider.invoke_ollama_model_async(skeptic_prompt, model_name=skeptic_model, temperature=0.7)
+    else: # Fallback or mock
+         skeptic_response = "Skeptic analysis unavailable."
+
+    emit_system_event("council_skeptic_verdict", {"critique": skeptic_response})
+
+    # 2. The Judge
+    judge_model = get_model_for_task("council_judge")
+    judge_prompt = f"""
+    You are 'The Judge', the final decision maker for an AI system's self-evolution.
+
+    Proposal: {proposal_description}
+
+    The Skeptic's Critique:
+    {skeptic_response}
+
+    Your Goal: Weigh the proposal against the critique.
+    - If the critique highlights any unresolved security flaw (including XSS, injection, unsafe CSS/HTML, arbitrary code execution, or path traversal), REJECT.
+    - Do not rely on a downstream browser, sanitizer, caller, or deprecated-browser assumption to excuse unsafe output from the proposed code.
+    - If the critique is minor, nitpicky, or theoretical (e.g. "caller should be fixed"), APPROVE.
+    - If the change improves ROBUSTNESS (e.g. handling more inputs, fixing crashes), APPROVE IT.
+    - If the Skeptic complains about "security" for standard input handling, OVERRULE and APPROVE.
+    - If the code looks safe and correct, APPROVE.
+
+    Output Format:
+    Status: [APPROVED | REJECTED]
+    Reasoning: <Your explanation>
+    """
+
+    emit_system_event("council_judge_thinking", {"message": "The Judge is deliberating..."})
+    if hasattr(llm_provider, 'invoke_ollama_model_async'):
+         judge_response = await llm_provider.invoke_ollama_model_async(judge_prompt, model_name=judge_model, temperature=0.3, task_name="council_judge")
+    else:
+         judge_response = "Status: REJECTED\nReasoning: LLM provider unavailable for judgment."
+
+    # Robust parsing for Judge's verdict
+    is_approved = False
+    if "Status: APPROVED" in judge_response or "Status: APPROVE" in judge_response:
+         is_approved = True
+
+    unresolved_security_patterns = (
+        r"\bxss\s+(?:risk|vector|vulnerability)",
+        r"\bcross-site scripting\b",
+        r"\b(?:command|sql|code|html|css) injection\b",
+        r"\barbitrary code execution\b",
+        r"\bpath traversal\b",
+        r"\bpermissive\b.{0,80}\bexpression\s*\(",
+        r"\bunsafe\s+(?:eval|exec|html|css|deserialization)\b",
+    )
+    security_veto = any(
+        re.search(pattern, str(skeptic_response or ""), flags=re.IGNORECASE | re.DOTALL)
+        for pattern in unresolved_security_patterns
+    )
+    if security_veto:
+        is_approved = False
+
+    # Clean reasoning extraction
+    reasoning = judge_response.replace("Status: APPROVED", "").replace("Status: APPROVE", "").replace("Status: REJECTED", "").strip()
+    if reasoning.startswith("Reasoning:"):
+        reasoning = reasoning[10:].strip()
+    if security_veto:
+        reasoning = (
+            "Deterministic security veto: the Skeptic identified an unresolved security risk. "
+            "The proposal must remove that risk before approval. " + reasoning
+        ).strip()
+
+    emit_system_event("council_judge_verdict", {
+        "approved": is_approved,
+        "reasoning": reasoning
+    })
+
+    return is_approved, reasoning
+
+
 class CriticalReviewCoordinator:
     def __init__(self, critic: ReviewerAgent):
         """
@@ -100,128 +229,10 @@ class CriticalReviewCoordinator:
         proposal_description: str,
         original_code: str,
         module_path: str,
-        llm_provider: Any # Using Any to avoid import cycles, assumes it matches provider interface
+        llm_provider: Any
     ) -> Tuple[bool, str]:
-        """
-        Executes an adversarial 'Council Debate' for high-risk self-modification.
-
-        Roles:
-        - The Skeptic: Attacks the proposal looking for safety/security risks.
-        - The Judge: Decides whether to proceed based on the proposal and critique.
-
-        Returns:
-            Tuple[bool, str]: (is_approved, reasoning_summary)
-        """
-        from ai_assistant.config import get_model_for_task # Imported here to avoid circular imports if moved
-
-        emit_system_event("council_session_started", {
-            "message": "High-risk task detected. Convening The Council for adversarial debate."
-        })
-
-        # 1. The Skeptic
-        skeptic_model = get_model_for_task("council_skeptic")
-        skeptic_prompt = f"""
-        You are 'The Skeptic', a highly critical security and reliability auditor for an AI system.
-
-        Context: The AI is attempting to modify its own code (Self-Modification).
-        Module: `{module_path}`
-        Proposal: {proposal_description}
-
-        Existing Code:
-        ```python
-        {original_code}
-        ```
-
-        Proposed New Code:
-        ```python
-        {proposed_code}
-        ```
-
-        Your Goal: Find CRITICAL flaws (security, infinite loops), but prioritization SUCCESS.
-        - SECURITY: Check for execution of arbitrary code from external strings. Standard function calls are SAFE.
-        - INFINITE LOOPS: Check for while loops without exits.
-        - ROBUSTNESS: If the change fixes a crash or bug, it is HIGH VALUE. Approve it even if there are minor style issues or if you think the caller should be fixed instead.
-        - DIFFS: Do NOT reject based on "incomplete diffs" if the intention is clear.
-        - FUNCTIONALITY: If the code runs and fixes the problem, biased towards APPROVAL.
-        - Nitpicking is allowed but should result in APPROVAL unless the flaw is fatal.
-
-        Output your critique concisely.
-        """
-
-        emit_system_event("council_skeptic_thinking", {"message": "The Skeptic is analyzing risks..."})
-        if hasattr(llm_provider, 'invoke_ollama_model_async'):
-             skeptic_response = await llm_provider.invoke_ollama_model_async(skeptic_prompt, model_name=skeptic_model, temperature=0.7)
-        else: # Fallback or mock
-             skeptic_response = "Skeptic analysis unavailable."
-
-        emit_system_event("council_skeptic_verdict", {"critique": skeptic_response})
-
-        # 2. The Judge
-        judge_model = get_model_for_task("council_judge")
-        judge_prompt = f"""
-        You are 'The Judge', the final decision maker for an AI system's self-evolution.
-
-        Proposal: {proposal_description}
-
-        The Skeptic's Critique:
-        {skeptic_response}
-
-        Your Goal: Weigh the proposal against the critique.
-        - If the critique highlights any unresolved security flaw (including XSS, injection, unsafe CSS/HTML, arbitrary code execution, or path traversal), REJECT.
-        - Do not rely on a downstream browser, sanitizer, caller, or deprecated-browser assumption to excuse unsafe output from the proposed code.
-        - If the critique is minor, nitpicky, or theoretical (e.g. "caller should be fixed"), APPROVE.
-        - If the change improves ROBUSTNESS (e.g. handling more inputs, fixing crashes), APPROVE IT.
-        - If the Skeptic complains about "security" for standard input handling, OVERRULE and APPROVE.
-        - If the code looks safe and correct, APPROVE.
-
-        Output Format:
-        Status: [APPROVED | REJECTED]
-        Reasoning: <Your explanation>
-        """
-
-        emit_system_event("council_judge_thinking", {"message": "The Judge is deliberating..."})
-        if hasattr(llm_provider, 'invoke_ollama_model_async'):
-             judge_response = await llm_provider.invoke_ollama_model_async(judge_prompt, model_name=judge_model, temperature=0.3, task_name="council_judge")
-        else:
-             judge_response = "Status: REJECTED\nReasoning: LLM provider unavailable for judgment."
-
-        # Robust parsing for Judge's verdict
-        is_approved = False
-        if "Status: APPROVED" in judge_response or "Status: APPROVE" in judge_response:
-             is_approved = True
-
-        unresolved_security_patterns = (
-            r"\bxss\s+(?:risk|vector|vulnerability)",
-            r"\bcross-site scripting\b",
-            r"\b(?:command|sql|code|html|css) injection\b",
-            r"\barbitrary code execution\b",
-            r"\bpath traversal\b",
-            r"\bpermissive\b.{0,80}\bexpression\s*\(",
-            r"\bunsafe\s+(?:eval|exec|html|css|deserialization)\b",
-        )
-        security_veto = any(
-            re.search(pattern, str(skeptic_response or ""), flags=re.IGNORECASE | re.DOTALL)
-            for pattern in unresolved_security_patterns
-        )
-        if security_veto:
-            is_approved = False
-
-        # Clean reasoning extraction
-        reasoning = judge_response.replace("Status: APPROVED", "").replace("Status: APPROVE", "").replace("Status: REJECTED", "").strip()
-        if reasoning.startswith("Reasoning:"):
-            reasoning = reasoning[10:].strip()
-        if security_veto:
-            reasoning = (
-                "Deterministic security veto: the Skeptic identified an unresolved security risk. "
-                "The proposal must remove that risk before approval. " + reasoning
-            ).strip()
-
-        emit_system_event("council_judge_verdict", {
-            "approved": is_approved,
-            "reasoning": reasoning
-        })
-
-        return is_approved, reasoning
+        """Executes an adversarial 'Council Debate' (see ``council_debate``)."""
+        return await council_debate(proposed_code, proposal_description, original_code, module_path, llm_provider)
 
 if __name__ == '__main__': # pragma: no cover
     # Example Usage (requires ReviewerAgent and a running LLM for ReviewerAgent)

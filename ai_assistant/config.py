@@ -30,7 +30,9 @@ def _load_env_file(path: str) -> None:
 _load_env_file(env_path)
 
 # Read provider/model values after loading .env so local configuration is honored.
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "deepseek").strip().lower()
+# Weebo 2.0: Codex (your ChatGPT plan) is the default brain for every legacy subsystem. Set LLM_PROVIDER=deepseek
+# or gemini to use the old pay-per-token APIs instead.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "codex").strip().lower()
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", DEEPSEEK_V4_FLASH_MODEL)
 # Gemini 2.5 Flash-Lite does not think by default. Set a budget to enable it.
 # Use 0 to disable, -1 for dynamic thinking, or 512-24576 for a manual budget.

@@ -18,6 +18,7 @@ from ai_assistant.config import GEMINI_EMBEDDING_MODEL
 from ai_assistant.debugging.resilience import retry_with_backoff
 import ai_assistant.llm_interface.gemini_client as gemini_client
 import ai_assistant.llm_interface.deepseek_client as deepseek_client
+from ai_assistant.core.llm.codex_provider import codex_enabled, codex_generate, codex_generate_sync
 from ai_assistant.core.telemetry import telemetry_tracker
 from ai_assistant.llm_interface.exceptions import BudgetExceededError
 
@@ -66,6 +67,8 @@ def invoke_ollama_model(
     task_name: Optional[str] = None,
     json_mode: bool = False
 ) -> Optional[str]:
+    if codex_enabled():
+        return codex_generate_sync(prompt, json_mode=json_mode, task_name=task_name or "unknown")
     _check_budget(task_name or "unknown")
 
     if _is_deepseek_model(model_name):
@@ -180,6 +183,8 @@ async def invoke_ollama_model_async_internal(
     task_name: Optional[str] = None,
     json_mode: bool = False
 ) -> Optional[str]:
+    if codex_enabled():
+        return await codex_generate(prompt, json_mode=json_mode, task_name=task_name or "unknown")
     _check_budget(task_name or "unknown")
 
     if _is_deepseek_model(model_name):

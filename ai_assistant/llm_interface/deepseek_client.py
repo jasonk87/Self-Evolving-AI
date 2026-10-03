@@ -34,6 +34,13 @@ async def invoke_raw_deepseek_async(
     task_name: str = "unknown",
     json_mode: bool = False,
 ) -> str:
+    from ai_assistant.core.llm.codex_provider import codex_enabled, codex_generate
+    if codex_enabled():
+        system = "\n\n".join(m.get("content", "") for m in messages if m.get("role") == "system") or None
+        turns = [m for m in messages if m.get("role") != "system"]
+        prompt = turns[-1].get("content", "") if turns else ""
+        return await codex_generate(prompt, system_instruction=system, history=turns[:-1] or None,
+                                    json_mode=json_mode, task_name=task_name)
     api_key = _get_api_key()
     if not api_key or api_key == "your_deepseek_api_key_here":
         raise DeepseekError("Deepseek API Key not found.")

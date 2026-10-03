@@ -32,3 +32,6 @@ chroma_db/
 *.wal
 *.json
 *.sqlite
+
+# Weebo 2.0 runtime data (database, logs, workspace, worktrees)
+weebo_data/

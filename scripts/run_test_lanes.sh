@@ -7,6 +7,10 @@ case "$LANE" in
   unit)
     PYTHONPATH=. pytest -q -m "not integration and not smoke"
     ;;
+  weebo)
+    python -m weebo --selftest
+    PYTHONPATH=. pytest -q tests/weebo -p no:cacheprovider
+    ;;
   integration)
     PYTHONPATH=. pytest -q -m "integration"
     ;;
@@ -18,7 +22,7 @@ case "$LANE" in
     ;;
   *)
     echo "Unknown lane: $LANE"
-    echo "Usage: $0 [unit|integration|smoke|all]"
+    echo "Usage: $0 [unit|weebo|integration|smoke|all]"
     exit 2
     ;;
 esac

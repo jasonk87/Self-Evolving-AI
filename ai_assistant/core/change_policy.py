@@ -24,6 +24,7 @@ class ChangeZone(str, Enum):
     GENERATED_TOOL = "generated_tool"
     DYNAMIC_SPECIALIST = "dynamic_specialist"
     GENERATED_PROJECT = "generated_project"
+    UI_SOURCE = "ui_source"
     RUNTIME_STATE = "runtime_state"
     TEST_SOURCE = "test_source"
     DOCS = "docs"
@@ -69,6 +70,18 @@ _GOVERNANCE_SOURCE_PARTS = {
 _EXECUTION_SOURCE_PREFIXES = (
     ("ai_assistant", "execution"),
     ("ai_assistant", "tools"),
+    ("weebo", "codex"),
+    ("weebo", "agents"),
+)
+
+# Weebo 2.0: the code that decides what Weebo may change about itself, and the
+# supervisor that rolls back bad upgrades, is governance and always needs a human.
+_WEEBO_GOVERNANCE_PREFIXES = (
+    ("weebo", "evolution"),
+    ("weebo", "supervisor.py"),
+    ("weebo", "brain", "interactions.py"),
+    ("weebo", "brain", "tools.py"),
+    ("ai_assistant", "core", "llm", "codex_provider.py"),
 )
 
 _AUTONOMOUS_GATES = (
@@ -128,17 +141,21 @@ def classify_change_zone(
         return ChangeZone.DYNAMIC_SPECIALIST
     if parts[:2] == ("ai_assistant", "ai_generated_projects"):
         return ChangeZone.GENERATED_PROJECT
+    if parts[0] == "weebo_data":
+        return ChangeZone.RUNTIME_STATE
     if parts[0] == "tests":
         return ChangeZone.TEST_SOURCE
     if parts[0] == "docs" or filename.lower().endswith((".md", ".rst", ".txt")):
         return ChangeZone.DOCS
-    if filename in _GOVERNANCE_SOURCE_PARTS or "safety" in parts:
+    if filename in _GOVERNANCE_SOURCE_PARTS or "safety" in parts or _has_prefix(parts, _WEEBO_GOVERNANCE_PREFIXES):
         return ChangeZone.GOVERNANCE_SOURCE
+    if parts[:2] == ("weebo", "web"):
+        return ChangeZone.UI_SOURCE
     if _has_prefix(parts, _EXECUTION_SOURCE_PREFIXES):
         return ChangeZone.EXECUTION_SOURCE
     if parts[:2] == ("ai_assistant", "custom_tools"):
         return ChangeZone.TOOL_SOURCE
-    if _has_prefix(parts, _CORE_SOURCE_PREFIXES):
+    if _has_prefix(parts, _CORE_SOURCE_PREFIXES) or parts[0] == "weebo":
         return ChangeZone.CORE_SOURCE
 
     return ChangeZone.UNKNOWN

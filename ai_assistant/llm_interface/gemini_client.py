@@ -181,6 +181,9 @@ def _invoke_raw_gemini_sync(
     """
     Synchronously invokes the Google Gemini model directly.
     """
+    from ai_assistant.core.llm.codex_provider import codex_enabled, codex_generate_sync
+    if codex_enabled():
+        return codex_generate_sync(prompt, json_mode=json_mode, task_name=task_name)
     model_name = model_name or GEMINI_FLASH_LITE_MODEL
     _check_budget(task_name)
     # Wait for rate limit
@@ -279,6 +282,9 @@ async def _invoke_raw_gemini_async(
     """
     Asynchronously invokes the Google Gemini model directly.
     """
+    from ai_assistant.core.llm.codex_provider import codex_enabled, codex_generate
+    if codex_enabled():
+        return await codex_generate(prompt, images=images, json_mode=json_mode, task_name=task_name)
     model_name = model_name or GEMINI_FLASH_LITE_MODEL
     _check_budget(task_name)
     if ENABLE_RATE_LIMITING:

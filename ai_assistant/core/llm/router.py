@@ -6,6 +6,7 @@ from ai_assistant.core.llm.provider import LLMProvider
 from ai_assistant.core.llm.gemini_provider import GeminiProvider
 from ai_assistant.core.llm.ollama_provider import OllamaProvider
 from ai_assistant.core.llm.deepseek_provider import DeepseekProvider
+from ai_assistant.core.llm.codex_provider import CodexProvider, codex_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,8 @@ class ModelRouter:
         self._providers: Dict[str, LLMProvider] = {
             "gemini": GeminiProvider(),
             "ollama": OllamaProvider(),
-            "deepseek": DeepseekProvider()
+            "deepseek": DeepseekProvider(),
+            "codex": CodexProvider(),
         }
         self.model = getattr(config, "DEFAULT_MODEL", "deepseek-v4-pro")
         self.DEFAULT_MODEL = self.model
@@ -26,6 +28,9 @@ class ModelRouter:
         """
         Returns (provider_instance, model_name, execution_mode, endpoint_url)
         """
+        if codex_enabled():
+            # Weebo 2.0: every legacy task thinks with Codex on the user's ChatGPT plan.
+            return self._providers["codex"], "codex", "DIRECT", None
         profiles = getattr(config, 'TASK_PROFILES', {})
 
         # Fallback to chat if specific task isn't configured
@@ -73,7 +78,7 @@ class ModelRouter:
         # outages survivable. This does not change API-key configuration or the
         # user's selected DeepSeek models; it only provides a Gemini fallback.
         provider_name = getattr(provider, "provider_name", "").lower()
-        if provider_name != "gemini":
+        if provider_name not in ("gemini", "codex"):
             fallback_provider = self._providers.get("gemini")
             fallback_model = getattr(
                 config, "GEMINI_VISION_FALLBACK_MODEL", "gemini-2.5-flash"

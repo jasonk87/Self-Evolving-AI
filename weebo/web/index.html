@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="weebo-token" content="{{WEEBO_TOKEN}}">
+  <meta name="weebo-version" content="{{WEEBO_VERSION}}">
+  <meta name="theme-color" content="#101117">
+  <meta name="color-scheme" content="dark light">
+  <title>Weebo</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Weebo">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/static/css/weebo.css">
+  <script type="module" src="/static/js/main.js"></script>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar" aria-label="Conversations">
+      <div class="brand">
+        <div id="brand-weebo" class="brand-weebo"></div>
+        <span class="brand-name">Weebo</span>
+        <span class="brand-ver">2.0</span>
+      </div>
+      <button id="new-chat" class="btn btn-primary wide" type="button" data-icon="plus"><span>New chat</span><kbd>Ctrl K</kbd></button>
+      <nav id="conv-list" class="conv-list"></nav>
+      <nav class="side-nav" aria-label="Weebo panels">
+        <button type="button" data-panel="agents" data-icon="bot"><span>Agents</span><b class="badge" hidden></b></button>
+        <button type="button" data-panel="evolution" data-icon="dna"><span>Evolution</span><b class="badge" hidden></b></button>
+        <button type="button" data-panel="memory" data-icon="brain"><span>Memory</span></button>
+        <button type="button" data-panel="schedule" data-icon="clock"><span>Schedule</span></button>
+        <button type="button" data-panel="activity" data-icon="pulse"><span>Activity</span><b class="badge" hidden></b></button>
+        <button type="button" data-panel="settings" data-icon="gear"><span>Settings</span></button>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <header id="topbar">
+        <button id="menu-btn" class="btn btn-ghost btn-icon" type="button" aria-label="Menu" data-icon="menu"></button>
+        <h2 id="conv-title" class="conv-heading">Weebo</h2>
+        <button id="engine-pill" class="engine-pill" type="button" hidden></button>
+        <div class="top-actions">
+          <div id="ctx-meter" class="ring ring-sm" title="Context window" style="--p:0"></div>
+          <div id="usage-ring" class="ring" title="ChatGPT plan usage" style="--p:0"><span>–</span></div>
+          <button id="theme-btn" class="btn btn-ghost btn-icon" type="button" aria-label="Theme"></button>
+        </div>
+      </header>
+      <section id="chat" class="chat"></section>
+    </main>
+
+    <aside id="drawer" class="drawer" aria-label="Panel">
+      <header class="drawer-head">
+        <h3 id="drawer-title"></h3>
+        <button id="drawer-close" class="btn btn-ghost btn-icon" type="button" aria-label="Close panel" data-icon="x"></button>
+      </header>
+      <div id="drawer-body" class="drawer-body"></div>
+    </aside>
+    <div id="scrim"></div>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div class="offline-banner" role="status">Reconnecting to Weebo…</div>
+</body>
+</html>
