@@ -277,7 +277,11 @@ class ConversationManager:
                     self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
                     return message  # type: ignore[return-value]
                 except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
-                    logger.info("Steer failed (%s); starting a new turn instead", exc)
+                    logger.info("Steer failed (%s)", exc)
+            # A failed steer does not confirm that the server turn has finished.
+            # Only start again after a terminal notification cleared the active turn.
+            if session.turn is not None:
+                raise ValueError("Could not add your message to the active turn. Please retry after it finishes.")
             await self._start_turn(session, conv, inputs, trigger="user", query=text)
         return message
 
@@ -434,6 +438,13 @@ class ConversationManager:
         session = self.session(conv_id)
         bus = self.app.bus
         store = self.app.store
+        event_turn_id = params.get("turnId") or (params.get("turn") or {}).get("id")
+        if event_turn_id:
+            if session.turn is None or session.turn.turn_id is None:
+                if method != "turn/started":
+                    return
+            elif event_turn_id != session.turn.turn_id:
+                return
         if method == "turn/started":
             if session.turn is None:
                 session.turn = TurnState(trigger="external")

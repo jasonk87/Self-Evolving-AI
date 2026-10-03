@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from weebo.brain.conversation import _error_text, auto_title, item_to_message, sandbox_for, tools_hash
+from weebo.codex.rpc import EngineClosed, RpcError
 from tests.weebo.conftest import drain
 
 pytestmark = pytest.mark.asyncio
@@ -52,6 +53,124 @@ async def test_message_during_turn_steers(app, fake_engine):
     assert fake_engine.steers and fake_engine.steers[0]["turn_id"] == turn["turn_id"]
     assert message["data"]["steered"] is True
     assert len(fake_engine.turns) == 1
+
+
+@pytest.mark.parametrize("failure", [RpcError(-32600, "Turn is already completed"),
+                                     asyncio.TimeoutError(), EngineClosed("Disconnected")])
+async def test_failed_steer_preserves_active_turn(app, fake_engine, monkeypatch, failure):
+    events = collect(app)
+    conv = app.conversations.create()
+    conv_id = conv["id"]
+    await app.conversations.send(conv_id, "start something long")
+    t = fake_engine.turns[0]
+    tid, turn_id = t["thread_id"], t["turn_id"]
+    item = {"type": "agentMessage", "id": "partial", "text": "", "phase": "final_answer"}
+    await fake_engine.emit(tid, "item/started", {"turnId": turn_id, "item": item})
+    await fake_engine.emit(tid, "item/agentMessage/delta", {"turnId": turn_id, "itemId": "partial", "delta": "Before "})
+    original = app.conversations.session(conv_id).turn
+
+    async def fail_steer(*args):
+        # Notifications continue arriving while the steering RPC is outstanding.
+        await fake_engine.emit(tid, "item/agentMessage/delta", {"turnId": turn_id, "itemId": "partial", "delta": "during "})
+        raise failure
+
+    monkeypatch.setattr(fake_engine, "steer", fail_steer)
+    with pytest.raises(ValueError, match="Please retry after it finishes"):
+        await app.conversations.send(conv_id, "also add tests")
+    assert app.conversations.session(conv_id).turn is original
+    assert app.conversations.live_state(conv_id)["streams"] == {f"{conv_id}:partial": "Before during "}
+    assert app.conversations.busy(conv_id) and len(fake_engine.turns) == 1
+    assert not any(topic == "conv.turn.completed" for topic, _ in events)
+
+    await fake_engine.emit(tid, "item/agentMessage/delta", {"turnId": turn_id, "itemId": "partial", "delta": "after"})
+    await fake_engine.emit(tid, "turn/completed", {"turn": {"id": turn_id, "status": "completed"}})
+    assert not app.conversations.busy(conv_id)
+    message = app.store.get_message(f"{conv_id}:partial")
+    assert message["content"] == "Before during after" and message["status"] == "done"
+    assert message["turn_id"] == turn_id
+    assert sum(topic == "conv.turn.completed" for topic, _ in events) == 1
+
+
+@pytest.mark.parametrize("failure", [RpcError(-32600, "Turn is already completed"), asyncio.TimeoutError()])
+async def test_failed_steer_starts_new_turn_after_confirmed_completion(app, fake_engine, monkeypatch, failure):
+    conv = app.conversations.create()
+    await app.conversations.send(conv["id"], "start something long")
+    t = fake_engine.turns[0]
+
+    async def finish_then_fail(*args):
+        await fake_engine.finish_turn(t["thread_id"], t["turn_id"], "Original finished.")
+        raise failure
+
+    monkeypatch.setattr(fake_engine, "steer", finish_then_fail)
+    message = await app.conversations.send(conv["id"], "also add tests")
+    assert not message["data"].get("steered")
+    assert len(fake_engine.turns) == 2
+    assert fake_engine.turns[1]["input"][0]["text"] == "also add tests"
+    assert app.conversations.session(conv["id"]).turn.turn_id == fake_engine.turns[1]["turn_id"]
+
+
+async def test_late_events_cannot_mutate_or_complete_replacement_turn(app, fake_engine):
+    conv = app.conversations.create()
+    conv_id = conv["id"]
+    await app.conversations.send(conv_id, "first")
+    old = fake_engine.turns[0]
+    tid, old_id = old["thread_id"], old["turn_id"]
+    await fake_engine.finish_turn(tid, old_id)
+    await app.conversations.send(conv_id, "second")
+    turn = app.conversations.session(conv_id).turn
+    events = collect(app)
+    messages = app.store.list_messages(conv_id)
+    stale_events = [
+        ("turn/started", {"turn": {"id": old_id}}),
+        ("item/started", {"item": {"id": "stale", "type": "agentMessage"}}),
+        ("item/agentMessage/delta", {"itemId": "stale", "delta": "stale text"}),
+        ("item/reasoning/summaryTextDelta", {"delta": "stale reasoning"}),
+        ("item/reasoning/summaryPartAdded", {}),
+        ("item/commandExecution/outputDelta", {"itemId": "stale", "delta": "stale output"}),
+        ("item/completed", {"item": {"id": "stale", "type": "agentMessage", "text": "stale final"}}),
+        ("turn/plan/updated", {"plan": [{"step": "stale plan", "status": "completed"}]}),
+        ("turn/diff/updated", {"diff": "stale diff"}),
+        ("turn/completed", {"turn": {"id": old_id, "status": "failed", "error": {"message": "stale error"}}}),
+    ]
+    for method, params in stale_events:
+        await fake_engine.emit(tid, method, {"turnId": old_id, **params})
+    assert app.conversations.session(conv_id).turn is turn
+    assert turn.turn_id == fake_engine.turns[1]["turn_id"]
+    assert not turn.streams and not turn.reasoning and not turn.outputs and not turn.diff and not turn.final_text
+    assert app.store.list_messages(conv_id) == messages
+    assert not events
+    await fake_engine.finish_turn(tid, turn.turn_id, "Replacement finished.")
+    assert not app.conversations.busy(conv_id)
+    assert app.store.list_messages(conv_id)[-1]["content"] == "Replacement finished."
+
+
+async def test_late_completion_ignored_while_replacement_start_is_pending(app, fake_engine, monkeypatch):
+    conv = app.conversations.create()
+    conv_id = conv["id"]
+    await app.conversations.send(conv_id, "first")
+    old = fake_engine.turns[0]
+    await fake_engine.finish_turn(old["thread_id"], old["turn_id"])
+    starting, release = asyncio.Event(), asyncio.Event()
+    start_turn = fake_engine.start_turn
+
+    async def slow_start(*args, **kwargs):
+        starting.set()
+        await release.wait()
+        return await start_turn(*args, **kwargs)
+
+    monkeypatch.setattr(fake_engine, "start_turn", slow_start)
+    pending = asyncio.create_task(app.conversations.send(conv_id, "second"))
+    try:
+        await asyncio.wait_for(starting.wait(), 1)
+        replacement = app.conversations.session(conv_id).turn
+        assert replacement.turn_id is None
+        await fake_engine.emit(old["thread_id"], "turn/completed",
+                               {"turn": {"id": old["turn_id"], "status": "completed"}})
+        assert app.conversations.session(conv_id).turn is replacement
+    finally:
+        release.set()
+        await pending
+    assert replacement.turn_id == fake_engine.turns[1]["turn_id"]
 
 
 async def test_work_items_and_diff_become_messages(app, fake_engine):
