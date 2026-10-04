@@ -477,6 +477,10 @@ export class Panels {
     const hb = status.heartbeat;
     const wrap = el("div", { class: "panel" });
     const stat = (label, value, ok) => el("div", { class: `stat${ok === false ? " warn" : ""}` }, el("span", { class: "muted small", text: label }), el("strong", { text: value }));
+    const unread = this.app.notifications.records();
+    wrap.append(section("Notification inbox",
+      el("p", { class: "muted small", text: "Opening an alert does not clear it. Choose Acknowledge when you are finished." }),
+      unread.length ? el("div", { class: "stack" }, unread.map((n) => this.app.notifications.renderRecord(n))) : empty("No unread notifications.")));
     wrap.append(el("div", { class: "stats-grid" },
       stat("Proactive budget", hb.budget_ok ? "Available" : "Paused", hb.budget_ok),
       stat("Background turns today", `${hb.background_turns_today}`),
@@ -496,11 +500,9 @@ export class Panels {
       el("span", { class: "tl-ic", html: icon(kindIcon[j.kind] || "dot", 14) }),
       el("div", { class: "tl-body" }, el("strong", { text: j.title }), j.detail ? el("p", { class: "muted small", text: j.detail }) : null, el("span", { class: "tl-time", text: timeAgo(j.created_at) })))))
       : empty("Nothing yet.")));
-    if (notifications.length) {
-      wrap.append(section("Notifications", el("div", { class: "stack" }, notifications.map((n) => el("div", { class: `note${n.read ? "" : " unread"}` },
-        el("strong", { text: n.title }), n.body ? el("p", { class: "muted small", text: n.body.slice(0, 220) }) : null, el("span", { class: "tl-time", text: timeAgo(n.created_at) }))))));
-      api.post("/api/notifications/read", {}).then(() => this.app.setUnread(0)).catch(() => {});
-    }
+    const acknowledged = notifications.filter((n) => n.read);
+    if (acknowledged.length) wrap.append(section("Acknowledged notifications", el("div", { class: "stack" },
+      acknowledged.map((n) => this.app.notifications.renderRecord(n)))));
     const open = diagnostics.filter((d) => d.status !== "fixed");
     if (open.length) {
       wrap.append(section("Self-diagnostics", el("p", { class: "muted small", text: "Failures Weebo noticed in itself. Repeated ones feed its self-audits." }),
@@ -521,6 +523,11 @@ export class Panels {
     this.app.state.settings = settings;
     this.app.state.engine = engine;
     const wrap = el("div", { class: "panel settings" });
+    wrap.append(section("Notifications",
+      el("p", { class: "small", text: this.app.notifications.capability() }),
+      el("p", { class: "muted small", text: "Unread alerts return when you open Weebo, reconnect, or bring it to the foreground. True background delivery, including phone Web Push, is not currently configured. Browser alerts require this page to be running; permission alone does not guarantee delivery." }),
+      window.isSecureContext && "Notification" in window && Notification.permission === "default"
+        ? btn("Enable browser alerts", { kind: "soft", size: "sm", onClick: () => this.app.notifications.enableDesktop() }) : null));
     const save = async (key, value) => {
       try {
         const res = await api.patch("/api/settings", { changes: { [key]: value } });

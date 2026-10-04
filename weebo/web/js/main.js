@@ -8,6 +8,7 @@ import { el, btn, toast, modal, timeAgo, confirmDialog, $ } from "./ui.js";
 import { configureVoice, speak } from "./voice.js";
 import { setWorkspaceRoot } from "./markdown.js";
 import { proposalHref, proposalFromHash } from "./evolution-route.js";
+import { NotificationInbox } from "./notifications.js";
 
 const ACTIVE_KEY = "weebo.activeConversation";
 const THEME_KEY = "weebo.theme";
@@ -28,6 +29,7 @@ class App {
     this.applyTheme(localStorage.getItem(THEME_KEY) || "system");
     this.chat = new ChatView(this);
     this.panels = new Panels(this);
+    this.notifications = new NotificationInbox(this);
     this.bindChrome();
     this.bindEvents();
     onConnection((s) => this.setConnection(s));
@@ -51,7 +53,8 @@ class App {
     this.state.deskId = data.desk_id;
     this.state.lan = data.lan;
     setWorkspaceRoot(data.snapshot.workspace);
-    this.state.unread = data.notifications.filter((n) => !n.read).length;
+    for (const note of data.notifications) this.notifications.receive(note);
+    await this.notifications.reconcile();
     this.runningTasks = data.tasks.filter((t) => t.status === "running" || t.status === "queued").length;
     this.state.proposals = data.proposals;
     this.readyProposals = data.proposals.filter((p) => p.status === "ready").length;
@@ -99,7 +102,11 @@ class App {
     });
     document.addEventListener("pointerdown", () => { this.lastInput = Date.now(); }, { passive: true });
     document.addEventListener("keydown", () => { this.lastInput = Date.now(); }, { passive: true });
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) this.tickMood(); });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) { this.tickMood(); this.notifications.reconcile(); this.panels.notify("settings.updated"); }
+    });
+    window.addEventListener("pageshow", () => this.notifications.reconcile());
+    window.addEventListener("online", () => this.notifications.reconcile());
   }
 
   applyTheme(theme) {
@@ -304,7 +311,7 @@ class App {
 
   // ------------------------------------------------------------------ live events
   bindEvents() {
-    on("hello", () => this.reconcileEvolution());
+    on("hello", () => { this.reconcileEvolution(); this.notifications.reconcile(); });
     on("conv.message", ({ conversation_id, message }) => {
       if (conversation_id === this.currentConvId) {
         const existing = this.chat.byId.get(message.id);
@@ -376,6 +383,7 @@ class App {
     }
 
     on("notify", ({ notification }) => this.onNotification(notification));
+    on("notifications.read", ({ ids }) => this.notifications.read(ids));
     on("interaction.pending", ({ interaction }) => this.announceInteraction(interaction));
     on("engine.status", (snapshot) => { this.state.engine = snapshot; this.renderEngine(); this.chat.updateChips(); this.panels.notify("engine.status"); });
     on("engine.usage", ({ rateLimits }) => { this.state.engine = { ...this.state.engine, rateLimits }; this.renderEngine(); });
@@ -411,23 +419,19 @@ class App {
   }
 
   onNotification(n) {
-    this.setUnread(this.state.unread + 1);
+    if (!this.notifications.receive(n)) return;
     const kind = { reminder: "warn", approval: "warn", evolution: "success", agent: "info" }[n.kind] || "info";
     const data = n.data || {};
-    let action = null;
-    if (data.conversation_id) action = { label: "Open", run: () => this.openConversation(data.conversation_id) };
-    else if (data.proposal_id) action = { label: "Review", run: () => this.panels.open("evolution", { proposal: data.proposal_id }) };
-    else if (data.task_id) action = { label: "Open", run: () => this.panels.open("agents", { task: data.task_id }) };
+    const action = this.notifications.action(n);
     if (n.kind !== "approval") toast(n.title, n.body || "", { kind, timeout: n.kind === "reminder" ? 0 : 7000, action });
     if (n.kind === "reminder" || n.kind === "approval") director.flash("alert", 3000);
     if (n.kind === "evolution" && /upgraded/i.test(n.title)) director.flash("celebrate", 3500);
     if (data.speak) speak(`${n.title}. ${n.body}`);
-    if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-      try { new Notification(n.title, { body: n.body, icon: "/static/icon.svg", tag: n.id }); } catch { /* ignore */ }
-    } else if ("Notification" in window && Notification.permission === "default" && !this._askedNotify) {
+    this.notifications.desktop(n);
+    if (window.isSecureContext && "Notification" in window && Notification.permission === "default" && !this._askedNotify) {
       this._askedNotify = true;
       toast("Want desktop alerts?", "Weebo can ping you for reminders and finished work even when this tab is hidden.", {
-        timeout: 12000, action: { label: "Enable", run: () => Notification.requestPermission() },
+        timeout: 12000, action: { label: "Enable", run: () => this.notifications.enableDesktop() },
       });
     }
   }

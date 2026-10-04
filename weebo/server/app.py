@@ -374,7 +374,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "desk_id": weebo.conversations.desk()["id"],
             "tasks": weebo.store.list_tasks(limit=40),
             "proposals": _slim_proposals(weebo.store.list_proposals(limit=60)),
-            "notifications": weebo.store.list_notifications(limit=30),
+            "notifications": weebo.store.list_notifications(limit=None, unread_only=True),
             "reminders": weebo.store.list_reminders(),
             "lan": lan_info(),
         })
@@ -702,11 +702,17 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     # ------------------------------------------------------------------ notifications
     async def list_notifications(request: web.Request) -> web.Response:
-        return _json({"notifications": weebo.store.list_notifications(limit=int(request.query.get("limit", 50)))})
+        unread_only = request.query.get("unread_only") == "1"
+        limit = int(request.query["limit"]) if "limit" in request.query else (None if unread_only else 50)
+        return _json({"notifications": weebo.store.list_notifications(limit=limit, unread_only=unread_only)})
 
     async def read_notifications(request: web.Request) -> web.Response:
         body = await _body(request)
-        weebo.store.mark_notifications_read(body.get("ids"))
+        ids = body.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(id_, str) for id_ in ids):
+            raise web.HTTPBadRequest(text="Explicit notification ids are required")
+        weebo.store.mark_notifications_read(ids)
+        weebo.bus.publish("notifications.read", {"ids": ids})
         return _json({"ok": True})
 
     r.add_get("/api/notifications", list_notifications)
