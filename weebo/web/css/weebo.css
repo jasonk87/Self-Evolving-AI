@@ -764,6 +764,11 @@ table.gov td:first-child { overflow-wrap: anywhere; }
 .note { padding: 9px 11px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .note.unread { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .note p { margin: 2px 0 0; }
+.notification-banner { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--accent); background: var(--surface); }
+.notification-banner[hidden] { display: none; }
+.notification-banner p { margin: 2px 0 0; }
+.notification-banner > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .notification-banner { align-items: flex-start; flex-direction: column; padding: 8px 12px; } }
 .diag { display: flex; gap: 8px; align-items: flex-start; }
 pre.logs { margin: 0; max-height: 360px; overflow: auto; font: 11.5px/1.5 var(--mono); background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; white-space: pre-wrap; }
 .lv-WARNING { color: var(--warm); } .lv-ERROR, .lv-CRITICAL { color: var(--bad); }

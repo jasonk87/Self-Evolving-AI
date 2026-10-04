@@ -688,9 +688,9 @@ class Store:
         self._insert("notifications", note)
         return self.query_one("SELECT * FROM notifications WHERE id=?", (note["id"],))  # type: ignore[return-value]
 
-    def list_notifications(self, limit: int = 50, unread_only: bool = False) -> list[dict[str, Any]]:
+    def list_notifications(self, limit: int | None = 50, unread_only: bool = False) -> list[dict[str, Any]]:
         where = "WHERE read=0" if unread_only else ""
-        return self.query(f"SELECT * FROM notifications {where} ORDER BY seq DESC LIMIT ?", (limit,))
+        return self.query(f"SELECT * FROM notifications {where} ORDER BY seq DESC LIMIT ?", (-1 if limit is None else limit,))
 
     def mark_notifications_read(self, ids: Iterable[str] | None = None) -> None:
         id_list = list(ids or [])
@@ -698,7 +698,7 @@ class Store:
             self.execute(
                 f"UPDATE notifications SET read=1 WHERE id IN ({', '.join('?' for _ in id_list)})", id_list
             )
-        else:
+        elif ids is None:
             self.execute("UPDATE notifications SET read=1 WHERE read=0")
 
 
