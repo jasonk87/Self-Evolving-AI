@@ -1,13 +1,14 @@
-// Persisted notification inbox. Display and navigation never acknowledge a record.
+// Persisted notification inbox. Opening content marks only that record read.
 import { api } from "./api.js";
-import { el, btn, toast, timeAgo } from "./ui.js";
+import { el, btn, toast, timeAgo, modal } from "./ui.js";
 
 export class NotificationInbox {
   constructor(app) {
     this.app = app;
     this.unread = new Map();
     this.seen = new Set();
-    this.acknowledged = new Set();
+    this.readIds = new Set();
+    this.reading = new Map();
     this.versions = new Map();
     this.version = 0;
     this.desktopError = "";
@@ -19,7 +20,7 @@ export class NotificationInbox {
   records() { return [...this.unread.values()].sort((a, b) => b.seq - a.seq); }
 
   receive(note) {
-    if (!note?.id || this.acknowledged.has(note.id)) return false;
+    if (!note?.id || this.readIds.has(note.id)) return false;
     if (note.read) { this.read([note.id]); return false; }
     const fresh = !this.seen.has(note.id);
     this.seen.add(note.id);
@@ -31,17 +32,26 @@ export class NotificationInbox {
 
   read(ids) {
     for (const id of ids) {
-      this.acknowledged.add(id);
+      this.readIds.add(id);
       this.unread.delete(id);
     }
     this.update();
   }
 
-  async acknowledge(id) {
-    try {
-      await api.post("/api/notifications/read", { ids: [id] });
-      this.read([id]);
-    } catch (err) { toast("Couldn't acknowledge notification", err.message, { kind: "error" }); }
+  markRead(id) {
+    if (this.readIds.has(id)) return;
+    if (this.reading.has(id)) return this.reading.get(id);
+    const request = api.post("/api/notifications/read", { ids: [id] })
+      .then(() => this.read([id]))
+      .catch((err) => toast("Couldn't mark notification read", err.message, { kind: "error" }))
+      .finally(() => this.reading.delete(id));
+    this.reading.set(id, request);
+    return request;
+  }
+
+  open(note) {
+    modal(note.title, el("p", { class: "notification-content", text: note.body || note.title }));
+    this.markRead(note.id);
   }
 
   // Coalesce overlapping recovery requests, then fetch again if another return
@@ -53,7 +63,8 @@ export class NotificationInbox {
         this.again = false;
         const version = this.version;
         try {
-          const { notifications } = await api.get("/api/notifications?unread_only=1");
+          const { notifications, read_notification_ids } = await api.get("/api/notifications?unread_only=1");
+          this.read(read_notification_ids || []);
           const ids = new Set(notifications.map((n) => n.id));
           for (const id of this.unread.keys()) {
             if (!ids.has(id) && this.versions.get(id) <= version) this.read([id]);
@@ -69,20 +80,22 @@ export class NotificationInbox {
 
   action(note) {
     const data = note.data || {};
-    if (data.proposal_id) return { label: "Review", run: () => this.app.panels.open("evolution", { proposal: data.proposal_id }) };
-    if (data.conversation_id) return { label: "Open", run: () => this.app.openConversation(data.conversation_id) };
-    if (data.task_id) return { label: "Open", run: () => this.app.panels.open("agents", { task: data.task_id }) };
-    return null;
+    let action;
+    if (data.proposal_id) action = { label: "Review", run: () => this.app.panels.open("evolution", { proposal: data.proposal_id }) };
+    else if (data.conversation_id) action = { label: "Open", run: () => this.app.openConversation(data.conversation_id) };
+    else if (data.task_id) action = { label: "Open", run: () => this.app.panels.open("agents", { task: data.task_id }) };
+    else return { label: "Open", run: () => this.open(note) };
+    return { label: action.label, run: () => { action.run(); this.markRead(note.id); } };
   }
 
   renderRecord(note) {
     const action = this.action(note);
     return el("article", { class: `note${note.read ? "" : " unread"}`, dataset: { notificationId: note.id } },
-      el("strong", { text: note.title }), note.body ? el("p", { class: "muted small", text: note.body }) : null,
+      el("button", { class: "note-title", type: "button", onclick: () => this.open(note) }, el("strong", { text: note.title })),
+      note.body ? el("p", { class: "muted small", text: note.body }) : null,
       el("span", { class: "tl-time", text: timeAgo(note.created_at) }),
       el("div", { class: "row wrap" },
-        action ? btn(action.label, { kind: "soft", size: "sm", onClick: action.run }) : null,
-        !note.read ? btn("Acknowledge", { size: "sm", onClick: () => this.acknowledge(note.id) }) : null));
+        btn(action.label, { kind: "soft", size: "sm", onClick: action.run })));
   }
 
   update() {
@@ -93,7 +106,7 @@ export class NotificationInbox {
     const action = latest && this.action(latest);
     this.banner.replaceChildren(
       el("div", {}, latest ? el("strong", { text: latest.title }) : null,
-        el("p", { class: "small", text: this.syncError || `${records.length} unread notification${records.length === 1 ? "" : "s"}. Available until acknowledged.` })),
+        el("p", { class: "small", text: this.syncError || `${records.length} unread notification${records.length === 1 ? "" : "s"}. Open an item to mark it read.` })),
       el("div", { class: "row wrap" }, action ? btn(action.label, { kind: "soft", size: "sm", onClick: action.run }) : null,
         btn("Notification inbox", { kind: "soft", size: "sm", onClick: () => this.app.panels.open("activity") })));
     this.app.panels?.notify("notify");

@@ -692,6 +692,9 @@ class Store:
         where = "WHERE read=0" if unread_only else ""
         return self.query(f"SELECT * FROM notifications {where} ORDER BY seq DESC LIMIT ?", (-1 if limit is None else limit,))
 
+    def read_notification_ids(self) -> list[str]:
+        return [note["id"] for note in self.query("SELECT id FROM notifications WHERE read=1")]
+
     def mark_notifications_read(self, ids: Iterable[str] | None = None) -> None:
         id_list = list(ids or [])
         if id_list:

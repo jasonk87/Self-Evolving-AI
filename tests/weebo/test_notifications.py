@@ -1,4 +1,4 @@
-"""Unread notification recovery and explicit, identity-scoped acknowledgment."""
+"""Notification content opens mark only that item read, with durable recovery."""
 
 import asyncio
 import json
@@ -7,6 +7,7 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from weebo.server.app import TOKEN_KEY, create_app
+from weebo.store import Store
 
 
 @pytest.mark.asyncio
@@ -32,6 +33,19 @@ async def test_unread_api_keeps_old_records_and_requires_explicit_ids(app):
         assert (await client.post("/api/notifications/read", json={"ids": [ready["id"]]}, headers=headers)).status == 200
         assert events[-1]["ids"] == [ready["id"]]
         assert [n["id"] for n in app.store.list_notifications(unread_only=True)] == [failed["id"]]
+        # Reload/bootstrap and a reopened database recover only unopened items.
+        data = await (await client.get("/api/bootstrap", headers=headers)).json()
+        assert [n["id"] for n in data["notifications"]] == [failed["id"]]
+        assert ready["id"] in data["read_notification_ids"]
+        data = await (await client.get("/api/notifications?unread_only=1", headers=headers)).json()
+        assert ready["id"] in data["read_notification_ids"]
+        reopened = Store(app.store.path)
+        try:
+            assert [n["id"] for n in reopened.list_notifications(unread_only=True)] == [failed["id"]]
+            saved = next(n for n in reopened.list_notifications(limit=None) if n["id"] == ready["id"])
+            assert saved == {**ready, "read": 1}
+        finally:
+            reopened.close()
 
 
 @pytest.mark.asyncio
@@ -77,25 +91,37 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
             failed = app.store.add_notification("agent", "Agent failed", "Build failed", {"task_id": task["id"]})
             await page.wait_for_function("id => weebo.notifications.unread.has(id)", arg=ready["id"])
             banner = page.locator(".notification-banner")
+            badge = page.locator("#inbox-btn .badge")
             assert await banner.is_visible()
-            await banner.get_by_role("button", name="Notification inbox").click()
+            assert await badge.is_visible()
+            assert await badge.inner_text() == "2"
+            await page.get_by_role("button", name="Notification inbox (2 unread)", exact=True).click()
             ready_row = page.locator(f'[data-notification-id="{ready["id"]}"]')
             failed_row = page.locator(f'[data-notification-id="{failed["id"]}"]')
             await failed_row.wait_for()
             assert len(app.store.list_notifications(unread_only=True)) == 2
+            assert await page.get_by_role("button", name="Acknowledge").count() == 0
             await ready_row.get_by_role("button", name="Review", exact=True).click()
             await page.locator("#drawer h3").get_by_text(proposal["title"], exact=True).wait_for()
             assert await page.evaluate("location.hash") == f"#evolution/{proposal['id']}"
-            assert len(app.store.list_notifications(unread_only=True)) == 2
+            await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=ready["id"])
+            assert [n["id"] for n in app.store.list_notifications(unread_only=True)] == [failed["id"]]
+            assert await badge.is_visible()
+            assert await badge.inner_text() == "1"
             await page.reload()
             await banner.wait_for()
             await page.locator("#drawer-close").click()
+            assert await badge.inner_text() == "1"
             await banner.get_by_role("button", name="Notification inbox").click()
             await failed_row.wait_for()
             await failed_row.get_by_role("button", name="Open", exact=True).click()
             await page.locator("#drawer h3").get_by_text(task["title"], exact=True).wait_for()
+            await page.wait_for_function("() => weebo.notifications.unread.size === 0")
+            assert not await badge.is_visible()
+            assert not await banner.is_visible()
+            assert app.store.list_notifications(unread_only=True) == []
             # Foreground catches a completion even without a websocket event.
-            foreground = app.store.add_notification("agent", "Foreground job failed", data={"task_id": "t_foreground"})
+            foreground = app.store.add_notification("weebo", "Foreground notification", "Complete notification content\nSecond line")
             await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             await page.wait_for_function("id => weebo.notifications.unread.has(id)", arg=foreground["id"])
             # Repeated real socket reconnects never render recovery popups.
@@ -104,7 +130,7 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
                 await page.wait_for_function("() => document.body.classList.contains('offline')")
                 await page.wait_for_function("() => !document.body.classList.contains('offline') && !weebo.notifications.syncing")
             assert await page.locator("#toasts .toast").count() == 0
-            assert await page.evaluate("weebo.notifications.unread.size") == 3
+            assert await page.evaluate("weebo.notifications.unread.size") == 1
             # Hold a stale recovery snapshot, then deliver a new live completion.
             captured, release = asyncio.Event(), asyncio.Event()
 
@@ -128,31 +154,43 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
                 app.bus.publish("notify", {"notification": live})
             await page.evaluate("() => weebo.notifications.reconcile()")
             assert await page.locator("#toasts .toast").filter(has_text="Concurrent job failed").count() == 1
-            # Recovery wins first, then a live duplicate: inbox stays accessible.
+            # A read item never revives from a delayed duplicate.
             app.bus.publish("notify", {"notification": ready})
             await page.locator("#drawer-close").click()
             await banner.get_by_role("button", name="Notification inbox").click()
             await ready_row.wait_for()
+            assert not await page.evaluate("id => weebo.notifications.unread.has(id)", ready["id"])
+            foreground_row = page.locator(f'[data-notification-id="{foreground["id"]}"]')
             captured.clear()
             release.clear()
             await page.route("**/api/notifications?unread_only=1", hold_snapshot)
             await page.evaluate("void weebo.notifications.reconcile()")
             await asyncio.wait_for(captured.wait(), 5)
-            await ready_row.get_by_role("button", name="Acknowledge").click()
-            await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=ready["id"])
+            # Opening generic content reads it, even with a stale snapshot in flight.
+            await foreground_row.get_by_role("button", name="Open", exact=True).click()
+            dialog = page.get_by_role("dialog", name=foreground["title"], exact=True)
+            await dialog.wait_for()
+            assert await dialog.locator(".notification-content").inner_text() == foreground["body"]
+            await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=foreground["id"])
             release.set()
             await page.wait_for_function("() => !weebo.notifications.syncing")
             await page.unroute("**/api/notifications?unread_only=1", hold_snapshot)
-            assert not await page.evaluate("id => weebo.notifications.unread.has(id)", ready["id"])
-            assert {n["id"] for n in app.store.list_notifications(unread_only=True)} == {failed["id"], foreground["id"], live["id"]}
-            # A delayed unread snapshot/event must not revive an acknowledged id.
-            await page.evaluate("note => weebo.onNotification(note)", ready)
+            assert not await page.evaluate("id => weebo.notifications.unread.has(id)", foreground["id"])
+            assert {n["id"] for n in app.store.list_notifications(unread_only=True)} == {live["id"]}
+            assert await badge.inner_text() == "1"
+            # A delayed unread snapshot/event must not revive a read id.
+            await page.evaluate("note => weebo.onNotification(note)", foreground)
             await page.reload()
             await banner.get_by_role("button", name="Notification inbox").click()
             await failed_row.wait_for()
-            assert await ready_row.count() == 1  # acknowledged history, with no acknowledge button
+            assert await ready_row.count() == 1  # read history is still accessible
             assert await ready_row.get_by_role("button", name="Acknowledge").count() == 0
-            assert await page.evaluate("weebo.notifications.unread.size") == 3
+            assert await page.evaluate("weebo.notifications.unread.size") == 1
+            assert await badge.inner_text() == "1"
+            assert await foreground_row.count() == 1
+            # Read ids are hydrated after reload, including delayed live duplicates.
+            await page.evaluate("note => weebo.onNotification(note)", foreground)
+            assert not await page.evaluate("id => weebo.notifications.unread.has(id)", foreground["id"])
             # Browser delivery failure is visible and never consumes the inbox record.
             desktop = app.store.add_notification("agent", "Desktop failure", data={"task_id": "t_desktop"})
             await page.evaluate("""note => {
@@ -179,4 +217,25 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
             await page.get_by_text("Browser alerts blocked in browser permissions.", exact=True).wait_for()
             await page.evaluate("delete window.Notification; weebo.panels.refresh()")
             await page.get_by_text("Browser alerts unsupported on this device.", exact=True).wait_for()
+            # The last unread items clear the badge; reopening read content doesn't revive it.
+            await page.locator("#drawer-close").click()
+            await page.locator("#inbox-btn").click()
+            for note in (live, desktop):
+                row = page.locator(f'[data-notification-id="{note["id"]}"]')
+                await row.get_by_role("button", name=note["title"], exact=True).click()
+                dialog = page.get_by_role("dialog", name=note["title"], exact=True)
+                await dialog.wait_for()
+                await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=note["id"])
+                await dialog.get_by_role("button", name="Close", exact=True).click()
+                await dialog.wait_for(state="detached")
+            assert not await badge.is_visible()
+            assert app.store.list_notifications(unread_only=True) == []
+            await page.reload()
+            await page.wait_for_function("() => window.weebo?.currentConvId && !weebo.notifications.syncing")
+            assert not await badge.is_visible()
+            await page.locator("#inbox-btn").click()
+            await foreground_row.get_by_role("button", name=foreground["title"], exact=True).click()
+            await page.get_by_role("dialog", name=foreground["title"], exact=True).wait_for()
+            assert await page.evaluate("weebo.notifications.unread.size") == 0
+            assert app.store.list_notifications(unread_only=True) == []
             assert errors == []
