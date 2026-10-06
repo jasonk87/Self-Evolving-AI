@@ -375,6 +375,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "tasks": weebo.store.list_tasks(limit=40),
             "proposals": _slim_proposals(weebo.store.list_proposals(limit=60)),
             "notifications": weebo.store.list_notifications(limit=None, unread_only=True),
+            "read_notification_ids": weebo.store.read_notification_ids(),
             "reminders": weebo.store.list_reminders(),
             "lan": lan_info(),
         })
@@ -704,7 +705,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
     async def list_notifications(request: web.Request) -> web.Response:
         unread_only = request.query.get("unread_only") == "1"
         limit = int(request.query["limit"]) if "limit" in request.query else (None if unread_only else 50)
-        return _json({"notifications": weebo.store.list_notifications(limit=limit, unread_only=unread_only)})
+        return _json({"notifications": weebo.store.list_notifications(limit=limit, unread_only=unread_only),
+                      "read_notification_ids": weebo.store.read_notification_ids()})
 
     async def read_notifications(request: web.Request) -> web.Response:
         body = await _body(request)

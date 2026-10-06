@@ -53,6 +53,7 @@ class App {
     this.state.deskId = data.desk_id;
     this.state.lan = data.lan;
     setWorkspaceRoot(data.snapshot.workspace);
+    this.notifications.read(data.read_notification_ids || []);
     for (const note of data.notifications) this.notifications.receive(note);
     await this.notifications.reconcile();
     this.runningTasks = data.tasks.filter((t) => t.status === "running" || t.status === "queued").length;
@@ -233,10 +234,13 @@ class App {
   }
 
   renderBadges() {
-    const set = (panel, n) => { const b = document.querySelector(`[data-panel="${panel}"] .badge`); if (b) { b.textContent = n > 9 ? "9+" : String(n); b.hidden = !n; } };
+    const set = (panel, n) => { document.querySelectorAll(`[data-panel="${panel}"] .badge`).forEach((b) => { b.textContent = n > 9 ? "9+" : String(n); b.hidden = !n; }); };
     set("agents", this.runningTasks);
     set("evolution", this.readyProposals);
     set("activity", this.state.unread);
+    const inboxLabel = this.state.unread ? `Notification inbox (${this.state.unread} unread)` : "Notification inbox";
+    $("#inbox-btn").setAttribute("aria-label", inboxLabel);
+    $("#inbox-btn").title = inboxLabel;
     this.chat?.stage.setResting(this.restingCaption());
   }
 

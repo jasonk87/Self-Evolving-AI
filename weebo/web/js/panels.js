@@ -479,7 +479,7 @@ export class Panels {
     const stat = (label, value, ok) => el("div", { class: `stat${ok === false ? " warn" : ""}` }, el("span", { class: "muted small", text: label }), el("strong", { text: value }));
     const unread = this.app.notifications.records();
     wrap.append(section("Notification inbox",
-      el("p", { class: "muted small", text: "Opening an alert does not clear it. Choose Acknowledge when you are finished." }),
+      el("p", { class: "muted small", text: "Open a notification to mark it read. Opening this list leaves other items unread." }),
       unread.length ? el("div", { class: "stack" }, unread.map((n) => this.app.notifications.renderRecord(n))) : empty("No unread notifications.")));
     wrap.append(el("div", { class: "stats-grid" },
       stat("Proactive budget", hb.budget_ok ? "Available" : "Paused", hb.budget_ok),
@@ -500,9 +500,9 @@ export class Panels {
       el("span", { class: "tl-ic", html: icon(kindIcon[j.kind] || "dot", 14) }),
       el("div", { class: "tl-body" }, el("strong", { text: j.title }), j.detail ? el("p", { class: "muted small", text: j.detail }) : null, el("span", { class: "tl-time", text: timeAgo(j.created_at) })))))
       : empty("Nothing yet.")));
-    const acknowledged = notifications.filter((n) => n.read);
-    if (acknowledged.length) wrap.append(section("Acknowledged notifications", el("div", { class: "stack" },
-      acknowledged.map((n) => this.app.notifications.renderRecord(n)))));
+    const read = notifications.filter((n) => n.read);
+    if (read.length) wrap.append(section("Read notifications", el("div", { class: "stack" },
+      read.map((n) => this.app.notifications.renderRecord(n)))));
     const open = diagnostics.filter((d) => d.status !== "fixed");
     if (open.length) {
       wrap.append(section("Self-diagnostics", el("p", { class: "muted small", text: "Failures Weebo noticed in itself. Repeated ones feed its self-audits." }),
