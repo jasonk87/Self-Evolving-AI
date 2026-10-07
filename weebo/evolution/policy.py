@@ -64,7 +64,8 @@ _GOVERNANCE_PREFIXES = (
     ("tests", "weebo", "conftest.py"),
     (".github",),
 )
-_GOVERNANCE_FILES = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini", "conftest.py"}
+# .gitattributes decides how git shows a diff (a "-diff" file hides its lines), so it governs the gates too.
+_GOVERNANCE_FILES = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini", "conftest.py", ".gitattributes"}
 _EXECUTION_PREFIXES = (
     ("weebo", "codex"),
     ("weebo", "agents"),

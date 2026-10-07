@@ -147,11 +147,21 @@ def _affected_tests(rewritten: list[str], originals: list[str], root: Path) -> s
             continue
         for module_path, dotted in modules.items():
             same_folder = module_path.rsplit("/", 1)[0] == path.rsplit("/", 1)[0]
-            stem = dotted.rsplit(".", 1)[-1]
-            if dotted in source or (same_folder and re.search(rf"from\s+\.\s*{stem}\b|from\s+\.\s+import\s+.*\b{stem}\b", source)):
+            package, _, stem = dotted.rpartition(".")
+            if (dotted in source or (package and _imports_from(source, re.escape(package), stem))
+                    or (same_folder and (re.search(rf"from\s+\.\s*{stem}\b", source)
+                                         or _imports_from(source, r"\.", stem)))):
                 targets.add(path)
                 break
     return targets
+
+
+def _imports_from(source: str, package: str, name: str) -> bool:
+    """Whether ``source`` has ``from <package> import ... name ...`` (one line or a parenthesized list)."""
+    for match in re.finditer(rf"from\s+{package}\s+import\s+(\([^)]*\)|[^\n]*)", source):
+        if re.search(rf"\b{re.escape(name)}\b", match.group(1)):
+            return True
+    return False
 
 
 async def existing_tests(worktree: Path, base_commit: str, env: dict[str, str]) -> GateResult | None:

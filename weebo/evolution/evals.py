@@ -135,8 +135,10 @@ async def rehearse(engine: Any, cases: list[dict[str, Any]], *, user_name: str =
 
     results: dict[str, dict[str, str]] = {}
     # A timed-out Codex turn can still be running in the folder; on Windows that blocks deleting it, and a
-    # cleanup error must not throw away every answer already collected.
-    with tempfile.TemporaryDirectory(prefix="weebo-rehearsal-", ignore_cleanup_errors=True) as tmp:
+    # cleanup error must not throw away every answer already collected. (Not TemporaryDirectory: before
+    # Python 3.12.1 its cleanup can recurse forever on a folder Windows won't delete, whatever its flags say.)
+    tmp = tempfile.mkdtemp(prefix="weebo-rehearsal-")
+    try:
         for index, case in enumerate(cases):
             app = RehearsalApp(Path(tmp) / f"case{index}", user_name)
             try:
@@ -149,6 +151,8 @@ async def rehearse(engine: Any, cases: list[dict[str, Any]], *, user_name: str =
                 results[case["id"]] = {"error": str(exc) or type(exc).__name__}
             finally:
                 app.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return results
 
 
@@ -244,13 +248,15 @@ class Evals:
         if rows and rows[-1]["role"] == "user" and rows[-1]["content"].strip() == correction.strip():
             rows = rows[:-1]  # the correction itself was already stored
         # Weebo's reply can be several messages (commentary while it used tools, then the answer): step back over
-        # all of them to the user's message they answered.
+        # them to the user's message they answered. Only within that one turn: a reply Weebo started on its own
+        # (an agent report, a routine) has no user message, and the one before it belongs to another exchange.
         i = len(rows) - 1
         if i < 0 or rows[i]["role"] != "assistant":
             return None
-        while i >= 0 and rows[i]["role"] == "assistant":
+        turn = rows[i].get("turn_id")
+        while i >= 0 and rows[i]["role"] == "assistant" and rows[i].get("turn_id") == turn:
             i -= 1
-        if i < 0:
+        if i < 0 or rows[i]["role"] != "user":
             return None
         asked, earlier = rows[i]["content"], rows[:i]
         dialogue = [f"{'User' if r['role'] == 'user' else 'Weebo'}: {r['content'][:600]}" for r in earlier
@@ -300,12 +306,19 @@ class Evals:
                 "model": engine.default_model(settings.get("codex.model")),
                 "effort": settings.get("codex.chat_effort") or ""}
 
-    def cached_baseline(self, case_ids: list[str]) -> dict[str, dict[str, Any]] | None:
+    def _fresh_verdicts(self) -> dict[str, dict[str, Any]]:
+        """Cached verdicts on the running code that are still fresh, by case id (each verdict ages on its own)."""
         cached = self.app.store.kv_get(BASELINE_KEY) or {}
-        results = cached.get("results") or {}
-        fresh = time.time() - float(cached.get("at") or 0) < BASELINE_MAX_AGE
-        if cached.get("code") == self.code_version and fresh and all(cid in results for cid in case_ids):
-            return {cid: results[cid] for cid in case_ids}
+        if cached.get("code") != self.code_version:
+            return {}
+        now = time.time()
+        return {cid: r for cid, r in (cached.get("results") or {}).items()
+                if now - float(r.get("at") or cached.get("at") or 0) < BASELINE_MAX_AGE}
+
+    def cached_baseline(self, case_ids: list[str]) -> dict[str, dict[str, Any]] | None:
+        fresh = self._fresh_verdicts()
+        if all(cid in fresh for cid in case_ids):
+            return {cid: fresh[cid] for cid in case_ids}
         return None
 
     def needs_baseline(self) -> bool:
@@ -321,28 +334,29 @@ class Evals:
             return await self._baseline(cases, count)
 
     async def _baseline(self, cases: list[dict[str, Any]], count: bool) -> dict[str, dict[str, Any]]:
-        cached = self.cached_baseline([c["id"] for c in cases])
-        if cached is not None:
-            return cached
+        fresh = self._fresh_verdicts()
+        have = {c["id"]: fresh[c["id"]] for c in cases if c["id"] in fresh}
+        todo = [c for c in cases if c["id"] not in have]  # only what isn't known yet (one bad case can't
+        if not todo:                                       # make every build re-run the whole suite)
+            return have
         spec = self._spec()
-        answers = await rehearse(self.app.engine, cases, user_name=spec["user_name"], model=spec["model"],
+        answers = await rehearse(self.app.engine, todo, user_name=spec["user_name"], model=spec["model"],
                                  effort=spec["effort"])
-        graded = await self.grade_all(cases, answers, count=False)
+        graded = await self.grade_all(todo, answers, count=False)
         if count:
             self.app.count_background_turn("evals")
-        stored = self.app.store.kv_get(BASELINE_KEY) or {}
-        results = dict(stored.get("results") or {}) if stored.get("code") == self.code_version else {}
+        now = time.time()
         # A case that couldn't be answered or graded (engine hiccup) isn't a verdict: don't cache it as one.
-        results.update({cid: {k: v for k, v in r.items() if k != "answer"} for cid, r in graded.items()
-                        if not r.get("error")})
-        self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "at": time.time(), "results": results})
-        for case in cases:
+        results = {**self._fresh_verdicts(), **{cid: {**{k: v for k, v in r.items() if k != "answer"}, "at": now}
+                                                for cid, r in graded.items() if not r.get("error")}}
+        self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "at": now, "results": results})
+        for case in todo:
             result = graded[case["id"]]
             meta = {**(case.get("meta") or {}), "last": {"passed": result["passed"], "reason": result["reason"],
                                                         "at": time.time(), "error": bool(result.get("error"))}}
             self.app.store.update_eval_case(case["id"], meta=meta)
         self.app.bus.publish("evals.updated", {})
-        return graded
+        return {**have, **graded}
 
     async def refresh_baseline(self) -> dict[str, Any]:
         """Nightly: grade the running Weebo on every active case (also what the UI's 'Run checks' does)."""

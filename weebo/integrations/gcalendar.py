@@ -1,7 +1,8 @@
 """Google Calendar through the user's own OAuth client (credentials.json).
 
-Credentials live in ``weebo_data/google/``. Files left by Weebo 1.x (``ai_assistant/core/data`` or the project
-root) are picked up and copied there the first time, so an existing sign-in keeps working.
+Credentials live in ``weebo_data/google/``. A Weebo 1.x ``credentials.json`` (``ai_assistant/core/data`` or the
+project root) is copied there when Weebo starts, and a 1.x sign-in (``token.json``) the first time the calendar is
+used, so an existing setup keeps working.
 """
 
 from __future__ import annotations
@@ -35,8 +36,9 @@ def _legacy_dirs() -> list[Path]:
 
 
 def credentials_path(adopt: bool = False) -> Path | None:
-    """The OAuth client file; a Weebo 1.x copy counts too. With ``adopt`` that copy is moved into
-    weebo_data/google. Only signing in adopts: status checks run constantly and must not copy secrets around."""
+    """The OAuth client file; a Weebo 1.x copy counts too. With ``adopt`` that copy is copied into
+    weebo_data/google. Only launch and signing in adopt: status checks run constantly and must not copy secrets
+    around."""
     target = paths.data_dir() / "google" / "credentials.json"
     if target.exists():
         return target

@@ -60,17 +60,30 @@ class EvolutionError(RuntimeError):
 CASE_INSENSITIVE_FS = os.name == "nt" or sys.platform == "darwin"
 
 
-def _protect_pattern(pattern: str, root: str, fold: bool) -> str:
-    """One protect_paths entry as a repo-relative path or glob. Accepts what people paste: quotes (Explorer's
-    "Copy as path"), backslashes, an absolute path into the repo, or a leading slash meaning the repo root."""
-    pattern = pattern.strip().strip("\"'").strip().replace("\\", "/")
-    root = root.replace("\\", "/").rstrip("/")
+def _within(pattern: str, root: str, fold: bool) -> str | None:
+    """``pattern`` relative to ``root`` ("*" for the root itself), or None when it doesn't start there."""
+    pattern, root = pattern.replace("\\", "/"), root.replace("\\", "/").rstrip("/")
     same = (lambda a, b: a.lower() == b.lower()) if fold else (lambda a, b: a == b)
     if same(pattern.rstrip("/"), root):
         return "*"  # the whole repository
     if same(pattern[:len(root) + 1], root + "/"):
-        pattern = pattern[len(root) + 1:]
-    pattern = pattern.lstrip("/")
+        return pattern[len(root) + 1:]
+    return None
+
+
+def _protect_pattern(pattern: str, root: str, fold: bool) -> str:
+    """One protect_paths entry as a repo-relative path or glob. Accepts what people paste: quotes (Explorer's
+    "Copy as path"), backslashes, an absolute path into the repo, or a leading slash meaning the repo root."""
+    pattern = pattern.strip().strip("\"'").strip()
+    relative = _within(pattern, root, fold)
+    if relative is None and os.path.isabs(pattern):
+        # The repository root is fully resolved, but a pasted path may reach it another way (a symlink, a
+        # junction, a mapped or subst drive): resolve it the same way. A glob tail survives non-strict realpath.
+        try:
+            relative = _within(os.path.realpath(pattern), root, fold)
+        except (OSError, ValueError):
+            relative = None
+    pattern = (pattern if relative is None else relative).replace("\\", "/").lstrip("/")
     while pattern.startswith("./"):
         pattern = pattern[2:]
     return pattern
@@ -643,8 +656,11 @@ class EvolutionEngine:
             else:
                 meta["live_at"] = time.time()
         self.app.store.update_proposal(proposal_id, status="merged", merged_commit=merged, meta=meta)
-        if meta.get("addresses") and not needs_restart:
-            self.app.diagnostics.mark_fixed(meta["addresses"], proposal_id)
+        if meta.get("addresses"):
+            if needs_restart:
+                self.app.diagnostics.mark_pending_live(meta["addresses"], proposal_id)
+            else:
+                self.app.diagnostics.mark_fixed(meta["addresses"], proposal_id)
         await self._cleanup(self._get(proposal_id), delete_branch=True)
         self.app.store.journal("evolution", f"Upgraded myself: {proposal['title']}",
                                ("Merged automatically" if automatic else "Merged with your approval") + f" ({merged[:8]}).",

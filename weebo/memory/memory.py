@@ -62,27 +62,34 @@ class Memory:
         self._vectors_lock = threading.Lock()
         self._wake = threading.Event()
         self._worker: threading.Thread | None = None
+        self._worker_lock = threading.Lock()  # a worker deciding to quit vs. recall being turned back on
 
     # ---------------------------------------------------------------- semantic index
     def start_indexing(self, enabled: bool) -> None:
         """Load the embedding model and embed memories in the background (never on the event loop)."""
         if not enabled:
-            self.stop()
+            # Only a signal: this runs on the event loop (a settings change), and the worker may be busy loading
+            # the model for a while. It stops at its next check; stop() is the one that waits (at shutdown).
+            with self._worker_lock:
+                self.semantic = "off"
+            self._wake.set()
             return
         if self.embedder is None:
             if not embeddings.available():
                 self.semantic = "unavailable"
                 return
             self.embedder = embeddings.FastEmbedder()
-        self.semantic = "loading" if self.semantic != "ready" else "ready"
-        if self._worker is None or not self._worker.is_alive():
-            self._worker = threading.Thread(target=self._index_loop, name="memory-index", daemon=True)
-            self._worker.start()
+        with self._worker_lock:
+            self.semantic = "loading" if self.semantic != "ready" else "ready"
+            if self._worker is None or not self._worker.is_alive():
+                self._worker = threading.Thread(target=self._index_loop, name="memory-index", daemon=True)
+                self._worker.start()
         self._wake.set()
 
     def stop(self, timeout: float = 5.0) -> None:
         """Turn semantic recall off and let the indexer thread finish (before the Store it reads is closed)."""
-        self.semantic = "off"
+        with self._worker_lock:
+            self.semantic = "off"
         self._wake.set()
         worker = self._worker
         if worker and worker.is_alive() and worker is not threading.current_thread():
@@ -96,14 +103,22 @@ class Memory:
                 self._vectors = {r["memory_id"]: embeddings.unpack(r["vector"]) for r in self.store.memory_vectors(model)}
         except Exception as exc:
             logger.warning("Semantic memory unavailable: %s", exc)
-            self.semantic = "error"
+            with self._worker_lock:
+                if self.semantic != "off":
+                    self.semantic = "error"
+                self._worker = None
             return
-        while self.semantic not in ("off", "error"):
+        while True:
+            with self._worker_lock:  # quit and say so in one step, or turning recall back on could find a
+                if self.semantic in ("off", "error"):  # worker that's alive but leaving, and start none
+                    self._worker = None
+                    return
             try:
                 self.index_pending()
-                if self.semantic == "loading":
-                    self.semantic = "ready"
-                    logger.info("Semantic memory recall ready (%d memories embedded)", len(self._vectors))
+                with self._worker_lock:  # never over a just-made "off"
+                    if self.semantic == "loading":
+                        self.semantic = "ready"
+                        logger.info("Semantic memory recall ready (%d memories embedded)", len(self._vectors))
             except Exception as exc:  # a bad batch must not kill recall for good
                 logger.warning("Embedding memories failed: %s", exc)
             self._wake.wait(300)

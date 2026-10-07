@@ -21,7 +21,7 @@ from .events import EventBus
 from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
 from .evolution.evals import Evals
-from .integrations import Integrations
+from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
 from .proactive.scheduler import Scheduler
@@ -76,6 +76,10 @@ class WeeboApp:
                 self.memory.import_legacy()
             except Exception as exc:
                 logger.warning("Legacy memory import failed: %s", exc)
+            try:  # copied now, so deleting the 1.x folder can't take the Google OAuth client file with it
+                gcalendar.credentials_path(adopt=True)
+            except OSError as exc:
+                logger.warning("Couldn't copy the Weebo 1.x Google credentials: %s", exc)
         self._infer_user_name()
         self.conversations.desk()
         self.skills.seed_defaults()

@@ -102,5 +102,6 @@ Runtime data lives in `weebo_data/` (git-ignored): database, logs, workspace, sk
 Weebo 2.0 no longer imports anything from the original assistant (`web_app.py`, `ai_assistant/`, `weebo/legacy/`).
 What was worth keeping moved into 2.0: the change policy (`weebo/evolution/policy.py`), the integrations
 (`weebo/integrations/`, reimplemented without the 1.x tool registry), the Council, the voice flow and your memories
-(imported from `ai_assistant/core/data` on first launch; Google Calendar credentials there are adopted too). The
-1.x code can be deleted; its data files are untracked and stay on disk.
+(imported from `ai_assistant/core/data` on first launch; the Google Calendar `credentials.json` there is copied
+into `weebo_data/google` at launch, and a 1.x calendar sign-in the first time you use the calendar). The 1.x code
+can be deleted; its data files are untracked and stay on disk.

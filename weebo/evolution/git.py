@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -101,13 +102,14 @@ async def snapshot_commit(cwd: str | Path) -> str:
     return result.out.strip()
 
 
-# The gates parse these diffs, so they must read the same on every machine whatever the user's git config says
-# (diff.noprefix, color.ui=always, external diff drivers, textconv, quoted non-ASCII paths). Renames are off: a
-# rename has to show up as the old path deleted plus the new one added, or moving a file would hide the old
-# path from the change policy (a moved protected file, a test "rewritten" by renaming it).
+# The gates parse these diffs, so they must read the same on every machine whatever the user's git config or
+# attribute files say (diff.noprefix, color.ui=always, external diff drivers, textconv, quoted non-ASCII paths,
+# diff.interHunkContext, a "*.py -diff" or "binary" attribute that would turn a file's lines into "Binary files
+# differ"). Renames are off: a rename has to show up as the old path deleted plus the new one added, or moving a
+# file would hide the old path from the change policy (a moved protected file, a test "rewritten" by renaming it).
 DISPLAY_DIFF = ("-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv",
                 "--src-prefix=a/", "--dst-prefix=b/")  # for people (the review panel): renames stay readable
-PLAIN_DIFF = (*DISPLAY_DIFF, "--no-renames")
+PLAIN_DIFF = (*DISPLAY_DIFF, "--no-renames", "--text", "--inter-hunk-context=0")
 
 
 async def changed_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
@@ -122,12 +124,14 @@ async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[s
 
 
 async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspec: str = ".") -> list[str]:
-    """Files that existed at ``base`` and lost lines by ``ref`` (edited or deleted, not just appended to)."""
-    result = await git(cwd, *PLAIN_DIFF, "--numstat", f"{base}...{ref}", "--", pathspec, check=True)
+    """Files that existed at ``base`` and lost lines by ``ref`` (edited or deleted, not just appended to).
+    A change git can't count lines for (it shows "-") is treated as a rewrite: unknown is not "only added"."""
+    result = await git(cwd, *PLAIN_DIFF, "--numstat", "--diff-filter=a", f"{base}...{ref}", "--", pathspec,
+                       check=True)
     files = []
     for line in result.out.splitlines():
         parts = line.split("\t")
-        if len(parts) == 3 and parts[1] not in ("0", "-"):
+        if len(parts) == 3 and parts[1] != "0":
             files.append(parts[2].strip())
     return files
 
@@ -135,18 +139,27 @@ async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspe
 async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tuple[str, int, str]]:
     """(path, new line number, text) for every line the change adds."""
     result = await git(cwd, *PLAIN_DIFF, "--unified=0", f"{base}...{ref}", check=True)
-    lines, path, number = [], "", 0
-    for raw in result.out.splitlines():
+    lines, path, number, old_left, new_left = [], "", 0, 0, 0
+    for raw in result.out.split("\n"):  # not splitlines(): a form feed or \u2028 inside a line isn't a new line
+        if old_left > 0 or new_left > 0:
+            # Inside a hunk its header's counts say which lines are content, so an added line that happens to
+            # read "+++ b/x" or "@@" (a diff quoted in a README) can't pass for a header and hide what follows.
+            tag = raw[:1]
+            if tag == "+":
+                lines.append((path, number, raw[1:]))
+                number, new_left = number + 1, new_left - 1
+            elif tag == "-":
+                old_left -= 1
+            elif tag in (" ", ""):  # context (none at -U0, but count it if it's there)
+                number, old_left, new_left = number + 1, old_left - 1, new_left - 1
+            continue  # "\ No newline at end of file" counts for neither side
         if raw.startswith("+++ "):
-            path = raw[6:] if raw.startswith("+++ b/") else ""
+            path = "" if raw == "+++ /dev/null" else raw[4:].strip('"').removeprefix("b/")
         elif raw.startswith("@@"):
-            try:
-                number = int(raw.split("+", 1)[1].split(" ", 1)[0].split(",")[0])
-            except (IndexError, ValueError):
-                number = 0
-        elif raw.startswith("+") and path:
-            lines.append((path, number, raw[1:]))
-            number += 1
+            hunk = re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", raw)
+            if hunk:
+                old_left, number = int(hunk.group(1) or 1), int(hunk.group(2))
+                new_left = int(hunk.group(3) or 1)
     return lines
 
 

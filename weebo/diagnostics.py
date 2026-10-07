@@ -92,13 +92,29 @@ class Diagnostics:
             self.store.kv_set(_KEY, items)
         return marked
 
+    def mark_pending_live(self, sigs: list[str], proposal_id: str) -> list[str]:
+        """A fix for these was merged but runs only after a restart. Until then they aren't open problems (audits
+        and dreams shouldn't propose the fix again), and a recurrence comes from the old code, so it isn't a
+        regression either: record() leaves them be. mark_fixed() takes over once the fix is live."""
+        items = self.store.kv_get(_KEY, {}) or {}
+        marked = []
+        for sig in sigs:
+            entry = items.get(sig)
+            if entry:
+                entry.update({"status": "pending_live", "fixed_by": proposal_id})
+                marked.append(sig)
+        if marked:
+            self.store.kv_set(_KEY, items)
+        return marked
+
     def reopen(self, sigs: list[str], proposal_id: str) -> None:
         """The upgrade that fixed these was rolled back: they are open problems again."""
         items = self.store.kv_get(_KEY, {}) or {}
         changed = False
         for sig in sigs:
             entry = items.get(sig)
-            if entry and entry.get("fixed_by") == proposal_id and entry.get("status") in ("fixed", "regressed"):
+            if (entry and entry.get("fixed_by") == proposal_id
+                    and entry.get("status") in ("fixed", "regressed", "pending_live")):
                 entry["status"] = "open"
                 changed = True
         if changed:
