@@ -22,6 +22,20 @@ def commit(root, message="change"):
     return git(root, "rev-parse", "HEAD")
 
 
+async def wait_settled(app, proposal_id, timeout=20.0):
+    """Wait until the build worker is done with this proposal, auto-merge attempt included.
+
+    A status alone races: an auto-merging build is briefly "ready" while merge() runs its first git commands,
+    before it flips to "merging". The worker clears ``evolution.current`` only after merge() has returned.
+    """
+    await wait_status(app, proposal_id, ("ready", "merged", "failed", "conflict"), timeout)
+    deadline = time.time() + timeout
+    while app.evolution.current == proposal_id and time.time() < deadline:
+        await asyncio.sleep(0.02)
+    assert app.evolution.current != proposal_id, "the build worker never finished with this proposal"
+    return app.store.get_proposal(proposal_id)
+
+
 @pytest.fixture
 def pyrepo(tmp_path):
     """A tiny project with a real test suite, for gates that run pytest."""
@@ -108,7 +122,7 @@ async def test_rewriting_existing_tests_needs_a_human(evolving, repo):
     state["script"] = [{"weebo/web/app.js": "export const version = 2;\n",
                         "tests/weebo/test_app.py": "def test_version():\n    pass\n"}]
     proposal = await app.evolution.propose("UI and a softer test", "v2")
-    ready = await wait_status(app, proposal["id"], ("ready", "merged", "failed"))
+    ready = await wait_settled(app, proposal["id"])
     assert ready["status"] == "ready"  # not auto-merged, although UI and tests are both low-risk zones
     gov = ready["meta"]["governance"]
     assert gov["autonomous"] is False and gov["rewritten_tests"] == ["tests/weebo/test_app.py"]
@@ -121,7 +135,8 @@ async def test_new_tests_with_ui_change_still_auto_merge(evolving, repo):
     state["script"] = [{"weebo/web/app.js": "export const version = 3;\n",
                         "tests/weebo/test_new.py": "def test_new():\n    assert True\n"}]
     proposal = await app.evolution.propose("UI with a new test", "v3")
-    assert (await wait_status(app, proposal["id"], ("ready", "merged", "failed")))["status"] == "merged"
+    settled = await wait_settled(app, proposal["id"])
+    assert settled["status"] == "merged", settled["meta"].get("governance")
 
 
 async def test_protect_paths_are_enforced(evolving, repo):
@@ -129,7 +144,7 @@ async def test_protect_paths_are_enforced(evolving, repo):
     app.settings.update({"evolution.mode": "auto_merge", "evolution.protect_paths": ["weebo/web/*.js"]})
     state["script"] = [{"weebo/web/app.js": "export const version = 4;\n"}]
     proposal = await app.evolution.propose("Protected UI", "v4")
-    ready = await wait_status(app, proposal["id"], ("ready", "merged", "failed"))
+    ready = await wait_settled(app, proposal["id"])
     assert ready["status"] == "ready" and "protected" in ready["meta"]["governance"]["why"]
 
 
