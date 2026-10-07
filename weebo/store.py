@@ -727,13 +727,17 @@ class Store:
         return self.execute("DELETE FROM eval_cases WHERE id=?", (case_id,)).rowcount > 0
 
     # -- memory vectors ---------------------------------------------------
-    def set_memory_vector(self, memory_id: str, model: str, text_hash: str, vector: bytes) -> None:
-        self.execute(
-            "INSERT INTO memory_vectors(memory_id, model, text_hash, vector, updated_at) VALUES (?,?,?,?,?) "
+    def set_memory_vector(self, memory_id: str, model: str, text: str, text_hash: str, vector: bytes) -> bool:
+        """Store the embedding of ``text``, but only if the memory still says exactly that (it can be edited or
+        forgotten while the embedding is computed). Returns whether it was stored."""
+        cur = self.execute(
+            "INSERT INTO memory_vectors(memory_id, model, text_hash, vector, updated_at) "
+            "SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM memories WHERE id=? AND text=?) "
             "ON CONFLICT(memory_id) DO UPDATE SET model=excluded.model, text_hash=excluded.text_hash, "
             "vector=excluded.vector, updated_at=excluded.updated_at",
-            (memory_id, model, text_hash, vector, time.time()),
+            (memory_id, model, text_hash, vector, time.time(), memory_id, text),
         )
+        return cur.rowcount > 0
 
     def memory_vectors(self, model: str) -> list[dict[str, Any]]:
         """Vectors of active memories embedded with ``model``."""

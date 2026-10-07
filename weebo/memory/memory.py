@@ -67,7 +67,7 @@ class Memory:
     def start_indexing(self, enabled: bool) -> None:
         """Load the embedding model and embed memories in the background (never on the event loop)."""
         if not enabled:
-            self.semantic = "off"
+            self.stop()
             return
         if self.embedder is None:
             if not embeddings.available():
@@ -80,6 +80,14 @@ class Memory:
             self._worker.start()
         self._wake.set()
 
+    def stop(self, timeout: float = 5.0) -> None:
+        """Turn semantic recall off and let the indexer thread finish (before the Store it reads is closed)."""
+        self.semantic = "off"
+        self._wake.set()
+        worker = self._worker
+        if worker and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout)
+
     def _index_loop(self) -> None:
         try:
             self.embedder.warm()  # type: ignore[union-attr]
@@ -90,7 +98,7 @@ class Memory:
             logger.warning("Semantic memory unavailable: %s", exc)
             self.semantic = "error"
             return
-        while self.semantic != "off":
+        while self.semantic not in ("off", "error"):
             try:
                 self.index_pending()
                 if self.semantic == "loading":
@@ -106,19 +114,27 @@ class Memory:
         if self.embedder is None:
             return 0
         done = 0
-        while True:
+        while self.semantic != "off":
             rows = self.store.memories_needing_vectors(self.embedder.name, limit=INDEX_BATCH)
             if not rows:
                 return done
-            vectors = self.embedder.embed([r["text"] for r in rows])
+            vectors = self.embedder.embed([r["text"] for r in rows])  # slow: the text may change meanwhile
+            stored_any = False
             for row, vector in zip(rows, vectors):
                 text_hash = hashlib.sha1(row["text"].encode("utf-8")).hexdigest()[:16]
-                self.store.set_memory_vector(row["id"], self.embedder.name, text_hash, embeddings.pack(vector))
-                with self._vectors_lock:
-                    self._vectors[row["id"]] = vector
-            done += len(rows)
+                with self._vectors_lock:  # store + cache together, so an edit can't slip in between them
+                    # Refused if the memory was edited or forgotten mid-embedding; the next pass sees the new text.
+                    if self.store.set_memory_vector(row["id"], self.embedder.name, row["text"], text_hash,
+                                                    embeddings.pack(vector)):
+                        self._vectors[row["id"]] = vector
+                        done += 1
+                        stored_any = True
+            if not stored_any:
+                return done  # everything changed under us; those edits already woke the loop for another pass
+        return done
 
     def _changed(self, memory_id: str) -> None:
+        """Call after the store changed a memory's text (its vector row is already gone)."""
         with self._vectors_lock:
             self._vectors.pop(memory_id, None)
         if self.semantic in ("loading", "ready"):

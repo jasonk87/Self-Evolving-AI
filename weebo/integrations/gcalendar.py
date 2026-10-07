@@ -34,14 +34,18 @@ def _legacy_dirs() -> list[Path]:
     return [paths.PROJECT_ROOT / "ai_assistant" / "core" / "data", paths.PROJECT_ROOT]
 
 
-def credentials_path() -> Path | None:
-    """The OAuth client file, adopting a Weebo 1.x copy if that's the only one."""
-    target = google_dir() / "credentials.json"
+def credentials_path(adopt: bool = False) -> Path | None:
+    """The OAuth client file; a Weebo 1.x copy counts too. With ``adopt`` that copy is moved into
+    weebo_data/google. Only signing in adopts: status checks run constantly and must not copy secrets around."""
+    target = paths.data_dir() / "google" / "credentials.json"
     if target.exists():
         return target
     for folder in _legacy_dirs():
-        if (folder / "credentials.json").exists():
-            shutil.copy2(folder / "credentials.json", target)
+        legacy = folder / "credentials.json"
+        if legacy.exists():
+            if not adopt:
+                return legacy
+            shutil.copy2(legacy, google_dir() / "credentials.json")
             return target
     return None
 
@@ -94,7 +98,7 @@ def _build_service() -> Any:
             logger.warning("Google token refresh failed: %s", exc)
             creds = None
     if not creds or not creds.valid:
-        client = credentials_path()
+        client = credentials_path(adopt=True)
         if client is None:
             raise IntegrationError("Google Calendar isn't set up: put your OAuth credentials.json in "
                                    f"{google_dir()}.")

@@ -1,6 +1,7 @@
 """Self-evolution safety: test-rewrite detection, personal details, protected paths, outcomes, behavior gate."""
 
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import weebo
 from weebo.evolution import engine as evo
 from weebo.evolution import gates, outcomes
 from weebo.evolution.council import _history
@@ -203,7 +205,8 @@ async def test_fix_that_holds_is_recorded(evolving, repo):
     await wait_status(app, proposal["id"], ("ready",))
     await app.evolution.merge(proposal["id"])
     meta = app.store.get_proposal(proposal["id"])["meta"]
-    meta["merged_at"] = time.time() - (outcomes.WINDOW_DAYS + 1) * 86400
+    assert meta["live_at"]  # a UI-only fix is live as soon as it merges
+    meta["live_at"] = time.time() - (outcomes.WINDOW_DAYS + 1) * 86400
     app.store.update_proposal(proposal["id"], meta=meta)
     assert outcomes.review(app)[0]["result"] == "held"
     assert "stayed fixed" in outcomes.track_record(app)
@@ -278,9 +281,12 @@ async def test_behavior_gate_that_cannot_run_is_shown_not_hidden(evolving, monke
 async def test_rehearse_cli_reports_errors_instead_of_crashing(tmp_path):
     (tmp_path / "in.json").write_text("{not json")
     out = tmp_path / "out.json"
-    root = Path(__file__).resolve().parents[2]
+    # The code under test, wherever this test file happens to live (the "Existing tests" gate re-runs old copies
+    # of tests from a temp folder). Keep the parent environment: on Windows, Python can't even import asyncio
+    # without SYSTEMROOT.
+    root = Path(weebo.__file__).resolve().parents[1]
+    env = {**os.environ, "WEEBO_DATA_DIR": str(tmp_path / "data"), "PYTHONPATH": str(root)}
     proc = subprocess.run([sys.executable, "-m", "weebo", "--rehearse", str(tmp_path / "in.json"), "--out", str(out)],
-                          cwd=root, capture_output=True, text=True, timeout=120,
-                          env={"PATH": "/usr/bin:/bin", "WEEBO_DATA_DIR": str(tmp_path / "data"),
-                               "PYTHONPATH": str(root)})
-    assert proc.returncode == 1 and "error" in out.read_text()
+                          cwd=root, capture_output=True, text=True, timeout=120, env=env)
+    assert proc.returncode == 1 and out.exists(), proc.stdout + proc.stderr
+    assert "error" in out.read_text()

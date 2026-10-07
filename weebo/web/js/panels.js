@@ -70,6 +70,7 @@ function proposalOutcome(p) {
       el("summary", { html: `${icon("x", 14)}<span>The failure came back after merging. Weebo's next self-audit will look at it again.</span>` }),
       el("pre", { class: "cmd-out", text: (outcome.issues || []).join("\n") }));
   }
+  if (p.status === "merged" && meta.awaiting_live) return el("p", { class: "muted small", text: `Goes live when Weebo restarts; then it watches ${n} for a few days to see whether the fix holds.` });
   if (p.status === "merged") return el("p", { class: "muted small", text: `Watching ${n} for a few days to see whether the fix holds.` });
   return el("p", { class: "muted small", text: `Targets ${n}; Weebo checks whether it stays fixed after merging.` });
 }
@@ -109,7 +110,8 @@ export class Panels {
     this.current = null;
     this.opts = {};
     document.getElementById("drawer-close").addEventListener("click", () => this.close());
-    this._refresh = debounce(() => this.refresh(), 250);
+    // Live updates are debounced; editing is checked again when they fire, not only when they're scheduled.
+    this._refresh = debounce(() => this.refresh({ live: true }), 250);
     this.pending = false;
     // Live updates wait while you're typing in a panel, so drafts and focus survive; they catch up after.
     this.body.addEventListener("focusout", () => setTimeout(() => {
@@ -160,14 +162,18 @@ export class Panels {
     }
   }
 
-  async refresh() {
+  /** Re-render the open panel. A live update (`live`) never replaces a form you're using: it waits until you
+   *  leave it, even if you started typing while the update was loading. Refreshes you trigger always run. */
+  async refresh({ live = false } = {}) {
     const name = this.current;
     if (!name) return;
+    if (live && this.editing()) { this.pending = true; return; }
     const opts = this.opts;
     const scrollTop = this.body.scrollTop;
     try {
       const content = await this[`render_${name}`](opts);
       if (this.current !== name || this.opts !== opts) return;
+      if (live && this.editing()) { this.pending = true; return; }
       this.body.replaceChildren(content);
       this.body.scrollTop = scrollTop;
     } catch (err) {
@@ -321,7 +327,7 @@ export class Panels {
           if (await confirmDialog("Forget skill?", `Weebo will no longer know "${s.name}".`, "Forget")) { await api.del(`/api/skills/${s.name}`); this.refresh(); }
         } })))))
       : empty("No learned skills yet. Weebo saves reusable procedures here as it figures them out.", "sparkles");
-    wrap.append(section("Learned skills", el("p", { class: "muted small", text: "Skills Weebo learned on its own are archived after a stretch of not being used (Settings → Skills)." }), skillList));
+    wrap.append(section("Learned skills", el("p", { class: "muted small", text: "Skills Weebo learned on its own while dreaming are archived after a stretch of not being used (Settings → Memory & skills). Skills saved in a chat stay." }), skillList));
     return wrap;
   }
 
@@ -699,7 +705,7 @@ export class Panels {
     wrap.append(section("Memory & skills",
       toggle("memory.semantic", "Semantic recall", `Finds memories by meaning, not just words, with a small model on this computer. Now: ${(status.memory || {}).recall || "keyword"}.`),
       toggle("skills.auto_learn", "Learn skills from repeated work", "While dreaming, Weebo turns procedures its agents keep repeating into skills."),
-      number("skills.prune_unused_days", "Archive unused learned skills after (days, 0 = never)", 0, 365)));
+      number("skills.prune_unused_days", "Archive unused dream-learned skills after (days, 0 = never)", 0, 365)));
 
     // --- Voice
     const voices = listVoices();

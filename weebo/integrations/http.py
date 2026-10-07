@@ -26,22 +26,39 @@ async def get_json(url: str, params: dict[str, Any] | None = None, timeout: floa
             return await resp.json(content_type=None)
 
 
+async def read_body(resp: aiohttp.ClientResponse, limit: int | None = None) -> tuple[bytes, bool]:
+    """The whole body up to ``limit`` bytes (default MAX_BYTES), and whether it was cut off there.
+    (``resp.content.read(n)`` returns only what has arrived so far, often a single network chunk.)"""
+    limit = MAX_BYTES if limit is None else limit
+    chunks, size = [], 0
+    async for chunk in resp.content.iter_chunked(64 * 1024):
+        chunks.append(chunk)
+        size += len(chunk)
+        if size > limit:
+            return b"".join(chunks)[:limit], True
+    return b"".join(chunks), False
+
+
 async def get_text(url: str, params: dict[str, Any] | None = None, timeout: float = 15.0) -> str:
+    """A page as text (pages over 8 MB are cut off; that's plenty for reading)."""
     async with aiohttp.ClientSession(timeout=_timeout(timeout), headers={"User-Agent": USER_AGENT}) as session:
         async with session.get(url, params=params) as resp:
             if resp.status >= 400:
                 raise HttpError(f"{url} answered HTTP {resp.status}")
-            body = await resp.content.read(MAX_BYTES)
+            body, _cut = await read_body(resp)
             return body.decode(resp.charset or "utf-8", errors="replace")
 
 
 async def get_bytes(url: str, timeout: float = 15.0) -> tuple[bytes, str]:
-    """Returns (body, content type)."""
+    """Returns (body, content type). Refuses bodies over 8 MB rather than returning a broken prefix."""
     async with aiohttp.ClientSession(timeout=_timeout(timeout), headers={"User-Agent": USER_AGENT}) as session:
         async with session.get(url) as resp:
             if resp.status >= 400:
                 raise HttpError(f"{url} answered HTTP {resp.status}")
-            return await resp.content.read(MAX_BYTES), resp.content_type or ""
+            body, cut = await read_body(resp)
+            if cut:
+                raise HttpError(f"{url} is larger than {MAX_BYTES // (1024 * 1024)} MB")
+            return body, resp.content_type or ""
 
 
 async def post_form(url: str, data: dict[str, str], auth: tuple[str, str] | None = None,

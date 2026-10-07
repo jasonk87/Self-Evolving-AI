@@ -1,10 +1,11 @@
 """Did an upgrade actually help?
 
 A proposal can name the recorded failures it addresses (diagnostic signatures: the self-audit and dreams
-cite them; the evolution engine keeps only ones that exist). When it merges, those failures are marked
-fixed. If one recurs, Diagnostics flags it regressed and the upgrade's outcome becomes "regressed"; if none
-recurs for a few days, the outcome is "held". Outcomes feed the Council's history and the self-audit, so
-Weebo learns which kinds of changes work instead of only which ones merged.
+cite them; the evolution engine keeps only ones that exist). When the fix goes live (at merge for UI-only
+changes; for Python changes, when Weebo restarts into them) those failures are marked fixed. If one recurs,
+Diagnostics flags it regressed and the upgrade's outcome becomes "regressed"; if none recurs for a few days,
+the outcome is "held". Outcomes feed the Council's history and the self-audit, so Weebo learns which kinds
+of changes work instead of only which ones merged.
 """
 
 from __future__ import annotations
@@ -35,6 +36,8 @@ def describe(proposal: dict[str, Any]) -> str:
             words += f"; the failures it fixed stayed fixed for {WINDOW_DAYS}+ days"
         elif outcome.get("result") == "regressed":
             words += "; BUT the failure it was meant to fix came back"
+        elif meta.get("addresses") and meta.get("awaiting_live"):
+            words += "; goes live when Weebo next restarts"
         elif meta.get("addresses"):
             words += "; still watching whether the fix holds"
         else:
@@ -54,8 +57,10 @@ def review(app: "WeeboApp") -> list[dict[str, Any]]:
     for proposal in app.store.list_proposals(limit=200, statuses=("merged",)):
         meta = dict(proposal.get("meta") or {})
         outcome = meta.get("outcome") or {}
-        addresses, merged_at = meta.get("addresses") or [], meta.get("merged_at")
-        if outcome.get("result") in ("held", "regressed") or not addresses or not merged_at:
+        addresses = meta.get("addresses") or []
+        # Watched from when the fix went live, not from the merge (Python fixes wait for a restart).
+        live_at = None if meta.get("awaiting_live") else (meta.get("live_at") or meta.get("merged_at"))
+        if outcome.get("result") in ("held", "regressed") or not addresses or not live_at:
             continue
         entries = [e for e in (app.diagnostics.get(s) for s in addresses) if e and e.get("fixed_by") == proposal["id"]]
         came_back = [e for e in entries if e.get("regressed_at")]  # status may since be "reviewed" by an audit
@@ -68,7 +73,7 @@ def review(app: "WeeboApp") -> list[dict[str, Any]]:
             app.notify("evolution", "A self-upgrade didn't fix the problem",
                        f"{proposal['title']}: the failure came back. Weebo will look at it again in its next audit.",
                        {"proposal_id": proposal["id"]})
-        elif now - float(merged_at) >= WINDOW_DAYS * 86400:
+        elif now - float(live_at) >= WINDOW_DAYS * 86400:
             meta["outcome"] = {"result": "held", "at": now}
             app.store.journal("evolution", f"Fix held: {proposal['title']}",
                               f"No recurrence of the {len(addresses)} failure(s) it addressed in {WINDOW_DAYS} days.",

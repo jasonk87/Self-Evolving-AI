@@ -134,7 +134,9 @@ async def rehearse(engine: Any, cases: list[dict[str, Any]], *, user_name: str =
     from ..codex.oneshot import OneShotError, ask
 
     results: dict[str, dict[str, str]] = {}
-    with tempfile.TemporaryDirectory(prefix="weebo-rehearsal-") as tmp:
+    # A timed-out Codex turn can still be running in the folder; on Windows that blocks deleting it, and a
+    # cleanup error must not throw away every answer already collected.
+    with tempfile.TemporaryDirectory(prefix="weebo-rehearsal-", ignore_cleanup_errors=True) as tmp:
         for index, case in enumerate(cases):
             app = RehearsalApp(Path(tmp) / f"case{index}", user_name)
             try:
@@ -184,6 +186,7 @@ class Evals:
     def __init__(self, app: "WeeboApp"):
         self.app = app
         self.code_version = ""
+        self._baseline_lock: asyncio.Lock | None = None  # created on first use, inside the running loop
 
     async def detect_code_version(self) -> None:
         """What is running: a snapshot of the code on disk at startup (uncommitted work included)."""
@@ -237,13 +240,21 @@ class Evals:
 
     def capture_correction(self, conv_id: str, correction: str) -> dict[str, Any] | None:
         """The user corrected Weebo's last reply: replaying the message that led to it becomes an eval case."""
-        rows = self.app.store.recent_dialogue(conv_id, limit=12)
-        if len(rows) >= 1 and rows[-1]["role"] == "user" and rows[-1]["content"].strip() == correction.strip():
+        rows = self.app.store.recent_dialogue(conv_id, limit=30)
+        if rows and rows[-1]["role"] == "user" and rows[-1]["content"].strip() == correction.strip():
             rows = rows[:-1]  # the correction itself was already stored
-        if len(rows) < 2 or rows[-1]["role"] != "assistant" or rows[-2]["role"] != "user":
+        # Weebo's reply can be several messages (commentary while it used tools, then the answer): step back over
+        # all of them to the user's message they answered.
+        i = len(rows) - 1
+        if i < 0 or rows[i]["role"] != "assistant":
             return None
-        asked, earlier = rows[-2]["content"], rows[:-2]
-        dialogue = [f"{'User' if r['role'] == 'user' else 'Weebo'}: {r['content'][:600]}" for r in earlier[-6:]]
+        while i >= 0 and rows[i]["role"] == "assistant":
+            i -= 1
+        if i < 0:
+            return None
+        asked, earlier = rows[i]["content"], rows[:i]
+        dialogue = [f"{'User' if r['role'] == 'user' else 'Weebo'}: {r['content'][:600]}" for r in earlier
+                    if (r.get("data") or {}).get("phase") != "commentary"][-6:]
         rubric = (f"When Weebo first answered this, the user corrected it: \"{correction.strip()[:600]}\". "
                   "A good reply gets it right the first time and respects that correction.")
         conv = self.app.store.get_conversation(conv_id) or {}
@@ -302,6 +313,14 @@ class Evals:
         return bool(cases) and self.cached_baseline([c["id"] for c in cases]) is None
 
     async def baseline(self, cases: list[dict[str, Any]], count: bool = True) -> dict[str, dict[str, Any]]:
+        # One run at a time: the nightly run and a build's gate can both need it. Whoever comes second waits and
+        # then reuses the first one's results instead of paying for every rehearsal again.
+        if self._baseline_lock is None:
+            self._baseline_lock = asyncio.Lock()
+        async with self._baseline_lock:
+            return await self._baseline(cases, count)
+
+    async def _baseline(self, cases: list[dict[str, Any]], count: bool) -> dict[str, dict[str, Any]]:
         cached = self.cached_baseline([c["id"] for c in cases])
         if cached is not None:
             return cached
@@ -313,7 +332,9 @@ class Evals:
             self.app.count_background_turn("evals")
         stored = self.app.store.kv_get(BASELINE_KEY) or {}
         results = dict(stored.get("results") or {}) if stored.get("code") == self.code_version else {}
-        results.update({cid: {k: v for k, v in r.items() if k != "answer"} for cid, r in graded.items()})
+        # A case that couldn't be answered or graded (engine hiccup) isn't a verdict: don't cache it as one.
+        results.update({cid: {k: v for k, v in r.items() if k != "answer"} for cid, r in graded.items()
+                        if not r.get("error")})
         self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "at": time.time(), "results": results})
         for case in cases:
             result = graded[case["id"]]
@@ -345,6 +366,11 @@ class Evals:
             (scratch / "in.json").write_text(json.dumps(spec), encoding="utf-8")
             env = {**os.environ, "PYTHONPATH": str(worktree), "WEEBO_DATA_DIR": str(scratch / "data"),
                    "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
+            # The live engine runs Codex with its helper folders on PATH (the Windows desktop app ships some);
+            # the build's engine gets the same, so both rehearsals run under the same conditions.
+            helpers = list(getattr(getattr(self.app.engine, "binary", None), "extra_path_dirs", None) or [])
+            if helpers:
+                env["PATH"] = os.pathsep.join([*helpers, env.get("PATH", "")])
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, "-m", "weebo", "--rehearse", str(scratch / "in.json"), "--out", str(scratch / "out.json"),
                 cwd=str(worktree), env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)

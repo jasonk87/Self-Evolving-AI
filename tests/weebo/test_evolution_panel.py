@@ -72,3 +72,49 @@ async def test_panel_shows_checks_outcomes_and_advisory_results(app, monkeypatch
             assert "needs your eyes" in await advisory.inner_text() and await advisory.get_attribute("open") is not None
             assert "It changes existing tests, so it needs your OK." in await drawer.inner_text()
             assert errors == []
+
+
+@pytest.mark.asyncio
+async def test_live_update_never_wipes_a_form_being_filled(app):
+    """Regression: a live update scheduled just before you open a form used to re-render the panel 250 ms later
+    and throw the form (and what you typed) away."""
+    playwright = pytest.importorskip("playwright.async_api")
+    app.evals.add_case("What tea should I brew?", "Must suggest genmaicha, the user's favorite.", title="Tea")
+    async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
+        try:
+            browser = await pw.chromium.launch(headless=True)
+        except playwright.Error as exc:
+            if "Executable doesn't exist" in str(exc):
+                pytest.skip("Install the browser with python -m playwright install chromium")
+            raise
+        async with browser:
+            page = await browser.new_page()
+            await page.goto(str(server.make_url("/")))
+            await page.wait_for_function("() => window.weebo?.panels && !document.body.classList.contains('offline')")
+            await page.evaluate("() => weebo.panels.open('evolution')")
+            drawer = page.locator("#drawer")
+            await drawer.get_by_text("Behavior checks", exact=True).wait_for()
+            # In one go, so the order is fixed: a live update arrives (nothing being edited yet, so a refresh is
+            # scheduled), then the form is opened and typed into before that refresh fires.
+            await page.evaluate("""() => {
+                weebo.panels.notify("evals.updated");
+                [...document.querySelectorAll("#drawer button")].find((b) => b.textContent.trim() === "Add a check").click();
+                const field = document.querySelector('#drawer textarea[placeholder^="What you"]');
+                field.focus();
+                field.value = "Book my usual table for Friday";
+            }""")
+            await page.wait_for_timeout(800)  # well past the 250 ms debounce and the panel's reload
+            prompt = drawer.get_by_placeholder("What you'd say to Weebo", exact=False)
+            assert await prompt.is_visible() and await prompt.input_value() == "Book my usual table for Friday"
+            assert await page.evaluate("() => weebo.panels.pending") is True  # the update was held, not dropped
+            # Leaving an emptied form lets the held update through.
+            await page.evaluate("""() => {
+                const field = document.querySelector('#drawer textarea[placeholder^="What you"]');
+                field.value = "";
+                field.blur();
+            }""")
+            await page.wait_for_function("() => weebo.panels.pending === false")
+            await page.wait_for_function("""() => {
+                const field = document.querySelector('#drawer textarea[placeholder^="What you"]');
+                return field && field.closest("form").hidden;
+            }""")

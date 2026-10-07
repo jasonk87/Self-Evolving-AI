@@ -25,8 +25,10 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import json
+import os
 import re
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -55,13 +57,37 @@ class EvolutionError(RuntimeError):
     pass
 
 
-def is_protected(path: str, patterns: list[str]) -> bool:
-    """evolution.protect_paths entries: a file, a folder (with or without a trailing slash) or a glob."""
+CASE_INSENSITIVE_FS = os.name == "nt" or sys.platform == "darwin"
+
+
+def _protect_pattern(pattern: str, root: str, fold: bool) -> str:
+    """One protect_paths entry as a repo-relative path or glob. Accepts what people paste: quotes (Explorer's
+    "Copy as path"), backslashes, an absolute path into the repo, or a leading slash meaning the repo root."""
+    pattern = pattern.strip().strip("\"'").strip().replace("\\", "/")
+    root = root.replace("\\", "/").rstrip("/")
+    same = (lambda a, b: a.lower() == b.lower()) if fold else (lambda a, b: a == b)
+    if same(pattern.rstrip("/"), root):
+        return "*"  # the whole repository
+    if same(pattern[:len(root) + 1], root + "/"):
+        pattern = pattern[len(root) + 1:]
+    pattern = pattern.lstrip("/")
+    while pattern.startswith("./"):
+        pattern = pattern[2:]
+    return pattern
+
+
+def is_protected(path: str, patterns: list[str], root: str | None = None, fold: bool | None = None) -> bool:
+    """evolution.protect_paths entries: a file, a folder (with or without a trailing slash) or a glob.
+    Case-insensitive where the file system is (Windows, macOS)."""
+    fold = CASE_INSENSITIVE_FS if fold is None else fold
+    root = str(paths.PROJECT_ROOT) if root is None else root
     path = path.replace("\\", "/")
-    for pattern in patterns:
-        pattern = pattern.strip().replace("\\", "/")
-        if pattern.startswith("./"):
-            pattern = pattern[2:]
+    if fold:
+        path = path.lower()
+    for raw in patterns:
+        pattern = _protect_pattern(raw, root, fold)
+        if fold:
+            pattern = pattern.lower()
         folder = pattern.rstrip("/")
         if folder and (path == folder or path.startswith(folder + "/") or fnmatch.fnmatchcase(path, pattern)):
             return True
@@ -141,6 +167,20 @@ class EvolutionEngine:
             self._start_vetting(proposal["id"])  # the Council was interrupted; convene again
         self._empty_trash()
         self._verify_after_upgrade()
+        self._go_live()
+
+    def _go_live(self) -> None:
+        """Python fixes merged before this process started are running now: from here on, a recurrence of the
+        failures they addressed is evidence the fix didn't hold (outcomes.py)."""
+        for proposal in self.app.store.list_proposals(limit=200, statuses=("merged",)):
+            meta = dict(proposal.get("meta") or {})
+            if not meta.get("awaiting_live") or float(meta.get("merged_at") or 0) >= self.app.started_at:
+                continue
+            meta.pop("awaiting_live", None)
+            meta["live_at"] = time.time()
+            self.app.diagnostics.mark_fixed(meta.get("addresses") or [], proposal["id"])
+            self.app.store.update_proposal(proposal["id"], meta=meta)
+            self._publish(proposal["id"])
 
     def _verify_after_upgrade(self) -> None:
         """Read the supervisor's note about the last merge (verified boot or rollback)."""
@@ -391,8 +431,8 @@ class EvolutionEngine:
             feedback = self._feedback(gate_report, review)
 
         assert gate_report is not None
-        diff_text = (await git.git(worktree, "diff", f"{base_commit}...HEAD", timeout=60)).out
-        diff_stat = (await git.git(worktree, "diff", "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
+        diff_text = (await git.git(worktree, *git.DISPLAY_DIFF, f"{base_commit}...HEAD", timeout=60)).out
+        diff_stat = (await git.git(worktree, *git.DISPLAY_DIFF, "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
         head_commit = await git.head(worktree)
         governance = self._governance(changed, await git.deleted_files(worktree, base_commit),
                                       await git.rewritten_files(worktree, base_commit, pathspec="tests"))
@@ -591,10 +631,19 @@ class EvolutionEngine:
             self._publish(proposal_id)
             raise EvolutionError("The upgrade conflicts with newer changes. Rebuild it on the latest code.")
         merged = await git.head(root)
+        needs_restart = any(f.endswith(".py") for f in meta.get("changed", []))
         meta.update({"previous_head": previous_head, "merged_into": current, "merged_at": time.time(),
                      "automatic": automatic, "checkpoint": checkpoint})
+        # The failures this fixes count as fixed only once the fix is live: a recurrence before then comes from the
+        # old code and says nothing about the fix. Python changes go live when Weebo restarts into them (which a
+        # running build can postpone for a long time), so they're marked by _go_live() on that next start.
+        if meta.get("addresses"):
+            if needs_restart:
+                meta["awaiting_live"] = True
+            else:
+                meta["live_at"] = time.time()
         self.app.store.update_proposal(proposal_id, status="merged", merged_commit=merged, meta=meta)
-        if meta.get("addresses"):  # if one of these failures recurs, outcomes.review() reports the fix didn't hold
+        if meta.get("addresses") and not needs_restart:
             self.app.diagnostics.mark_fixed(meta["addresses"], proposal_id)
         await self._cleanup(self._get(proposal_id), delete_branch=True)
         self.app.store.journal("evolution", f"Upgraded myself: {proposal['title']}",
@@ -603,7 +652,6 @@ class EvolutionEngine:
         self._publish(proposal_id)
         self.app.bus.publish("weebo.mood", {"mood": "celebrate"})
         self.app.notify("evolution", "Weebo upgraded itself", proposal["title"], {"proposal_id": proposal_id})
-        needs_restart = any(f.endswith(".py") for f in meta.get("changed", []))
         if needs_restart:
             (paths.data_dir() / PENDING_FILE).write_text(json.dumps({
                 "proposal_id": proposal_id, "merged_commit": merged, "previous_head": previous_head, "at": time.time(),

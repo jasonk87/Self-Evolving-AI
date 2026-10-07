@@ -125,31 +125,47 @@ async def personal_details(worktree: Path, base_commit: str, terms: tuple[str, .
                       + "\n".join(hits[:40]), seconds=time.perf_counter() - started)
 
 
+def _is_test_module(path: str) -> bool:
+    return Path(path).name.startswith("test_") and path.endswith(".py")
+
+
+def _affected_tests(rewritten: list[str], originals: list[str], root: Path) -> set[str]:
+    """Original test files whose expectations a rewrite can change: the rewritten test files themselves, every
+    test in a folder whose conftest.py was rewritten, and every test that imports a rewritten test module."""
+    targets = {p for p in rewritten if _is_test_module(p)}
+    for path in rewritten:
+        if Path(path).name == "conftest.py":
+            folder = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+            targets.update(p for p in originals if _is_test_module(p) and p.startswith(folder))
+    modules = {p: p[:-3].replace("/", ".") for p in rewritten if _is_test_module(p)}
+    for path in originals:
+        if not _is_test_module(path) or path in targets:
+            continue
+        try:
+            source = (root / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for module_path, dotted in modules.items():
+            same_folder = module_path.rsplit("/", 1)[0] == path.rsplit("/", 1)[0]
+            stem = dotted.rsplit(".", 1)[-1]
+            if dotted in source or (same_folder and re.search(rf"from\s+\.\s*{stem}\b|from\s+\.\s+import\s+.*\b{stem}\b", source)):
+                targets.add(path)
+                break
+    return targets
+
+
 async def existing_tests(worktree: Path, base_commit: str, env: dict[str, str]) -> GateResult | None:
     """Run the original version of every test file the change rewrote against the new code."""
     started = time.perf_counter()
     rewritten = [p for p in await gitlib.rewritten_files(worktree, base_commit, pathspec="tests") if p.endswith(".py")]
     if not rewritten:
         return None
-    targets: set[str] = set()
-    for path in rewritten:
-        name = Path(path).name
-        if name == "conftest.py":  # shared fixtures changed: every original test in that folder is affected
-            folder = str(Path(path).parent).replace("\\", "/")
-            targets.update(p for p in await gitlib.files_at(worktree, base_commit, folder)
-                           if Path(p).name.startswith("test_") and p.endswith(".py"))
-        elif name.startswith("test_"):
-            targets.add(path)
     header = "The change rewrote or deleted existing tests:\n" + "\n".join(f"- {p}" for p in rewritten)
     with tempfile.TemporaryDirectory(prefix="weebo-baseline-tests-") as tmp:
         root = Path(tmp)
-        for path in await gitlib.files_at(worktree, base_commit, "tests"):
-            if Path(path).name.startswith("test_") and path not in targets:
-                continue  # support files only (conftest, __init__, helpers), plus the targets
-            content = await gitlib.file_at(worktree, base_commit, path)
-            if content is not None:
-                (root / path).parent.mkdir(parents=True, exist_ok=True)
-                (root / path).write_text(content, encoding="utf-8")
+        # The whole original tests/ tree: test modules can import each other's fixtures and helpers.
+        originals = await gitlib.extract_tree(worktree, base_commit, "tests", root)
+        targets = _affected_tests(rewritten, originals, root)
         runnable = sorted(p for p in targets if (root / p).exists())
         if not runnable:
             return GateResult(EXISTING_TESTS, True, header + "\n\nNo original test files to re-run.",

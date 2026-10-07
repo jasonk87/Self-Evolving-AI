@@ -47,6 +47,9 @@ async def evolving(app, repo, monkeypatch):
         if edit:
             for rel, content in edit.items():
                 target = Path(cwd) / rel
+                if content is None:  # the agent deleted (or, with a new path alongside, moved) this file
+                    target.unlink()
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content)
         app.store.update_task(task["id"], status="completed", summary="done", finished_at=time.time())

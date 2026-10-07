@@ -31,6 +31,7 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
 SKILL_FILE_RE = re.compile(r"skills[\\/]+([a-z0-9][a-z0-9-]{1,47})[\\/]+SKILL\.md", re.IGNORECASE)
 META_KEY = "skill_meta"
 SEEDED = {"weebo-self-check"}
+AUTO_LEARNED = "dream"  # the source of skills Weebo learns on its own; the only ones it may archive
 PRUNE_EVERY = 86400
 
 
@@ -131,7 +132,9 @@ class Skills:
         return used
 
     def prune(self, force: bool = False) -> list[str]:
-        """Archive auto-learned skills unused for ``skills.prune_unused_days`` (0 = never). Runs at most daily."""
+        """Archive skills Weebo learned on its own while dreaming that went unused for ``skills.prune_unused_days``
+        (0 = never). Runs at most daily. Skills saved in a chat may be ones the user asked for, and skills from
+        before usage was tracked have no known origin, so those are never archived automatically."""
         days = int(self.app.settings.get("skills.prune_unused_days") or 0)
         store, now = self.app.store, time.time()
         tracking_since = float(store.kv_get("skill_tracking_since") or 0)
@@ -145,7 +148,7 @@ class Skills:
         for skill_file in self.root.glob("*/SKILL.md"):
             name = skill_file.parent.name
             entry = meta.get(name, {})
-            if name in SEEDED or entry.get("source") == "user":
+            if name in SEEDED or entry.get("source") != AUTO_LEARNED:
                 continue
             seen = max(float(entry.get("last_used_at") or 0), float(entry.get("created_at") or 0),
                        skill_file.stat().st_mtime, tracking_since)

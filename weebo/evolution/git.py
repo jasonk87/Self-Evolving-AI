@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import subprocess
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,19 +101,29 @@ async def snapshot_commit(cwd: str | Path) -> str:
     return result.out.strip()
 
 
+# The gates parse these diffs, so they must read the same on every machine whatever the user's git config says
+# (diff.noprefix, color.ui=always, external diff drivers, textconv, quoted non-ASCII paths). Renames are off: a
+# rename has to show up as the old path deleted plus the new one added, or moving a file would hide the old
+# path from the change policy (a moved protected file, a test "rewritten" by renaming it).
+DISPLAY_DIFF = ("-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                "--src-prefix=a/", "--dst-prefix=b/")  # for people (the review panel): renames stay readable
+PLAIN_DIFF = (*DISPLAY_DIFF, "--no-renames")
+
+
 async def changed_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
-    result = await git(cwd, "diff", "--name-only", f"{base}...{ref}", check=True)
+    """Every path the change touches; a rename lists both the old and the new path."""
+    result = await git(cwd, *PLAIN_DIFF, "--name-only", f"{base}...{ref}", check=True)
     return [line.strip() for line in result.out.splitlines() if line.strip()]
 
 
 async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
-    result = await git(cwd, "diff", "--no-renames", "--diff-filter=D", "--name-only", f"{base}...{ref}", check=True)
+    result = await git(cwd, *PLAIN_DIFF, "--diff-filter=D", "--name-only", f"{base}...{ref}", check=True)
     return [line.strip() for line in result.out.splitlines() if line.strip()]
 
 
 async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspec: str = ".") -> list[str]:
     """Files that existed at ``base`` and lost lines by ``ref`` (edited or deleted, not just appended to)."""
-    result = await git(cwd, "diff", "--no-renames", "--numstat", f"{base}...{ref}", "--", pathspec, check=True)
+    result = await git(cwd, *PLAIN_DIFF, "--numstat", f"{base}...{ref}", "--", pathspec, check=True)
     files = []
     for line in result.out.splitlines():
         parts = line.split("\t")
@@ -122,7 +134,7 @@ async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspe
 
 async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tuple[str, int, str]]:
     """(path, new line number, text) for every line the change adds."""
-    result = await git(cwd, "diff", "--no-renames", "--unified=0", f"{base}...{ref}", check=True)
+    result = await git(cwd, *PLAIN_DIFF, "--unified=0", f"{base}...{ref}", check=True)
     lines, path, number = [], "", 0
     for raw in result.out.splitlines():
         if raw.startswith("+++ "):
@@ -138,12 +150,30 @@ async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tup
     return lines
 
 
-async def file_at(cwd: str | Path, ref: str, path: str) -> str | None:
-    """A text file's content at ``ref`` (None if it didn't exist there)."""
-    result = await git(cwd, "show", f"{ref}:{path}")
-    return result.out if result.ok else None
-
-
-async def files_at(cwd: str | Path, ref: str, prefix: str) -> list[str]:
-    result = await git(cwd, "ls-tree", "-r", "--name-only", ref, "--", prefix)
-    return [line.strip() for line in result.out.splitlines() if line.strip()] if result.ok else []
+async def extract_tree(cwd: str | Path, ref: str, prefix: str, dest: Path) -> list[str]:
+    """Write every file under ``prefix`` as it was at ``ref`` into ``dest`` (one ``git archive``).
+    Returns the repository-relative paths written. Entries that would land outside ``dest`` are skipped."""
+    kwargs = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    proc = await asyncio.create_subprocess_exec(
+        "git", "archive", "--format=tar", ref, "--", prefix, cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
+    out, err = await asyncio.wait_for(proc.communicate(), 300)
+    if proc.returncode != 0:
+        if b"did not match any files" in err:
+            return []  # nothing under prefix at that commit
+        raise GitError(f"git archive {ref} {prefix} failed: {err.decode('utf-8', 'replace')[:500]}")
+    written = []
+    root = dest.resolve()
+    with tarfile.open(fileobj=io.BytesIO(out)) as archive:
+        for member in archive.getmembers():
+            target = (dest / member.name).resolve()
+            if not member.isfile() or root not in target.parents:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is not None:
+                target.write_bytes(source.read())
+                written.append(member.name)
+    return written

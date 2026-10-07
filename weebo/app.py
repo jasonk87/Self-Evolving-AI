@@ -97,6 +97,7 @@ class WeeboApp:
         for component in (self.scheduler, self.heartbeat, self.evolution):
             await component.stop()
         await self.engine.stop()
+        await asyncio.to_thread(self.memory.stop)  # joins the indexer thread; it reads the store we close next
         self.store.close()
 
     def _infer_user_name(self) -> None:

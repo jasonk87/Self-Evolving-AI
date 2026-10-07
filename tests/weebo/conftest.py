@@ -24,6 +24,9 @@ os.environ.setdefault("WEEBO_SKIP_LEGACY_IMPORT", "1")
 def data_dir(tmp_path, monkeypatch):
     path = tmp_path / "weebo_data"
     monkeypatch.setenv("WEEBO_DATA_DIR", str(path))
+    # Never look at the developer's real Weebo 1.x Google credentials in the checkout.
+    from weebo.integrations import gcalendar
+    monkeypatch.setattr(gcalendar, "_legacy_dirs", lambda: [])
     return path
 
 
@@ -152,6 +155,7 @@ async def app(fake_engine):
     await weebo.start(with_engine=False, with_background=False)
     yield weebo
     await weebo.evolution.stop()
+    weebo.memory.stop()  # the background indexer thread must not outlive the Store it reads
     weebo.store.close()
 
 

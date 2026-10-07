@@ -53,7 +53,8 @@ DEFAULTS: dict[str, Any] = {
     "evals": {"enabled": True, "max_cases": 10},
     # Semantic recall: a small local embedding model (pip install fastembed) alongside keyword search.
     "memory": {"semantic": True},
-    # Learned skills: suggested from repeated agent work; auto-learned ones unused this long are archived (0 = never).
+    # Learned skills: suggested from repeated agent work; ones Weebo learned while dreaming that go unused this long are
+    # archived (0 = never). Skills saved in a chat are never archived automatically.
     "skills": {"auto_learn": True, "prune_unused_days": 60},
     "voice": {"speak_replies": False, "voice_name": "", "rate": 1.05, "pitch": 1.25},
     "ui": {"companion": True, "reduce_motion": False},
