@@ -73,6 +73,35 @@ def sandbox_for(level: str, extra_roots: list[str]) -> tuple[str, str, dict[str,
     }
 
 
+_CORRECTION = re.compile(  # openings that push back on the last answer by themselves
+    r"^\W*(?:"
+    r"no(?:pe)?\b(?![\s,.!]*(?:problem|worries|thanks|thank|rush|need|biggie|prob)\b)"
+    r"|wrong\b|incorrect\b|not (?:quite|really|right|what i)"
+    r"|that'?s (?:not|wrong|incorrect)|that is (?:not|wrong|incorrect)|that isn'?t|that wasn'?t"
+    r"|you (?:forgot|missed|misunderstood|misread|ignored|got (?:it|that) wrong|didn'?t|did not|should(?:n'?t| not) have)"
+    r"|i (?:told you|already told you)\b"
+    r"|actually,? (?:it'?s|it is|that'?s|that is)\b"
+    r"|(?:please )?stop (?:doing|saying|using|adding)|why did you|why would you"
+    r")",
+    re.IGNORECASE,
+)
+_RESTATEMENT = re.compile(r"^\W*(?:actually,? )?i (?:said|meant|asked for|asked you|wanted)\b", re.IGNORECASE)
+_PUSHBACK = re.compile(r"\b(?:not|instead|wrong|never|didn'?t|don'?t)\b", re.IGNORECASE)
+
+CORRECTION_HINT = (
+    "The user's message looks like a correction of your previous reply. Fix the mistake directly. If it reveals "
+    "a lasting preference or a lesson about how to help them, save it now with `remember` (kind \"lesson\" or "
+    "\"preference\") so it doesn't happen again; skip that for one-off slips."
+)
+
+
+def looks_like_correction(text: str) -> bool:
+    """Heuristic: does this message push back on Weebo's last answer? (Errs toward missing, not nagging.)
+    "I said ..." only counts with pushback ("I said Friday, not Thursday"), so "I said hi to Sam" doesn't."""
+    text = text or ""
+    return bool(_CORRECTION.match(text) or (_RESTATEMENT.match(text) and _PUSHBACK.search(text)))
+
+
 def auto_title(text: str) -> str:
     clean = re.sub(r"\s+", " ", re.sub(r"[`*#>\[\]]|(?<!\w)_|_(?!\w)", "", text)).strip()
     if not clean:
@@ -283,6 +312,8 @@ class ConversationManager:
             # Only start again after a terminal notification cleared the active turn.
             if session.turn is not None:
                 raise ValueError("Could not add your message to the active turn. Please retry after it finishes.")
+            if text and looks_like_correction(text):
+                self._on_correction(session, conv_id, text)
             await self._start_turn(session, conv, inputs, trigger="user", query=text)
         return message
 
@@ -325,6 +356,17 @@ class ConversationManager:
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
+
+    def _on_correction(self, session: Session, conv_id: str, text: str) -> None:
+        """Learn from being corrected now, not at the next dream: nudge Weebo to save the lesson, and keep
+        the moment as a behavior check so future versions of Weebo are tested against it."""
+        session.pending_context.append(CORRECTION_HINT)
+        try:
+            case = self.app.evals.capture_correction(conv_id, text)
+            if case:
+                logger.info("Saved a behavior check from a correction: %s", case["title"])
+        except Exception as exc:  # learning must never break sending a message
+            logger.warning("Couldn't record the correction: %s", exc)
 
     async def interrupt(self, conv_id: str) -> bool:
         conv = self.app.store.get_conversation(conv_id)
@@ -577,6 +619,8 @@ class ConversationManager:
         item_type = item.get("type")
         if item_type in ("userMessage", "hookPrompt", "sleep", "subAgentActivity", None):
             return
+        if completed:
+            self.app.skills.note_item(item)
         turn = session.turn
         message_id = f"{conv_id}:{item.get('id')}"
         if item_type == "agentMessage" and not completed:

@@ -13,7 +13,7 @@ Lifecycle of a proposal::
 * Weebo then verifies the result itself: syntax, a boot self-test and the test suite
   (gates.py), then a Codex code review of exactly the agent's change. Failures go back
   to the agent for up to two revision rounds. A review that can't run fails the build.
-* Weebo 1.x's change policy classifies every touched file. Only UI/tests/docs/skills
+* The change policy (policy.py) classifies every touched file. Only UI/tests/docs/skills
   changes may merge without a human; core, execution and governance code always wait
   for the user.
 * After a merge Weebo restarts into the new code. The supervisor reverts the merge
@@ -23,6 +23,7 @@ Lifecycle of a proposal::
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import re
 import shutil
@@ -33,7 +34,9 @@ from typing import TYPE_CHECKING, Any
 from .. import log, paths
 from ..codex.rpc import EngineClosed, RpcError
 from . import council, git
-from .gates import run_gates
+from .evals import touches_behavior
+from .gates import GateResult, run_gates
+from .policy import decide_governance
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -41,6 +44,7 @@ if TYPE_CHECKING:
 logger = log.get("evolution")
 
 MAX_ROUNDS = 3
+BEHAVIOR_GATE = "Behavior evals"
 OPEN_STATES = ("vetting", "proposed", "queued", "building", "checking", "ready", "merging")
 PENDING_FILE = "evolution_pending.json"
 SCRATCH_DIR = ".weebo-tmp"  # build agents keep temp files, logs and test dirs here; never committed
@@ -51,14 +55,27 @@ class EvolutionError(RuntimeError):
     pass
 
 
+def is_protected(path: str, patterns: list[str]) -> bool:
+    """evolution.protect_paths entries: a file, a folder (with or without a trailing slash) or a glob."""
+    path = path.replace("\\", "/")
+    for pattern in patterns:
+        pattern = pattern.strip().replace("\\", "/")
+        if pattern.startswith("./"):
+            pattern = pattern[2:]
+        folder = pattern.rstrip("/")
+        if folder and (path == folder or path.startswith(folder + "/") or fnmatch.fnmatchcase(path, pattern)):
+            return True
+    return False
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:32] or "change"
 
 
 BUILD_PROMPT = """You are improving Weebo, a self-evolving AI assistant, by changing its own source code.
 You are working in an isolated git worktree of Weebo's repository: {worktree}
-Weebo 2.0 lives in weebo/ (Python, asyncio + aiohttp, Codex app-server integration) with the web UI in weebo/web/
-(vanilla ES modules, no build step). Weebo 1.x lives in ai_assistant/ and is reused through weebo/legacy/.
+Weebo lives in weebo/ (Python, asyncio + aiohttp, Codex app-server integration) with the web UI in weebo/web/
+(vanilla ES modules, no build step) and integrations (search, calendar, SMS, widgets) in weebo/integrations/.
 
 ## Improvement to implement
 Title: {title}
@@ -69,7 +86,12 @@ Why: {rationale}
 
 ## Rules
 - Make the smallest complete change that fully implements this. Match the surrounding code style.
-- Add or update tests under tests/weebo/ that prove the change works (pytest, pytest-asyncio available).
+- Add tests under tests/weebo/ that prove the change works (pytest, pytest-asyncio available).
+- Never weaken, skip or delete an existing test to make checks pass. If an existing expectation genuinely has to
+  change, change only that assertion and explain why in your report: the original tests are re-run against your
+  code and every rewritten expectation is shown to the user.
+- Never hardcode who the user is (their name, email, accounts) in code, prompts or tests. Read user.name from
+  settings at runtime or write for "you" / "the user"; use made-up names in tests.
 - Run the checks yourself before finishing:
     python -m weebo --selftest
     python -m pytest tests/weebo -q -p no:cacheprovider
@@ -135,6 +157,7 @@ class EvolutionEngine:
         if pending.get("rolled_back"):
             if proposal:
                 self._set(proposal_id, "rolled_back")
+                self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
             self.app.store.journal("evolution", "Rolled back an upgrade that failed to boot",
                                    proposal["title"] if proposal else "", pending)
             self.app.notify("evolution", "Upgrade rolled back",
@@ -184,8 +207,14 @@ class EvolutionEngine:
         duplicate = self._find_duplicate(title)
         if duplicate:
             return duplicate
+        meta = dict(meta or {})
+        # The recorded failures this claims to fix (diagnostic ids). Only real ones count: they are how the
+        # upgrade's outcome gets measured after it merges (outcomes.py).
+        addresses = self.app.diagnostics.known([str(a) for a in meta.pop("addresses", None) or []])[:10]
+        if addresses:
+            meta["addresses"] = addresses
         proposal = self.app.store.add_proposal(title, description, rationale.strip(), source,
-                                               meta={"conversation_id": conversation_id, **(meta or {})})
+                                               meta={"conversation_id": conversation_id, **meta})
         self.app.store.journal("evolution", f"New self-improvement idea: {title}", rationale[:400], {"proposal_id": proposal["id"]})
         self._publish(proposal["id"])
         if self.app.settings.get("evolution.mode") == "off":
@@ -334,13 +363,20 @@ class EvolutionEngine:
                 self._fail(proposal_id, "The build agent finished without changing any files.")
                 return
             self._stage(proposal_id, "checking", "testing", round_number)
-            gate_report = await run_gates(worktree, changed, self.app.settings.get("evolution.test_command"))
+            gate_report = await run_gates(worktree, changed, self.app.settings.get("evolution.test_command"),
+                                          base_commit=base_commit, personal_terms=self._personal_terms())
             self._stage(proposal_id, "checking", "reviewing", round_number)
             # Work the user asked for doesn't spend Weebo's proactive (background) budget.
             counted = proposal.get("source") not in council.USER_SOURCES
             review = await self._codex_review(worktree, base_ref, count=counted)
             if review.get("error"):
                 review = await self._codex_review(worktree, base_ref, count=counted)  # one retry, then fail closed
+            if gate_report.ok and not review.get("blocking") and touches_behavior(changed):
+                # Only worth rehearsing once everything else passes: it costs real model turns.
+                self._stage(proposal_id, "checking", "evaluating", round_number)
+                behavior = await self._behavior_gate(worktree, counted)
+                if behavior:
+                    gate_report.results.append(behavior)
             round_info = {"round": round_number, "gates_ok": gate_report.ok, "review_blocking": review.get("blocking"),
                           "task_id": task["id"]}
             meta = dict(self._get(proposal_id).get("meta") or {})
@@ -358,7 +394,8 @@ class EvolutionEngine:
         diff_text = (await git.git(worktree, "diff", f"{base_commit}...HEAD", timeout=60)).out
         diff_stat = (await git.git(worktree, "diff", "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
         head_commit = await git.head(worktree)
-        governance = self._governance(changed)
+        governance = self._governance(changed, await git.deleted_files(worktree, base_commit),
+                                      await git.rewritten_files(worktree, base_commit, pathspec="tests"))
         meta = dict(self._get(proposal_id).get("meta") or {})
         meta.update({"diff": diff_text[:400_000], "changed": changed, "governance": governance,
                      "review_blocking": review.get("blocking", False), "stage": None})
@@ -383,7 +420,7 @@ class EvolutionEngine:
                 return
             except EvolutionError as exc:
                 logger.info("Auto-merge skipped: %s", exc)
-        why = "" if governance["autonomous"] else " It touches core code, so it needs your OK."
+        why = "" if governance["autonomous"] else f" {governance['why']}"
         self.app.notify("evolution", "Upgrade ready to review", f"{proposal['title']}.{why}", {"proposal_id": proposal_id})
         self.app.bus.publish("weebo.mood", {"mood": "proud", "background": True})
 
@@ -417,18 +454,60 @@ class EvolutionEngine:
             parts.append("## Code review found blocking issues\n" + review.get("text", "")[-5000:])
         return "\n\n".join(parts)
 
-    def _governance(self, changed: list[str]) -> dict[str, Any]:
-        try:
-            from ai_assistant.core.change_policy import decide_governance
-        except Exception as exc:  # the policy module is required for any automatic merge
-            return {"autonomous": False, "files": [], "error": str(exc)}
+    def _governance(self, changed: list[str], deleted: list[str] = (), rewritten_tests: list[str] = ()) -> dict[str, Any]:
+        """Classify every touched file. Low-risk zones may auto-merge, except files the user protected
+        (evolution.protect_paths) and existing tests the change rewrote or deleted."""
+        protect = [p for p in (self.app.settings.get("evolution.protect_paths") or []) if p.strip()]
         files = []
         for path in changed:
-            decision = decide_governance(path, project_root=paths.PROJECT_ROOT)
-            files.append({"path": path, "zone": decision.zone.value, "tier": decision.tier.value,
-                          "reason": decision.reason})
+            decision = decide_governance(path, "delete" if path in deleted else "modify",
+                                         project_root=paths.PROJECT_ROOT)
+            tier, reason = decision.tier.value, decision.reason
+            if tier == "autonomous" and is_protected(path, protect):
+                tier, reason = "human_required", "Listed in Settings → evolution.protect_paths."
+            if tier == "autonomous" and path in rewritten_tests:
+                tier, reason = "human_required", ("Rewrites an existing test: a person should confirm the old "
+                                                  "expectation was meant to change.")
+            files.append({"path": path, "zone": decision.zone.value, "tier": tier, "reason": reason})
         autonomous = bool(files) and all(f["tier"] == "autonomous" for f in files)
-        return {"autonomous": autonomous, "files": files}
+        held = [f for f in files if f["tier"] != "autonomous"]
+        if not held:
+            why = ""
+        elif any(f["path"] in rewritten_tests for f in held):
+            why = "It changes existing tests, so it needs your OK."
+        elif any("protect_paths" in f["reason"] for f in held):
+            why = "It touches files you protected, so it needs your OK."
+        else:
+            why = "It touches core code, so it needs your OK."
+        return {"autonomous": autonomous, "files": files, "why": why,
+                "rewritten_tests": [p for p in rewritten_tests if p in changed]}
+
+    def _personal_terms(self) -> tuple[str, ...]:
+        """Who the user is, so the gates can refuse changes that hardcode it."""
+        terms = [str(self.app.settings.get("user.name") or "").strip()]
+        account = (self.app.engine.snapshot() or {}).get("account") or {}
+        terms.append(str(account.get("email") or "").strip())
+        return tuple(t for t in terms if t)
+
+    async def _behavior_gate(self, worktree: Path, count: bool) -> GateResult | None:
+        """Rehearse real situations with the build's code and compare with the running Weebo (evals.py)."""
+        evals = self.app.evals
+        if not evals.enabled():
+            return None
+        started = time.perf_counter()
+        if count:
+            ok, why = self.app.heartbeat.budget()
+            if not ok:
+                return GateResult(BEHAVIOR_GATE, True, f"Not run: {why}", skipped=True)
+        try:
+            result = await evals.gate(worktree, count=count)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # a check that couldn't run is shown, not silently passed
+            logger.warning("Behavior evals couldn't run: %s", exc)
+            return GateResult(BEHAVIOR_GATE, True, f"Couldn't run: {exc}", time.perf_counter() - started, skipped=True)
+        return GateResult(BEHAVIOR_GATE, result["ok"], result["summary"], time.perf_counter() - started,
+                          skipped=result["skipped"])
 
     async def _codex_review(self, worktree: Path, base_ref: str, count: bool = True) -> dict[str, Any]:
         """Codex's built-in code review of the agent's change (everything since ``base_ref``).
@@ -515,6 +594,8 @@ class EvolutionEngine:
         meta.update({"previous_head": previous_head, "merged_into": current, "merged_at": time.time(),
                      "automatic": automatic, "checkpoint": checkpoint})
         self.app.store.update_proposal(proposal_id, status="merged", merged_commit=merged, meta=meta)
+        if meta.get("addresses"):  # if one of these failures recurs, outcomes.review() reports the fix didn't hold
+            self.app.diagnostics.mark_fixed(meta["addresses"], proposal_id)
         await self._cleanup(self._get(proposal_id), delete_branch=True)
         self.app.store.journal("evolution", f"Upgraded myself: {proposal['title']}",
                                ("Merged automatically" if automatic else "Merged with your approval") + f" ({merged[:8]}).",
@@ -575,6 +656,7 @@ class EvolutionEngine:
                 await git.git(root, "reset", "-q", before)
             raise EvolutionError("Couldn't revert cleanly: " + result.text()[-500:])
         self._set(proposal_id, "rolled_back")
+        self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
         self.app.store.journal("evolution", f"Rolled back: {proposal['title']}", "Reverted at the user's request.")
         if any(f.endswith(".py") for f in (proposal.get("meta") or {}).get("changed", [])):
             self.app.request_restart("Rolling back an upgrade")

@@ -1,4 +1,5 @@
 # Optional runtime integrations (install only what you need)
+fastembed  # Weebo 2.0 semantic memory recall: small local embedding model, no API calls
 chromadb
 pyaudio
 mss

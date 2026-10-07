@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING, Any
 
 from .. import log, paths
 from ..brain.mind import ThinkError, extract_json
+from ..evolution import outcomes
 from ..memory.memory import KINDS, MemoryError_
+from . import heatmap
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
 logger = log.get("heartbeat")
 
 TICK_SECONDS = 30
+UPKEEP_SECONDS = 600  # outcome review and skill pruning: bookkeeping only, no model calls
+EVAL_MIN_HOURS_BETWEEN = 20
 
 DREAM_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -43,11 +47,21 @@ DREAM_SCHEMA: dict[str, Any] = {
         "insights": {"type": "array", "items": {"type": "string"}},
         "message_to_user": {"type": "string"},
         "improvements": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["title", "description", "rationale"],
+            "type": "object", "additionalProperties": False,
+            "required": ["title", "description", "rationale", "addresses"],
             "properties": {"title": {"type": "string"}, "description": {"type": "string"},
-                           "rationale": {"type": "string"}}}},
+                           "rationale": {"type": "string"},
+                           "addresses": {"type": "array", "items": {"type": "string"}}}}},
+        "eval_cases": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["title", "prompt", "rubric"],
+            "properties": {"title": {"type": "string"}, "prompt": {"type": "string"}, "rubric": {"type": "string"}}}},
+        "skills": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["name", "description", "instructions"],
+            "properties": {"name": {"type": "string"}, "description": {"type": "string"},
+                           "instructions": {"type": "string"}}}},
     },
 }
+DREAM_SCHEMA["required"] = [*DREAM_SCHEMA["required"], "eval_cases", "skills"]
 
 AUDIT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -57,19 +71,13 @@ AUDIT_SCHEMA: dict[str, Any] = {
         "summary": {"type": "string"},
         "proposals": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["title", "description", "rationale", "severity"],
+            "required": ["title", "description", "rationale", "severity", "addresses"],
             "properties": {"title": {"type": "string"}, "description": {"type": "string"},
                            "rationale": {"type": "string"},
-                           "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}}}},
+                           "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                           "addresses": {"type": "array", "items": {"type": "string"}}}}},
     },
 }
-
-AUDIT_FOCUS = [
-    "reliability of the Codex engine integration (weebo/codex) and conversation streaming (weebo/brain/conversation.py)",
-    "the web UI (weebo/web): broken interactions, missing error states, accessibility, mobile layout",
-    "proactive features (weebo/proactive) and memory quality (weebo/memory)",
-    "background agents (weebo/agents) and the HTTP/WebSocket server (weebo/server)",
-]
 
 
 def _clock_minutes(value: str) -> int:
@@ -92,9 +100,10 @@ class Heartbeat:
     def __init__(self, app: "WeeboApp"):
         self.app = app
         self.last_activity = time.time()
-        self.busy: str | None = None  # dream | brief | audit
+        self.busy: str | None = None  # dream | brief | audit | eval
         self._task: asyncio.Task | None = None
         self._last_limits_refresh = 0.0
+        self._last_upkeep = 0.0
 
     def touch(self) -> None:
         self.last_activity = time.time()
@@ -153,6 +162,9 @@ class Heartbeat:
                 await self.app.engine.refresh_rate_limits()
             except Exception as exc:
                 logger.debug("rate limit refresh failed: %s", exc)
+        if now - self._last_upkeep > UPKEEP_SECONDS:
+            self._last_upkeep = now
+            self.upkeep()
         if self.busy:
             return
         ok, _reason = self.budget()
@@ -174,11 +186,24 @@ class Heartbeat:
                 and self.idle_minutes >= float(s.get("autonomy.dream_idle_minutes"))
                 and now - float(store.kv_get("last_audit", 0) or 0) >= float(s.get("autonomy.self_audit_min_hours_between")) * 3600):
             await self._run("audit", self.self_audit())
+            return
+        if (self.app.evals.enabled() and self.idle_minutes >= float(s.get("autonomy.dream_idle_minutes"))
+                and now - float(store.kv_get("last_eval", 0) or 0) >= EVAL_MIN_HOURS_BETWEEN * 3600
+                and self.app.evals.needs_baseline()):
+            await self._run("eval", self.app.evals.refresh_baseline())
+
+    def upkeep(self) -> None:
+        """Bookkeeping that costs no model turns: settle upgrade outcomes, archive skills nobody uses."""
+        for name, job in (("outcomes", lambda: outcomes.review(self.app)), ("skills", self.app.skills.prune)):
+            try:
+                job()
+            except Exception:
+                logger.exception("Upkeep (%s) failed", name)
 
     async def _run(self, name: str, coro: Any) -> None:
         self.busy = name
         self.app.bus.publish("weebo.activity", {"activity": name, "state": "started"})
-        mood = {"dream": "dreaming", "audit": "inspecting", "brief": "alert"}.get(name, "thinking")
+        mood = {"dream": "dreaming", "audit": "inspecting", "eval": "inspecting", "brief": "alert"}.get(name, "thinking")
         self.app.bus.publish("weebo.mood", {"mood": mood, "background": True})
         try:
             result = await coro
@@ -244,18 +269,35 @@ class Heartbeat:
         memories = store.list_memories(limit=150)
         memory_lines = "\n".join(f"{m['id']} ({m['kind']}, {m['importance']}) {m['text'][:220]}" for m in memories)
         issues = self.app.diagnostics.open_issues(min_count=2)[:5]
-        issue_lines = "\n".join(f"- x{i['count']} {i['kind']}: {i['message'][:200]}" for i in issues) or "(none)"
+        issue_lines = "\n".join(f"- [{i['id']}] x{i['count']} {i['kind']}{' (came back after a fix)' if i['status'] == 'regressed' else ''}: "
+                                f"{i['message'][:200]}" for i in issues) or "(none)"
+        trouble = store.trouble_since(since, limit=20)
+        trouble_lines = "\n".join(f"[{t['conversation_title'][:40]}] {'failed' if t['kind'] == 'error' else 'interrupted'}: "
+                                  f"{t['content'][:200]}" for t in trouble) or "(none)"
+        agent_runs = [t for t in store.list_tasks(limit=60, statuses=("completed",))
+                      if t.get("kind") == "agent" and float(t.get("finished_at") or 0) > since]
+        run_lines = "\n".join(f"- {t['title']}: {str(t.get('summary') or '')[:300]}" for t in agent_runs[:15]) or "(none)"
+        existing_skills = ", ".join(s["name"] for s in self.app.skills.list()) or "(none)"
         evolution_on = self.app.settings.get("evolution.mode") != "off"
+        learn_skills = self.app.settings.get("skills.auto_learn")
         prompt = f"""You are dreaming: reflect on Weebo's recent conversations to consolidate long-term memory.
 
 RECENT CONVERSATIONS:
 {transcript}
 
+TURNS THAT FAILED OR WERE INTERRUPTED:
+{trouble_lines}
+
 EXISTING MEMORIES (id, kind, importance, text):
 {memory_lines or '(none yet)'}
 
-WEEBO'S RECURRING FAILURES:
+WEEBO'S RECURRING FAILURES ([id] count kind: message):
 {issue_lines}
+
+BACKGROUND AGENT JOBS THAT SUCCEEDED:
+{run_lines}
+
+SKILLS WEEBO ALREADY HAS: {existing_skills}
 
 Return JSON:
 - new_memories: durable facts/preferences/goals/people/projects/lessons about the user that are NOT already in memory (max 10). Each one self-contained. importance 1-5. No secrets, no trivia, nothing speculative.
@@ -264,20 +306,25 @@ Return JSON:
 - episode: 2-4 sentences summarizing what happened in these conversations (what the user worked on, decisions, open threads).
 - insights: up to 3 specific ways Weebo could proactively help soon, grounded in the conversations.
 - message_to_user: one short, friendly proactive note for the user's desk ONLY if there is something genuinely useful to say (a follow-up, a reminder of an open thread, an idea). Otherwise "".
-- improvements: {"up to 2 concrete improvements to Weebo's own code/abilities, grounded in failures or unmet requests above (title, description with how to verify, rationale citing evidence). Otherwise []." if evolution_on else "always []."}
+- improvements: {"up to 2 concrete improvements to Weebo's own code/abilities, grounded in failures or unmet requests above (title, description with how to verify, rationale citing evidence, addresses: the [id]s of the recurring failures it fixes, or []). Otherwise []." if evolution_on else "always []."}
+- eval_cases: up to 2 moments where Weebo fell short (the user corrected it, a turn failed or was interrupted, a request was missed or misunderstood) worth replaying as behavior checks: title, prompt (the user's message, verbatim), rubric (what a good reply must do, concretely and checkably). Only clear shortfalls; otherwise [].
+- skills: {"up to 1 reusable procedure that the background agent jobs above carried out successfully at least twice (or that clearly will recur), not already a skill: name (kebab-case), description (one line), instructions (step by step, general, no personal data). Otherwise []." if learn_skills else "always []."}
 """
         result = await self.app.mind.think(prompt, DREAM_SCHEMA, label="dream", timeout=420)
         applied = self._apply_dream(result if isinstance(result, dict) else {})
+        extras = [f"{applied[k]} {label}" for k, label in (("proposals", "improvement idea(s)"),
+                                                          ("eval_cases", "behavior check(s)"),
+                                                          ("skills", "skill(s) learned")) if applied[k]]
         store.journal("dream", "Dreamed and consolidated memories",
                       f"+{applied['added']} memories, {applied['updated']} updated, {applied['deleted']} removed"
-                      + (f", {applied['proposals']} improvement idea(s)" if applied["proposals"] else ""),
+                      + (", " + ", ".join(extras) if extras else ""),
                       {"episode": (result or {}).get("episode", "")})
         return applied
 
     def _apply_dream(self, result: dict[str, Any]) -> dict[str, int]:
         store = self.app.store
         memory = self.app.memory
-        applied = {"added": 0, "updated": 0, "deleted": 0, "proposals": 0}
+        applied = {"added": 0, "updated": 0, "deleted": 0, "proposals": 0, "eval_cases": 0, "skills": 0}
         for item in (result.get("new_memories") or [])[:10]:
             try:
                 _, action = memory.remember(str(item.get("text", "")), str(item.get("kind", "fact")),
@@ -324,39 +371,69 @@ Return JSON:
             for idea in (result.get("improvements") or [])[:2]:
                 title, description = str(idea.get("title", "")).strip(), str(idea.get("description", "")).strip()
                 if title and description:
+                    addresses = [str(a) for a in idea.get("addresses") or []]
                     asyncio.create_task(self.app.evolution.propose(title, description, str(idea.get("rationale", "")),
-                                                                   source="dream"))
+                                                                   source="dream", meta={"addresses": addresses}))
                     applied["proposals"] += 1
+        if self.app.evals.enabled():
+            for case in (result.get("eval_cases") or [])[:2]:
+                try:
+                    self.app.evals.add_case(str(case.get("prompt", "")), str(case.get("rubric", "")),
+                                            title=str(case.get("title", "")), source="dream")
+                    applied["eval_cases"] += 1
+                except Exception as exc:  # EvalError: too vague, or looks like a secret
+                    logger.info("Skipped a dreamed behavior check: %s", exc)
+        if self.app.settings.get("skills.auto_learn"):
+            for skill in (result.get("skills") or [])[:1]:
+                name = str(skill.get("name", "")).strip()
+                if name and name not in {s["name"] for s in self.app.skills.list()}:
+                    asyncio.create_task(self._learn_skill(name, str(skill.get("description", "")),
+                                                          str(skill.get("instructions", ""))))
+                    applied["skills"] += 1
         return applied
+
+    async def _learn_skill(self, name: str, description: str, instructions: str) -> None:
+        try:
+            await self.app.skills.save(name, description, instructions, source="dream")
+        except ValueError as exc:
+            logger.info("Skipped a dreamed skill %s: %s", name, exc)
 
     # ------------------------------------------------------------------ self audit
     async def self_audit(self) -> dict[str, Any]:
         store = self.app.store
         store.kv_set("last_audit", time.time())
-        round_index = int(store.kv_get("audit_round", 0) or 0)
-        store.kv_set("audit_round", round_index + 1)
-        focus = AUDIT_FOCUS[round_index % len(AUDIT_FOCUS)]
         issues = self.app.diagnostics.open_issues(min_count=1, since=time.time() - 14 * 86400)[:8]
-        issue_text = "\n".join(f"- seen {i['count']}x ({i['kind']}): {i['message'][:300]}" for i in issues) or "(none recorded)"
+        target = heatmap.pick(self.app, issues)
+        focus = target["focus"]
+        issue_text = "\n".join(
+            f"- [{i['id']}] seen {i['count']}x ({i['kind']}){' — CAME BACK after an upgrade meant to fix it' if i['status'] == 'regressed' else ''}: "
+            f"{i['message'][:300]}" for i in issues) or "(none recorded)"
+        file_text = "\n".join(f"- {f}" for f in target["files"]) or "(any file in the area)"
         open_titles = [p["title"] for p in store.list_proposals(limit=40)
                        if p["status"] not in ("rejected", "discarded", "merged", "failed")]
-        prompt = f"""Audit Weebo's own source code (this repository; Weebo 2.0 lives in weebo/ and its UI in weebo/web/).
+        prompt = f"""Audit Weebo's own source code (this repository; Weebo lives in weebo/ and its UI in weebo/web/).
 
 Focus this round on: {focus}.
+Start with these files (changed since they were last audited, or not looked at in a while):
+{file_text}
 
-Weebo's recorded runtime failures (strong evidence; prioritize these):
+Weebo's recorded runtime failures ([id] count kind: message; strong evidence, prioritize these):
 {issue_text}
+
+How Weebo's recent self-improvements turned out (learn from what held and what didn't):
+{outcomes.track_record(self.app, limit=12)}
 
 Already-proposed improvements (do not duplicate): {json.dumps(open_titles)[:2000]}
 
 Read the relevant code (do not modify anything). Find real, verifiable problems: crashes, wrong behavior, race
 conditions, broken UI flows, or high-value missing abilities. Ignore style nits. For each proposal give a precise
-description an engineer could implement and verify (files, functions, expected behavior, how to test it), and a
-rationale with evidence (file:line or the failure above). Return at most 3 proposals, best first; return [] if
-nothing is worth changing.
+description an engineer could implement and verify (files, functions, expected behavior, how to test it), a
+rationale with evidence (file:line or the failure above), and addresses: the [id]s of the recorded failures it
+fixes ([] if none; this is how Weebo later checks whether the fix held). Return at most 3 proposals, best first;
+return [] if nothing is worth changing.
 """
         task = await self.app.agents.start(
-            "Self-audit: " + focus.split(" (")[0], prompt, cwd=str(paths.PROJECT_ROOT), kind="audit",
+            "Self-audit: " + focus.split(" (")[0].split(":")[0], prompt, cwd=str(paths.PROJECT_ROOT), kind="audit",
             meta={"sandbox_mode": "read-only-auto", "output_schema": AUDIT_SCHEMA, "tools_scope": "none"},
             effort=self.app.settings.get("codex.background_effort") or "medium",
         )
@@ -375,10 +452,12 @@ nothing is worth changing.
                 if not title or not description:
                     continue
                 await self.app.evolution.propose(title, description, str(item.get("rationale", "")),
-                                                 source="self-audit", meta={"severity": item.get("severity")})
+                                                 source="self-audit", meta={"severity": item.get("severity"),
+                                                                            "addresses": item.get("addresses") or []})
                 proposals += 1
             for issue in issues:
                 self.app.diagnostics.set_status(issue["id"], "reviewed")
+            heatmap.mark_audited(self.app, target["files"])
             store.journal("audit", "Audited my own code", f"Focus: {focus}. {proposals} proposal(s). "
                           + str(parsed.get("summary", ""))[:400])
         else:
@@ -391,7 +470,8 @@ nothing is worth changing.
             raise ValueError(f"Weebo is already busy with: {self.busy}")
         if self.app.engine.status != "ready":
             raise ValueError(f"Codex engine is {self.app.engine.status}")
-        runners = {"dream": self.dream, "brief": self.daily_brief, "audit": self.self_audit}
+        runners = {"dream": self.dream, "brief": self.daily_brief, "audit": self.self_audit,
+                   "eval": self.app.evals.refresh_baseline}
         if name not in runners:
             raise ValueError(f"Unknown activity {name}")
         if name == "dream":

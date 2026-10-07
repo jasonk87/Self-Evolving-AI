@@ -215,6 +215,7 @@ select.input { padding-right: 28px; }
 .chip.ghost:hover { background: var(--surface-2); color: var(--text); }
 .chip.static { cursor: default; }
 .chip.warn { border-color: var(--warm-soft); color: var(--warm); }
+.chip.off { opacity: .55; }
 
 .row { display: flex; align-items: center; gap: 8px; }
 .row.end { justify-content: flex-end; }
@@ -728,6 +729,17 @@ ol.plan li.ps-inProgress .plan-mark { border-color: var(--accent); }
 .check.fail { border-color: color-mix(in srgb, var(--bad) 40%, var(--border)); }
 .check.fail summary .ic { color: var(--bad); }
 .check.skip summary .ic { color: var(--muted); }
+.check.warn { border-color: color-mix(in srgb, var(--warm) 45%, var(--border)); }
+.check.warn summary .ic { color: var(--warm); }
+div.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+div.check.pass .ic { color: var(--ok); }
+.eval-row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.eval-row:last-child { border-bottom: 0; }
+.eval-row > div:first-child { min-width: 0; flex: 1; }
+.eval-row strong { display: block; overflow-wrap: anywhere; }
+.eval-row .ic.ok { color: var(--ok); }
+.eval-row .ic.bad { color: var(--bad); }
+.eval-row.retired { opacity: .55; }
 .check[open] .cmd-out, .check[open] .md { margin-top: 8px; }
 table.gov { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 table.gov td { padding: 5px 6px; border-bottom: 1px solid var(--border); }

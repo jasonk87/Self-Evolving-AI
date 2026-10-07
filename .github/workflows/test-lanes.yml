@@ -26,7 +26,23 @@ jobs:
       - name: Weebo 2.0 boot self-test
         run: python -m weebo --selftest
       - name: Weebo 2.0 web UI syntax
-        run: for f in weebo/web/js/*.js; do node --check "$f"; done
+        # Same check as the self-evolution gate: plain `node --check x.js` can pass a broken ES module.
+        run: |
+          python - <<'EOF'
+          import asyncio, pathlib, shutil, sys
+          from weebo.evolution.gates import check_js
+
+          async def main():
+              node = shutil.which("node")
+              files = sorted(pathlib.Path("weebo/web/js").glob("*.js"))
+              errors = [error for f in files if (error := await check_js(node, f))]
+              print("\n\n".join(errors) or f"All {len(files)} UI modules parse.")
+              return 1 if errors else 0
+
+          sys.exit(asyncio.run(main()))
+          EOF
+      - name: Browser for UI tests
+        run: python -m playwright install --with-deps chromium
       - name: Weebo 2.0 tests
         run: |
           git config --global user.name "ci" && git config --global user.email "ci@example.com"

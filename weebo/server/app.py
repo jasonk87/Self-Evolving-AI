@@ -29,12 +29,13 @@ from .. import __version__, log, paths
 from ..app import WeeboApp
 from ..config import SettingsError
 from ..evolution.engine import EvolutionError
+from ..evolution.evals import EvalError
 from ..memory.memory import MemoryError_
 from ..timeparse import TimeParseError
 
 logger = log.get("server")
 
-USER_ERRORS = (ValueError, SettingsError, EvolutionError, MemoryError_, TimeParseError, KeyError)
+USER_ERRORS = (ValueError, SettingsError, EvolutionError, EvalError, MemoryError_, TimeParseError, KeyError)
 IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 MAX_UPLOAD = 20 * 1024 * 1024
 
@@ -694,12 +695,41 @@ def create_app(weebo: WeeboApp) -> web.Application:
     async def delete_skill(request: web.Request) -> web.Response:
         return _json({"ok": await weebo.skills.delete(request.match_info["name"])})
 
+    async def list_evals(_: web.Request) -> web.Response:
+        return _json({"cases": weebo.store.list_eval_cases(None, limit=200), "stats": weebo.evals.stats(),
+                      "enabled": weebo.evals.enabled()})
+
+    async def add_eval(request: web.Request) -> web.Response:
+        body = await _body(request)
+        case = weebo.evals.add_case(str(body.get("prompt", "")), str(body.get("rubric", "")),
+                                    title=str(body.get("title", "")), source="user")
+        return _json({"case": case})
+
+    async def eval_action(request: web.Request) -> web.Response:
+        case_id, action = request.match_info["id"], request.match_info["action"]
+        if not weebo.store.get_eval_case(case_id):
+            raise web.HTTPNotFound()
+        if action == "retire":
+            return _json({"case": weebo.evals.retire(case_id)})
+        if action == "restore":
+            return _json({"case": weebo.store.update_eval_case(case_id, status="active")})
+        raise web.HTTPNotFound()
+
+    async def delete_eval(request: web.Request) -> web.Response:
+        ok = weebo.store.delete_eval_case(request.match_info["id"])
+        weebo.bus.publish("evals.updated", {})
+        return _json({"ok": ok})
+
     r.add_get("/api/proposals", list_proposals)
     r.add_post("/api/proposals", create_proposal)
     r.add_get("/api/proposals/{id}", get_proposal)
     r.add_post("/api/proposals/{id}/{action}", proposal_action)
     r.add_get("/api/skills", list_skills)
     r.add_delete("/api/skills/{name}", delete_skill)
+    r.add_get("/api/evals", list_evals)
+    r.add_post("/api/evals", add_eval)
+    r.add_post("/api/evals/{id}/{action}", eval_action)
+    r.add_delete("/api/evals/{id}", delete_eval)
 
     # ------------------------------------------------------------------ notifications
     async def list_notifications(request: web.Request) -> web.Response:

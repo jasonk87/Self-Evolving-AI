@@ -356,29 +356,29 @@ async def open_in_browser(ctx: ToolContext, url: str) -> ToolResult:
     return ToolResult("Opened." if opened else "Could not open a browser on this machine.", success=bool(opened))
 
 
-def _legacy_description() -> str:
-    from ..legacy.bridge import LegacyBridge
+def _integrations_description() -> str:
+    from ..integrations import Integrations
     return (
-        "Use one of Weebo 1.x's built-in abilities (they run on Codex too). Prefer your own tools when they do the "
-        "job; use these for: \n" + LegacyBridge.describe_catalog()
+        "Use one of Weebo's integrations (the user's own keys and accounts). Prefer your own tools when they do the "
+        "job; use these for: \n" + Integrations.describe_catalog()
     )
 
 
 @registry.register(
-    "weebo1_tool",
-    _legacy_description,
+    "use_integration",
+    _integrations_description,
     {
         "properties": {
-            "name": {"type": "string", "description": "Tool name from the list."},
-            "arguments": {"type": "object", "description": "Keyword arguments for the tool."},
+            "name": {"type": "string", "description": "Integration name from the list."},
+            "arguments": {"type": "object", "description": "Keyword arguments for the integration."},
         },
         "required": ["name"],
     },
     scopes=("chat", "agent"),
 )
-async def weebo1_tool(ctx: ToolContext, name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
-    text, success, extras = await ctx.app.legacy.run(name, arguments or {}, conversation_id=ctx.conversation_id,
-                                                     task_id=ctx.task_id)
+async def use_integration(ctx: ToolContext, name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
+    text, success, extras = await ctx.app.integrations.run(name, arguments or {}, conversation_id=ctx.conversation_id,
+                                                           task_id=ctx.task_id)
     if ctx.conversation_id and (extras.get("html") or extras.get("images")):
         kind = "widget" if extras.get("html") else "images"
         message = ctx.app.store.add_message(ctx.conversation_id, "assistant", "", kind=kind,

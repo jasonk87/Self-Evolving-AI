@@ -18,8 +18,10 @@ from .codex.engine import CodexEngine
 from .config import Settings
 from .diagnostics import Diagnostics
 from .events import EventBus
+from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
-from .legacy.bridge import LegacyBridge
+from .evolution.evals import Evals
+from .integrations import Integrations
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
 from .proactive.scheduler import Scheduler
@@ -47,8 +49,9 @@ class WeeboApp:
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
         self.evolution = EvolutionEngine(self)
+        self.evals = Evals(self)
         self.skills = Skills(self)
-        self.legacy = LegacyBridge(self)
+        self.integrations = Integrations(self)
         self.remote = TailnetEndpoint(self)
         # Where the server actually listens (CLI flags can override the settings); set by server.main.
         self.bind_host: str = str(self.settings.get("server.host"))
@@ -84,7 +87,8 @@ class WeeboApp:
             self.scheduler.start()
             self.heartbeat.start()
             self.evolution.start()
-            self.legacy.start()
+            self.memory.start_indexing(self.settings.get("memory.semantic"))
+            asyncio.create_task(self.evals.detect_code_version(), name="code-version")
             asyncio.create_task(self.remote.start(), name="tailnet")
         self.store.journal("system", f"Weebo {__version__} started")
         self.agents._pump()  # Also handles an engine that was already ready at startup.
@@ -122,6 +126,8 @@ class WeeboApp:
             asyncio.get_running_loop().create_task(self.engine.restart())
         if "agents.max_parallel" in changed:
             self.agents._pump()
+        if "memory.semantic" in changed:
+            self.memory.start_indexing(changed["memory.semantic"])
 
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
         if data.get("status") == "ready":
@@ -161,7 +167,7 @@ class WeeboApp:
             "uptime": time.time() - self.started_at,
             "engine": self.engine.snapshot(),
             "heartbeat": self.heartbeat.status(),
-            "legacy": self.legacy.snapshot(),
+            "integrations": self.integrations.snapshot(),
             "agents": {"running": len(self.agents.runs), "queued": len(self.agents.queue)},
             "active_turns": self.conversations.active_turns(),
             "memory": self.memory.stats(),
@@ -169,7 +175,9 @@ class WeeboApp:
                 "mode": self.settings.get("evolution.mode"),
                 "current": self.evolution.current,
                 "ready": len(self.store.list_proposals(limit=50, statuses=("ready",))),
+                "track_record": outcomes.stats(self),
             },
+            "evals": self.evals.stats(),
             "pending_interactions": self.interactions.list(),
             "workspace": str(paths.workspace_dir()),
             "project_root": str(paths.PROJECT_ROOT),
@@ -181,6 +189,7 @@ class WeeboApp:
         limits = engine.get("rateLimits") or {}
         primary = (limits.get("primary") or {}).get("usedPercent")
         account = engine.get("account") or {}
+        record, evals = snap["evolution"]["track_record"], snap["evals"]
         lines = [
             f"Weebo {snap['version']}, up {int(snap['uptime'] // 60)} min.",
             f"Codex engine {engine.get('version')} is {engine['status']}"
@@ -190,9 +199,13 @@ class WeeboApp:
             f"background turns today {snap['heartbeat']['background_turns_today']}"
             f"/{self.settings.get('autonomy.max_background_turns_per_day')}.",
             f"Agents: {snap['agents']['running']} running, {snap['agents']['queued']} queued.",
-            f"Memory: {snap['memory']['total']} memories. Skills: {len(self.skills.list())}.",
-            f"Self-evolution: mode {snap['evolution']['mode']}, {snap['evolution']['ready']} upgrade(s) waiting for review.",
-            f"Weebo 1.x tools: {snap['legacy']['status']} ({len(snap['legacy']['tools'])} available).",
+            f"Memory: {snap['memory']['total']} memories (recall: {snap['memory']['recall']}). "
+            f"Skills: {len(self.skills.list())}.",
+            f"Self-evolution: mode {snap['evolution']['mode']}, {snap['evolution']['ready']} upgrade(s) waiting for review. "
+            f"Track record: {record['merged']} merged, {record['held']} fixes held, {record['regressed']} came back, "
+            f"{record['rolled_back']} rolled back.",
+            f"Behavior checks: {evals['passing']}/{evals['checked']} passing ({evals['cases']} cases).",
+            f"Integrations: {self.integrations.ready_count()} of {len(snap['integrations']['tools'])} set up on this machine.",
         ]
         if snap["heartbeat"]["busy"]:
             lines.append(f"Currently busy with: {snap['heartbeat']['busy']}.")
@@ -200,7 +213,7 @@ class WeeboApp:
 
 
 def _load_dotenv() -> None:
-    """Expose the project's .env (Google search keys etc.) to Weebo 1.x integrations without overriding real env."""
+    """Expose the project's .env (Google search keys etc.) to the integrations without overriding real env."""
     env_file = paths.PROJECT_ROOT / ".env"
     if not env_file.exists():
         return

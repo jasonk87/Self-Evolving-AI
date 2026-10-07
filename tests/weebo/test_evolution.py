@@ -38,7 +38,8 @@ def repo(tmp_path, monkeypatch):
 @pytest_asyncio.fixture
 async def evolving(app, repo, monkeypatch):
     """App whose build agent edits files according to ``script`` and whose gates are scripted too."""
-    state = {"script": [], "gates": [], "reviews": [], "council": [], "restarts": [], "stages": [], "convened": []}
+    state = {"script": [], "gates": [], "reviews": [], "council": [], "restarts": [], "stages": [], "convened": [],
+             "gate_kwargs": []}
 
     async def fake_start(title, instructions, cwd=None, kind="agent", meta=None, effort=None, **_):
         task = app.store.create_task(title, instructions, kind=kind, cwd=cwd, meta=meta or {})
@@ -58,8 +59,9 @@ async def evolving(app, repo, monkeypatch):
         meta = app.store.get_proposal(app.evolution.current)["meta"]
         state["stages"].append((meta.get("stage"), meta.get("round")))
 
-    async def fake_gates(worktree, changed, test_command=""):
+    async def fake_gates(worktree, changed, test_command="", **kwargs):
         note_stage()
+        state["gate_kwargs"].append(kwargs)
         ok = state["gates"].pop(0) if state["gates"] else True
         return GateReport([GateResult("Tests", ok, "" if ok else "1 failed: test_thing")])
 

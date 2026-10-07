@@ -51,7 +51,7 @@ async def test_submission_and_council_verdict_update_one_persisted_card(app, mon
         assert card["data"]["reasons"] == [verdict["reason"]]
         if approved:
             assert "approved building" in card["data"]["decision"]
-            assert "not Jason's approval to merge" in card["data"]["decision"]
+            assert "not your approval to merge" in card["data"]["decision"]
         elif approved is False:
             assert card["content"] == "Council declined to build"
         else:
@@ -76,7 +76,7 @@ async def test_user_bypass_lifecycle_and_restart_reconciliation(app, monkeypatch
     assert "User-requested change; skips Council" in initial["data"]["decision"]
     assert app.store.list_proposal_messages(other["id"]) == []
     for status, stage, text in (("building", "building", "Building"), ("checking", "testing", "verification tests"),
-                                ("checking", "reviewing", "Reviewing the code"), ("ready", None, "Jason's approval to merge")):
+                                ("checking", "reviewing", "Reviewing the code"), ("ready", None, "your approval to merge")):
         app.store.update_proposal(p["id"], status=status, meta={**p["meta"], "stage": stage})
         app.evolution._publish(p["id"])
         assert text in app.store.get_message(message_id)["content"]
@@ -87,7 +87,7 @@ async def test_user_bypass_lifecycle_and_restart_reconciliation(app, monkeypatch
         review_report="Blocking review finding", meta={**p["meta"], "review_blocking": True})
     assert app.store.get_message(message_id)["data"]["reasons"] == ["Tests: test_example failed", "Blocking review finding"]
     for status, meta, text in (("rejected", {"reason": "Too risky"}, "Rejected"),
-                               ("merged", {"automatic": False}, "Jason approved the merge"),
+                               ("merged", {"automatic": False}, "you approved the merge"),
                                ("merged", {"automatic": True, "verified_at": 1}, "startup verified")):
         app.store.update_proposal(p["id"], status=status, meta={**p["meta"], **meta})
         assert text in app.store.get_message(message_id)["content"]
@@ -99,7 +99,7 @@ async def test_user_bypass_lifecycle_and_restart_reconciliation(app, monkeypatch
     try:
         assert reopened.get_proposal(p["id"])["meta"]["conversation_id"] == conv["id"]
         card = reopened.list_proposal_messages(conv["id"])[0]
-        assert card["seq"] == initial["seq"] and "awaiting Jason" in card["content"]
+        assert card["seq"] == initial["seq"] and "awaiting your approval" in card["content"]
         assert reopened.list_messages(conv["id"])[0] == card
     finally:
         reopened.close()
@@ -163,7 +163,7 @@ async def test_live_card_reload_reconnect_and_deep_link_navigation(app, monkeypa
             submitted = app.store.get_message(f"evolution:{p['id']}")
             await app.evolution._vet(p["id"])
             await card.get_by_text(verdict["reason"], exact=True).wait_for()
-            assert "not Jason's approval to merge" in await card.inner_text()
+            assert "not your approval to merge" in await card.inner_text()
             for _ in range(3):
                 app.evolution._publish(p["id"])
             assert await card.count() == 1
@@ -194,7 +194,7 @@ async def test_live_card_reload_reconnect_and_deep_link_navigation(app, monkeypa
             await page.evaluate("eventSocket.close()")
             await page.wait_for_function("() => document.body.classList.contains('offline')")
             app.store.update_proposal(p["id"], status="ready")
-            await card.get_by_text("Ready for review; awaiting Jason's approval to merge", exact=True).wait_for()
+            await card.get_by_text("Ready for review; awaiting your approval to merge", exact=True).wait_for()
             assert await card.count() == 1
             app.bus.publish("conv.message", {"conversation_id": origin["id"], "message": submitted})
             # Wait for the duplicate to reach the browser before asserting no regression.

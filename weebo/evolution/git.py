@@ -102,3 +102,48 @@ async def snapshot_commit(cwd: str | Path) -> str:
 async def changed_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
     result = await git(cwd, "diff", "--name-only", f"{base}...{ref}", check=True)
     return [line.strip() for line in result.out.splitlines() if line.strip()]
+
+
+async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
+    result = await git(cwd, "diff", "--no-renames", "--diff-filter=D", "--name-only", f"{base}...{ref}", check=True)
+    return [line.strip() for line in result.out.splitlines() if line.strip()]
+
+
+async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspec: str = ".") -> list[str]:
+    """Files that existed at ``base`` and lost lines by ``ref`` (edited or deleted, not just appended to)."""
+    result = await git(cwd, "diff", "--no-renames", "--numstat", f"{base}...{ref}", "--", pathspec, check=True)
+    files = []
+    for line in result.out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[1] not in ("0", "-"):
+            files.append(parts[2].strip())
+    return files
+
+
+async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tuple[str, int, str]]:
+    """(path, new line number, text) for every line the change adds."""
+    result = await git(cwd, "diff", "--no-renames", "--unified=0", f"{base}...{ref}", check=True)
+    lines, path, number = [], "", 0
+    for raw in result.out.splitlines():
+        if raw.startswith("+++ "):
+            path = raw[6:] if raw.startswith("+++ b/") else ""
+        elif raw.startswith("@@"):
+            try:
+                number = int(raw.split("+", 1)[1].split(" ", 1)[0].split(",")[0])
+            except (IndexError, ValueError):
+                number = 0
+        elif raw.startswith("+") and path:
+            lines.append((path, number, raw[1:]))
+            number += 1
+    return lines
+
+
+async def file_at(cwd: str | Path, ref: str, path: str) -> str | None:
+    """A text file's content at ``ref`` (None if it didn't exist there)."""
+    result = await git(cwd, "show", f"{ref}:{path}")
+    return result.out if result.ok else None
+
+
+async def files_at(cwd: str | Path, ref: str, prefix: str) -> list[str]:
+    result = await git(cwd, "ls-tree", "-r", "--name-only", ref, "--", prefix)
+    return [line.strip() for line in result.out.splitlines() if line.strip()] if result.ok else []

@@ -71,8 +71,9 @@ export function workLabel(msg) {
     }
     case "tool": {
       if (d.source === "weebo") {
-        const label = d.tool === "weebo1_tool" ? `Used ${(d.arguments || {}).name || "a Weebo 1.x tool"}` : (TOOL_LABELS[d.tool] || d.tool);
-        const detail = d.tool === "weebo1_tool" ? argSummary((d.arguments || {}).arguments) : argSummary(d.arguments);
+        const wrapped = d.tool === "use_integration" || d.tool === "weebo1_tool";  // weebo1_tool: older chats
+        const label = wrapped ? `Used ${(d.arguments || {}).name || "an integration"}` : (TOOL_LABELS[d.tool] || d.tool);
+        const detail = wrapped ? argSummary((d.arguments || {}).arguments) : argSummary(d.arguments);
         return { ic: d.tool === "start_agent" ? "bot" : d.tool === "propose_improvement" ? "dna" : d.tool === "remember" ? "brain" : "sparkles", text: label, detail };
       }
       return { ic: "wrench", text: `${d.server}: ${d.tool}`, detail: argSummary(d.arguments) };

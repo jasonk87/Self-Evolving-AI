@@ -382,7 +382,7 @@ class App {
       this.panels.notify("evolution.updated");
       if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     });
-    for (const t of ["memory.added", "memory.updated", "memory.deleted", "reminder.updated", "skills.updated", "legacy.status"]) {
+    for (const t of ["memory.added", "memory.updated", "memory.deleted", "reminder.updated", "skills.updated", "evals.updated"]) {
       on(t, () => this.panels.notify(t));
     }
 

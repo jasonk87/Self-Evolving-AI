@@ -17,7 +17,31 @@ from typing import Any, Iterable
 
 from . import paths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+V3_SCHEMA = """
+CREATE TABLE IF NOT EXISTS eval_cases (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    rubric TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'user',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_eval_cases_status ON eval_cases(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    updated_at REAL NOT NULL
+);
+"""
 
 ROUTINE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS routine_occurrences (
@@ -245,6 +269,9 @@ class Store:
                 self._conn.executescript(SCHEMA)
             if version < 2:
                 self._conn.executescript(ROUTINE_SCHEMA)
+            if version < 3:
+                self._conn.executescript(V3_SCHEMA)
+            if version < SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -416,6 +443,15 @@ class Store:
             (since, limit),
         )
 
+    def trouble_since(self, since: float, limit: int = 20) -> list[dict[str, Any]]:
+        """Turns that failed (error notices) or were cut off (interrupted replies) since ``since``."""
+        return self.query(
+            "SELECT m.*, c.title AS conversation_title FROM messages m JOIN conversations c ON c.id=m.conversation_id "
+            "WHERE m.created_at>? AND (m.kind='error' OR (m.status='interrupted' AND m.role='assistant')) "
+            "ORDER BY m.seq DESC LIMIT ?",
+            (since, limit),
+        )
+
     # -- memories ---------------------------------------------------------
     def add_memory(self, text: str, kind: str = "fact", importance: int = 3, source: str = "",
                    pinned: bool = False, meta: dict | None = None) -> dict[str, Any]:
@@ -442,9 +478,12 @@ class Store:
             values["importance"] = max(1, min(5, int(values["importance"])))
         values.setdefault("updated_at", time.time())
         self._update("memories", "id", memory_id, values)
+        if "text" in values:
+            self.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))  # re-embedded later
         return self.get_memory(memory_id)
 
     def delete_memory(self, memory_id: str) -> bool:
+        self.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))
         cur = self.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return cur.rowcount > 0
 
@@ -661,6 +700,51 @@ class Store:
                 (*status_list, limit),
             )
         return self.query("SELECT * FROM proposals ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    # -- behavior eval cases ----------------------------------------------
+    def add_eval_case(self, title: str, prompt: str, rubric: str, source: str = "user",
+                      data: dict | None = None) -> dict[str, Any]:
+        now = time.time()
+        case = {"id": new_id("ev"), "title": title, "prompt": prompt, "rubric": rubric, "source": source,
+                "created_at": now, "updated_at": now, "data": data or {}, "meta": {}}
+        self._insert("eval_cases", case)
+        return self.get_eval_case(case["id"])  # type: ignore[return-value]
+
+    def get_eval_case(self, case_id: str) -> dict[str, Any] | None:
+        return self.query_one("SELECT * FROM eval_cases WHERE id=?", (case_id,))
+
+    def update_eval_case(self, case_id: str, **values: Any) -> dict[str, Any] | None:
+        values.setdefault("updated_at", time.time())
+        self._update("eval_cases", "id", case_id, values)
+        return self.get_eval_case(case_id)
+
+    def list_eval_cases(self, status: str | None = "active", limit: int = 200) -> list[dict[str, Any]]:
+        if status:
+            return self.query("SELECT * FROM eval_cases WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, limit))
+        return self.query("SELECT * FROM eval_cases ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    def delete_eval_case(self, case_id: str) -> bool:
+        return self.execute("DELETE FROM eval_cases WHERE id=?", (case_id,)).rowcount > 0
+
+    # -- memory vectors ---------------------------------------------------
+    def set_memory_vector(self, memory_id: str, model: str, text_hash: str, vector: bytes) -> None:
+        self.execute(
+            "INSERT INTO memory_vectors(memory_id, model, text_hash, vector, updated_at) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(memory_id) DO UPDATE SET model=excluded.model, text_hash=excluded.text_hash, "
+            "vector=excluded.vector, updated_at=excluded.updated_at",
+            (memory_id, model, text_hash, vector, time.time()),
+        )
+
+    def memory_vectors(self, model: str) -> list[dict[str, Any]]:
+        """Vectors of active memories embedded with ``model``."""
+        return self.query(
+            "SELECT v.memory_id, v.text_hash, v.vector FROM memory_vectors v JOIN memories m ON m.id = v.memory_id "
+            "WHERE v.model=? AND m.status='active'", (model,))
+
+    def memories_needing_vectors(self, model: str, limit: int = 256) -> list[dict[str, Any]]:
+        return self.query(
+            "SELECT m.id, m.text FROM memories m LEFT JOIN memory_vectors v ON v.memory_id = m.id AND v.model=? "
+            "WHERE m.status='active' AND (v.memory_id IS NULL) ORDER BY m.updated_at DESC LIMIT ?", (model, limit))
 
     # -- journal & notifications ------------------------------------------
     def journal(self, kind: str, title: str, detail: str = "", data: dict | None = None) -> dict[str, Any]:

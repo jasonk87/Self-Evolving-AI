@@ -47,8 +47,14 @@ DEFAULTS: dict[str, Any] = {
         "mode": "build",  # off | propose | build | auto_merge
         "test_command": "",  # blank = built-in gate (pytest tests/weebo + syntax checks)
         "checkpoint_commits": True,  # save uncommitted work in a commit right before merging an upgrade
-        "protect_paths": ["weebo/evolution/", "weebo/supervisor.py"],
+        "protect_paths": ["weebo/evolution/", "weebo/supervisor.py"],  # never auto-merged (files, folders or globs)
     },
+    # Behavior checks rehearsed from real moments Weebo got wrong; upgrades to its brain/memory must not do worse.
+    "evals": {"enabled": True, "max_cases": 10},
+    # Semantic recall: a small local embedding model (pip install fastembed) alongside keyword search.
+    "memory": {"semantic": True},
+    # Learned skills: suggested from repeated agent work; auto-learned ones unused this long are archived (0 = never).
+    "skills": {"auto_learn": True, "prune_unused_days": 60},
     "voice": {"speak_replies": False, "voice_name": "", "rate": 1.05, "pitch": 1.25},
     "ui": {"companion": True, "reduce_motion": False},
     "user": {"name": "", "timezone": ""},
@@ -71,6 +77,8 @@ RANGES: dict[str, tuple[float, float]] = {
     "autonomy.self_audit_min_hours_between": (0, 24 * 30),
     "agents.max_parallel": (1, 12),
     "agents.max_minutes": (1, 24 * 60),
+    "evals.max_cases": (1, 50),
+    "skills.prune_unused_days": (0, 365),
     "voice.rate": (0.5, 2.0),
     "voice.pitch": (0.0, 2.0),
 }

@@ -7,7 +7,7 @@ from tests.weebo.conftest import drain
 from weebo.app import WeeboApp
 from weebo.codex.rpc import EngineClosed, RpcError
 from weebo.proactive.scheduler import MISSED_GRACE, ROUTINE_MAX_ATTEMPTS
-from weebo.store import Store
+from weebo.store import SCHEMA_VERSION, Store
 
 pytestmark = pytest.mark.asyncio
 
@@ -251,7 +251,24 @@ async def test_existing_database_gets_occurrence_table(tmp_path):
     try:
         assert migrated.get_reminder(reminder["id"]) == reminder
         assert migrated.query("SELECT * FROM routine_occurrences") == []
-        assert migrated.query_one("PRAGMA user_version")["user_version"] == 2
+        assert migrated.query_one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION
+    finally:
+        migrated.close()
+
+
+async def test_version_2_database_gets_eval_and_vector_tables(tmp_path):
+    path = tmp_path / "v2.db"
+    old = Store(path)
+    memory = old.add_memory("User likes tea", "preference")
+    old.execute("DROP TABLE eval_cases")
+    old.execute("DROP TABLE memory_vectors")
+    old.execute("PRAGMA user_version=2")
+    old.close()
+    migrated = Store(path)
+    try:
+        assert migrated.get_memory(memory["id"])["text"] == "User likes tea"
+        assert migrated.list_eval_cases() == [] and migrated.memory_vectors("m") == []
+        assert migrated.query_one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION
     finally:
         migrated.close()
 

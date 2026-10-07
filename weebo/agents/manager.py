@@ -361,6 +361,7 @@ class AgentManager:
             return
         if method == "item/completed":
             item = params.get("item") or {}
+            self.app.skills.note_item(item)
             mapped = item_to_message(item)
             if mapped is None:
                 return

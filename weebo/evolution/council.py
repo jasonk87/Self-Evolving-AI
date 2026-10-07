@@ -34,7 +34,8 @@ concretely and briefly (under 180 words). Weigh:
 - Cost: a build agent, the test suite and a code review all spend the user's ChatGPT plan budget.
 - Efficiency and complexity: would it make Weebo slower, heavier, noisier or harder to maintain?
 - Risk: security, privacy, more autonomy than the user granted, or fragile changes to core code.
-- History: is it a repeat of something already merged, declined, rejected, or failing below?
+- History: is it a repeat of something already merged, declined, rejected, or failing below? Did similar
+  changes actually work (a merged fix whose failure came back is evidence this kind of change doesn't)?
 - Scope: is it clear and small enough to build and verify well in one go?
 If the idea is genuinely good, say so plainly instead of inventing objections.
 
@@ -98,11 +99,9 @@ def needs_council(source: str) -> bool:
 
 
 def _history(app: "WeeboApp", proposal_id: str) -> str:
-    lines = []
-    for other in app.store.list_proposals(limit=25):
-        if other["id"] != proposal_id:
-            lines.append(f"- [{other['status']}] {other['title']}")
-    return "\n".join(lines[:20]) or "(none yet)"
+    """Recent ideas with what became of them, including whether merged fixes actually held."""
+    from .outcomes import track_record
+    return track_record(app, limit=20, exclude=proposal_id)
 
 
 async def convene(app: "WeeboApp", proposal: dict[str, Any]) -> dict[str, Any]:

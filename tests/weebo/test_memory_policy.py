@@ -74,9 +74,22 @@ def test_legacy_import_maps_categories(memory, tmp_path, monkeypatch):
     ("weebo/codex/rpc.py", "human_required"),
     ("weebo/evolution/engine.py", "human_required"),
     ("weebo/supervisor.py", "human_required"),
-    ("ai_assistant/core/llm/codex_provider.py", "human_required"),
+    ("weebo/selftest.py", "human_required"),
+    ("weebo/integrations/sms.py", "human_required"),
+    ("tests/weebo/conftest.py", "human_required"),  # the fake engine decides what "passing" means
+    (".github/workflows/test-lanes.yml", "human_required"),
+    ("pytest.ini", "human_required"),
+    ("requirements-core.txt", "human_required"),  # a new dependency is a trust decision, not "docs"
+    ("README.md", "autonomous"),
     ("somewhere/else.py", "blocked"),
+    ("../outside.py", "blocked"),
 ])
 def test_change_policy_covers_weebo(path, tier):
-    from ai_assistant.core.change_policy import decide_governance
+    from weebo.evolution.policy import decide_governance
     assert decide_governance(path).tier.value == tier
+
+
+def test_deleting_tests_needs_a_human():
+    from weebo.evolution.policy import decide_governance
+    assert decide_governance("tests/weebo/test_x.py", "delete").tier.value == "human_required"
+    assert decide_governance("weebo_data/skills/x/SKILL.md", "delete").tier.value == "autonomous"

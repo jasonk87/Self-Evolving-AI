@@ -1,7 +1,7 @@
 """One-shot Codex calls: ephemeral read-only thread, one turn, return the final text.
 
-Shared by Weebo's background mind and by the legacy (Weebo 1.x) LLM layer, which
-is routed here so every old subsystem also runs on the user's ChatGPT plan.
+Used by Weebo's background mind (dreams, the Council, evals) and by integrations that
+need a model (deep research, widgets), so all of it runs on the user's ChatGPT plan.
 """
 
 from __future__ import annotations
