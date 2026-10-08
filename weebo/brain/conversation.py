@@ -301,21 +301,30 @@ class ConversationManager:
             inputs = ([text_input(text)] if text else []) + [image_input(p) for p in images]
 
             if session.turn and session.turn.turn_id and conv.get("thread_id"):
+                active_turn_id = session.turn.turn_id
                 try:
-                    await self.app.engine.steer(conv["thread_id"], session.turn.turn_id, inputs)
-                    message = self.app.store.update_message(message["id"], data={**message["data"], "steered": True})
+                    await self.app.engine.steer(conv["thread_id"], active_turn_id, inputs)
+                    message = self.app.store.update_message(message["id"], turn_id=active_turn_id,
+                                                            data={**message["data"], "steered": True})
                     self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
                     return message  # type: ignore[return-value]
                 except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
                     logger.info("Steer failed (%s)", exc)
+                    if session.turn is not None:
+                        # An RPC rejection confirms the input wasn't accepted. A timeout/closed engine cannot
+                        # establish that, so correction capture must not skip an uncertain input as rejected.
+                        delivery = "rejected" if isinstance(exc, RpcError) else "unconfirmed"
+                        message = self.app.store.update_message(message["id"],
+                                                                data={**message["data"], "delivery": delivery})
+                        self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
             # A failed steer does not confirm that the server turn has finished.
             # Only start again after a terminal notification cleared the active turn.
             if session.turn is not None:
                 raise ValueError("Could not add your message to the active turn. Please retry after it finishes.")
             if text and looks_like_correction(text):
                 self._on_correction(session, conv_id, text)
-            await self._start_turn(session, conv, inputs, trigger="user", query=text)
-        return message
+            await self._start_turn(session, conv, inputs, trigger="user", query=text, user_message_id=message["id"])
+        return self.app.store.get_message(message["id"]) or message
 
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
                         notice_kind: str = "notice", notice_data: dict | None = None,
@@ -385,7 +394,8 @@ class ConversationManager:
 
     # ------------------------------------------------------------------ turns
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
-                          trigger: str, query: str, occurrence_id: str | None = None) -> str:
+                          trigger: str, query: str, occurrence_id: str | None = None,
+                          user_message_id: str | None = None) -> str:
         state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
@@ -402,6 +412,9 @@ class ConversationManager:
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
                 raise ValueError("The engine did not confirm a turn id.")
+            if user_message_id:
+                message = self.app.store.update_message(user_message_id, turn_id=turn["id"])
+                self.app.bus.publish("conv.message", {"conversation_id": conv["id"], "message": message})
             if occurrence_id:
                 self.app.scheduler.delivery_started(occurrence_id, turn["id"])
             if session.turn and not session.turn.turn_id:
@@ -625,7 +638,9 @@ class ConversationManager:
         message_id = f"{conv_id}:{item.get('id')}"
         if item_type == "agentMessage" and not completed:
             message = self.app.store.upsert_message(message_id, conv_id, "assistant", "text", "",
-                                                    {"phase": item.get("phase")}, turn.turn_id if turn else None,
+                                                    {"phase": item.get("phase"),
+                                                     "trigger": turn.trigger if turn else "external"},
+                                                    turn.turn_id if turn else None,
                                                     status="streaming")
             self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
             return
@@ -635,6 +650,8 @@ class ConversationManager:
         if mapped is None:
             return
         kind, role, content, data, status = mapped
+        if kind == "text" and role == "assistant":
+            data["trigger"] = turn.trigger if turn else "external"
         if kind == "reasoning" and not content.strip():
             return
         if kind == "image" and data.get("saved_path"):

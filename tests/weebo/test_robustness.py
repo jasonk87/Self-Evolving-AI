@@ -424,6 +424,22 @@ async def test_added_lines_that_look_like_diff_headers_hide_nothing(pyrepo):
     result = await gates.personal_details(root, base, ("Robin",))
     assert not result.ok and "weebo/notes.md:5" in result.output and "weebo/form.py:2" in result.output
 
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_added_lines_normalize_only_crlf_records(monkeypatch, tmp_path, newline):
+    # Preserve control characters inside content; neither they nor quoted diff headers end a hunk.
+    content = ["left\rright", "form\ffeed", "unicode\u2028separator\u2029", "+++ b/other.py", "@@ -1 +1 @@"]
+    diff = newline.join(["diff --git a/weebo/a.py b/weebo/a.py", "--- a/weebo/a.py", "+++ b/weebo/a.py",
+                         "@@ -0,0 +1,5 @@", *("+" + line for line in content), ""])
+
+    async def fake_git(*args, **kwargs):
+        return gitlib.GitResult(0, diff, "")
+
+    monkeypatch.setattr(gitlib, "git", fake_git)
+    assert await gitlib.added_lines(tmp_path, "base") == [("weebo/a.py", n, line)
+                                                         for n, line in enumerate(content, 1)]
+
+
 async def test_tests_importing_a_rewritten_test_from_its_package_are_rerun(tmp_path):
     originals = ["tests/weebo/test_a.py", "tests/weebo/test_b.py", "tests/weebo/test_c.py", "tests/other/test_d.py",
                  "tests/other/test_e.py"]

@@ -18,6 +18,7 @@ and a rubric saying what a good reply must do.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -83,6 +84,12 @@ def touches_behavior(changed: list[str]) -> bool:
 
 def _normalize(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _case_version(case: dict[str, Any]) -> str:
+    """Fingerprint the inputs a verdict actually grades, including the saved rehearsal context."""
+    inputs = {key: case.get(key) for key in ("prompt", "rubric", "data")}
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------- rehearsal (runs in any Weebo version)
@@ -229,7 +236,14 @@ class Evals:
         key = _normalize(prompt)
         for existing in self.app.store.list_eval_cases("active", limit=500):
             if _normalize(existing["prompt"]) == key:
-                case = self.app.store.update_eval_case(existing["id"], rubric=rubric[:2000])
+                values: dict[str, Any] = {"rubric": rubric[:2000]}
+                if existing["rubric"] != values["rubric"]:
+                    values["meta"] = {k: v for k, v in (existing.get("meta") or {}).items() if k != "last"}
+                    cached = self.app.store.kv_get(BASELINE_KEY) or {}
+                    results = dict(cached.get("results") or {})
+                    results.pop(existing["id"], None)
+                    self.app.store.kv_set(BASELINE_KEY, {**cached, "results": results})
+                case = self.app.store.update_eval_case(existing["id"], **values)
                 self.app.bus.publish("evals.updated", {"case": case})
                 return case  # type: ignore[return-value]
         data = {"dialogue": [line[:600] for line in (dialogue or [])][-8:], "conversation_title": conversation_title,
@@ -244,23 +258,53 @@ class Evals:
 
     def capture_correction(self, conv_id: str, correction: str) -> dict[str, Any] | None:
         """The user corrected Weebo's last reply: replaying the message that led to it becomes an eval case."""
-        rows = self.app.store.recent_dialogue(conv_id, limit=30)
+        rows = self.app.store.recent_messages(conv_id, limit=100)
         if rows and rows[-1]["role"] == "user" and rows[-1]["content"].strip() == correction.strip():
             rows = rows[:-1]  # the correction itself was already stored
-        # Weebo's reply can be several messages (commentary while it used tools, then the answer): step back over
-        # them to the user's message they answered. Only within that one turn: a reply Weebo started on its own
-        # (an agent report, a routine) has no user message, and the one before it belongs to another exchange.
+        # Keep event/error boundaries; filtering to dialogue could hide a failed user request followed by a
+        # routine. Only cross messages and tool artifacts from the same turn. New replies also retain the
+        # trigger, so an autonomous turn with no visible notice cannot borrow an unanswered user message.
         i = len(rows) - 1
-        if i < 0 or rows[i]["role"] != "assistant":
+        if i < 0:
             return None
         turn = rows[i].get("turn_id")
-        while i >= 0 and rows[i]["role"] == "assistant" and rows[i].get("turn_id") == turn:
+        artifacts = {"command", "file_change", "tool", "reasoning", "plan", "diff", "approval", "question",
+                     "image", "widget", "images"}
+        replied = False
+        user_reply = False
+        while i >= 0:
+            row = rows[i]
+            if row["role"] == "user":
+                # A rejected steer remains visible, but it did not cause the answer. Only skip an explicitly
+                # rejected input; an unconfirmed delivery or a different accepted turn is still a boundary.
+                if not row.get("turn_id") and (row.get("data") or {}).get("delivery") == "rejected":
+                    i -= 1
+                    continue
+                user_turn = row.get("turn_id")
+                if row["kind"] != "text" or (user_reply and (not turn or user_turn != turn)):
+                    return None
+                if user_turn and user_turn != turn:
+                    return None
+                break
+            if row.get("turn_id") != turn:
+                return None
+            if row["role"] == "assistant" and row["kind"] == "text":
+                data = row.get("data") or {}
+                trigger = data.get("trigger")
+                if (trigger and trigger != "user") or data.get("source") == "dream":
+                    return None
+                user_reply = user_reply or trigger == "user"
+                replied = True
+            elif row["kind"] not in artifacts:
+                return None
             i -= 1
-        if i < 0 or rows[i]["role"] != "user":
+        if not replied or i < 0 or rows[i]["kind"] != "text":
             return None
         asked, earlier = rows[i]["content"], rows[:i]
         dialogue = [f"{'User' if r['role'] == 'user' else 'Weebo'}: {r['content'][:600]}" for r in earlier
-                    if (r.get("data") or {}).get("phase") != "commentary"][-6:]
+                    if r["kind"] == "text" and r["role"] in ("user", "assistant")
+                    and (r.get("data") or {}).get("delivery") != "rejected"
+                    and (r.get("data") or {}).get("phase") != "commentary"][-6:]
         rubric = (f"When Weebo first answered this, the user corrected it: \"{correction.strip()[:600]}\". "
                   "A good reply gets it right the first time and respects that correction.")
         conv = self.app.store.get_conversation(conv_id) or {}
@@ -307,13 +351,19 @@ class Evals:
                 "effort": settings.get("codex.chat_effort") or ""}
 
     def _fresh_verdicts(self) -> dict[str, dict[str, Any]]:
-        """Cached verdicts on the running code that are still fresh, by case id (each verdict ages on its own)."""
+        """Fresh verdicts for the running code and unchanged case inputs; each verdict ages on its own."""
         cached = self.app.store.kv_get(BASELINE_KEY) or {}
         if cached.get("code") != self.code_version:
             return {}
         now = time.time()
-        return {cid: r for cid, r in (cached.get("results") or {}).items()
-                if now - float(r.get("at") or cached.get("at") or 0) < BASELINE_MAX_AGE}
+        fresh = {}
+        for cid, result in (cached.get("results") or {}).items():
+            case = self.app.store.get_eval_case(cid)
+            if (case and case["status"] == "active" and not result.get("error")
+                    and result.get("case_version") == _case_version(case)
+                    and now - float(result.get("at") or cached.get("at") or 0) < BASELINE_MAX_AGE):
+                fresh[cid] = result
+        return fresh
 
     def cached_baseline(self, case_ids: list[str]) -> dict[str, dict[str, Any]] | None:
         fresh = self._fresh_verdicts()
@@ -335,7 +385,8 @@ class Evals:
 
     async def _baseline(self, cases: list[dict[str, Any]], count: bool) -> dict[str, dict[str, Any]]:
         fresh = self._fresh_verdicts()
-        have = {c["id"]: fresh[c["id"]] for c in cases if c["id"] in fresh}
+        have = {c["id"]: fresh[c["id"]] for c in cases
+                if c["id"] in fresh and fresh[c["id"]]["case_version"] == _case_version(c)}
         todo = [c for c in cases if c["id"] not in have]  # only what isn't known yet (one bad case can't
         if not todo:                                       # make every build re-run the whole suite)
             return have
@@ -347,12 +398,22 @@ class Evals:
             self.app.count_background_turn("evals")
         now = time.time()
         # A case that couldn't be answered or graded (engine hiccup) isn't a verdict: don't cache it as one.
-        results = {**self._fresh_verdicts(), **{cid: {**{k: v for k, v in r.items() if k != "answer"}, "at": now}
-                                                for cid, r in graded.items() if not r.get("error")}}
+        results = self._fresh_verdicts()
+        current_cases = {}
+        for case in todo:
+            current = self.app.store.get_eval_case(case["id"])
+            if current and current["status"] == "active" and _case_version(current) == _case_version(case):
+                current_cases[case["id"]] = current
+                result = graded[case["id"]]
+                if not result.get("error"):
+                    results[case["id"]] = {**{k: v for k, v in result.items() if k != "answer"},
+                                           "at": now, "case_version": _case_version(case)}
         self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "at": now, "results": results})
         for case in todo:
+            if case["id"] not in current_cases:
+                continue  # the case changed while it was rehearsing; do not restore the old UI verdict
             result = graded[case["id"]]
-            meta = {**(case.get("meta") or {}), "last": {"passed": result["passed"], "reason": result["reason"],
+            meta = {**(current_cases[case["id"]].get("meta") or {}), "last": {"passed": result["passed"], "reason": result["reason"],
                                                         "at": time.time(), "error": bool(result.get("error"))}}
             self.app.store.update_eval_case(case["id"], meta=meta)
         self.app.bus.publish("evals.updated", {})
@@ -411,17 +472,26 @@ class Evals:
         cases = self.active_cases()
         if not cases:
             return {"ok": True, "skipped": True, "summary": "No eval cases yet; they come from corrections and dreams."}
+
+        def require_verdicts(graded: dict[str, dict[str, Any]], checked: list[dict[str, Any]], stage: str) -> None:
+            errors = [f"- {c['title']}: {graded[c['id']]['reason']}" for c in checked if graded[c["id"]].get("error")]
+            if errors:
+                raise EvalError(f"The {stage} behavior checks couldn't complete:\n" + "\n".join(errors))
+
         baseline = await self.baseline(cases, count=count)
+        require_verdicts(baseline, cases, "baseline")
         answers = await self.rehearse_candidate(worktree, cases)
         candidate = await self.grade_all(cases, answers, count=False)
+        if count:
+            self.app.count_background_turn("evals")
+        require_verdicts(candidate, cases, "candidate")
         flipped = [c for c in cases if baseline[c["id"]]["passed"] and not candidate[c["id"]]["passed"]]
         if flipped:  # model answers vary: a regression must reproduce before it counts
             again = await self.grade_all(flipped, await self.rehearse_candidate(worktree, flipped), count=False)
+            require_verdicts(again, flipped, "confirmation")
             for case in flipped:
                 if again[case["id"]]["passed"]:
                     candidate[case["id"]] = again[case["id"]]
-        if count:
-            self.app.count_background_turn("evals")
         base_passed = sum(1 for c in cases if baseline[c["id"]]["passed"])
         cand_passed = sum(1 for c in cases if candidate[c["id"]]["passed"])
         regressed = [c for c in cases if baseline[c["id"]]["passed"] and not candidate[c["id"]]["passed"]]

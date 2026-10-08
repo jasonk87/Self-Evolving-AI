@@ -3,9 +3,9 @@
 Weebo runs these itself instead of trusting the building agent's claims.
 
 The build agent may edit the test suite it is judged by, so tests alone can't prove a change is safe. Two
-checks cover that: the original version of every test file the change rewrote is run against the new code
+checks cover that: the original version of every existing test file the change modified is run against the new code
 (advisory: a failure there means old expectations changed, which a person then has to confirm), and the
-change policy refuses to auto-merge any change that rewrites or deletes existing tests.
+change policy refuses to auto-merge any change that modifies or deletes existing tests, including append-only edits.
 """
 
 from __future__ import annotations
@@ -165,12 +165,12 @@ def _imports_from(source: str, package: str, name: str) -> bool:
 
 
 async def existing_tests(worktree: Path, base_commit: str, env: dict[str, str]) -> GateResult | None:
-    """Run the original version of every test file the change rewrote against the new code."""
+    """Run the original version of every existing test file the change modified against the new code."""
     started = time.perf_counter()
     rewritten = [p for p in await gitlib.rewritten_files(worktree, base_commit, pathspec="tests") if p.endswith(".py")]
     if not rewritten:
         return None
-    header = "The change rewrote or deleted existing tests:\n" + "\n".join(f"- {p}" for p in rewritten)
+    header = "The change modified or deleted existing tests:\n" + "\n".join(f"- {p}" for p in rewritten)
     with tempfile.TemporaryDirectory(prefix="weebo-baseline-tests-") as tmp:
         root = Path(tmp)
         # The whole original tests/ tree: test modules can import each other's fixtures and helpers.

@@ -427,6 +427,15 @@ class Store:
         rows.reverse()
         return rows
 
+    def recent_messages(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
+        """Recent rows including the events that separate user and autonomous turns."""
+        rows = self.query(
+            "SELECT * FROM messages WHERE conversation_id=? ORDER BY seq DESC LIMIT ?",
+            (conversation_id, limit),
+        )
+        rows.reverse()
+        return rows
+
     def recent_dialogue(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
         rows = self.query(
             "SELECT * FROM messages WHERE conversation_id=? AND kind='text' AND role IN ('user','assistant') "

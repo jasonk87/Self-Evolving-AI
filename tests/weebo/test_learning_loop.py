@@ -111,6 +111,101 @@ async def test_baseline_is_graded_by_the_live_judge_and_cached(app, fake_engine,
     assert app.evals.needs_baseline()  # new code: run again
 
 
+async def test_edited_rubric_rechecks_only_its_baseline_and_clears_old_status(app, monkeypatch):
+    tea = app.evals.add_case("What tea should I order?", "Must recommend black coffee.")
+    other = app.evals.add_case("What should I read tonight?", "Must suggest a book.")
+    runs = []
+
+    async def rehearsal(engine, cases, **kwargs):
+        runs.append([c["id"] for c in cases])
+        return {c["id"]: {"answer": "Genmaicha and a book"} for c in cases}
+
+    async def judge(prompt, schema=None, **kwargs):
+        return {"passed": "black coffee" not in prompt, "reason": "mocked rubric check"}
+
+    monkeypatch.setattr(evals_mod, "rehearse", rehearsal)
+    monkeypatch.setattr(app.mind, "think", judge)
+    initial = await app.evals.baseline([tea, other], count=False)
+    assert not initial[tea["id"]]["passed"] and initial[other["id"]]["passed"]
+    edited = app.evals.add_case("what tea should I order", "Must recommend green tea.")
+    assert edited["id"] == tea["id"]
+    assert "last" not in edited["meta"]
+    assert app.evals.needs_baseline()
+    assert app.evals.cached_baseline([tea["id"]]) is None
+    assert app.evals.cached_baseline([other["id"]])[other["id"]]["passed"]
+    subsequent = await app.evals.baseline([edited, other], count=False)
+    assert subsequent[tea["id"]]["passed"]
+    assert runs == [[tea["id"], other["id"]], [tea["id"]]]
+    assert not app.evals.needs_baseline()
+    unchanged = app.evals.add_case(edited["prompt"], edited["rubric"])
+    assert unchanged["meta"]["last"]["passed"]
+    await app.evals.baseline([unchanged, other], count=False)
+    assert len(runs) == 2  # the same rubric does not invalidate a verdict
+
+
+async def test_rubric_edit_during_baseline_cannot_restore_an_old_verdict(app, monkeypatch):
+    case = app.evals.add_case("What tea should I order?", "Must recommend black coffee.")
+
+    async def rehearsal(engine, cases, **kwargs):
+        app.evals.add_case(case["prompt"], "Must recommend green tea.")
+        return {c["id"]: {"answer": "Genmaicha"} for c in cases}
+
+    async def judge(prompt, schema=None, **kwargs):
+        return {"passed": False, "reason": "old rubric"}
+
+    monkeypatch.setattr(evals_mod, "rehearse", rehearsal)
+    monkeypatch.setattr(app.mind, "think", judge)
+    await app.evals.baseline([case], count=False)
+    assert app.evals.needs_baseline()
+    assert app.evals.cached_baseline([case["id"]]) is None
+    assert "last" not in app.store.get_eval_case(case["id"])["meta"]
+
+
+@pytest.mark.parametrize("stage", ["baseline", "candidate", "confirmation"])
+@pytest.mark.parametrize("failure", ["answer", "judge"])
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_gate_reports_incomplete_evaluations_instead_of_success(app, monkeypatch, stage, failure, mixed):
+    cases = [app.evals.add_case(f"Question number {i} about tea", f"Must answer question {i} well.")
+             for i in range(2 if mixed else 1)]
+    broken = cases[0]["id"]
+    candidate_runs = []
+    counted = []
+
+    def answers(cases_to_run, this_stage):
+        result = {c["id"]: {"answer": "GOOD"} for c in cases_to_run}
+        if this_stage == stage:
+            result[broken] = {"error": "mocked engine unavailable"} if failure == "answer" else {"answer": "JUDGE_ERROR"}
+        if stage == "confirmation" and this_stage == "candidate":
+            result[broken] = {"answer": "BAD"}
+        return result
+
+    async def rehearsal(engine, cases_to_run, **kwargs):
+        return answers(cases_to_run, "baseline")
+
+    async def candidate(worktree, cases_to_run):
+        candidate_runs.append([c["id"] for c in cases_to_run])
+        return answers(cases_to_run, "candidate" if len(candidate_runs) == 1 else "confirmation")
+
+    async def judge(prompt, schema=None, **kwargs):
+        reply = prompt.split("## Weebo's reply")[1]
+        if "JUDGE_ERROR" in reply:
+            raise RuntimeError("mocked judge unavailable")
+        return {"passed": "GOOD" in reply, "reason": "graded"}
+
+    monkeypatch.setattr(evals_mod, "rehearse", rehearsal)
+    monkeypatch.setattr(app.evals, "rehearse_candidate", candidate)
+    monkeypatch.setattr(app.mind, "think", judge)
+    monkeypatch.setattr(app, "count_background_turn", counted.append)
+    with pytest.raises(evals_mod.EvalError, match="mocked .* unavailable") as error:
+        await app.evals.gate(paths.PROJECT_ROOT, count=True)
+    assert stage in str(error.value).lower()
+    assert counted == ["evals"] * (1 if stage == "baseline" else 2)
+    if stage == "baseline":
+        assert candidate_runs == []  # no comparison is possible without a complete baseline
+    elif stage == "confirmation":
+        assert candidate_runs[1] == [broken]
+
+
 async def test_gate_confirms_regressions_before_counting_them(app, fake_engine, monkeypatch):
     cases = [app.evals.add_case(f"Question number {i} about tea", f"Must answer question {i} well.") for i in range(3)]
     answer_with(fake_engine, lambda prompt: "GOOD")

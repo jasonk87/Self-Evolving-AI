@@ -71,10 +71,43 @@ async def test_rewritten_test_is_rerun_in_its_original_form(pyrepo):
 async def test_new_tests_alone_are_not_flagged(pyrepo):
     root, base = pyrepo
     (root / "tests" / "test_more.py").write_text("def test_more():\n    assert True\n")
-    with (root / "tests" / "test_core.py").open("a") as handle:
-        handle.write("\n\ndef test_extra():\n    assert VALUE > 0\n")  # appended, nothing removed
     commit(root)
     assert await gates.existing_tests(root, base, {"PYTHONPATH": str(root)}) is None
+
+
+APPENDED_TEST_WEAKENING = [
+    "\nimport pytest\npytestmark = pytest.mark.skip(reason='disabled')\n",
+    "\n\ndef test_value():\n    pass\n",  # rebinding the original name hides it from collection
+    "\nimport pytest\n@pytest.fixture(autouse=True)\ndef skip_suite():\n    pytest.skip('disabled')\n",
+]
+
+
+@pytest.mark.parametrize("addition", APPENDED_TEST_WEAKENING, ids=["module-skip", "rebind-test", "skip-fixture"])
+async def test_append_only_test_weakening_reruns_original_expectations(pyrepo, addition):
+    root, base = pyrepo
+    (root / "weebo" / "core.py").write_text("VALUE = 2\n")
+    test = root / "tests" / "test_core.py"
+    with test.open("a") as handle:
+        handle.write(addition)
+    commit(root)
+    env = {"PYTHONPATH": str(root), "PYTHONDONTWRITEBYTECODE": "1"}
+    # The modified suite conceals the broken contract, without removing any of the old test source.
+    modified = await gates.run([sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"],
+                               root, env=env)
+    assert modified.ok, modified.text()
+    original = await gates.existing_tests(root, base, env)
+    assert original is not None and original.advisory and not original.ok
+    assert "tests/test_core.py" in original.output and "1 failed" in original.output
+
+
+async def test_appending_a_new_test_to_an_existing_file_reruns_originals(pyrepo):
+    root, base = pyrepo
+    with (root / "tests" / "test_core.py").open("a") as handle:
+        handle.write("\n\ndef test_extra():\n    assert VALUE > 0\n")
+    commit(root)
+    result = await gates.existing_tests(root, base, {"PYTHONPATH": str(root), "PYTHONDONTWRITEBYTECODE": "1"})
+    assert result is not None and result.ok and result.advisory
+    assert "1 passed" in result.output  # the original expectation, not the appended test, was run
 
 
 async def test_rewritten_test_that_still_passes_is_reported_passing(pyrepo):
@@ -139,6 +172,24 @@ async def test_new_tests_with_ui_change_still_auto_merge(evolving, repo):
     proposal = await app.evolution.propose("UI with a new test", "v3")
     settled = await wait_settled(app, proposal["id"])
     assert settled["status"] == "merged", settled["meta"].get("governance")
+
+
+@pytest.mark.parametrize("addition", APPENDED_TEST_WEAKENING, ids=["module-skip", "rebind-test", "skip-fixture"])
+async def test_append_only_existing_test_changes_never_auto_merge(evolving, repo, addition):
+    app, state = evolving
+    (repo / "tests" / "weebo").mkdir(parents=True)
+    original = "def test_value():\n    assert True\n"
+    (repo / "tests" / "weebo" / "test_app.py").write_text(original)
+    commit(repo)
+    app.settings.update({"evolution.mode": "auto_merge"})
+    state["script"] = [{"weebo/web/app.js": "export const version = 2;\n",
+                        "tests/weebo/test_app.py": original + addition}]
+    proposal = await app.evolution.propose("UI and appended test code", "Update the UI.")
+    settled = await wait_settled(app, proposal["id"])
+    assert settled["status"] == "ready", settled["meta"].get("governance")
+    gov = settled["meta"]["governance"]
+    assert not gov["autonomous"] and gov["rewritten_tests"] == ["tests/weebo/test_app.py"]
+    assert next(f for f in gov["files"] if f["path"] == "tests/weebo/test_app.py")["tier"] == "human_required"
 
 
 async def test_protect_paths_are_enforced(evolving, repo):

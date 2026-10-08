@@ -509,7 +509,7 @@ class EvolutionEngine:
 
     def _governance(self, changed: list[str], deleted: list[str] = (), rewritten_tests: list[str] = ()) -> dict[str, Any]:
         """Classify every touched file. Low-risk zones may auto-merge, except files the user protected
-        (evolution.protect_paths) and existing tests the change rewrote or deleted."""
+        (evolution.protect_paths) and existing tests the change modified or deleted."""
         protect = [p for p in (self.app.settings.get("evolution.protect_paths") or []) if p.strip()]
         files = []
         for path in changed:
@@ -519,7 +519,7 @@ class EvolutionEngine:
             if tier == "autonomous" and is_protected(path, protect):
                 tier, reason = "human_required", "Listed in Settings → evolution.protect_paths."
             if tier == "autonomous" and path in rewritten_tests:
-                tier, reason = "human_required", ("Rewrites an existing test: a person should confirm the old "
+                tier, reason = "human_required", ("Changes an existing test: a person should confirm the old "
                                                   "expectation was meant to change.")
             files.append({"path": path, "zone": decision.zone.value, "tier": tier, "reason": reason})
         autonomous = bool(files) and all(f["tier"] == "autonomous" for f in files)

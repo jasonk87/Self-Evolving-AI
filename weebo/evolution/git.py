@@ -124,23 +124,22 @@ async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[s
 
 
 async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspec: str = ".") -> list[str]:
-    """Files that existed at ``base`` and lost lines by ``ref`` (edited or deleted, not just appended to).
-    A change git can't count lines for (it shows "-") is treated as a rewrite: unknown is not "only added"."""
-    result = await git(cwd, *PLAIN_DIFF, "--numstat", "--diff-filter=a", f"{base}...{ref}", "--", pathspec,
+    """Changed files that existed at ``base``, including append-only edits and deletions.
+
+    Appended code can skip or replace original tests and fixtures without deleting a line. Only entirely new
+    files are excluded; the caller must review any change to an existing test's expectations.
+    """
+    result = await git(cwd, *PLAIN_DIFF, "--name-only", "--diff-filter=a", f"{base}...{ref}", "--", pathspec,
                        check=True)
-    files = []
-    for line in result.out.splitlines():
-        parts = line.split("\t")
-        if len(parts) == 3 and parts[1] != "0":
-            files.append(parts[2].strip())
-    return files
+    return [line.strip() for line in result.out.splitlines() if line.strip()]
 
 
 async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tuple[str, int, str]]:
     """(path, new line number, text) for every line the change adds."""
     result = await git(cwd, *PLAIN_DIFF, "--unified=0", f"{base}...{ref}", check=True)
     lines, path, number, old_left, new_left = [], "", 0, 0, 0
-    for raw in result.out.split("\n"):  # not splitlines(): a form feed or \u2028 inside a line isn't a new line
+    # Normalize actual CRLF records only: a bare CR, form feed or Unicode separator inside content is data.
+    for raw in result.out.replace("\r\n", "\n").split("\n"):
         if old_left > 0 or new_left > 0:
             # Inside a hunk its header's counts say which lines are content, so an added line that happens to
             # read "+++ b/x" or "@@" (a diff quoted in a README) can't pass for a header and hide what follows.
