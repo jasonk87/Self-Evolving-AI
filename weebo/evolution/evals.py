@@ -353,7 +353,8 @@ class Evals:
     def _fresh_verdicts(self) -> dict[str, dict[str, Any]]:
         """Fresh verdicts for the running code and unchanged case inputs; each verdict ages on its own."""
         cached = self.app.store.kv_get(BASELINE_KEY) or {}
-        if cached.get("code") != self.code_version:
+        # The build's answers come from today's model, effort and user name: verdicts from other ones don't compare.
+        if cached.get("code") != self.code_version or cached.get("spec") != self._spec():
             return {}
         now = time.time()
         fresh = {}
@@ -408,7 +409,7 @@ class Evals:
                 if not result.get("error"):
                     results[case["id"]] = {**{k: v for k, v in result.items() if k != "answer"},
                                            "at": now, "case_version": _case_version(case)}
-        self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "at": now, "results": results})
+        self.app.store.kv_set(BASELINE_KEY, {"code": self.code_version, "spec": spec, "at": now, "results": results})
         for case in todo:
             if case["id"] not in current_cases:
                 continue  # the case changed while it was rehearsing; do not restore the old UI verdict

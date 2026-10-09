@@ -111,8 +111,11 @@ async def personal_details(worktree: Path, base_commit: str, terms: tuple[str, .
         return GateResult(PERSONAL_DETAILS, True, "No personal details to check for.", skipped=True)
     patterns = [_term_pattern(t) for t in terms]
     hits = []
-    for path, number, text in await gitlib.added_lines(worktree, base_commit):
-        if path.startswith("weebo_data/"):
+    added = await gitlib.added_lines(worktree, base_commit)
+    # Binary files (NUL bytes, git's own test): compressed bytes can spell a short name by chance.
+    binary = {path for path, _, text in added if "\x00" in text}
+    for path, number, text in added:
+        if path.startswith("weebo_data/") or path in binary:
             continue
         if any(p.search(text) for p in patterns):
             hits.append(f"{path}:{number}: {text.strip()[:160]}")
@@ -137,7 +140,7 @@ def _affected_tests(rewritten: list[str], originals: list[str], root: Path) -> s
         if Path(path).name == "conftest.py":
             folder = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
             targets.update(p for p in originals if _is_test_module(p) and p.startswith(folder))
-    modules = {p: p[:-3].replace("/", ".") for p in rewritten if _is_test_module(p)}
+    modules = {p: p[:-3].replace("/", ".") for p in rewritten if p.endswith(".py")}  # helpers can be imported too
     for path in originals:
         if not _is_test_module(path) or path in targets:
             continue

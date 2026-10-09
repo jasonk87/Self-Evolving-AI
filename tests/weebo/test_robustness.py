@@ -493,8 +493,8 @@ async def test_semantic_recall_toggled_back_on_while_loading_still_comes_up(app)
     while memory.semantic != "ready" and time.time() < deadline:
         await asyncio.sleep(0.02)
     assert memory.semantic == "ready" and memory._worker.is_alive()
+    old = memory._worker  # read first: once it has quit, the worker clears memory._worker itself
     memory.start_indexing(False)  # off, then on again once the old worker has gone: a new one starts
-    old = memory._worker
     await asyncio.to_thread(old.join, 5)
     memory.start_indexing(True)
     deadline = time.time() + 5
@@ -502,6 +502,36 @@ async def test_semantic_recall_toggled_back_on_while_loading_still_comes_up(app)
         await asyncio.sleep(0.02)
     assert memory.semantic == "ready" and memory._worker is not old and memory._worker.is_alive()
 
+
+
+async def test_recall_turned_back_on_while_the_old_worker_is_leaving_still_comes_up(app):
+    """The worker decides to quit (recall is off), and recall is turned back on before its thread has died."""
+    memory = app.memory
+    memory.embedder = SlowWarmEmbedder()
+    memory.embedder.warmed.set()
+    leaving, resume = threading.Event(), threading.Event()
+    real_loop, runs = memory._index_loop, []
+
+    def index_loop():
+        runs.append(threading.current_thread())
+        real_loop()
+        if len(runs) == 1:  # the first worker has decided to quit but is still alive
+            leaving.set()
+            assert resume.wait(5)
+
+    memory._index_loop = index_loop
+    memory.start_indexing(True)
+    deadline = time.time() + 5
+    while memory.semantic != "ready" and time.time() < deadline:
+        await asyncio.sleep(0.02)
+    memory.start_indexing(False)
+    assert await asyncio.to_thread(leaving.wait, 5)
+    memory.start_indexing(True)  # the old thread is alive but on its way out: a new worker must start
+    resume.set()
+    deadline = time.time() + 5
+    while memory.semantic != "ready" and time.time() < deadline:
+        await asyncio.sleep(0.02)
+    assert memory.semantic == "ready" and len(runs) == 2 and memory._worker.is_alive()
 
 # ---------------------------------------------------------------- one bad check doesn't re-run the whole baseline
 async def test_one_check_that_keeps_erroring_reruns_only_itself(app, fake_engine, monkeypatch):
@@ -666,3 +696,71 @@ async def test_protect_paths_reached_through_a_symlink_still_protect(tmp_path):
     assert evo.is_protected("weebo/x.py", [str(alias)], root=root, fold=False)  # the whole repository
     assert not evo.is_protected("weebo/server/app.py", [str(tmp_path / "elsewhere")], root=root, fold=False)
     assert evo.is_protected("weebo/server/app.py", ["/weebo/server"], root=root, fold=False)  # repo-relative
+
+
+# ================================================================ third sweep
+# ---------------------------------------------------------------- the gates judge exactly what would merge
+async def test_gates_never_see_files_git_ignores(evolving, repo, monkeypatch):
+    app, state = evolving
+    (repo / "tests" / "weebo").mkdir(parents=True)
+    (repo / "tests" / "weebo" / "test_feature.py").write_text(FEATURE_TESTS)
+    commit(repo)
+    seen = {}
+
+    async def run_gates(worktree, changed, test_command="", **kwargs):
+        seen["conftest"] = (worktree / "tests" / "weebo" / "conftest.py").exists()
+        seen["scratch"] = (worktree / ".weebo-tmp" / "notes.txt").exists()
+        return gates.GateReport([gates.GateResult("Tests", True, "ok")])
+
+    monkeypatch.setattr(evo, "run_gates", run_gates)
+    app.settings.update({"evolution.mode": "auto_merge"})
+    state["script"] = [{  # a self-ignoring .gitignore: neither file is ever committed, but pytest would load both
+        "tests/weebo/.gitignore": "conftest.py\n.gitignore\n",
+        "tests/weebo/conftest.py": "collect_ignore_glob = ['*']  # skips the whole suite\n",
+        ".weebo-tmp/notes.txt": "the agent's scratch notes\n",
+        "weebo/web/app.js": "export const version = 2;\n"}]
+    proposal = await app.evolution.propose("UI tweak", "Version 2.")
+    settled = await wait_settled(app, proposal["id"])
+    assert seen == {"conftest": False, "scratch": True}
+    assert "tests/weebo/conftest.py" not in settled["meta"]["changed"]
+
+
+async def test_a_changed_gitattributes_cannot_blank_the_diff_a_person_approves(evolving, repo):
+    app, state = evolving
+    state["script"] = [{"weebo/.gitattributes": "*.js -diff\n",
+                        "weebo/web/app.js": "export const version = 2;  // phones home\n"}]
+    proposal = await app.evolution.propose("UI tweak", "Version 2.")
+    ready = await wait_settled(app, proposal["id"])
+    assert "phones home" in ready["meta"]["diff"]
+    assert not ready["meta"]["governance"]["autonomous"]
+
+
+# ---------------------------------------------------------------- cached verdicts must match how Weebo answers
+async def test_changing_how_weebo_answers_regrades_the_baseline(app, fake_engine, monkeypatch):
+    app.evals.add_case("Tell me about tea", "Must talk about tea.", title="tea")
+
+    async def on_turn(engine, thread_id, turn_id, record):
+        await engine.finish_turn(thread_id, turn_id, text="An answer")
+
+    async def judge(prompt, schema=None, **kwargs):
+        return {"passed": True, "reason": "ok"}
+
+    fake_engine.on_turn = on_turn
+    monkeypatch.setattr(app.mind, "think", judge)
+    app.evals.code_version = "v1"
+    await app.evals.baseline(app.evals.active_cases())
+    assert len(fake_engine.turns) == 1 and not app.evals.needs_baseline()
+    app.settings.update({"codex.chat_effort": "high"})  # a build would now answer with another effort
+    assert app.evals.needs_baseline()
+    await app.evals.baseline(app.evals.active_cases())
+    assert len(fake_engine.turns) == 2 and not app.evals.needs_baseline()
+
+
+# ---------------------------------------------------------------- binary files and the personal-details gate
+async def test_personal_details_gate_ignores_binary_files(pyrepo):
+    root, base = pyrepo
+    (root / "weebo" / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x13Ann\x00\x7f")  # bytes that spell the name
+    (root / "weebo" / "hello.md").write_text("Hi Ann!\n")
+    commit(root)
+    result = await gates.personal_details(root, base, ("Ann",))
+    assert not result.ok and "weebo/hello.md:1" in result.output and "icon.png" not in result.output

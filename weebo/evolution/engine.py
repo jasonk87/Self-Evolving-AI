@@ -138,6 +138,8 @@ Why: {rationale}
 - Do not commit; Weebo verifies and commits your work.
 - Keep scratch files (temp dirs, logs, patches; point TEMP/TMP there if tests need it) in `.weebo-tmp/` at the
   worktree root. It is never committed. Don't leave other files that aren't part of the change.
+- Files git ignores (see .gitignore: *.json, data/, build/ ...) are never committed and are deleted before Weebo's
+  checks run, so nothing the change needs may live in one: keep test data inside the test itself.
 - Do not touch weebo_data/, .git, or anything outside this worktree.
 - Finish with a short report: what you changed (files), how you verified it, and any caveats.
 """
@@ -411,6 +413,9 @@ class EvolutionEngine:
                 return
             await self._commit_all(worktree, f"Weebo evolution: {proposal['title']}"
                                    + (f" (revision {round_number - 1})" if round_number > 1 else ""))
+            # Judge exactly what would merge. Files git ignores (a nested .gitignore can hide a conftest.py, or a
+            # .gitattributes that blanks the diff) were never committed, yet the tests and the review would see them.
+            await git.clean_untracked(worktree, keep=(SCRATCH_DIR, ".verification-tmp"))
             changed = await git.changed_files(worktree, base_commit)
             if not changed:
                 self._fail(proposal_id, "The build agent finished without changing any files.")
@@ -444,8 +449,11 @@ class EvolutionEngine:
             feedback = self._feedback(gate_report, review)
 
         assert gate_report is not None
-        diff_text = (await git.git(worktree, *git.DISPLAY_DIFF, f"{base_commit}...HEAD", timeout=60)).out
-        diff_stat = (await git.git(worktree, *git.DISPLAY_DIFF, "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
+        # A changed .gitattributes can mark files "-diff" and blank them in the diff a person approves from.
+        shown = (*git.DISPLAY_DIFF, "--text") if any(Path(f).name == ".gitattributes" for f in changed) \
+            else git.DISPLAY_DIFF
+        diff_text = (await git.git(worktree, *shown, f"{base_commit}...HEAD", timeout=60)).out
+        diff_stat = (await git.git(worktree, *shown, "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
         head_commit = await git.head(worktree)
         governance = self._governance(changed, await git.deleted_files(worktree, base_commit),
                                       await git.rewritten_files(worktree, base_commit, pathspec="tests"))

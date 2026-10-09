@@ -123,6 +123,11 @@ async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[s
     return [line.strip() for line in result.out.splitlines() if line.strip()]
 
 
+async def clean_untracked(cwd: str | Path, keep: tuple[str, ...] = ()) -> None:
+    """Delete every file git doesn't track, ignored ones included (except the ``keep`` folders)."""
+    await git(cwd, "clean", "-ffdxq", *[arg for name in keep for arg in ("-e", name)], check=True, timeout=300)
+
+
 async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspec: str = ".") -> list[str]:
     """Changed files that existed at ``base``, including append-only edits and deletions.
 
