@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .. import log, paths
-from ..brain import persona
+from ..brain import activity, persona
 from ..brain.conversation import item_to_message, sandbox_for
 from ..brain.tools import ToolContext, registry
 from ..codex.engine import text_input
@@ -35,7 +35,9 @@ class AgentRun:
     final_text: str = ""
     last_message: str = ""
     error: str = ""
-    progress: str = ""
+    progress: str = ""  # plain words for what it's doing now ("Running the tests"), never a command
+    activity: str = "thinking"
+    reasoning: str = ""
     files: set[str] = field(default_factory=set)
     commands: int = 0
     cancelled: bool = False
@@ -136,7 +138,8 @@ class AgentManager:
         run = self.runs.get(task_id)
         if not run:
             return {}
-        return {"progress": run.progress, "files": sorted(run.files), "commands": run.commands}
+        return {"progress": run.progress, "activity": run.activity, "files": sorted(run.files),
+                "commands": run.commands}
 
     def describe(self, task_id: str | None = None) -> str:
         store = self.app.store
@@ -150,7 +153,12 @@ class AgentManager:
                 lines.append(f"Progress: {run.progress or 'working'}; commands run: {run.commands}; files touched: {len(run.files)}")
             events = store.list_task_events(task_id, limit=12)
             for event in events[-8:]:
-                lines.append(f"- {event['kind']}: {event['content'][:200]}")
+                if event["kind"] == "command":  # what it did, in words: the user never needs the command line
+                    words = activity.describe_command(event["content"])[0]
+                    code = (event.get("data") or {}).get("exitCode")
+                    lines.append(f"- {words}" + (f" (failed, exit {code})" if code not in (None, 0) else ""))
+                else:
+                    lines.append(f"- {event['kind']}: {event['content'][:200]}")
             if task.get("summary"):
                 lines.append("Report:\n" + task["summary"][:3000])
             if task.get("error"):
@@ -335,6 +343,10 @@ class AgentManager:
         event = self.app.store.add_task_event(run.task_id, kind, content[:4000], data)
         self.app.bus.publish("task.event", {"task_id": run.task_id, **event})
 
+    def _set_progress(self, run: AgentRun, text: str, kind: str) -> None:
+        run.progress, run.activity = text, kind
+        self.app.bus.publish("task.progress", {"task_id": run.task_id, "progress": text, "activity": kind})
+
     def _on_event(self, run: AgentRun, method: str, params: dict[str, Any]) -> None:
         if method == "turn/started":
             run.turn_id = (params.get("turn") or {}).get("id") or run.turn_id
@@ -344,20 +356,22 @@ class AgentManager:
             run.done.set()
             return
         if method == "item/reasoning/summaryTextDelta":
-            run.progress = (run.progress + params.get("delta", ""))[-240:]
+            run.reasoning = (run.reasoning + params.get("delta", ""))[-2000:]
+            heading = activity.reasoning_heading(run.reasoning)
+            if heading and heading != run.progress:
+                self._set_progress(run, heading, "thinking")
             return
         if method == "item/reasoning/summaryPartAdded":
-            run.progress = ""
+            run.reasoning = ""
             return
         if method == "turn/plan/updated":
             steps = [f"[{'x' if s.get('status') == 'completed' else ' '}] {s.get('step')}" for s in params.get("plan") or []]
             self._event(run, "plan", "\n".join(steps), {"plan": params.get("plan")})
             return
         if method == "item/started":
-            item = params.get("item") or {}
-            if item.get("type") == "commandExecution":
-                run.progress = f"Running: {item.get('command', '')[:160]}"
-                self.app.bus.publish("task.progress", {"task_id": run.task_id, "progress": run.progress})
+            mapped = item_to_message(params.get("item") or {})
+            if mapped and mapped[0] in activity.WORK_KINDS and mapped[0] != "reasoning":
+                self._set_progress(run, mapped[3]["doing"], mapped[3]["activity"])
             return
         if method == "item/completed":
             item = params.get("item") or {}

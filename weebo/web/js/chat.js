@@ -3,7 +3,7 @@ import { api, sendActivity } from "./api.js";
 import { director } from "./avatar.js";
 import { Stage } from "./stage.js";
 import { icon } from "./icons.js";
-import { renderMessage, renderWorkItem, summarizeWork, workLabel, WORK_KINDS } from "./items.js";
+import { renderMessage, renderWorkItem, summarizeWork, WORK_KINDS } from "./items.js";
 import { renderMarkdown } from "./markdown.js";
 import { el, btn, autoGrow, toast, escapeHtml, duration, copyText } from "./ui.js";
 import { startListening, isListening, voiceSupport, speak } from "./voice.js";
@@ -26,6 +26,20 @@ function reconcile(parent, desired) {
     parent.insertBefore(node, cursor);
   }
   while (cursor) { const next = cursor.nextSibling; cursor.remove(); cursor = next; }
+}
+
+// What Weebo is doing picks its animation (avatar.js moods).
+const ACTIVITY_MOODS = { thinking: "thinking", coding: "coding", reviewing: "reviewing", researching: "researching",
+                         delegating: "delegating" };
+const CODEY = /`|\\|\/|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b/;
+
+// The latest heading of a reasoning summary ("**Checking the forecast**"), if it reads as plain words.
+export function reasoningHeading(text) {
+  const headings = [...String(text || "").matchAll(/\*\*([^*\n]{3,80})\*\*/g)].map((m) => m[1].trim().replace(/[.:]+$/, ""));
+  for (let i = headings.length - 1; i >= 0; i--) {
+    if (headings[i] && headings[i].length <= 60 && !CODEY.test(headings[i])) return headings[i];
+  }
+  return "";
 }
 
 export class ChatView {
@@ -194,9 +208,8 @@ export class ChatView {
     this.byId.set(msg.id, existing || msg);
     if (msg.status !== "streaming") this.streams.delete(msg.id);
     if (WORK_KINDS.has(msg.kind) && msg.status === "running" && msg.kind !== "reasoning") {
-      const info = workLabel(msg);
-      const label = msg.kind === "command" && info.ic === "terminal" ? `Running: ${info.text}` : (info.text || "");
-      this.stage.say(label.length > 90 ? label.slice(0, 87) + "…" : label, 9000);
+      // Plain words from the server ("Running the tests"); never the command itself.
+      this.showDoing(msg.data?.doing || "Working on it…", msg.data?.activity || "thinking");
     } else if (msg.kind === "approval" && msg.status === "pending") {
       this.stage.say("I need your OK on something below.", 0);
     }
@@ -226,13 +239,22 @@ export class ChatView {
 
   reasoningDelta({ conversation_id, delta, reset }) {
     if (conversation_id !== this.convId) return;
-    this.reasoning = reset ? "" : (this.reasoning + (delta || "")).slice(-400);
-    const snippet = this.reasoning.replace(/\*\*/g, "").split("\n").filter(Boolean).pop() || "";
-    if (snippet && this.statusText) {
-      this.statusText.textContent = snippet.length > 120 ? snippet.slice(0, 117) + "…" : snippet;
-      this.stage.say(snippet.length > 110 ? snippet.slice(0, 107) + "…" : snippet, 8000);
+    this.reasoning = reset ? "" : (this.reasoning + (delta || "")).slice(-2000);
+    // Only the summary's heading ("Checking the forecast"): its body often quotes commands and paths.
+    const heading = reasoningHeading(this.reasoning);
+    if (heading && heading !== this._heading) {
+      this._heading = heading;
+      this.showDoing(heading, "thinking", 8000);
+    } else if (!this._dirtyStreams.size) {
+      director.setBase("thinking");
     }
-    if (!this._dirtyStreams.size) director.setBase("thinking");
+  }
+
+  showDoing(text, activity = "thinking", ms = 9000) {
+    const line = text.length > 90 ? text.slice(0, 87) + "…" : text;
+    if (this.statusText) this.statusText.textContent = line;
+    this.stage.say(line, ms);
+    if (!this._dirtyStreams.size) director.setBase(ACTIVITY_MOODS[activity] || "thinking");
   }
 
   scheduleStreamPaint() {
@@ -258,6 +280,7 @@ export class ChatView {
     if (busy) {
       this.turnStartedAt = startedAt || Date.now() / 1000;
       this.reasoning = reasoning || "";
+      this._heading = "";
       this.renderStatus();
       director.setBase("thinking");
     } else {

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from .. import log, paths
 from ..codex.engine import image_input, text_input
 from ..codex.rpc import EngineClosed, RpcError
-from . import persona
+from . import activity, persona
 from .tools import ToolContext, registry
 
 if TYPE_CHECKING:
@@ -142,7 +142,17 @@ def _mcp_result_text(result: dict[str, Any] | None) -> str:
 
 
 def item_to_message(item: dict[str, Any]) -> tuple[str, str, str, dict[str, Any], str] | None:
-    """Translate a Codex ThreadItem into (kind, role, content, data, status)."""
+    """Translate a Codex ThreadItem into (kind, role, content, data, status). Work items also carry
+    data.doing (plain words for what is happening, never the command) and data.activity (which picks the avatar's
+    animation)."""
+    mapped = _item_to_message(item)
+    if mapped and mapped[0] in activity.WORK_KINDS:
+        kind, _role, content, data, _status = mapped
+        data["doing"], data["activity"] = activity.describe(kind, content, data)
+    return mapped
+
+
+def _item_to_message(item: dict[str, Any]) -> tuple[str, str, str, dict[str, Any], str] | None:
     kind = item.get("type")
     status = STATUS_MAP.get(item.get("status") or "completed", "done")
     if kind == "agentMessage":
