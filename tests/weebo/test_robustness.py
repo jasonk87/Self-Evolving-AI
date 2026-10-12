@@ -710,6 +710,7 @@ async def test_gates_never_see_files_git_ignores(evolving, repo, monkeypatch):
     async def run_gates(worktree, changed, test_command="", **kwargs):
         seen["conftest"] = (worktree / "tests" / "weebo" / "conftest.py").exists()
         seen["scratch"] = (worktree / ".weebo-tmp" / "notes.txt").exists()
+        seen["nested"] = (worktree / "tests" / "weebo" / ".weebo-tmp" / "conftest.py").exists()
         return gates.GateReport([gates.GateResult("Tests", True, "ok")])
 
     monkeypatch.setattr(evo, "run_gates", run_gates)
@@ -718,10 +719,12 @@ async def test_gates_never_see_files_git_ignores(evolving, repo, monkeypatch):
         "tests/weebo/.gitignore": "conftest.py\n.gitignore\n",
         "tests/weebo/conftest.py": "collect_ignore_glob = ['*']  # skips the whole suite\n",
         ".weebo-tmp/notes.txt": "the agent's scratch notes\n",
+        "tests/weebo/.weebo-tmp/.gitignore": "*\n",  # a "scratch" folder anywhere but the root is cleaned too
+        "tests/weebo/.weebo-tmp/conftest.py": "import os\nos._exit(0)\n",
         "weebo/web/app.js": "export const version = 2;\n"}]
     proposal = await app.evolution.propose("UI tweak", "Version 2.")
     settled = await wait_settled(app, proposal["id"])
-    assert seen == {"conftest": False, "scratch": True}
+    assert seen == {"conftest": False, "scratch": True, "nested": False}
     assert "tests/weebo/conftest.py" not in settled["meta"]["changed"]
 
 

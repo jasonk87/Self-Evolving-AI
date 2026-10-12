@@ -145,7 +145,9 @@ Why: {rationale}
 """
 
 REVISION_PROMPT = """Your previous attempt at "{title}" did not pass Weebo's verification. Fix these problems in the
-same worktree ({worktree}), re-run the checks, and report back. Do not commit.
+same worktree ({worktree}), re-run the checks, and report back. Do not commit. Files git ignores (*.json, data/,
+build/ ...) are deleted before the checks run, so keep anything the change needs out of them; scratch files go in
+`.weebo-tmp/` at the worktree root.
 
 {feedback}
 """
