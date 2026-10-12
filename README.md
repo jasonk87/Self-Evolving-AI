@@ -20,11 +20,13 @@ If Codex isn't signed in, Weebo shows a **Sign in with ChatGPT** button in Setti
 
 | | |
 |---|---|
-| **Chat that actually does things** | Weebo is Codex with a personality: it runs commands, edits files, searches the web and uses your Codex plugins (Gmail, Calendar, GitHub, …). Work streams in live as compact "Worked for 12s · 3 commands · 2 edits" groups you can expand. |
-| **Steer mid-turn** | Type while Weebo is working and your message joins the running turn. `Esc` stops it. |
-| **Parallel agents** | For big jobs Weebo launches background Codex agents (`start_agent`) that run **simultaneously** while you keep chatting. Watch them live in **Agents**, message or stop them; when one finishes, Weebo tells you in the chat. |
+| **One chat** | Everything happens in a single conversation: talk, briefs, routines, agent results, upgrades that need you. Weebo keeps up with it all: each turn knows what agents are doing, what finished today and which upgrades are waiting, and `search_history` looks back through everything said (and older chats, kept to read under **More → Older chats**). A tab bar (Chat, Memory, Evolution, Agents, More) gets you everywhere else. |
+| **Weebo delegates** | The chat talks, remembers, plans and keeps track; real work (commands, files, code, web research) goes to background Codex agents that run **in parallel** while you keep chatting. Each agent has a live card in the chat that says what it's doing in plain words ("Running the tests"), with a Stop button; when it finishes, Weebo tells you what came back. (Settings → `chat.delegate_work` turns this off and lets the chat work itself.) |
+| **Just ask** | Tell Weebo to change a setting, check on or redirect an agent, show you a build, build or reject an upgrade, or "merge them all and tell me when it's done": it merges them, restarts once, and reports back in the chat. Upgrade cards in the chat also have Merge / Rebuild / See changes buttons. Results come to you in the chat instead of an inbox to check. |
+| **Reply chips** | When the next step is obvious, Weebo offers a few tap-to-send replies under its answer. |
+| **Easy to read** | While Weebo works it says what it's doing in plain words, never the command it's running, and its avatar shows it: thinking, coding, reviewing, researching or handing work to an agent. `Esc` stops a turn; typing while it works adds to it. |
 | **Memory** | Weebo remembers durable facts, preferences, goals and people, injects the relevant ones into every turn, and never stores secrets. Recall is hybrid: full-text search plus optional **semantic search** with a small embedding model on your computer (`pip install fastembed`), so "my kid" finds the memory about your daughter. When you correct Weebo, it saves the lesson right away. Your Weebo 1.x memories are imported on first launch. |
-| **Proactive** | Morning brief, reminders and **routines** (scheduled instructions Weebo runs itself), agent reports, and **dreaming**: while you're away it consolidates memories, summarizes what happened, and leaves you ideas on **Weebo's Desk**. |
+| **Proactive** | Morning brief, reminders and **routines** (scheduled instructions Weebo runs itself), agent reports, and **dreaming**: while you're away it consolidates memories, summarizes what happened, and leaves you ideas in the chat. |
 | **Self-evolution** | Weebo proposes upgrades to itself (from your requests, its own failures, or self-audits that go where the code changed and the failures are), builds them in an isolated git worktree, verifies them, and merges with your approval. It then checks whether each fix actually held. See below. |
 | **Behavior checks** | Moments Weebo got wrong (your corrections, failures its dreams notice) become replayable checks. They run nightly, and any upgrade to Weebo's brain or memory must pass at least as many as the running version. |
 | **Skills** | Procedures Weebo figures out are saved as Codex-native `SKILL.md` files that every future thread can use. Weebo counts how often each is used, learns new ones while dreaming from agent work that repeats, and archives the ones it learned that way if nobody uses them; skills saved in a chat stay. |
@@ -52,9 +54,14 @@ watches your cursor.
   suite and a Codex code review (P0/P1 findings block). Changes to Weebo's brain or memory are also rehearsed
   against the behavior checks and must not do worse than the running version. Failures go back to the build agent
   for up to two revisions.
-* **Tests can't be gamed:** the build agent may edit tests, so the original version of every test it rewrote is
-  re-run against the new code and shown to you, and a change that rewrites or deletes existing tests never merges
-  automatically.
+* **Tests can't be gamed:** the build agent may edit tests, so the original version of every existing test file it
+  changed is re-run against the new code and shown to you, and a change that touches existing tests (even by only
+  adding lines, which can skip or replace them) never merges automatically. The checks run on exactly what would
+  merge: files git ignores are deleted before they run.
+* **Asking in the chat:** saying "merge them", "build it", "restart" or changing a safety setting (evolution mode,
+  protected paths, autonomy level, server) works only in a turn you started with your own message, never in one
+  Weebo started itself (an agent's report, a routine, a brief), so text in a report or a web page can't trigger it.
+  Each is recorded in the journal.
 * **Change policy** (`weebo/evolution/policy.py`) classifies every touched file: only UI, new tests, docs and
   skills may merge without you; core, execution and governance code (including CI, pytest config and dependency
   files) always wait for your approval, as does anything under *Protected paths* in Settings. If an upgrade fails
