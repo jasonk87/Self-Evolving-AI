@@ -44,6 +44,8 @@ class TurnState:
     outputs: dict[str, int] = field(default_factory=dict)
     diff: str = ""
     final_text: str = ""
+    final_message_id: str = ""
+    suggestions: list[str] = field(default_factory=list)  # reply chips offered with the final answer
     used_memories: list[str] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
 
@@ -71,6 +73,15 @@ def sandbox_for(level: str, extra_roots: list[str]) -> tuple[str, str, dict[str,
         "type": "workspaceWrite", "writableRoots": extra_roots, "networkAccess": True,
         "excludeTmpdirEnvVar": False, "excludeSlashTmp": False,
     }
+
+
+def chat_sandbox(app: "WeeboApp", extra_roots: list[str]) -> tuple[str, str, dict[str, Any]]:
+    """The chat's own sandbox. When it delegates work (the default), it can look but not change anything: commands
+    that write, and the network, are for agents."""
+    approval, mode, policy = sandbox_for(app.settings.get("autonomy.level"), extra_roots)
+    if app.settings.get("chat.delegate_work"):
+        return approval, "read-only", {"type": "readOnly", "networkAccess": False}
+    return approval, mode, policy
 
 
 _CORRECTION = re.compile(  # openings that push back on the last answer by themselves
@@ -214,6 +225,9 @@ def _item_to_message(item: dict[str, Any]) -> tuple[str, str, str, dict[str, Any
     return None
 
 
+MAIN_TITLE = "Weebo"
+
+
 class ConversationManager:
     def __init__(self, app: "WeeboApp"):
         self.app = app
@@ -260,17 +274,23 @@ class ConversationManager:
         return conv
 
     def desk(self) -> dict[str, Any]:
-        """Weebo's own pinned conversation for proactive briefs, routines and dreams."""
+        """The one chat: everything happens here (talk, briefs, routines, agent results, upgrades that need the user).
+        Older chats stay readable in the archive. (Stored as kind "desk", which it has always been.)"""
         conv = self.app.store.find_conversation_by_kind("desk")
         if conv is None:
-            conv = self.app.store.create_conversation(title="Weebo's Desk", kind="desk")
+            conv = self.app.store.create_conversation(title=MAIN_TITLE, kind="desk")
             self.app.store.add_message(
                 conv["id"], "assistant",
-                "This is my desk. Briefings, routines, dream insights and agent check-ins land here, "
-                "so your other chats stay clean. Reply any time.",
+                "Hi! This is where we talk, about anything. When something needs real work I hand it to an agent "
+                "in the background and tell you how it went, right here.",
             )
             self.app.bus.publish("conv.created", {"conversation": conv})
+        elif conv["title"] == "Weebo's Desk":  # it used to be one chat among many
+            conv = self.app.store.update_conversation(conv["id"], title=MAIN_TITLE) or conv
         return conv
+
+    def main_id(self) -> str:
+        return self.desk()["id"]
 
     async def delete(self, conv_id: str) -> None:
         conv = self.app.store.get_conversation(conv_id)
@@ -467,7 +487,7 @@ class ConversationManager:
         if thread_id and thread_id in engine.loaded_threads:
             self._route(conv["id"], thread_id)
             return thread_id
-        approval, sandbox_mode, _ = sandbox_for(self.app.settings.get("autonomy.level"), [])
+        approval, sandbox_mode, _ = chat_sandbox(self.app, [])
         cwd = conv.get("cwd") or str(paths.workspace_dir())
         if thread_id and meta.get("tools_hash") == current_hash:
             try:
@@ -513,7 +533,7 @@ class ConversationManager:
         model = engine.default_model(settings.get("codex.model"))
         effort = engine.clamp_effort(model, settings.get("codex.chat_effort"))
         roots = [str(paths.workspace_dir()), str(paths.uploads_dir())]
-        approval, _, policy = sandbox_for(settings.get("autonomy.level"), roots)
+        approval, _, policy = chat_sandbox(self.app, roots)
         overrides: dict[str, Any] = {"model": model, "effort": effort, "approvalPolicy": approval,
                                      "sandboxPolicy": policy, "summary": "auto",
                                      "cwd": conv.get("cwd") or str(paths.workspace_dir())}
@@ -669,7 +689,7 @@ class ConversationManager:
         if completed and kind == "text" and turn is not None:
             turn.streams.pop(str(item.get("id")), None)
             if data.get("phase") != "commentary":
-                turn.final_text = content
+                turn.final_text, turn.final_message_id = content, message_id
         if not completed and status == "done":
             status = "running"
         message = self.app.store.upsert_message(message_id, conv_id, role, kind, content, data,
@@ -722,6 +742,12 @@ class ConversationManager:
                                          data={"diff": _tail(turn.diff, MAX_DIFF), "files": files,
                                                "added": added, "removed": removed}, turn_id=turn.turn_id)
             self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": diff_msg})
+        if turn and turn.suggestions and turn.final_message_id and status == "completed":
+            final = store.get_message(turn.final_message_id)
+            if final:  # reply chips belong to the answer, and only the newest answer shows them
+                msg = store.update_message(final["id"], data={**(final.get("data") or {}),
+                                                              "suggestions": turn.suggestions})
+                self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": msg})
         self.app.bus.publish("conv.turn.completed", {
             "conversation_id": conv_id, "status": status, "trigger": turn.trigger if turn else "",
             "final_text": (turn.final_text if turn else "")[:600],

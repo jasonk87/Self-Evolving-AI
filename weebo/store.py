@@ -218,6 +218,10 @@ STOPWORDS = {
 }
 
 
+def _like_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
@@ -404,6 +408,24 @@ class Store:
         })
         return self.get_message(message_id)  # type: ignore[return-value]
 
+    def bring_forward(self, message_id: str) -> dict[str, Any] | None:
+        """Move a message to the end of its conversation (a card that needs the user again shows up where they
+        are, not hundreds of messages up). It keeps its id, so the chat updates it in place from then on."""
+        with self._lock:
+            row = self.get_message(message_id)
+            if row is None:
+                return None
+            last = self.query_one("SELECT MAX(seq) AS seq FROM messages WHERE conversation_id=?",
+                                  (row["conversation_id"],))
+            if last and last["seq"] == row["seq"]:
+                return row
+            self.execute("DELETE FROM messages WHERE id=?", (message_id,))
+            row.pop("seq", None)
+            row["updated_at"] = time.time()
+            self._insert("messages", row)
+            self.execute("UPDATE conversations SET updated_at=? WHERE id=?", (row["updated_at"], row["conversation_id"]))
+        return self.get_message(message_id)
+
     def update_message(self, message_id: str, **values: Any) -> dict[str, Any] | None:
         values.setdefault("updated_at", time.time())
         self._update("messages", "id", message_id, values)
@@ -435,6 +457,29 @@ class Store:
         )
         rows.reverse()
         return rows
+
+    def search_messages(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+        """What was said (by the user or Weebo, in any chat) that contains every word of ``query``, newest first."""
+        terms = [t for t in re.findall(r"[\w'@.-]{3,}", query.lower()) if t][:6]
+        if not terms:
+            return []
+        like = " AND ".join("lower(m.content) LIKE ? ESCAPE '\\'" for _ in terms)
+        params = [f"%{_like_escape(t)}%" for t in terms]
+        return self.query(
+            "SELECT m.seq, m.conversation_id, m.role, m.content, m.created_at, c.title AS conversation_title "
+            "FROM messages m JOIN conversations c ON c.id=m.conversation_id "
+            f"WHERE m.kind='text' AND m.role IN ('user','assistant') AND {like} ORDER BY m.seq DESC LIMIT ?",
+            (*params, limit))
+
+    def search_tasks(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Agents whose title or report mentions every word of ``query``, newest first."""
+        terms = [t for t in re.findall(r"[\w'@.-]{3,}", query.lower()) if t][:6]
+        if not terms:
+            return []
+        like = " AND ".join("lower(title || ' ' || summary) LIKE ? ESCAPE '\\'" for _ in terms)
+        return self.query(f"SELECT id, title, status, summary, created_at, finished_at FROM tasks "
+                          f"WHERE kind='agent' AND {like} ORDER BY created_at DESC LIMIT ?",
+                          (*[f"%{_like_escape(t)}%" for t in terms], limit))
 
     def recent_dialogue(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
         rows = self.query(

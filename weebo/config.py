@@ -43,6 +43,9 @@ DEFAULTS: dict[str, Any] = {
         "self_audit_min_hours_between": 24,
     },
     "agents": {"max_parallel": 3, "default_cwd": "", "max_minutes": 60, "auto_followup": True},
+    # The chat talks, remembers, plans and keeps track; real work (commands, files, research) goes to background
+    # agents, so chat turns run read-only. Off: the chat may do work itself, like an agent.
+    "chat": {"delegate_work": True},
     "evolution": {
         "mode": "build",  # off | propose | build | auto_merge
         "test_command": "",  # blank = built-in gate (pytest tests/weebo + syntax checks)

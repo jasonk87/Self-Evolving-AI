@@ -25,6 +25,9 @@ logger = log.get("agents")
 ACTIVE = ("queued", "running")
 
 
+CARD_EVERY = 2.0  # seconds between progress updates of an agent's chat card
+
+
 @dataclass
 class AgentRun:
     task_id: str
@@ -41,6 +44,7 @@ class AgentRun:
     files: set[str] = field(default_factory=set)
     commands: int = 0
     cancelled: bool = False
+    card_synced: float = 0.0
 
 
 def _duration(seconds: float) -> str:
@@ -95,6 +99,7 @@ class AgentManager:
         self.queue.append(task["id"])
         self.app.bus.publish("task.updated", {"task": task})
         self._pump()
+        self._sync_card(task["id"])
         return self.app.store.get_task(task["id"]) or task
 
     async def wait(self, task_id: str, timeout: float | None = None) -> dict[str, Any]:
@@ -199,6 +204,7 @@ class AgentManager:
             task_id = self.queue.popleft()
             run = self.runs[task_id] = AgentRun(task_id)
             self.app.store.update_task(task_id, status="running", started_at=time.time())
+            self._sync_card(task_id)
             task = asyncio.create_task(self._run(run), name=f"agent-{task_id}")
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
@@ -282,6 +288,7 @@ class AgentManager:
             return
         store.add_task_event(task_id, "finished", f"{status}: {error}" if error else status)
         self.app.bus.publish("task.updated", {"task": task})
+        self._sync_card(task_id)
         for future in self._waiters.pop(task_id, []):
             if not future.done():
                 future.set_result(task)
@@ -302,9 +309,12 @@ class AgentManager:
         took = _duration((task.get("finished_at") or time.time()) - (task.get("started_at") or task["created_at"]))
         verb = {"completed": "finished", "failed": "failed", "cancelled": "was stopped", "interrupted": "was interrupted"}.get(task["status"], task["status"])
         title = f"Agent “{task['title']}” {verb} ({took})"
-        self.app.notify("agent", title, (task.get("summary") or task.get("error") or "")[:600], {"task_id": task["id"]})
         conv_id = task.get("conversation_id")
-        if not conv_id or not self.app.store.get_conversation(conv_id):
+        in_chat = bool(conv_id and self.app.store.get_conversation(conv_id))
+        if not in_chat or self.app.clients == 0:  # an open chat shows it already; otherwise reach the phone/desktop
+            self.app.notify("agent", title, (task.get("summary") or task.get("error") or "")[:600],
+                            {"task_id": task["id"], "conversation_id": conv_id if in_chat else None})
+        if not in_chat:
             return
         data = {"task_id": task["id"], "status": task["status"], "summary": task.get("summary", "")[:8000],
                 "error": task.get("error", ""), "cwd": task.get("cwd"), "took": took}
@@ -346,6 +356,29 @@ class AgentManager:
     def _set_progress(self, run: AgentRun, text: str, kind: str) -> None:
         run.progress, run.activity = text, kind
         self.app.bus.publish("task.progress", {"task_id": run.task_id, "progress": text, "activity": kind})
+        if time.monotonic() - run.card_synced >= CARD_EVERY:
+            self._sync_card(run.task_id)
+
+    def _sync_card(self, task_id: str) -> None:
+        """The agent's card in the chat that launched it: what it's doing now (in plain words), then how it went.
+        One card per agent, updated in place (id "agent:<task id>")."""
+        store = self.app.store
+        task = store.get_task(task_id)
+        if not task or task["kind"] != "agent" or not task.get("conversation_id"):
+            return
+        if not store.get_conversation(task["conversation_id"]):
+            return
+        run = self.runs.get(task_id)
+        if run:
+            run.card_synced = time.monotonic()
+        data = {"task_id": task_id, "title": task["title"], "status": task["status"],
+                "doing": run.progress if run and task["status"] == "running" else "",
+                "activity": run.activity if run else "", "created_at": task["created_at"],
+                "started_at": task.get("started_at"), "finished_at": task.get("finished_at"),
+                "summary": (task.get("summary") or "")[:600], "error": (task.get("error") or "")[:300]}
+        message = store.upsert_message(f"agent:{task_id}", task["conversation_id"], "event", "agent_card",
+                                       task["title"], data=data)
+        self.app.bus.publish("conv.message", {"conversation_id": task["conversation_id"], "message": message})
 
     def _on_event(self, run: AgentRun, method: str, params: dict[str, Any]) -> None:
         if method == "turn/started":
