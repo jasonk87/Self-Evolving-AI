@@ -124,8 +124,8 @@ async def test_restart_interruption_updates_existing_card(app, monkeypatch):
 @pytest.mark.asyncio
 async def test_live_card_reload_reconnect_and_deep_link_navigation(app, monkeypatch):
     playwright = pytest.importorskip("playwright.async_api")
-    origin = app.conversations.create(title="Origin")
-    other = app.conversations.create(title="Other")
+    origin = app.store.get_conversation(app.conversations.main_id())  # the one chat the app opens
+    other = app.conversations.create(title="Other")  # an older chat, opened to read
     app.settings.update({"evolution.mode": "propose"})
     monkeypatch.setattr(app.evolution, "_start_vetting", lambda _: None)
     monkeypatch.setattr(app.heartbeat, "budget", lambda: (True, ""))
@@ -167,7 +167,7 @@ async def test_live_card_reload_reconnect_and_deep_link_navigation(app, monkeypa
             for _ in range(3):
                 app.evolution._publish(p["id"])
             assert await card.count() == 1
-            link = card.get_by_role("link", name="Open in Evolution")
+            link = card.get_by_role("link", name="Details")
             href = await link.get_attribute("href")
             assert href == f"/#evolution/{p['id']}"
             await link.click()

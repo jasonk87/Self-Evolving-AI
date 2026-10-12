@@ -67,10 +67,8 @@ class App {
     this.renderSidebar();
     this.renderBadges();
     for (const p of data.snapshot.pending_interactions || []) this.announceInteraction(p);
-    const saved = localStorage.getItem(ACTIVE_KEY);
-    const target = this.state.conversations.find((c) => c.id === saved) ? saved : null;
-    if (target) await this.openConversation(target);
-    else await this.newChat();
+    this.mainId = data.desk_id;  // the one chat; older chats are read from the archive
+    await this.openMain();
     this.routeProposal();
     director.setBase(this.restingMood());
   }
@@ -80,7 +78,11 @@ class App {
     window.addEventListener("hashchange", () => this.routeProposal());
     window.addEventListener("popstate", () => this.routeProposal());
     document.querySelectorAll("[data-icon]").forEach((n) => n.insertAdjacentHTML("afterbegin", icon(n.dataset.icon, Number(n.dataset.iconSize || 18))));
-    $("#new-chat").addEventListener("click", () => this.newChat());
+    document.querySelectorAll("[data-tab='chat']").forEach((b) => b.addEventListener("click", () => {
+      this.panels.close();
+      document.body.classList.remove("sidebar-open");
+      if (this.currentConvId !== this.mainId) this.openMain();
+    }));
     $("#menu-btn").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
     $("#scrim").addEventListener("click", () => { document.body.classList.remove("sidebar-open"); this.panels.close(); });
     $("#theme-btn").addEventListener("click", () => {
@@ -97,7 +99,7 @@ class App {
     $("#conv-title").addEventListener("click", () => this.renameConversation(this.currentConvId));
     this.sidebarWeebo = new WeeboAvatar($("#brand-weebo"), { size: 34, track: false });
     document.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); this.newChat(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); this.openMain().then(() => this.chat.input.focus()); }
       else if (e.key === "Escape" && this.panels.current && !document.querySelector(".modal-backdrop")) this.panels.close();
       else if (e.key === "/" && document.activeElement === document.body) { e.preventDefault(); this.chat.input.focus(); }
     });
@@ -133,16 +135,12 @@ class App {
   // ------------------------------------------------------------------ conversations
   conversation(id) { return this.state.conversations.find((c) => c.id === id); }
 
-  async newChat() {
-    const empty = this.state.conversations.find((c) => c.kind === "chat" && c.title === "New chat" && !this.busyConvs.has(c.id));
-    if (empty) return this.openConversation(empty.id);
-    try {
-      const { conversation } = await api.post("/api/conversations", {});
-      this.upsertConversation(conversation);
-      await this.openConversation(conversation.id);
-    } catch (err) {
-      toast("Couldn't start a chat", err.message, { kind: "error" });
-    }
+  // There is one chat now; "new chat" just means "back to it".
+  async newChat() { return this.openMain(); }
+
+  async openMain() {
+    if (!this.mainId) this.mainId = this.state.conversations.find((c) => c.kind === "desk")?.id;
+    if (this.mainId) await this.openConversation(this.mainId);
   }
 
   async openConversation(id) {
@@ -153,6 +151,7 @@ class App {
     this.renderSidebar();
     this.renderHeader();
     await this.chat.open(id);
+    this.readNotificationsShownInChat();
   }
 
   upsertConversation(conv) {
@@ -210,6 +209,7 @@ class App {
 
   renderSidebar() {
     const list = $("#conv-list");
+    if (!list) return;  // one chat: no conversation list
     const items = this.state.conversations.filter((c) => !c.archived).map((c) => {
       const busy = this.busyConvs.has(c.id);
       const row = el("div", { class: `conv${c.id === this.currentConvId ? " active" : ""}${c.unread && c.id !== this.currentConvId ? " unread" : ""}${c.kind === "desk" ? " desk" : ""}`, role: "button", tabindex: 0,
@@ -230,7 +230,7 @@ class App {
   renderHeader() {
     const conv = this.conversation(this.currentConvId);
     $("#conv-title").textContent = conv ? conv.title : "Weebo";
-    $("#conv-title").title = conv?.kind === "desk" ? "Weebo's own conversation for briefs, routines and check-ins" : "Click to rename";
+    $("#conv-title").title = conv?.kind === "desk" ? "Your chat with Weebo" : "An older chat";
   }
 
   renderBadges() {
@@ -320,6 +320,7 @@ class App {
       if (conversation_id === this.currentConvId) {
         const existing = this.chat.byId.get(message.id);
         if (message.kind !== "evolution_status" || !existing || message.updated_at >= existing.updated_at) this.chat.upsert(message);
+        if (message.kind === "agent_card" || message.kind === "evolution_status") this.readNotificationsShownInChat();
       }
       const conv = this.conversation(conversation_id);
       if (conv) {
@@ -422,12 +423,26 @@ class App {
     } catch { /* offline */ }
   }
 
+  // The chat card a notification is about (an agent's result, an upgrade), if the open chat shows it.
+  cardFor(note) {
+    const d = note?.data || {};
+    const id = d.task_id ? `agent:${d.task_id}` : d.proposal_id ? `evolution:${d.proposal_id}` : null;
+    return id && this.currentConvId === this.mainId && this.chat.byId.has(id) ? id : null;
+  }
+
+  // A notification about something the chat already shows has done its job: nothing to go and check.
+  readNotificationsShownInChat() {
+    for (const note of this.notifications.records()) if (this.cardFor(note)) this.notifications.markRead(note.id);
+  }
+
   onNotification(n) {
     if (!this.notifications.receive(n)) return;
     const kind = { reminder: "warn", approval: "warn", evolution: "success", agent: "info" }[n.kind] || "info";
     const data = n.data || {};
     const action = this.notifications.action(n);
-    if (n.kind !== "approval") toast(n.title, n.body || "", { kind, timeout: n.kind === "reminder" ? 0 : 7000, action });
+    const inChat = this.cardFor(n);
+    if (inChat) this.notifications.markRead(n.id);
+    if (n.kind !== "approval" && !inChat) toast(n.title, n.body || "", { kind, timeout: n.kind === "reminder" ? 0 : 7000, action });
     if (n.kind === "reminder" || n.kind === "approval") director.flash("alert", 3000);
     if (n.kind === "evolution" && /upgraded/i.test(n.title)) director.flash("celebrate", 3500);
     if (data.speak) speak(`${n.title}. ${n.body}`);
@@ -497,6 +512,17 @@ class App {
   }
 
   openPanel(name, opts) { this.panels.open(name, opts); }
+
+  /** Open the main chat at a card (an upgrade, an agent), or run ``fallback`` when the chat has no such card. */
+  async showInChat(messageId, fallback) {
+    this.panels.close();
+    if (this.currentConvId !== this.mainId) await this.openMain();
+    const node = document.querySelector(`#chat [data-id="${CSS.escape(messageId)}"]`);
+    if (!node) { fallback?.(); return; }
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.add("flash");
+    setTimeout(() => node.classList.remove("flash"), 1600);
+  }
 
   // ------------------------------------------------------------------ installable app
   watchInstall() {

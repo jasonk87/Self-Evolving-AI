@@ -3,7 +3,7 @@ import { api, sendActivity } from "./api.js";
 import { director } from "./avatar.js";
 import { Stage } from "./stage.js";
 import { icon } from "./icons.js";
-import { renderMessage, renderWorkItem, summarizeWork, WORK_KINDS } from "./items.js";
+import { renderMessage, renderWorkItem, renderSuggestions, summarizeWork, WORK_KINDS } from "./items.js";
 import { renderMarkdown } from "./markdown.js";
 import { el, btn, autoGrow, toast, escapeHtml, duration, copyText } from "./ui.js";
 import { startListening, isListening, voiceSupport, speak } from "./voice.js";
@@ -67,10 +67,14 @@ export class ChatView {
     this.list = el("div", { class: "chat-list", role: "log", "aria-live": "polite" });
     this.status = el("div", { class: "turn-status", hidden: true });
     this.hero = el("div", { class: "hero", hidden: true });
+    this.suggest = el("div", { class: "suggest-slot" });
     this.stage = new Stage();
-    this.scroller.append(this.stage.root, this.hero, this.list, this.status);
+    this.scroller.append(this.stage.root, this.hero, this.list, this.suggest, this.status);
     this.composer = this.buildComposer();
-    this.root.append(this.scroller, this.composer);
+    this.oldChat = el("div", { class: "old-chat-bar", hidden: true },
+      el("span", { text: "An older chat, kept to read. Everything new happens in the main chat." }),
+      btn("Back to Weebo", { kind: "primary", size: "sm", onClick: () => this.app.openMain() }));
+    this.root.append(this.scroller, this.oldChat, this.composer);
 
     this.root.addEventListener("click", (e) => {
       const fileLink = e.target.closest(".file-link:not(.openable)");
@@ -166,9 +170,14 @@ export class ChatView {
     } finally {
       this.root.classList.remove("loading");
     }
+    const conv = this.app.conversation(convId);
+    this.readOnly = Boolean(conv && conv.kind !== "desk");  // older chats are kept to read; we talk in the main one
+    this.composer.hidden = this.readOnly;
+    this.oldChat.hidden = !this.readOnly;
+    this._suggestKey = null;
     this.render(true);
     this.updateChips();
-    this.input.focus({ preventScroll: true });
+    if (!this.readOnly) this.input.focus({ preventScroll: true });
   }
 
   async loadOlder() {
@@ -200,7 +209,9 @@ export class ChatView {
     if (msg.conversation_id !== this.convId) return;
     const existing = this.byId.get(msg.id);
     if (existing) {
+      const moved = msg.seq != null && msg.seq !== existing.seq;  // a card brought to the bottom of the chat
       Object.assign(existing, msg);
+      if (moved) { this.messages.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)); this.keepBottom(true); }
     } else {
       this.messages.push(msg);
       this.messages.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
@@ -289,6 +300,7 @@ export class ChatView {
       this.stage.clear();
     }
     this.updateSendButton();
+    this.renderSuggestions();
   }
 
   renderStatus() {
@@ -390,11 +402,28 @@ export class ChatView {
     }
     flush();
     reconcile(this.list, desired);
+    this.renderSuggestions();
     const conv = this.app.conversation(this.convId);
     this.hero.hidden = !(this.messages.length === 0 && conv && conv.kind === "chat");
     this.stage.setBig(!this.hero.hidden);
     if (!this.hero.hidden) this.renderHero();
     this.keepBottom(forceBottom);
+  }
+
+  // Reply chips under Weebo's newest answer, until anything else is said.
+  renderSuggestions() {
+    const last = [...this.messages].reverse().find((m) => !WORK_KINDS.has(m.kind));
+    const replies = !this.busy && !this.readOnly && last?.role === "assistant" && last.kind === "text"
+      && last.status === "done" ? (last.data?.suggestions || []) : [];
+    const key = replies.length ? `${last.id}:${replies.join("|")}` : "";
+    if (key === this._suggestKey) return;
+    this.suggest.replaceChildren(...(replies.length ? [renderSuggestions(replies, (text) => this.sendText(text))] : []));
+    this._suggestKey = key;
+  }
+
+  sendText(text) {
+    this.input.value = text;
+    this.submit();
   }
 
   renderHero() {
@@ -418,6 +447,21 @@ export class ChatView {
       resolve: (id, decision, answers) => this.app.resolveInteraction(id, decision, answers),
       openTask: (id) => this.app.openPanel("agents", { task: id }),
       openProposal: (id) => this.app.openPanel("evolution", { proposal: id }),
+      proposalAction: async (id, action, button) => {
+        if (button) button.disabled = true;
+        try {
+          await api.post(`/api/proposals/${encodeURIComponent(id)}/${action}`, {});
+          if (action === "merge") this.stage.say("Merging it in…", 4000);
+        } catch (err) {
+          toast("That didn't work", err.message, { kind: "error" });
+          if (button) button.disabled = false;
+        }
+      },
+      stopTask: async (id, button) => {
+        if (button) button.disabled = true;
+        try { await api.post(`/api/tasks/${encodeURIComponent(id)}/stop`, {}); }
+        catch (err) { toast("Couldn't stop it", err.message, { kind: "error" }); if (button) button.disabled = false; }
+      },
     };
   }
 

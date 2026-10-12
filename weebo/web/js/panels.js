@@ -13,6 +13,8 @@ const PANELS = {
   schedule: { title: "Schedule", icon: "clock" },
   activity: { title: "Activity", icon: "pulse" },
   settings: { title: "Settings", icon: "gear" },
+  more: { title: "More", icon: "menu" },
+  archive: { title: "Older chats", icon: "inbox" },
 };
 
 const STATUS_LABEL = {
@@ -516,6 +518,34 @@ export class Panels {
           btn("", { icon: "trash", title: "Forget", size: "sm", onClick: async () => { await api.del(`/api/memories/${m.id}`); this.refresh(); } }))));
     }
     wrap.append(list);
+    return wrap;
+  }
+
+  // ================================================================== MORE (the tab bar's overflow)
+  async render_more() {
+    const wrap = el("div", { class: "panel" });
+    const go = (name, label, ic, hint) => el("button", { class: "more-row", type: "button", onclick: () => this.open(name) },
+      el("span", { class: "more-ic", html: icon(ic, 18) }),
+      el("span", { class: "grow" }, el("div", { text: label }), el("div", { class: "muted small", text: hint })),
+      el("span", { html: icon("send", 14) }));
+    wrap.append(el("div", { class: "stack" },
+      go("schedule", "Schedule", "clock", "Reminders and routines"),
+      go("activity", "Activity", "pulse", "What Weebo did on its own, and its notifications"),
+      go("settings", "Settings", "gear", "Or just tell Weebo what to change"),
+      go("archive", "Older chats", "inbox", "Conversations from before there was one chat")));
+    return wrap;
+  }
+
+  // ================================================================== ARCHIVE (older chats, read-only)
+  async render_archive() {
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Everything happens in one chat now. Your older chats are kept here to read; Weebo can also search them when you ask about something from back then." }));
+    const old = this.app.state.conversations.filter((c) => c.kind !== "desk");
+    wrap.append(old.length ? el("div", { class: "stack" }, old.map((c) => el("button", { class: "more-row", type: "button",
+      onclick: () => { this.close(); this.app.openConversation(c.id); } },
+      el("span", { class: "more-ic", html: icon("dot", 10) }),
+      el("span", { class: "grow" }, el("div", { text: c.title }), el("div", { class: "muted small", text: timeAgo(c.updated_at) })))))
+      : empty("No older chats.", "inbox"));
     return wrap;
   }
 
