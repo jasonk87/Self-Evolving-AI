@@ -258,7 +258,8 @@ class EvolutionEngine:
             proposal_id = await self._queue.get()
             proposal = self.app.store.get_proposal(proposal_id)
             if proposal is None or proposal["status"] != "queued":
-                continue  # rejected or discarded while waiting in line
+                self._restart_if_idle()  # rejected or discarded while waiting in line: it may have been the last
+                continue
             self.current = proposal_id
             try:
                 await self._build(proposal_id)
@@ -269,9 +270,13 @@ class EvolutionEngine:
                 self._fail(proposal_id, f"Build crashed: {exc}")
             finally:
                 self.current = None
-                if self.restart_after_build and self._queue.empty():
-                    reason, self.restart_after_build = self.restart_after_build, None
-                    self.app.request_restart(reason)
+                self._restart_if_idle()
+
+    def _restart_if_idle(self) -> None:
+        """A restart that waited for the builds to finish happens as soon as none is running or waiting."""
+        if self.restart_after_build and not self.current and self._queue.empty():
+            reason, self.restart_after_build = self.restart_after_build, None
+            self.app.request_restart(reason)
 
     # ------------------------------------------------------------------ public API
     async def propose(self, title: str, description: str, rationale: str = "", source: str = "user",

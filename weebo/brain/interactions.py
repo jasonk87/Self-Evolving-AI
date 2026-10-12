@@ -31,6 +31,7 @@ class Pending:
     conversation_id: str | None = None
     task_id: str | None = None
     message_id: str | None = None
+    agent: str = ""  # the background agent asking, by title (its card says so)
     created_at: float = field(default_factory=time.time)
     future: asyncio.Future | None = None
 
@@ -55,7 +56,7 @@ class Pending:
             detail.update(_elicitation_detail(p))
         return {
             "id": self.id, "kind": self.kind, "conversation_id": self.conversation_id, "task_id": self.task_id,
-            "message_id": self.message_id, "created_at": self.created_at, **detail,
+            "agent": self.agent, "message_id": self.message_id, "created_at": self.created_at, **detail,
         }
 
 
@@ -117,7 +118,7 @@ class Interactions:
         self.pending: dict[str, Pending] = {}
 
     async def ask(self, method: str, params: dict[str, Any], conversation_id: str | None = None,
-                  task_id: str | None = None) -> dict[str, Any]:
+                  task_id: str | None = None, agent: str = "") -> dict[str, Any]:
         if method == ELICITATION and params.get("mode") == "openai/userVerification":
             logger.info("Declined a device-verified approval from %s (only Codex's own apps can verify).",
                         params.get("serverName"))
@@ -125,7 +126,7 @@ class Interactions:
         pending = Pending(
             id=new_id("ask"), kind=_kind_for(method), method=method, params=params,
             thread_id=params.get("threadId") or params.get("conversationId") or "",
-            turn_id=params.get("turnId") or "", conversation_id=conversation_id, task_id=task_id,
+            turn_id=params.get("turnId") or "", conversation_id=conversation_id, task_id=task_id, agent=agent,
         )
         pending.future = asyncio.get_running_loop().create_future()
         self.pending[pending.id] = pending
@@ -142,8 +143,9 @@ class Interactions:
             self.app.store.add_task_event(task_id, "approval", "Waiting for your approval", summary)
         self.app.bus.publish("interaction.pending", {"interaction": summary})
         self.app.bus.publish("weebo.mood", {"mood": "asking", "conversation_id": conversation_id})
-        if task_id or not conversation_id:
-            title = "An agent needs your approval" if task_id else "Weebo needs your approval"
+        if not conversation_id or self.app.clients == 0:  # an open chat shows the card; otherwise reach the phone
+            title = f"Agent “{agent}” needs your OK" if agent else ("An agent needs your approval" if task_id
+                                                                     else "Weebo needs your approval")
             self.app.notify("approval", title, _describe(summary), {"interaction_id": pending.id, "task_id": task_id})
         try:
             decision, answers = await pending.future
@@ -168,6 +170,14 @@ class Interactions:
         status = "answered" if pending.kind == "question" else decision
         self._finish(pending, status, answers)
         return True
+
+    def cancel_task(self, task_id: str) -> None:
+        """The agent finished or was stopped: its open requests can no longer be answered."""
+        for pending in list(self.pending.values()):
+            if pending.task_id == task_id:
+                if pending.future and not pending.future.done():
+                    pending.future.set_result(("cancel", {}))
+                self._finish(pending, "expired", None)
 
     def cancel_turn(self, thread_id: str, turn_id: str | None = None) -> None:
         for pending in list(self.pending.values()):

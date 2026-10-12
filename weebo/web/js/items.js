@@ -287,9 +287,10 @@ function renderPlan(msg) {
 function renderApproval(msg, ctx) {
   const d = msg.data || {};
   const pending = msg.status === "pending";
+  const who = d.agent ? `Agent “${d.agent}”` : "Weebo";  // a background agent's request lands in this chat too
   const titles = {
-    command: "Weebo wants to run a command", file_change: "Weebo wants to change files",
-    permissions: "Weebo is asking for more access", confirm: d.title || "Weebo wants to take an action",
+    command: `${who} wants to run a command`, file_change: `${who} wants to change files`,
+    permissions: `${who} is asking for more access`, confirm: d.title || `${who} wants to take an action`,
     elicitation: d.title || "A tool needs your OK",
   };
   const card = el("div", { class: `card approval-card${pending ? " pending" : ""}` });

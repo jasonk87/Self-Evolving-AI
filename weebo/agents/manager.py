@@ -193,6 +193,9 @@ class AgentManager:
                 # Other kinds retain their existing recovery rules (e.g. evolution owns rebuilding).
                 task = self.app.store.update_task(task_id, status="interrupted", finished_at=time.time(),
                                                   error="Weebo restarted while this agent was running.")
+                if task and task["kind"] == "agent":  # say so in its chat: its card would read "Working" forever
+                    self._sync_card(task_id)
+                    self._report(task)
             self.app.bus.publish("task.updated", {"task": task})
 
     # ------------------------------------------------------------------ internals
@@ -288,6 +291,7 @@ class AgentManager:
             return
         store.add_task_event(task_id, "finished", f"{status}: {error}" if error else status)
         self.app.bus.publish("task.updated", {"task": task})
+        self.app.interactions.cancel_task(task_id)  # nobody can answer for an agent that has stopped
         self._sync_card(task_id)
         for future in self._waiters.pop(task_id, []):
             if not future.done():
@@ -322,17 +326,19 @@ class AgentManager:
                   f"Working directory: {task.get('cwd')}\n"
                   f"{(task.get('summary') or task.get('error') or 'No report.')[:6000]}")
         conversations = self.app.conversations
+        # The result goes in the chat now, whatever happens to Weebo's spoken follow-up (it may wait behind a busy
+        # turn, and a Stop or a restart drops what waits).
+        note = self.app.store.add_message(conv_id, "event", title, kind="agent_report", data=data)
+        self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
         if (self.app.settings.get("agents.auto_followup") and task["status"] in ("completed", "failed")
                 and self._followup_budget_ok()):
             self.app.count_background_turn("agent_report")
             prompt = (f"[Event: one of your background agents just finished]\n{report}\n\n"
                       "Tell the user what came back in a few friendly sentences: the outcome, where to find it, "
                       "and the obvious next step if there is one. Don't repeat the whole report.")
-            asyncio.create_task(conversations.run_event(conv_id, prompt, title, trigger="agent_report",
-                                                        notice_kind="agent_report", notice_data=data))
+            asyncio.create_task(conversations.run_event(conv_id, prompt, "", trigger="agent_report",
+                                                        fallback=report))
         else:
-            note = self.app.store.add_message(conv_id, "event", title, kind="agent_report", data=data)
-            self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
             conversations.add_context(conv_id, report)
 
     # ------------------------------------------------------------------ codex → agent
@@ -347,7 +353,12 @@ class AgentManager:
         if method == "item/tool/requestUserInput":
             # Agents run unattended: answer with no input so they proceed on assumptions.
             return {"answers": {}}
-        return await self.app.interactions.ask(method, params, task_id=run.task_id)
+        # The request shows up as a card in the chat that launched the agent, so it's answered where the user is.
+        conv_id = task.get("conversation_id")
+        if conv_id and not self.app.store.get_conversation(conv_id):
+            conv_id = None
+        return await self.app.interactions.ask(method, params, conversation_id=conv_id, task_id=run.task_id,
+                                               agent=task.get("title") or "")
 
     def _event(self, run: AgentRun, kind: str, content: str, data: dict | None = None) -> None:
         event = self.app.store.add_task_event(run.task_id, kind, content[:4000], data)

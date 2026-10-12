@@ -358,7 +358,7 @@ class ConversationManager:
 
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
                         notice_kind: str = "notice", notice_data: dict | None = None,
-                        occurrence_id: str | None = None) -> str:
+                        occurrence_id: str | None = None, fallback: str = "") -> str:
         """Run a turn Weebo starts itself (routine, agent report, brief). The prompt is hidden;
         the UI shows ``notice`` instead of a user bubble. Return the dispatch outcome
         so a caught startup error cannot be mistaken for an accepted turn."""
@@ -379,7 +379,7 @@ class ConversationManager:
                 if not occurrence_id or not any(f.get("occurrence_id") == occurrence_id for f in session.followups):
                     session.followups.append({"prompt": prompt, "notice": notice, "trigger": trigger,
                                               "notice_kind": notice_kind, "notice_data": notice_data,
-                                              "occurrence_id": occurrence_id})
+                                              "occurrence_id": occurrence_id, "fallback": fallback})
                 return "queued"
             if occurrence_id and not self.app.scheduler.delivery_starting(occurrence_id):
                 return occurrence["status"]
@@ -412,6 +412,8 @@ class ConversationManager:
         session = self.sessions.get(conv_id)
         if not conv or not session or not session.turn:
             return False
+        # Stop drops what was waiting to be said, but not what it was about: the next turn still knows.
+        session.pending_context.extend(f["fallback"] for f in session.followups if f.get("fallback"))
         session.followups.clear()
         if session.turn.turn_id and conv.get("thread_id"):
             try:

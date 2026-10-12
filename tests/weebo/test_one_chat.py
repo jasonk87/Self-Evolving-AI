@@ -189,3 +189,90 @@ async def test_the_desk_becomes_the_main_chat(app):
     desk = app.store.find_conversation_by_kind("desk")
     app.store.update_conversation(desk["id"], title="Weebo's Desk")
     assert app.conversations.desk()["title"] == "Weebo" and app.conversations.main_id() == desk["id"]
+
+
+# ---------------------------------------------------------------- an agent asking for permission asks in the chat
+async def test_an_agents_approval_is_asked_in_the_chat_that_launched_it(app, fake_engine):
+    import asyncio
+
+    from weebo.agents.manager import AgentRun
+
+    main = app.conversations.main_id()
+    task = await app.agents.start("Clean up downloads", "Delete old installers.", conversation_id=main)
+    run = AgentRun(task["id"])
+    notes = []
+    app.bus.subscribe("notify", lambda topic, data: notes.append(data["notification"]))
+    app.clients = 1  # a browser is open: the card is enough, no notification on top
+    asking = asyncio.create_task(app.agents._on_request(run, "item/commandExecution/requestApproval", {
+        "threadId": "th", "turnId": "tu", "command": "rm -rf ~/Downloads/old", "reason": "Free up space"}))
+    for _ in range(100):
+        cards = [m for m in app.store.list_messages(main) if m["kind"] == "approval"]
+        if cards:
+            break
+        await asyncio.sleep(0.01)
+    assert cards and cards[0]["data"]["agent"] == "Clean up downloads" and cards[0]["status"] == "pending"
+    assert notes == []
+    app.interactions.resolve(cards[0]["data"]["id"], "accept")
+    assert (await asyncio.wait_for(asking, 2))["decision"] == "accept"
+
+    # An agent that stops while its question is open: the question expires instead of hanging forever.
+    again = asyncio.create_task(app.agents._on_request(run, "item/commandExecution/requestApproval", {
+        "threadId": "th", "turnId": "tu", "command": "rm -rf ~/Downloads/older"}))
+    for _ in range(100):
+        if app.interactions.pending:
+            break
+        await asyncio.sleep(0.01)
+    app.agents._finalize(task["id"], "cancelled", "", "Stopped by the user.")
+    assert (await asyncio.wait_for(again, 2))["decision"] == "cancel"
+    card = [m for m in app.store.list_messages(main) if m["kind"] == "approval"][-1]
+    assert card["status"] == "expired"
+
+
+# ---------------------------------------------------------------- agent results don't get lost
+async def test_an_agents_result_survives_stop_while_weebo_is_busy(app, fake_engine):
+    from weebo.brain.conversation import TurnState
+
+    main = app.conversations.main_id()
+    task = app.store.create_task("Compare cabins", "x", kind="agent", cwd=".", conversation_id=main)
+    session = app.conversations.session(main)
+    session.turn = TurnState(trigger="user", turn_id="busy-turn")  # Weebo is mid-reply
+    app.store.update_conversation(main, thread_id="th-1")
+    app.agents._finalize(task["id"], "completed", "Pine Hollow is the best cabin, $210/night.", "")
+    import asyncio
+    for _ in range(50):
+        if session.followups:
+            break
+        await asyncio.sleep(0.01)
+    reports = [m for m in app.store.list_messages(main) if m["kind"] == "agent_report"]
+    assert len(reports) == 1 and "Pine Hollow" in reports[0]["data"]["summary"]  # in the chat right away
+    assert session.followups and session.followups[0]["trigger"] == "agent_report"
+    await app.conversations.interrupt(main)  # Stop: the queued "tell the user" turn is dropped...
+    assert session.followups == []
+    assert any("Pine Hollow" in c for c in session.pending_context)  # ...but the next turn still knows
+
+
+async def test_agents_cut_off_by_a_restart_say_so_in_the_chat(app):
+    main = app.conversations.main_id()
+    task = app.store.create_task("Fix the build", "x", kind="agent", cwd=".", conversation_id=main)
+    app.store.update_task(task["id"], status="running", started_at=time.time())
+    app.agents._sync_card(task["id"])
+    app.agents.recover_after_restart()
+    card = app.store.get_message(f"agent:{task['id']}")
+    assert card["data"]["status"] == "interrupted"
+    report = [m for m in app.store.list_messages(main) if m["kind"] == "agent_report"][-1]
+    assert "interrupted" in report["content"] and report["data"]["task_id"] == task["id"]
+
+
+async def test_a_restart_waiting_for_builds_happens_when_the_last_queued_one_is_dropped(evolving, repo):
+    import asyncio
+
+    app, state = evolving
+    app.settings.update({"evolution.mode": "build"})
+    app.evolution.restart_after_build = "Applying a self-upgrade"  # a merge waits for the builds
+    idea = await app.evolution.propose("Queued idea", "Never built.", source="user")
+    app.store.update_proposal(idea["id"], status="rejected")  # dropped while it waited in line
+    for _ in range(100):
+        if state["restarts"]:
+            break
+        await asyncio.sleep(0.02)
+    assert state["restarts"] == ["Applying a self-upgrade"] and app.evolution.restart_after_build is None
