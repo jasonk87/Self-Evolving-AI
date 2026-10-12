@@ -68,9 +68,14 @@ async def test_one_chat_cards_chips_tabs_and_archive(app, fake_engine, monkeypat
 
             # A notification about it has nothing left to tell: the card is right here.
             note = app.notify("agent", "Agent “Fix the build” finished", "All green.", {"task_id": task["id"]})
-            await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=note["id"])
-            assert not await page.locator(".notification-banner").is_visible()
+            for _ in range(200):  # the browser receives it, sees the card, and marks it read on the server
+                if note["id"] not in [n["id"] for n in app.store.list_notifications(unread_only=True)]:
+                    break
+                await page.wait_for_timeout(25)
             assert note["id"] not in [n["id"] for n in app.store.list_notifications(unread_only=True)]
+            await page.wait_for_function("id => weebo.notifications.seen.has(id) && !weebo.notifications.unread.has(id)",
+                                         arg=note["id"])
+            assert not await page.locator(".notification-banner").is_visible()
 
             # The upgrade's card: merge right from the chat.
             upgrade = page.locator(f'[data-id="evolution:{proposal["id"]}"]')

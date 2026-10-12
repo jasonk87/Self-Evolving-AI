@@ -276,3 +276,20 @@ async def test_a_restart_waiting_for_builds_happens_when_the_last_queued_one_is_
             break
         await asyncio.sleep(0.02)
     assert state["restarts"] == ["Applying a self-upgrade"] and app.evolution.restart_after_build is None
+
+
+async def test_shutting_down_mid_run_leaves_the_agent_to_be_reported_after_the_restart(app, fake_engine):
+    import asyncio
+
+    main = app.conversations.main_id()
+    task = await app.agents.start("Long job", "Work for a while.", conversation_id=main)
+    for _ in range(100):
+        if fake_engine.turns:
+            break
+        await asyncio.sleep(0.01)
+    await app.agents.shutdown()  # Weebo stops while the agent works: nothing writes after this
+    assert app.store.get_task(task["id"])["status"] == "running" and not app.agents._tasks
+    app.agents.closing = False  # the next start
+    app.agents.recover_after_restart()
+    assert app.store.get_task(task["id"])["status"] == "interrupted"
+    assert app.store.get_message(f"agent:{task['id']}")["data"]["status"] == "interrupted"

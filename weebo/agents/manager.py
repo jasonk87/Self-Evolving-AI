@@ -63,6 +63,7 @@ class AgentManager:
         self.queue: deque[str] = deque()
         self._waiters: dict[str, list[asyncio.Future]] = {}
         self._tasks: set[asyncio.Task] = set()
+        self.closing = False
 
     # ------------------------------------------------------------------ public
     def resolve_cwd(self, cwd: str | None) -> str:
@@ -277,12 +278,22 @@ class AgentManager:
         finally:
             if run.thread_id:
                 engine.unroute(run.thread_id)
-                if run.turn_id:  # the thread exists on disk once a turn ran; label it for the Codex app
+                if run.turn_id and not self.closing:  # a thread exists on disk once a turn ran: label it
                     asyncio.create_task(engine.set_thread_name(run.thread_id, f"Weebo agent · {task['title']}"))
             self.runs.pop(run.task_id, None)
-            status = "cancelled" if run.cancelled and run.status != "failed" else run.status
-            self._finalize(run.task_id, status, run.final_text or run.last_message, run.error)
-            self._pump()
+            if not self.closing:  # shutting down: left "running", the next start reports it interrupted in its chat
+                status = "cancelled" if run.cancelled and run.status != "failed" else run.status
+                self._finalize(run.task_id, status, run.final_text or run.last_message, run.error)
+                self._pump()
+
+    async def shutdown(self) -> None:
+        """Weebo is stopping: end every agent run before the store they write to closes."""
+        self.closing = True
+        runs = [task for task in self._tasks if not task.done()]
+        for task in runs:
+            task.cancel()
+        if runs:
+            await asyncio.gather(*runs, return_exceptions=True)
 
     def _finalize(self, task_id: str, status: str, summary: str, error: str) -> None:
         store = self.app.store
