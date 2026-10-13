@@ -222,6 +222,21 @@ def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _casefold(text: Any) -> str:
+    # SQLite's lower() folds only ASCII: "ZÜRICH" would never match "zürich".
+    return str(text).casefold() if text is not None else ""
+
+
+def search_terms(query: str, max_terms: int = 6) -> list[str]:
+    """The words of a history search worth matching: "what did we decide about the trip" -> ["decide", "trip"]."""
+    terms: list[str] = []
+    for word in re.findall(r"[\w'@.-]+", query.casefold()):
+        word = word.strip("'.-")
+        if len(word) >= 3 and word not in STOPWORDS and word not in terms:
+            terms.append(word)
+    return terms[:max_terms]
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
@@ -260,6 +275,7 @@ class Store:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
+        self._conn.create_function("casefold", 1, _casefold, deterministic=True)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -408,17 +424,21 @@ class Store:
         })
         return self.get_message(message_id)  # type: ignore[return-value]
 
-    def bring_forward(self, message_id: str) -> dict[str, Any] | None:
-        """Move a message to the end of its conversation (a card that needs the user again shows up where they
-        are, not hundreds of messages up). It keeps its id, so the chat updates it in place from then on."""
+    def bring_forward(self, message_id: str, conversation_id: str | None = None) -> dict[str, Any] | None:
+        """Move a message to the end of its conversation, or of ``conversation_id`` (a card that needs the user
+        again shows up where they are, not hundreds of messages up). It keeps its id, so the chat updates it in
+        place from then on."""
         with self._lock:
             row = self.get_message(message_id)
             if row is None:
                 return None
+            moving = bool(conversation_id) and conversation_id != row["conversation_id"]
             last = self.query_one("SELECT MAX(seq) AS seq FROM messages WHERE conversation_id=?",
                                   (row["conversation_id"],))
-            if last and last["seq"] == row["seq"]:
+            if not moving and last and last["seq"] == row["seq"]:
                 return row
+            if moving:
+                row["conversation_id"] = conversation_id
             self.execute("DELETE FROM messages WHERE id=?", (message_id,))
             row.pop("seq", None)
             row["updated_at"] = time.time()
@@ -458,28 +478,36 @@ class Store:
         rows.reverse()
         return rows
 
-    def search_messages(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        """What was said (by the user or Weebo, in any chat) that contains every word of ``query``, newest first."""
-        terms = [t for t in re.findall(r"[\w'@.-]{3,}", query.lower()) if t][:6]
-        if not terms:
-            return []
-        like = " AND ".join("lower(m.content) LIKE ? ESCAPE '\\'" for _ in terms)
+    def _search(self, select: str, text: str, where: str, order: str, terms: list[str], every: bool,
+                limit: int) -> list[dict[str, Any]]:
+        """Rows whose ``text`` contains every term (``every``), or else any of them, best matched first."""
+        likes = [f"casefold({text}) LIKE ? ESCAPE '\\'" for _ in terms]
         params = [f"%{_like_escape(t)}%" for t in terms]
-        return self.query(
-            "SELECT m.seq, m.conversation_id, m.role, m.content, m.created_at, c.title AS conversation_title "
-            "FROM messages m JOIN conversations c ON c.id=m.conversation_id "
-            f"WHERE m.kind='text' AND m.role IN ('user','assistant') AND {like} ORDER BY m.seq DESC LIMIT ?",
-            (*params, limit))
+        if every:
+            return self.query(f"{select} WHERE {where} AND {' AND '.join(likes)} ORDER BY {order} LIMIT ?",
+                              (*params, limit))
+        score = " + ".join(f"({like})" for like in likes)
+        return self.query(f"{select} WHERE {where} AND ({' OR '.join(likes)}) ORDER BY {score} DESC, {order} LIMIT ?",
+                          (*params, *params, limit))
 
-    def search_tasks(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Agents whose title or report mentions every word of ``query``, newest first."""
-        terms = [t for t in re.findall(r"[\w'@.-]{3,}", query.lower()) if t][:6]
+    def search_messages(self, query: str, limit: int = 8, every: bool = True) -> list[dict[str, Any]]:
+        """What was said (by the user or Weebo, in any chat) that contains every word of ``query`` (or, with
+        ``every=False``, the most of them), newest first."""
+        terms = search_terms(query)
         if not terms:
             return []
-        like = " AND ".join("lower(title || ' ' || summary) LIKE ? ESCAPE '\\'" for _ in terms)
-        return self.query(f"SELECT id, title, status, summary, created_at, finished_at FROM tasks "
-                          f"WHERE kind='agent' AND {like} ORDER BY created_at DESC LIMIT ?",
-                          (*[f"%{_like_escape(t)}%" for t in terms], limit))
+        return self._search(
+            "SELECT m.seq, m.conversation_id, m.role, m.content, m.created_at, c.title AS conversation_title "
+            "FROM messages m JOIN conversations c ON c.id=m.conversation_id", "m.content",
+            "m.kind='text' AND m.role IN ('user','assistant')", "m.seq DESC", terms, every, limit)
+
+    def search_tasks(self, query: str, limit: int = 5, every: bool = True) -> list[dict[str, Any]]:
+        """Agents whose title or report mentions every word of ``query`` (or the most of them), newest first."""
+        terms = search_terms(query)
+        if not terms:
+            return []
+        return self._search("SELECT id, title, status, summary, created_at, finished_at FROM tasks",
+                            "title || ' ' || summary", "kind='agent'", "created_at DESC", terms, every, limit)
 
     def recent_dialogue(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
         rows = self.query(
@@ -734,6 +762,8 @@ class Store:
         message_id = f"evolution:{proposal['id']}"
         data = chat_status(proposal)
         existing = self.get_message(message_id)
+        if existing and existing["conversation_id"] != conversation_id:
+            existing = self.bring_forward(message_id, conversation_id)  # its card moves to the chat it now belongs to
         if existing and existing["data"] == data:
             return existing
         return self.upsert_message(message_id, conversation_id, "assistant", "evolution_status",

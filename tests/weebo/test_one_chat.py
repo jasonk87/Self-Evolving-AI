@@ -158,6 +158,23 @@ async def test_search_history_finds_what_was_said_and_what_agents_found(app):
     assert "Nothing" in wild.text  # LIKE wildcards in the query are literal
 
 
+async def test_search_history_reads_questions_and_any_alphabet(app):
+    main = app.conversations.main_id()
+    app.store.add_message(main, "user", "We decided the trip goes to ZÜRICH, then Malmö by train.")
+    app.store.add_message(main, "user", "Pick up oat milk")
+    # Plain words of a question, not every word of it ("what", "did", "we"...).
+    asked = await registry.call(said(app, main), "search_history", {"query": "what did we decide about the trip?"})
+    assert "ZÜRICH" in asked.text and "closest" not in asked.text
+    # Upper and lower case match beyond ASCII.
+    assert "ZÜRICH" in (await registry.call(said(app, main), "search_history", {"query": "zürich"})).text
+    assert "Malmö" in (await registry.call(said(app, main), "search_history", {"query": "MALMÖ"})).text
+    # No message has every word: the closest matches come back, said so, most words first.
+    close = await registry.call(said(app, main), "search_history", {"query": "trip to zürich by plane"})
+    assert "closest" in close.text and "ZÜRICH" in close.text and "oat milk" not in close.text
+    common = await registry.call(said(app, main), "search_history", {"query": "what did we do"})
+    assert not common.success
+
+
 async def test_offered_replies_land_on_the_final_answer(app, fake_engine):
     main = app.conversations.main_id()
 

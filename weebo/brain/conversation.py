@@ -295,12 +295,18 @@ class ConversationManager:
 
     def move_into_main(self) -> None:
         """Older chats are kept to read, so anything still due to happen in one (a reminder and the routines it
-        starts, an agent still working) happens in the main chat instead, where the user is."""
+        starts, an agent still working, an upgrade still in the works) happens in the main chat instead, where the
+        user is. An upgrade's card follows it there the next time it updates."""
         main, store = self.main_id(), self.app.store
         for table, statuses in (("reminders", ("pending",)), ("tasks", ("queued", "running"))):
             marks = ", ".join("?" for _ in statuses)
             store.execute(f"UPDATE {table} SET conversation_id=? WHERE conversation_id IS NOT NULL "
                           f"AND conversation_id != ? AND status IN ({marks})", (main, main, *statuses))
+        active = ("proposed", "vetting", "declined", "queued", "building", "checking", "ready", "conflict")
+        store.execute(  # only from chats that still exist: a chat deleted on purpose takes its upgrades' cards along
+            "UPDATE proposals SET meta=json_set(meta, '$.conversation_id', ?) "
+            f"WHERE status IN ({', '.join('?' for _ in active)}) AND json_extract(meta, '$.conversation_id') IN "
+            "(SELECT id FROM conversations WHERE id != ?)", (main, *active, main))
 
     async def delete(self, conv_id: str) -> None:
         conv = self.app.store.get_conversation(conv_id)

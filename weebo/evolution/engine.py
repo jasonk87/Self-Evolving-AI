@@ -165,6 +165,8 @@ class EvolutionEngine:
         self.restart_after_build: str | None = None  # a merged upgrade waits for the running build before restarting
         self._merge_mutex: asyncio.Lock | None = None
         self._restart_task: asyncio.Task | None = None
+        self.restarting: str | None = None  # a restart is decided: no more merges until Weebo is back
+        self._verify_handle: asyncio.TimerHandle | None = None
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -215,6 +217,7 @@ class EvolutionEngine:
             return
         proposal_ids = [i for i in (pending.get("proposal_ids") or [pending.get("proposal_id")]) if i]
         report_to = pending.get("report_to")
+        reported = pending.get("reported") or proposal_ids
         if pending.get("rolled_back"):
             titles = []
             for proposal_id in proposal_ids:
@@ -228,17 +231,25 @@ class EvolutionEngine:
                             "The new version failed to start, so Weebo reverted it automatically.",
                             {"proposal_id": proposal_ids[-1] if proposal_ids else None})
             if report_to:
-                self._report_upgrades(report_to, pending.get("reported") or proposal_ids, live=False)
+                # Only what was reverted: upgrades in the same batch that needed no restart are still in.
+                kept = [p["title"] for p in (self.app.store.get_proposal(i) for i in reported
+                                             if i not in proposal_ids) if p]
+                note = ("Still in (they didn't need the restart): " + "; ".join(kept) + ".\n\n" if kept else "")
+                self._report_upgrades(report_to, proposal_ids, live=False,
+                                      note=note + "Nothing is lost; I can look into what broke and rebuild it.")
             pending_path.unlink(missing_ok=True)
             return
         # This boot runs the merged code; confirm it once it has stayed up as long as the supervisor watches for a
         # crash (a crash before then is rolled back, so "live" must not be said sooner).
-        asyncio.get_event_loop().call_later(VERIFY_AFTER_SECONDS, self._mark_verified, proposal_ids, pending_path,
-                                            report_to, pending.get("reported") or proposal_ids)
+        self._verify_handle = asyncio.get_event_loop().call_later(
+            VERIFY_AFTER_SECONDS, self._mark_verified, proposal_ids, pending_path, report_to, reported, pending.get("at"))
 
     def _mark_verified(self, proposal_ids: list[str] | str | None, pending_path: Path, report_to: str | None = None,
-                       reported: list[str] | None = None) -> None:
-        pending_path.unlink(missing_ok=True)
+                       reported: list[str] | None = None, at: float | None = None) -> None:
+        self._verify_handle = None
+        # The note is only this boot's: a merge since may have written its own, which the supervisor still needs.
+        if at is None or self._pending_at(pending_path) == at:
+            pending_path.unlink(missing_ok=True)
         if isinstance(proposal_ids, str) or proposal_ids is None:
             proposal_ids = [proposal_ids] if proposal_ids else []
         for proposal_id in proposal_ids:
@@ -252,6 +263,13 @@ class EvolutionEngine:
             self._publish(proposal_id)
         if report_to:
             self._report_upgrades(report_to, reported or proposal_ids, live=True)
+
+    @staticmethod
+    def _pending_at(path: Path) -> float | None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get("at")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return None
 
     async def _work(self) -> None:
         while True:
@@ -276,7 +294,23 @@ class EvolutionEngine:
         """A restart that waited for the builds to finish happens as soon as none is running or waiting."""
         if self.restart_after_build and not self.current and self._queue.empty():
             reason, self.restart_after_build = self.restart_after_build, None
-            self.app.request_restart(reason)
+            if self._merge_lock().locked():  # a merge is mid-way: restart once it is done
+                self._restart_task = asyncio.create_task(self._restart(reason))
+            else:
+                self._restart_now(reason)
+
+    def _restart_now(self, reason: str) -> None:
+        """Restart, and refuse merges from here on (the process is about to exit). Call it holding the merge lock,
+        or when no merge is running."""
+        self.restarting = reason
+        self.app.request_restart(reason)
+
+    async def _restart(self, reason: str) -> None:
+        async with self._merge_lock():
+            if self.current or not self._queue.empty():
+                self.restart_after_build = reason  # a build started meanwhile: after it, then
+            else:
+                self._restart_now(reason)
 
     # ------------------------------------------------------------------ public API
     async def propose(self, title: str, description: str, rationale: str = "", source: str = "user",
@@ -646,7 +680,7 @@ class EvolutionEngine:
     async def merge(self, proposal_id: str, automatic: bool = False, approved_by: str = "") -> dict[str, Any]:
         async with self._merge_lock():
             merged = await self._merge_one(proposal_id, automatic, approved_by)
-        self._after_merge([merged])
+            self._after_merge([merged])  # under the lock: a merge waiting behind this one can't race the restart
         return self._get(proposal_id)
 
     async def merge_many(self, proposal_ids: list[str], approved_by: str = "",
@@ -662,7 +696,7 @@ class EvolutionEngine:
                 except EvolutionError as exc:
                     problem = {"proposal_id": proposal_id, "error": str(exc)}
                     break
-        restarting = self._after_merge(done, report_to=report_to, when_quiet=report_to)
+            restarting = self._after_merge(done, report_to=report_to, when_quiet=report_to)
         return {"merged": [d["proposal_id"] for d in done], "problem": problem, "restarting": restarting,
                 "skipped": [p for p in proposal_ids if p not in {d["proposal_id"] for d in done}
                             and p != (problem or {}).get("proposal_id")]}
@@ -674,6 +708,8 @@ class EvolutionEngine:
 
     async def _merge_one(self, proposal_id: str, automatic: bool, approved_by: str) -> dict[str, Any]:
         proposal = self._get(proposal_id)
+        if self.restarting:
+            raise EvolutionError("Weebo is restarting to load the upgrades just merged; merge this once it's back.")
         if proposal["status"] != "ready":
             raise EvolutionError(f"Only ready proposals can be merged (this one is {proposal['status']}).")
         root = paths.PROJECT_ROOT
@@ -737,16 +773,17 @@ class EvolutionEngine:
                 "previous_head": previous_head, "needs_restart": needs_restart}
 
     def _after_merge(self, done: list[dict[str, Any]], report_to: str | None = None,
-                     when_quiet: str | None = None) -> bool:
-        """Python changes need a restart to go live; anything else just reloads the page. Returns whether a
-        restart is coming."""
+                     when_quiet: str | None = None) -> str:
+        """Python changes need a restart to go live; anything else just reloads the page. Called holding the merge
+        lock. Returns when the restart comes: "now" (after the reply, if ``when_quiet``), "after_build" (a build is
+        running), or "" (none needed)."""
         if not done:
-            return False
+            return ""
         if not any(d["needs_restart"] for d in done):
             self.app.bus.publish("ui.reload", {"reason": done[-1]["title"]})
             if report_to:
                 self._report_upgrades(report_to, [d["proposal_id"] for d in done], live=True)
-            return False
+            return ""
         self._write_pending(done, report_to)
         if self.current or not self._queue.empty():
             # Restarting now would kill the build in progress; the merged code goes live right after it.
@@ -754,17 +791,18 @@ class EvolutionEngine:
             titles = ", ".join(d["title"] for d in done)
             self.app.notify("evolution", "Upgrade merged", f"{titles}: Weebo restarts to apply it as soon "
                             "as the current build finishes.", {"proposal_id": done[-1]["proposal_id"]})
-        elif when_quiet:
+            return "after_build"
+        if when_quiet:
             self._restart_task = asyncio.create_task(self._restart_when_quiet(when_quiet))
         else:
-            self.app.request_restart("Applying a self-upgrade")
-        return True
+            self._restart_now("Applying a self-upgrade")
+        return "now"
 
     def _write_pending(self, done: list[dict[str, Any]], report_to: str | None) -> None:
         """The supervisor's note: what to revert if the new version fails to start. Merges still waiting for their
         restart (deferred behind a build) stay in it, so a bad one among them is reverted too."""
         path = paths.data_dir() / PENDING_FILE
-        ids, commits, previous, reports = [], [], done[0]["previous_head"], []
+        ids, commits, previous, reports, reported = [], [], done[0]["previous_head"], [], []
         try:
             old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         except (OSError, json.JSONDecodeError):
@@ -774,25 +812,35 @@ class EvolutionEngine:
             commits = list(old.get("merged_commits") or [old.get("merged_commit")])
             previous = old.get("previous_head") or previous
             reports = [r for r in [old.get("report_to")] if r]
+            reported = list(old.get("reported") or ids)
+        elif old and not old.get("rolled_back") and self._verify_handle is not None:
+            # The last upgrade's note, still waiting to confirm this boot: this process has run its code long
+            # enough to merge another, so confirm it now rather than let its timer delete the note written here.
+            self._verify_handle.cancel()
+            self._verify_after_upgrade_now(old, path)
         ids += [d["proposal_id"] for d in done if d["needs_restart"]]
         commits += [d["merged_commit"] for d in done if d["needs_restart"]]
+        reported += [d["proposal_id"] for d in done if d["proposal_id"] not in reported]
         path.write_text(json.dumps({
             "proposal_id": ids[-1], "merged_commit": commits[-1],  # the newest (older readers)
             "proposal_ids": ids, "merged_commits": commits, "previous_head": previous, "at": time.time(),
             "report_to": report_to or (reports[0] if reports else None),
-            "reported": [d["proposal_id"] for d in done],
+            "reported": reported,
         }), encoding="utf-8")
 
-    async def _restart_when_quiet(self, conv_id: str, limit: float = 90.0) -> None:
+    def _verify_after_upgrade_now(self, pending: dict[str, Any], path: Path) -> None:
+        proposal_ids = [i for i in (pending.get("proposal_ids") or [pending.get("proposal_id")]) if i]
+        self._mark_verified(proposal_ids, path, pending.get("report_to"), pending.get("reported") or proposal_ids,
+                            pending.get("at"))
+
+    async def _restart_when_quiet(self, conv_id: str, limit: float = 90.0,
+                                  reason: str = "Applying a self-upgrade") -> None:
         """Let the reply that asked for the merge finish (it says what's about to happen), then restart."""
         deadline = time.monotonic() + limit
         session = self.app.conversations.sessions.get(conv_id)
         while session is not None and session.turn is not None and time.monotonic() < deadline:
             await asyncio.sleep(0.5)
-        if self.current or not self._queue.empty():
-            self.restart_after_build = "Applying a self-upgrade"
-        else:
-            self.app.request_restart("Applying a self-upgrade")
+        await self._restart(reason)
 
     def _report_upgrades(self, conv_id: str, proposal_ids: list[str], live: bool, note: str = "") -> None:
         """Say in the chat how a batch of upgrades went (the follow-up to "merge them, tell me when it's done")."""
@@ -830,6 +878,10 @@ class EvolutionEngine:
         return result
 
     async def rollback(self, proposal_id: str) -> dict[str, Any]:
+        async with self._merge_lock():  # the same checkout as merges
+            return await self._rollback(proposal_id)
+
+    async def _rollback(self, proposal_id: str) -> dict[str, Any]:
         proposal = self._get(proposal_id)
         if proposal["status"] != "merged" or not proposal.get("merged_commit"):
             raise EvolutionError("Only merged upgrades can be rolled back.")
@@ -851,7 +903,7 @@ class EvolutionEngine:
         self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
         self.app.store.journal("evolution", f"Rolled back: {proposal['title']}", "Reverted at the user's request.")
         if any(f.endswith(".py") for f in (proposal.get("meta") or {}).get("changed", [])):
-            self.app.request_restart("Rolling back an upgrade")
+            self._restart_now("Rolling back an upgrade")
         else:
             self.app.bus.publish("ui.reload", {"reason": "rollback"})
         return self._get(proposal_id)
@@ -948,7 +1000,7 @@ class EvolutionEngine:
         """Put an upgrade's card at the bottom of a chat ("show me that build")."""
         proposal = self._get(proposal_id)
         meta = dict(proposal.get("meta") or {})
-        if not meta.get("conversation_id") or not self.app.store.get_conversation(meta["conversation_id"]):
+        if meta.get("conversation_id") != conversation_id:  # it comes to the chat that asked (its card moves)
             meta["conversation_id"] = conversation_id
             self.app.store.update_proposal(proposal_id, meta=meta)
             proposal = self._get(proposal_id)
@@ -963,7 +1015,13 @@ class EvolutionEngine:
         shows up at the bottom of the main chat, once per state, instead of only as an inbox notification."""
         status, meta = proposal["status"], dict(proposal.get("meta") or {})
         wanted = status in NEEDS_YOU or (status == "failed" and proposal.get("source") in ("user", "conversation"))
-        if not wanted or meta.get("shown_status") == status:
+        if not wanted:
+            if meta.get("shown_status"):  # it moved on (rebuilding, say): the next time it needs the user, show it
+                meta.pop("shown_status")
+                self.app.store.update_proposal(proposal["id"], meta=meta)
+                return {**proposal, "meta": meta}
+            return proposal
+        if meta.get("shown_status") == status:
             return proposal
         meta["shown_status"] = status
         if not meta.get("conversation_id"):  # ideas from dreams, audits or the panel: the main chat is theirs

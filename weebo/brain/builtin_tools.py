@@ -567,7 +567,10 @@ async def merge_upgrades(ctx: ToolContext, proposal_ids: list[str] | None = None
         lines.append(f"Stopped at {titles.get(problem['proposal_id'], problem['proposal_id'])}: {problem['error']}")
     if result["skipped"]:
         lines.append("Not merged (stopped before them): " + "; ".join(titles.get(i, i) for i in result["skipped"]) + ".")
-    if result["restarting"]:
+    if result["restarting"] == "after_build":
+        lines.append("An upgrade build is running, so Weebo restarts to load the new code as soon as it finishes, "
+                     "then reports back in this chat.")
+    elif result["restarting"]:
         lines.append("Weebo restarts right after this reply to load the new code, then reports back in this chat.")
     elif result["merged"]:
         lines.append("No restart needed: they're live now.")
@@ -586,7 +589,8 @@ async def restart_weebo(ctx: ToolContext) -> ToolResult:
         evolution.restart_after_build = "Restart requested in chat"
         return ToolResult("A build is running; Weebo restarts as soon as it finishes.")
     conv_id = ctx.conversation_id or ctx.app.conversations.main_id()
-    evolution._restart_task = asyncio.create_task(evolution._restart_when_quiet(conv_id))
+    evolution._restart_task = asyncio.create_task(evolution._restart_when_quiet(conv_id,
+                                                                                reason="Restart requested in chat"))
     return ToolResult("Restarting right after this reply.")
 
 
@@ -600,13 +604,20 @@ async def restart_weebo(ctx: ToolContext) -> ToolResult:
      "required": ["query"]},
 )
 async def search_history(ctx: ToolContext, query: str, limit: int = 8) -> ToolResult:
+    from ..store import search_terms
+
     store = ctx.app.store
-    rows = store.search_messages(query, limit=max(1, min(int(limit or 8), 20)))
-    tasks = store.search_tasks(query, limit=4)
-    if not rows and not tasks:
-        return ToolResult(f"Nothing in the history mentions all of: {query}. Try fewer or different words.")
-    user = ctx.app.settings.get("user.name") or "User"
+    if not search_terms(query):
+        raise ToolError("Search with a few distinctive words (names, places, things), not just common ones.")
+    limit = max(1, min(int(limit or 8), 20))
+    rows, tasks = store.search_messages(query, limit=limit), store.search_tasks(query, limit=4)
     lines = []
+    if not rows and not tasks:  # nothing has every word: the closest matches, most words first
+        rows, tasks = store.search_messages(query, limit=limit, every=False), store.search_tasks(query, 4, every=False)
+        if not rows and not tasks:
+            return ToolResult(f"Nothing in the history mentions any of: {query}. Try different words.")
+        lines.append(f"Nothing mentions all of \"{query}\"; the closest matches:")
+    user = ctx.app.settings.get("user.name") or "User"
     for row in reversed(rows):
         when = datetime.fromtimestamp(row["created_at"]).strftime("%b %d %I:%M %p")
         who = user if row["role"] == "user" else "Weebo"
