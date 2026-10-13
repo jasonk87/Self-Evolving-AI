@@ -147,9 +147,14 @@ Why: {rationale}
 """
 
 REVISION_PROMPT = """Your previous attempt at "{title}" did not pass Weebo's verification. Fix these problems in the
-same worktree ({worktree}), re-run the checks, and report back. Do not commit. Files git ignores (*.json, data/,
-build/ ...) are deleted before the checks run, so keep anything the change needs out of them; scratch files go in
-`.weebo-tmp/` at the worktree root.
+same worktree ({worktree}), re-run the checks (python -m weebo --selftest; python -m pytest tests/weebo -q
+-p no:cacheprovider), and report back. Do not commit. Files git ignores (*.json, data/, build/ ...) are deleted
+before the checks run, so keep anything the change needs out of them; scratch files go in `.weebo-tmp/` at the
+worktree root.
+
+The goal, as a reminder: {description}
+The same rules still hold: never weaken, skip or delete an existing test to make checks pass, and never hardcode
+who the user is.
 
 {feedback}
 """
@@ -452,7 +457,7 @@ class EvolutionEngine:
         self._publish(proposal_id)
         self.app.bus.publish("weebo.mood", {"mood": "evolving", "background": True})
 
-        feedback = ""
+        feedback, previous_task = "", None
         gate_report = None
         review: dict[str, Any] = {}
         changed: list[str] = []
@@ -461,11 +466,9 @@ class EvolutionEngine:
             prompt = (BUILD_PROMPT if round_number == 1 else REVISION_PROMPT).format(
                 worktree=worktree, title=proposal["title"], description=proposal["description"],
                 rationale=proposal["rationale"] or "(not given)", feedback=feedback)
-            task = await self.app.agents.start(
-                f"Evolve: {proposal['title']}" + (f" (revision {round_number - 1})" if round_number > 1 else ""),
-                prompt, cwd=str(worktree), kind="evolution",
-                meta={"sandbox_mode": "workspace-write-auto", "proposal_id": proposal_id, "tools_scope": "none"},
-                effort=self.app.settings.get("codex.agent_effort"))
+            # A revision continues the previous round's session: the agent remembers what it tried and why.
+            task = await self._build_agent(proposal, round_number, prompt, worktree, previous_task)
+            previous_task = task["id"]
             self.app.store.update_proposal(proposal_id, task_id=task["id"])
             finished = await self.app.agents.wait(task["id"])
             if finished["status"] != "completed":
@@ -544,6 +547,19 @@ class EvolutionEngine:
         why = "" if governance["autonomous"] else f" {governance['why']}"
         self.app.notify("evolution", "Upgrade ready to review", f"{proposal['title']}.{why}", {"proposal_id": proposal_id})
         self.app.bus.publish("weebo.mood", {"mood": "proud", "background": True})
+
+    async def _build_agent(self, proposal: dict[str, Any], round_number: int, prompt: str, worktree: Path,
+                           previous_task: str | None) -> dict[str, Any]:
+        title = f"Evolve: {proposal['title']}" + (f" (revision {round_number - 1})" if round_number > 1 else "")
+        options = dict(cwd=str(worktree), kind="evolution", effort=self.app.settings.get("codex.agent_effort"),
+                       meta={"sandbox_mode": "workspace-write-auto", "proposal_id": proposal["id"],
+                             "tools_scope": "none"})
+        if previous_task:
+            try:
+                return await self.app.agents.start(title, prompt, continue_from=previous_task, **options)
+            except ValueError as exc:  # it left no session to continue: a fresh one has the whole prompt
+                logger.info("Revision of %s starts a fresh session: %s", proposal["id"], exc)
+        return await self.app.agents.start(title, prompt, **options)
 
     async def _checkpoint(self, root: Path, title: str) -> str:
         """Save the user's uncommitted work as a normal commit (their identity, their hooks) before merging."""
@@ -665,8 +681,7 @@ class EvolutionEngine:
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             return {"text": f"Review did not complete: {exc}", "blocking": True, "error": str(exc) or "timed out"}
         finally:
-            engine.unroute(thread_id)
-            engine.loaded_threads.discard(thread_id)
+            engine.release_thread(thread_id)
             if count:
                 self.app.count_background_turn("review")
         text = (state["review"] or "\n\n".join(state["messages"])).strip()

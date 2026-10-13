@@ -515,16 +515,21 @@ class ConversationManager:
         approval, sandbox_mode, _ = chat_sandbox(self.app, [])
         cwd = conv.get("cwd") or str(paths.workspace_dir())
         if thread_id and meta.get("tools_hash") == current_hash:
-            try:
-                self._route(conv["id"], thread_id)
-                await engine.resume_thread(
-                    thread_id, cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode,
-                    developerInstructions=persona.developer_instructions(self.app, "chat"),
-                )
-                return thread_id
-            except (RpcError, asyncio.TimeoutError) as exc:
-                logger.info("Could not resume thread %s (%s); starting fresh", thread_id, exc)
-                self.app.engine.unroute(thread_id)
+            for attempt in (1, 2):
+                try:
+                    self._route(conv["id"], thread_id)
+                    await engine.resume_thread(
+                        thread_id, cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode,
+                        developerInstructions=persona.developer_instructions(self.app, "chat"),
+                    )
+                    return thread_id
+                except (RpcError, asyncio.TimeoutError) as exc:
+                    if attempt == 1 and "archived" in str(exc).lower():  # put away in Codex: bring it back
+                        await self.app.threads.take_back(thread_id)
+                        continue
+                    logger.info("Could not resume thread %s (%s); starting fresh", thread_id, exc)
+                    self.app.engine.unroute(thread_id)
+                    break
         if thread_id:
             # Old thread is gone or has outdated tools: carry the recent dialogue over.
             recap = self._recap(conv["id"])
@@ -540,6 +545,9 @@ class ConversationManager:
         meta["tools_hash"] = current_hash
         self.app.store.update_conversation(conv["id"], thread_id=new_thread, meta=meta)
         self._route(conv["id"], new_thread)
+        if thread_id:  # the thread it replaces: out of the Codex app's list (archived there, not deleted)
+            self.app.engine.unroute(thread_id)
+            self.app.threads.put_away(thread_id)
         return new_thread
 
     def _recap(self, conv_id: str) -> str:

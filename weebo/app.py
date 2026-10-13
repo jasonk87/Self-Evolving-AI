@@ -14,6 +14,7 @@ from .agents.manager import AgentManager
 from .brain.conversation import ConversationManager
 from .brain.interactions import Interactions
 from .brain.mind import Mind
+from .brain.threads import ThreadKeeper
 from .codex.engine import CodexEngine
 from .config import Settings
 from .diagnostics import Diagnostics
@@ -45,6 +46,7 @@ class WeeboApp:
         self.interactions = Interactions(self)
         self.conversations = ConversationManager(self)
         self.agents = AgentManager(self)
+        self.threads = ThreadKeeper(self)
         self.scheduler = Scheduler(self)
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
@@ -138,6 +140,7 @@ class WeeboApp:
 
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
         if data.get("status") == "ready":
+            self.threads.on_engine_ready()  # before the pump: a continued agent may need a thread put away first
             self.agents._pump()
             await self.skills.sync_with_codex()
 

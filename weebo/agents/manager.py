@@ -1,5 +1,6 @@
 """Parallel background agents. Each agent is its own Codex thread with its own turn,
-so several run at the same time while the chat stays responsive."""
+so several run at the same time while the chat stays responsive. Follow-up work on a finished agent's job can
+continue that agent's thread (it remembers what it did); finished threads are put away in Codex's archive."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import log, paths
 from ..brain import activity, persona
-from ..brain.conversation import item_to_message, sandbox_for
+from ..brain.conversation import item_to_message, sandbox_for, tools_hash
 from ..brain.tools import ToolContext, registry
 from ..codex.engine import text_input
 from ..codex.rpc import EngineClosed, RpcError
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 logger = log.get("agents")
 
 ACTIVE = ("queued", "running")
+# What a continuation takes from the agent it continues: what its Codex thread was set up with.
+INHERITED = ("tools_scope", "tools_hash", "developer_instructions", "sandbox_mode", "autonomy")
 
 
 CARD_EVERY = 2.0  # seconds between progress updates of an agent's chat card
@@ -45,6 +48,7 @@ class AgentRun:
     commands: int = 0
     cancelled: bool = False
     card_synced: float = 0.0
+    fresh: bool = False  # this run started its thread (rather than continuing an earlier agent's)
 
 
 def _duration(seconds: float) -> str:
@@ -86,22 +90,54 @@ class AgentManager:
 
     async def start(self, title: str, instructions: str, cwd: str | None = None, effort: str | None = None,
                     conversation_id: str | None = None, kind: str = "agent", meta: dict | None = None,
-                    tools_scope: str = "agent", developer_instructions: str | None = None) -> dict[str, Any]:
+                    tools_scope: str = "agent", developer_instructions: str | None = None,
+                    continue_from: str | None = None) -> dict[str, Any]:
+        """Queue an agent. With ``continue_from`` (a finished agent of the same kind) it works in that agent's
+        Codex thread, where it remembers the job, so ``instructions`` can be just the follow-up."""
         title = (title or "").strip()[:120] or "Background task"
         if not instructions or not instructions.strip():
             raise ValueError("Agent instructions are empty.")
-        resolved = self.resolve_cwd(cwd)
         task_meta = {"effort": effort, "tools_scope": tools_scope, **(meta or {})}
         if developer_instructions:
             task_meta["developer_instructions"] = developer_instructions
+        source = self._continuable(continue_from, kind) if continue_from else None
+        if source:
+            # Its thread's tools, instructions and folder are fixed: they come along, whatever else was asked.
+            inherited = {k: v for k, v in (source.get("meta") or {}).items() if k in INHERITED}
+            task_meta = {**task_meta, **inherited, "continues": source["id"]}
+            resolved = self.resolve_cwd(source["cwd"])
+        else:
+            resolved = self.resolve_cwd(cwd)
+            task_meta["tools_hash"] = tools_hash(task_meta.get("tools_scope") or "agent")
         task = self.app.store.create_task(title, instructions.strip(), kind=kind, cwd=resolved,
                                           conversation_id=conversation_id, meta=task_meta)
-        self.app.store.add_task_event(task["id"], "created", f"Queued in {resolved}")
+        if source:
+            task = self.app.store.update_task(task["id"], thread_id=source["thread_id"]) or task
+            self.app.store.add_task_event(task["id"], "created", f"Continues {source['id']} in {resolved}")
+        else:
+            self.app.store.add_task_event(task["id"], "created", f"Queued in {resolved}")
         self.queue.append(task["id"])
         self.app.bus.publish("task.updated", {"task": task})
         self._pump()
         self._sync_card(task["id"])
         return self.app.store.get_task(task["id"]) or task
+
+    def _continuable(self, task_id: str, kind: str) -> dict[str, Any]:
+        source = self.app.store.get_task(task_id)
+        if source is None:
+            raise ValueError(f"No agent {task_id}.")
+        if source["kind"] != kind:
+            raise ValueError(f"{task_id} isn't that kind of agent, so it can't be continued here.")
+        if source["status"] in ACTIVE:
+            raise ValueError(f"Agent {task_id} is still {source['status']}; send it a message instead.")
+        if not source.get("thread_id") or (source.get("meta") or {}).get("ephemeral"):
+            raise ValueError(f"Agent {task_id} left no thread to continue; start a new agent instead.")
+        # One turn at a time per thread: a second continuation would collide with the first.
+        busy = self.app.store.query_one("SELECT id FROM tasks WHERE thread_id=? AND status IN ('queued', 'running')",
+                                        (source["thread_id"],))
+        if busy:
+            raise ValueError(f"Agent {busy['id']} is already continuing that work; send it a message instead.")
+        return source
 
     async def wait(self, task_id: str, timeout: float | None = None) -> dict[str, Any]:
         task = self.app.store.get_task(task_id)
@@ -154,6 +190,8 @@ class AgentManager:
             if not task:
                 return f"No agent {task_id}."
             lines = [f"{task['id']} \"{task['title']}\" — {task['status']}"]
+            if (task.get("meta") or {}).get("continues"):
+                lines.append(f"Continues {task['meta']['continues']} (same session, so it remembers that work).")
             run = self.runs.get(task_id)
             if run:
                 lines.append(f"Progress: {run.progress or 'working'}; commands run: {run.commands}; files touched: {len(run.files)}")
@@ -194,6 +232,8 @@ class AgentManager:
                 # Other kinds retain their existing recovery rules (e.g. evolution owns rebuilding).
                 task = self.app.store.update_task(task_id, status="interrupted", finished_at=time.time(),
                                                   error="Weebo restarted while this agent was running.")
+                if task and task.get("thread_id") and not (task.get("meta") or {}).get("ephemeral"):
+                    self.app.threads.later(task["thread_id"])
                 if task and task["kind"] == "agent":  # say so in its chat: its card would read "Working" forever
                     self._sync_card(task_id)
                     self._report(task)
@@ -237,13 +277,24 @@ class AgentManager:
                 policy = {"type": "workspaceWrite", "writableRoots": [task["cwd"]], "networkAccess": True,
                           "excludeTmpdirEnvVar": False, "excludeSlashTmp": False}
             scope = meta.get("tools_scope") or "agent"
-            result = await engine.start_thread(
-                cwd=task["cwd"], approvalPolicy=approval, sandbox=sandbox_mode,
-                developerInstructions=meta.get("developer_instructions") or persona.developer_instructions(self.app, "agent"),
-                dynamicTools=registry.specs(scope), serviceName="weebo-agent", ephemeral=False, model=model,
-            )
-            run.thread_id = result["thread"]["id"]
-            self.app.store.update_task(run.task_id, thread_id=run.thread_id)
+            developer = meta.get("developer_instructions") or persona.developer_instructions(self.app, "agent")
+            earlier = ""
+            if task.get("thread_id"):  # continuing an earlier agent's work in its own thread
+                run.thread_id = await self._reopen(task, approval, sandbox_mode, developer, scope)
+                if run.thread_id is None:
+                    earlier = self._earlier_work(task)
+            if run.thread_id is None:
+                result = await engine.start_thread(
+                    cwd=task["cwd"], approvalPolicy=approval, sandbox=sandbox_mode, developerInstructions=developer,
+                    dynamicTools=registry.specs(scope), serviceName="weebo-agent",
+                    ephemeral=bool(meta.get("ephemeral")), model=model,
+                )
+                run.thread_id, run.fresh = result["thread"]["id"], True
+                if task.get("thread_id"):  # took over from a thread that couldn't be reopened: it has today's tools
+                    self.app.store.update_task(run.task_id, thread_id=run.thread_id,
+                                               meta={**meta, "tools_hash": tools_hash(scope)})
+                else:
+                    self.app.store.update_task(run.task_id, thread_id=run.thread_id)
             if run.cancelled:  # stopped while the thread was being created: never start the turn
                 run.status = "cancelled"
                 return
@@ -251,6 +302,8 @@ class AgentManager:
                          listener=lambda m, p, r=run: self._on_event(r, m, p),
                          request_handler=lambda m, p, r=run: self._on_request(r, m, p))
             context = f"Agent task id: {run.task_id}\nLaunched by Weebo at {time.strftime('%Y-%m-%d %H:%M')}"
+            if earlier:
+                context += "\n\n" + earlier
             overrides: dict[str, Any] = {"model": model, "effort": effort, "approvalPolicy": approval,
                                          "sandboxPolicy": policy}
             if meta.get("output_schema") and engine.features.output_schema:
@@ -278,13 +331,51 @@ class AgentManager:
         finally:
             if run.thread_id:
                 engine.unroute(run.thread_id)
-                if run.turn_id and not self.closing:  # a thread exists on disk once a turn ran: label it
-                    asyncio.create_task(engine.set_thread_name(run.thread_id, f"Weebo agent · {task['title']}"))
             self.runs.pop(run.task_id, None)
             if not self.closing:  # shutting down: left "running", the next start reports it interrupted in its chat
                 status = "cancelled" if run.cancelled and run.status != "failed" else run.status
                 self._finalize(run.task_id, status, run.final_text or run.last_message, run.error)
+                if run.thread_id:
+                    self._put_away(run, task)
                 self._pump()
+
+    async def _reopen(self, task: dict[str, Any], approval: str, sandbox_mode: str, developer: str,
+                      scope: str) -> str | None:
+        """The continued agent's thread, ready for another turn; None when it can't come back (its tools changed
+        in an upgrade, or Codex no longer has it), so a fresh thread takes over."""
+        thread_id = task["thread_id"]
+        if (task.get("meta") or {}).get("tools_hash") not in (None, tools_hash(scope)):
+            return None  # a thread keeps the tools it started with: the current ones need a new thread
+        engine = self.app.engine
+        await self.app.threads.settle(thread_id)  # it may be being put away right now
+        if thread_id in engine.loaded_threads:
+            return thread_id
+        await self.app.threads.take_back(thread_id)
+        try:
+            await engine.resume_thread(thread_id, cwd=task["cwd"], approvalPolicy=approval, sandbox=sandbox_mode,
+                                       developerInstructions=developer)
+        except (RpcError, asyncio.TimeoutError) as exc:
+            logger.info("Could not reopen thread %s for %s (%s); starting a fresh one", thread_id, task["id"], exc)
+            return None
+        return thread_id
+
+    def _earlier_work(self, task: dict[str, Any]) -> str:
+        """What a fresh thread needs to know when the thread it was meant to continue couldn't be reopened."""
+        source = self.app.store.get_task((task.get("meta") or {}).get("continues") or "")
+        if not source:
+            return ""
+        return (f"This continues earlier work by agent {source['id']} \"{source['title']}\", whose own session "
+                f"couldn't be reopened. For background only (the instructions are in the message), it was asked:\n"
+                f"{source['prompt'][:4000]}\n\nIt reported:\n{(source.get('summary') or source.get('error') or '')[:4000]}")
+
+    def _put_away(self, run: AgentRun, task: dict[str, Any]) -> None:
+        """Done with this thread for now: out of the Codex app's thread list (follow-up work brings it back)."""
+        if (task.get("meta") or {}).get("ephemeral") or (run.fresh and not run.turn_id):
+            self.app.engine.release_thread(run.thread_id)  # nothing on disk: just let Codex unload it
+            return
+        # A thread exists on disk once a turn ran: label it (one this agent continued keeps its first name).
+        name = f"Weebo agent · {task['title']}" if run.turn_id and run.fresh else ""
+        self.app.threads.put_away(run.thread_id, name)
 
     async def shutdown(self) -> None:
         """Weebo is stopping: end every agent run before the store they write to closes."""

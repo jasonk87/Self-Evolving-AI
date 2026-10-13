@@ -434,7 +434,9 @@ return [] if nothing is worth changing.
 """
         task = await self.app.agents.start(
             "Self-audit: " + focus.split(" (")[0].split(":")[0], prompt, cwd=str(paths.PROJECT_ROOT), kind="audit",
-            meta={"sandbox_mode": "read-only-auto", "output_schema": AUDIT_SCHEMA, "tools_scope": "none"},
+            # Ephemeral: read once for its findings, never continued, so nothing is saved to the Codex app.
+            meta={"sandbox_mode": "read-only-auto", "output_schema": AUDIT_SCHEMA, "tools_scope": "none",
+                  "ephemeral": True},
             effort=self.app.settings.get("codex.background_effort") or "medium",
         )
         self.app.count_background_turn("audit")

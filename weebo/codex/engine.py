@@ -362,12 +362,44 @@ class CodexEngine:
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/name/set failed: %s", exc)
 
-    async def archive_thread(self, thread_id: str) -> None:
+    async def archive_thread(self, thread_id: str) -> bool:
+        """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too."""
         try:
             await self.request("thread/archive", {"threadId": thread_id}, timeout=15)
+            return True
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/archive failed: %s", exc)
+            return False
+        finally:
+            self.loaded_threads.discard(thread_id)
+
+    async def unarchive_thread(self, thread_id: str) -> bool:
+        """Bring an archived thread back so it can be resumed (resuming an archived thread is refused)."""
+        try:
+            await self.request("thread/unarchive", {"threadId": thread_id}, timeout=15)
+            return True
+        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            logger.debug("thread/unarchive failed: %s", exc)
+            return False
+
+    async def list_threads(self, **params: Any) -> dict[str, Any]:
+        return await self.request("thread/list", {k: v for k, v in params.items() if v is not None}, timeout=30)
+
+    def release_thread(self, thread_id: str) -> None:
+        """Done with a thread for good: stop following it, so the app-server can unload it (ephemeral threads stay
+        in its memory while anyone is subscribed)."""
+        self.unroute(thread_id)
         self.loaded_threads.discard(thread_id)
+        if self.status != "ready":
+            return
+
+        async def unsubscribe() -> None:
+            try:
+                await self.request("thread/unsubscribe", {"threadId": thread_id}, timeout=15)
+            except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+                logger.debug("thread/unsubscribe failed: %s", exc)
+
+        asyncio.get_running_loop().create_task(unsubscribe())
 
     async def start_review(self, thread_id: str, target: dict[str, Any]) -> dict[str, Any]:
         return await self.request("review/start", {"threadId": thread_id, "target": target, "delivery": "inline"}, timeout=90)

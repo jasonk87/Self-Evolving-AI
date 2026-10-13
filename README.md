@@ -21,7 +21,8 @@ If Codex isn't signed in, Weebo shows a **Sign in with ChatGPT** button in Setti
 | | |
 |---|---|
 | **One chat** | Everything happens in a single conversation: talk, briefs, routines, agent results, upgrades that need you. Weebo keeps up with it all: each turn knows what agents are doing, what finished today and which upgrades are waiting, and `search_history` looks back through everything said (and older chats, kept to read under **More → Older chats**). A tab bar (Chat, Memory, Evolution, Agents, More) gets you everywhere else. |
-| **Weebo delegates** | The chat talks, remembers, plans and keeps track; real work (commands, files, code, web research) goes to background Codex agents that run **in parallel** while you keep chatting. Each agent has a live card in the chat that says what it's doing in plain words ("Running the tests"), with a Stop button; when it finishes, Weebo tells you what came back. (Settings → `chat.delegate_work` turns this off and lets the chat work itself.) |
+| **Weebo delegates** | The chat talks, remembers, plans and keeps track; real work (commands, files, code, web research) goes to background Codex agents that run **in parallel** while you keep chatting. Each agent has a live card in the chat that says what it's doing in plain words ("Running the tests"), with a Stop button; when it finishes, Weebo tells you what came back. Follow-up work on the same job continues that agent's own session, so it remembers what it did. (Settings → `chat.delegate_work` turns this off and lets the chat work itself.) |
+| **Tidy in Codex** | Your Codex app shows one Weebo thread, the chat. Weebo archives agent and upgrade-build threads in Codex once they finish (restorable from Codex's archive; Weebo brings one back itself when work continues it), and background thinking never saves a thread at all. |
 | **Just ask** | Tell Weebo to change a setting, check on or redirect an agent, show you a build, build or reject an upgrade, or "merge them all and tell me when it's done": it merges them, restarts once, and reports back in the chat. Upgrade cards in the chat also have Merge / Rebuild / See changes buttons. Results come to you in the chat instead of an inbox to check. |
 | **Reply chips** | When the next step is obvious, Weebo offers a few tap-to-send replies under its answer. |
 | **Easy to read** | While Weebo works it says what it's doing in plain words, never the command it's running, and its avatar shows it: thinking, coding, reviewing, researching or handing work to an agent. `Esc` stops a turn; typing while it works adds to it. |
@@ -77,9 +78,9 @@ watches your cursor.
                                     WeeboApp (weebo/app.py) ---+--- SQLite store, memory, scheduler, heartbeat
                                                                |
                          one long-lived `codex app-server` (JSON-RPC over stdio, weebo/codex)
-                         ├─ chat threads      (one per conversation, Weebo's tools as dynamicTools)
-                         ├─ agent threads     (parallel background jobs)
-                         ├─ review/think threads (self-audit, dreams, Codex code review)
+                         ├─ the chat's thread (Weebo's tools as dynamicTools)
+                         ├─ agent threads     (parallel background jobs; continued for follow-ups, archived when done)
+                         ├─ ephemeral threads (self-audit, dreams, Council, evals, Codex code review: never saved)
                          └─ calls back into Weebo: tool calls, approvals, questions
 ```
 

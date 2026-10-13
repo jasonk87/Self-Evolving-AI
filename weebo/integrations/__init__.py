@@ -88,10 +88,10 @@ class Integrations:
         self.app = app
 
     @staticmethod
-    def describe_catalog() -> str:
+    def describe_catalog(availability: bool = True) -> str:
         lines = []
         for name, item in CATALOG.items():
-            missing = missing_requirements(name)
+            missing = missing_requirements(name) if availability else []
             note = f" UNAVAILABLE (needs {', '.join(missing)}); use another way." if missing else ""
             lines.append(f"- {name}: {item.about}{' Asks the user first.' if item.risk == 'confirm' else ''}{note}")
         return "\n".join(lines)

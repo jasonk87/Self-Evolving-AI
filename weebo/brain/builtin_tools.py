@@ -154,25 +154,38 @@ async def cancel_reminder(ctx: ToolContext, reminder_id: str) -> ToolResult:
     "start_agent",
     "Launch a background Codex agent for a long or multi-step job. Returns immediately with a task id; the agent works "
     "in parallel and its report is delivered to you automatically when it finishes. Give complete, self-contained "
-    "instructions: the agent does not see this conversation.",
+    "instructions: the agent does not see this conversation. For follow-up work on a job an agent already did (fix "
+    "what it found, extend or redo part of its result), pass continue_agent with that agent's id: the new agent "
+    "picks up in the same session and remembers the job, so the instructions can be just the follow-up.",
     {
         "properties": {
             "title": {"type": "string", "description": "Short name shown to the user, e.g. 'Build snake game'."},
             "instructions": {"type": "string", "description": "Full task description with goals, constraints and where to work."},
             "cwd": {"type": "string", "description": "Absolute working directory. Defaults to Weebo's workspace."},
             "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh"]},
+            "continue_agent": {"type": "string", "description": "Id of a finished agent whose work this continues "
+                               "(it works where that agent did). Leave out for unrelated jobs."},
         },
         "required": ["title", "instructions"],
     },
 )
-async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str = "", effort: str = "") -> ToolResult:
+async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str = "", effort: str = "",
+                      continue_agent: str = "") -> ToolResult:
+    agents = ctx.app.agents
+    if continue_agent and continue_agent in agents.runs:  # still at it: tell it rather than start a second one
+        try:
+            await agents.message(continue_agent, instructions)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        return ToolResult(f"Agent {continue_agent} is still working on that, so I passed this on to it instead.")
     try:
-        task = await ctx.app.agents.start(title, instructions, cwd=cwd or None, effort=effort or None,
-                                          conversation_id=ctx.conversation_id)
+        task = await agents.start(title, instructions, cwd=cwd or None, effort=effort or None,
+                                  conversation_id=ctx.conversation_id, continue_from=continue_agent or None)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
     position = "starting now" if task["status"] == "running" else "queued (other agents are busy)"
-    return ToolResult(f"Agent {task['id']} \"{task['title']}\" is {position} in {task['cwd']}.")
+    picks_up = f", picking up where {continue_agent} left off," if continue_agent else ""
+    return ToolResult(f"Agent {task['id']} \"{task['title']}\" is {position}{picks_up} in {task['cwd']}.")
 
 
 @registry.register(
@@ -193,6 +206,10 @@ async def message_agent(ctx: ToolContext, task_id: str, message: str) -> ToolRes
     try:
         await ctx.app.agents.message(task_id, message)
     except ValueError as exc:
+        task = ctx.app.store.get_task(task_id)
+        if task and task["kind"] == "agent" and task["status"] not in ("queued", "running"):
+            raise ToolError(f"Agent {task_id} has finished ({task['status']}). To give it more to do on the same job, "
+                            f"use start_agent with continue_agent={task_id}: it picks up where it left off.") from exc
         raise ToolError(str(exc)) from exc
     return ToolResult(f"Sent to {task_id}.")
 
@@ -359,9 +376,11 @@ async def open_in_browser(ctx: ToolContext, url: str) -> ToolResult:
 
 def _integrations_description() -> str:
     from ..integrations import Integrations
+    # Without what's set up on this machine: a Codex thread keeps the tool descriptions it started with, so adding
+    # an API key must not mean a new chat thread. An integration that isn't set up says what it needs when called.
     return (
         "Use one of Weebo's integrations (the user's own keys and accounts). Prefer your own tools when they do the "
-        "job; use these for: \n" + Integrations.describe_catalog()
+        "job; use these for: \n" + Integrations.describe_catalog(availability=False)
     )
 
 

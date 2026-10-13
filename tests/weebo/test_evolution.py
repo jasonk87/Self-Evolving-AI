@@ -39,9 +39,10 @@ def repo(tmp_path, monkeypatch):
 async def evolving(app, repo, monkeypatch):
     """App whose build agent edits files according to ``script`` and whose gates are scripted too."""
     state = {"script": [], "gates": [], "reviews": [], "council": [], "restarts": [], "stages": [], "convened": [],
-             "gate_kwargs": []}
+             "gate_kwargs": [], "continued": []}
 
-    async def fake_start(title, instructions, cwd=None, kind="agent", meta=None, effort=None, **_):
+    async def fake_start(title, instructions, cwd=None, kind="agent", meta=None, effort=None, continue_from=None, **_):
+        state["continued"].append(continue_from)
         task = app.store.create_task(title, instructions, kind=kind, cwd=cwd, meta=meta or {})
         edit = state["script"].pop(0) if state["script"] else None
         if edit:
@@ -126,6 +127,10 @@ async def test_failed_checks_trigger_revision_round(evolving):
     rounds = ready["meta"]["rounds"]
     assert [r["gates_ok"] for r in rounds] == [False, True]
     assert ready["meta"]["governance"]["autonomous"] is False  # core code needs a human
+    # The revision continues the first round's session (one Codex thread per build, and it remembers its attempt).
+    assert state["continued"] == [None, rounds[0]["task_id"]]
+    revision = app.store.get_task(rounds[1]["task_id"])
+    assert "Set VALUE correctly." in revision["prompt"]  # the goal is restated, should a fresh session take over
 
 
 async def test_build_fails_after_max_rounds(evolving):
