@@ -681,7 +681,7 @@ class EvolutionEngine:
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             return {"text": f"Review did not complete: {exc}", "blocking": True, "error": str(exc) or "timed out"}
         finally:
-            engine.release_thread(thread_id)
+            engine.release_thread(thread_id, finished=done.is_set())
             if count:
                 self.app.count_background_turn("review")
         text = (state["review"] or "\n\n".join(state["messages"])).strip()

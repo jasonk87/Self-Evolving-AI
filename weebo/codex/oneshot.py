@@ -72,7 +72,7 @@ async def ask(engine: CodexEngine, prompt: str, *, developer_instructions: str =
     except (RpcError, EngineClosed) as exc:
         raise OneShotError(str(exc)) from exc
     finally:
-        engine.release_thread(thread_id)
+        engine.release_thread(thread_id, finished=done.is_set())
     if state["status"] != "completed":
         raise OneShotError(state["error"] or f"turn {state['status']}")
     return state["final"] or state["last"]

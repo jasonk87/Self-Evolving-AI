@@ -54,6 +54,7 @@ class FakeEngine:
         self.archived: set[str] = set()  # threads put away in Codex's archive
         self.archive_log: list[str] = []
         self.released: list[str] = []
+        self.held: list[str] = []
         self.listed: list[dict[str, Any]] = []
         self.codex_threads: list[dict[str, Any]] = []  # what thread/list returns (the user's Codex thread list)
         self.binary_override = ""
@@ -81,10 +82,10 @@ class FakeEngine:
         self.listed.append(params)
         return {"data": [t for t in self.codex_threads if t["id"] not in self.archived], "nextCursor": None}
 
-    def release_thread(self, thread_id) -> None:
+    def release_thread(self, thread_id, finished=True) -> None:
         self.routes.pop(thread_id, None)
         self.loaded_threads.discard(thread_id)
-        self.released.append(thread_id)
+        (self.released if finished else self.held).append(thread_id)  # held: its turn may still be running
     async def refresh_rate_limits(self): return self.rate_limits
     async def refresh_models(self): return self.models
 

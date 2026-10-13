@@ -337,6 +337,9 @@ class AgentManager:
                 self._finalize(run.task_id, status, run.final_text or run.last_message, run.error)
                 if run.thread_id:
                     self._put_away(run, task)
+                if task.get("thread_id") and task["thread_id"] != run.thread_id:
+                    # The thread it was to continue (perhaps un-archived for it) couldn't be used: put it back.
+                    self.app.threads.put_away(task["thread_id"])
                 self._pump()
 
     async def _reopen(self, task: dict[str, Any], approval: str, sandbox_mode: str, developer: str,
@@ -371,7 +374,8 @@ class AgentManager:
     def _put_away(self, run: AgentRun, task: dict[str, Any]) -> None:
         """Done with this thread for now: out of the Codex app's thread list (follow-up work brings it back)."""
         if (task.get("meta") or {}).get("ephemeral") or (run.fresh and not run.turn_id):
-            self.app.engine.release_thread(run.thread_id)  # nothing on disk: just let Codex unload it
+            # Nothing on disk: just let Codex unload it (once its turn is over, if one started).
+            self.app.engine.release_thread(run.thread_id, finished=run.done.is_set() or not run.turn_id)
             return
         # A thread exists on disk once a turn ran: label it (one this agent continued keeps its first name).
         name = f"Weebo agent · {task['title']}" if run.turn_id and run.fresh else ""

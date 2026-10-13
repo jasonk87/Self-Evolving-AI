@@ -20,8 +20,12 @@ if TYPE_CHECKING:
 logger = log.get("threads")
 
 NAME_PREFIXES = ("Weebo · ", "Weebo agent · ")  # the names Weebo gives the threads it saves
+ORIGINATOR = "weebo"  # the client name Weebo gives Codex, recorded on every thread it starts
+PENDING_KEY = "codex.put_away_pending"  # threads still to put away, kept across restarts
 SWEEP_KEY = "codex.thread_sweep"
+SWEEP_TRIES_KEY = "codex.thread_sweep_tries"
 SWEEP_VERSION = 1  # raise to tidy up once more on the next start
+SWEEP_TRIES = 3  # starts on which the Codex thread list may fail before the sweep makes do with Weebo's own records
 SWEEP_PAGES = 20  # of 100 threads each: how far back the sweep looks through the Codex thread list
 
 
@@ -29,8 +33,19 @@ class ThreadKeeper:
     def __init__(self, app: "WeeboApp"):
         self.app = app
         self._archiving: dict[str, asyncio.Task] = {}
-        self._backlog: dict[str, str] = {}  # thread id -> name: to put away once the engine is ready
+        # Thread id -> name: to put away, saved so a restart (or Codex being down) doesn't lose any.
+        pending = app.store.kv_get(PENDING_KEY, {})
+        self._pending: dict[str, str] = dict(pending) if isinstance(pending, dict) else {}
         self._sweep: asyncio.Task | None = None
+
+    def _note(self, thread_id: str, name: str | None) -> None:
+        """Remember (a name) or forget (None) a thread still to put away."""
+        if name is None:
+            if self._pending.pop(thread_id, None) is None:
+                return
+        else:
+            self._pending[thread_id] = name
+        self.app.store.kv_set(PENDING_KEY, self._pending)
 
     def in_use(self, thread_id: str) -> bool:
         """The main chat's thread, or one an agent is working (or about to work) in."""
@@ -43,27 +58,28 @@ class ThreadKeeper:
 
     def put_away(self, thread_id: str, name: str = "", retry: bool = True) -> asyncio.Task | None:
         """Name a finished thread (so it reads well in Codex's archive) and archive it, unless by then something is
-        using it again. ``name`` is only for threads that took a turn: naming one saves it to disk."""
+        using it again. ``name`` is only for threads that took a turn: naming one saves it to disk. With ``retry``
+        it is remembered until it's done, across restarts and Codex being down."""
         if not thread_id:
             return None
         previous = self._archiving.get(thread_id)
+        if retry:
+            self._note(thread_id, name or self._pending.get(thread_id, ""))
 
         async def run() -> None:
             if previous:
                 await asyncio.gather(previous, return_exceptions=True)
-            if self.in_use(thread_id):  # continued meanwhile
+            if self.in_use(thread_id):  # continued meanwhile: whoever finishes with it puts it away
+                self._note(thread_id, None)
                 return
             engine = self.app.engine
             if engine.status != "ready":
-                if retry:
-                    self._backlog[thread_id] = name
-                return
+                return  # still noted: done once Codex is ready
             if name:
                 await engine.set_thread_name(thread_id, name)
-            if await engine.archive_thread(thread_id):
-                self._backlog.pop(thread_id, None)
-            elif retry and engine.status != "ready":  # the engine went down mid-way: try again when it's back
-                self._backlog[thread_id] = name
+            archived = await engine.archive_thread(thread_id)
+            if archived is not None or not retry:  # done, or refused for good (gone, already archived)
+                self._note(thread_id, None)
 
         task = asyncio.get_running_loop().create_task(run())
         self._archiving[thread_id] = task
@@ -77,7 +93,7 @@ class ThreadKeeper:
     def later(self, thread_id: str, name: str = "") -> None:
         """Put away once the engine is ready (an agent cut off by a restart)."""
         if thread_id:
-            self._backlog[thread_id] = name
+            self._note(thread_id, name)
 
     async def settle(self, thread_id: str) -> None:
         """Wait for an archive of this thread that is already under way."""
@@ -89,13 +105,13 @@ class ThreadKeeper:
         """Before resuming a thread that may have been put away: un-archive it (Codex won't resume an archived
         thread). A thread that isn't archived just stays as it is."""
         await self.settle(thread_id)
-        self._backlog.pop(thread_id, None)
+        self._note(thread_id, None)
         await self.app.engine.unarchive_thread(thread_id)
 
     def on_engine_ready(self) -> None:
-        backlog, self._backlog = self._backlog, {}
-        for thread_id, name in backlog.items():
-            self.put_away(thread_id, name)
+        for thread_id, name in list(self._pending.items()):
+            if thread_id not in self._archiving:
+                self.put_away(thread_id, name)
         if self._sweep is None and int(self.app.store.kv_get(SWEEP_KEY, 0) or 0) < SWEEP_VERSION:
             self._sweep = asyncio.get_running_loop().create_task(self._sweep_once())
 
@@ -109,24 +125,38 @@ class ThreadKeeper:
         for row in store.query("SELECT thread_id FROM conversations WHERE thread_id IS NOT NULL AND thread_id != '' "
                                "AND kind != 'desk'"):
             found[row["thread_id"]] = None  # older chats are kept to read in Weebo, which has their messages
-        cursor = None
+        cursor, listed = None, True
         try:  # threads Weebo named but no longer tracks, such as main-chat threads it replaced
             for _ in range(SWEEP_PAGES):
                 page = await engine.list_threads(limit=100, cursor=cursor, searchTerm="Weebo")
                 for thread in page.get("data") or []:
-                    if str(thread.get("name") or "").startswith(NAME_PREFIXES) and thread.get("id"):
+                    if self._weebos(thread):
                         found[thread["id"]] = None
                 cursor = page.get("nextCursor")
                 if not cursor:
                     break
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
-            logger.info("Could not list Codex threads to tidy up: %s", exc)
+            listed = False
+            logger.warning("Could not list Codex threads to tidy up (%s); trying again on the next start", exc)
         for thread_id in found:
             if engine.status != "ready":
                 return  # not marked done: the next start tries again
             task = self.put_away(thread_id, retry=False)
             if task:
                 await task
-        store.kv_set(SWEEP_KEY, SWEEP_VERSION)
+        tries = int(store.kv_get(SWEEP_TRIES_KEY, 0) or 0) + 1
+        store.kv_set(SWEEP_TRIES_KEY, tries)
+        if listed or tries >= SWEEP_TRIES:
+            store.kv_set(SWEEP_KEY, SWEEP_VERSION)
         if found:
             logger.info("Tidied up %d of Weebo's older Codex threads", len(found))
+
+    @staticmethod
+    def _weebos(thread: dict) -> bool:
+        """A thread Weebo started and named, not a copy the user made of one in Codex (a fork keeps the name)."""
+        if not thread.get("id") or not str(thread.get("name") or "").startswith(NAME_PREFIXES):
+            return False
+        if thread.get("forkedFromId") or thread.get("parentThreadId"):
+            return False
+        originator = thread.get("originator")  # older Codex versions don't report it: the name has to do
+        return not originator or originator == ORIGINATOR

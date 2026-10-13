@@ -362,14 +362,19 @@ class CodexEngine:
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/name/set failed: %s", exc)
 
-    async def archive_thread(self, thread_id: str) -> bool:
-        """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too."""
+    async def archive_thread(self, thread_id: str) -> bool | None:
+        """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too.
+        True when archived, False when Codex refused (gone, already archived), None when Codex couldn't be reached
+        (worth trying again later)."""
         try:
             await self.request("thread/archive", {"threadId": thread_id}, timeout=15)
             return True
-        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
-            logger.debug("thread/archive failed: %s", exc)
+        except RpcError as exc:
+            logger.debug("thread/archive refused: %s", exc)
             return False
+        except (EngineClosed, asyncio.TimeoutError) as exc:
+            logger.debug("thread/archive failed: %s", exc)
+            return None
         finally:
             self.loaded_threads.discard(thread_id)
 
@@ -382,15 +387,17 @@ class CodexEngine:
             logger.debug("thread/unarchive failed: %s", exc)
             return False
 
-    async def list_threads(self, **params: Any) -> dict[str, Any]:
-        return await self.request("thread/list", {k: v for k, v in params.items() if v is not None}, timeout=30)
+    async def list_threads(self, timeout: float = 120, **params: Any) -> dict[str, Any]:
+        # A search scans the session files on disk, which can be slow when there are many.
+        return await self.request("thread/list", {k: v for k, v in params.items() if v is not None}, timeout=timeout)
 
-    def release_thread(self, thread_id: str) -> None:
+    def release_thread(self, thread_id: str, finished: bool = True) -> None:
         """Done with a thread for good: stop following it, so the app-server can unload it (ephemeral threads stay
-        in its memory while anyone is subscribed)."""
+        in its memory while anyone is subscribed). Only once its turn has finished: a turn still running (one that
+        timed out) would ask questions nobody receives and never end; staying subscribed, Weebo declines them."""
         self.unroute(thread_id)
         self.loaded_threads.discard(thread_id)
-        if self.status != "ready":
+        if self.status != "ready" or not finished:
             return
 
         async def unsubscribe() -> None:
