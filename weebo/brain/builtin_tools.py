@@ -393,10 +393,28 @@ async def weebo_status(ctx: ToolContext) -> ToolResult:
     return ToolResult(ctx.app.status_text())
 
 
-# Settings that loosen Weebo's own safety: changed only because the user asked, in their own message (never in a
-# turn Weebo started itself, where an agent's report or a web page could have put the idea in its head).
-SENSITIVE_SETTINGS = ("evolution.", "autonomy.level", "autonomy.usage_ceiling_percent",
-                      "autonomy.max_background_turns_per_day", "server.", "codex.binary", "chat.delegate_work")
+# What a turn Weebo started itself (a routine, a brief, an agent's report) may change: everyday preferences. Anything
+# else changes only because the user asked in their own message, since in Weebo's own turns an agent's report or a
+# web page could have put the idea there.
+EVERYDAY_SETTINGS = ("voice.", "ui.", "user.", "autonomy.daily_brief", "autonomy.dream", "autonomy.quiet_hours",
+                     "autonomy.proactive", "codex.chat_effort", "codex.agent_effort", "codex.fast_mode")
+# Of those the user may change, the ones that loosen Weebo's own safety are written to the journal.
+SENSITIVE_SETTINGS = ("evolution.", "evals.", "autonomy.level", "autonomy.usage_ceiling_percent",
+                      "autonomy.max_background_turns_per_day", "server.", "codex.binary", "chat.delegate_work",
+                      "agents.auto_followup")
+
+
+def _flat_settings(changes: dict[str, Any]) -> dict[str, Any]:
+    """Dotted keys exactly as Settings.update reads the patch (it accepts nested sections too)."""
+    from ..config import DEFAULTS, _flatten
+
+    flat: dict[str, Any] = {}
+    for key, value in changes.items():
+        if isinstance(value, dict) and key in DEFAULTS:
+            flat.update(_flatten(value, key + "."))
+        else:
+            flat[key] = value
+    return flat
 
 
 def asked_by_user(ctx: ToolContext) -> bool:
@@ -413,19 +431,24 @@ def _need_user(ctx: ToolContext, what: str) -> None:
 @registry.register(
     "update_settings",
     "Change Weebo's settings when the user asks, e.g. {'voice.speak_replies': true, 'evolution.mode': 'auto_merge', "
-    "'agents.max_parallel': 5}. Use dotted keys from weebo_status / the Settings page. Settings that affect safety "
-    "(evolution.*, autonomy.level, server.*) change only when the user asked for it in their own message.",
+    "'agents.max_parallel': 5}. Use dotted keys from weebo_status / the Settings page. Beyond everyday preferences "
+    "(voice, ui, name, brief and quiet hours, effort), settings change only when the user asked in their own message.",
     {"properties": {"changes": {"type": "object", "description": "Map of dotted setting keys to new values."}},
      "required": ["changes"]},
 )
 async def update_settings(ctx: ToolContext, changes: dict[str, Any]) -> ToolResult:
     from ..config import SettingsError
 
-    sensitive = [k for k in changes if k.startswith(SENSITIVE_SETTINGS)]
-    if sensitive:
-        _need_user(ctx, "changes to " + ", ".join(sensitive))
+    if not isinstance(changes, dict) or not changes:
+        raise ToolError("Pass the settings to change as {\"dotted.key\": value}.")
+    flat = _flat_settings(changes)
+    if not asked_by_user(ctx):
+        held = [k for k in flat if not k.startswith(EVERYDAY_SETTINGS)]
+        if held:
+            _need_user(ctx, "changes to " + ", ".join(held))
+    sensitive = [k for k in flat if k.startswith(SENSITIVE_SETTINGS)]
     try:
-        changed = ctx.app.settings.update(changes)
+        changed = ctx.app.settings.update(flat)
     except SettingsError as exc:
         raise ToolError(str(exc)) from exc
     if not changed:
@@ -437,6 +460,8 @@ async def update_settings(ctx: ToolContext, changes: dict[str, Any]) -> ToolResu
 
 
 # ---------------------------------------------------------------- upgrades, from the chat
+REJECTABLE = ("ready", "proposed", "declined", "vetting", "failed", "conflict", "rolled_back", "queued")
+
 def _upgrade_brief(ctx: ToolContext, proposal: dict[str, Any]) -> str:
     meta = proposal.get("meta") or {}
     lines = [f"{proposal['id']} \"{proposal['title']}\": {_evolution_state(ctx, proposal)}"]
@@ -500,6 +525,13 @@ async def reject_upgrade(ctx: ToolContext, proposal_id: str) -> ToolResult:
     from ..evolution.engine import EvolutionError
 
     _need_user(ctx, "rejecting an upgrade")
+    proposal = ctx.app.store.get_proposal(proposal_id)
+    if proposal is None:
+        raise ToolError(f"No upgrade {proposal_id}.")
+    if proposal["status"] == "merged":
+        raise ToolError("It's already merged and live. To undo it, roll it back (its card or the Evolution panel).")
+    if proposal["status"] not in REJECTABLE or proposal_id == ctx.app.evolution.current:
+        raise ToolError(f"It can't be set aside while it is {proposal['status']}.")
     try:
         await ctx.app.evolution.reject(proposal_id)
     except EvolutionError as exc:

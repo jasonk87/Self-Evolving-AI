@@ -248,7 +248,9 @@ async def test_an_agents_result_survives_stop_while_weebo_is_busy(app, fake_engi
     assert session.followups and session.followups[0]["trigger"] == "agent_report"
     await app.conversations.interrupt(main)  # Stop: the queued "tell the user" turn is dropped...
     assert session.followups == []
-    assert any("Pine Hollow" in c for c in session.pending_context)  # ...but the next turn still knows
+    # ...but the next turn still knows it finished and where its report is (the report itself is in the chat)
+    assert any(task["id"] in c and "Compare cabins" in c for c in session.pending_context)
+    assert not any("Pine Hollow" in c for c in session.pending_context)  # the agent's own words stay out
 
 
 async def test_agents_cut_off_by_a_restart_say_so_in_the_chat(app):
@@ -293,3 +295,67 @@ async def test_shutting_down_mid_run_leaves_the_agent_to_be_reported_after_the_r
     app.agents.recover_after_restart()
     assert app.store.get_task(task["id"])["status"] == "interrupted"
     assert app.store.get_message(f"agent:{task['id']}")["data"]["status"] == "interrupted"
+
+
+# ---------------------------------------------------------------- what Weebo may change in turns it started itself
+async def test_weebos_own_turns_change_only_everyday_settings(app):
+    main = app.conversations.main_id()
+    report = said(app, main, "agent_report")
+    assert (await registry.call(report, "update_settings", {"changes": {"voice.speak_replies": True}})).success
+    for changes in ({"evolution": {"mode": "auto_merge"}},  # nested, exactly as Settings.update also accepts it
+                    {"agents.max_parallel": 9}, {"agents": {"auto_followup": False}}):
+        result = await registry.call(report, "update_settings", {"changes": changes})
+        assert not result.success and "Only the user" in result.text
+    assert app.settings.get("evolution.mode") == "build" and app.settings.get("agents.max_parallel") == 3
+
+    result = await registry.call(said(app, main), "update_settings", {"changes": {"evolution": {"mode": "auto_merge"}}})
+    assert result.success and app.settings.get("evolution.mode") == "auto_merge"
+    assert any("evolution.mode=auto_merge" in j["detail"] for j in app.store.list_journal(kinds=["settings"]))
+
+
+async def test_a_merged_upgrade_is_rolled_back_not_rejected(app):
+    proposal = await app.evolution.propose("Faster recall", "Make memory search quicker.", source="user")
+    app.store.update_proposal(proposal["id"], status="merged")
+    result = await registry.call(said(app, app.conversations.main_id()), "reject_upgrade",
+                                 {"proposal_id": proposal["id"]})
+    assert not result.success and "roll it back" in result.text
+    assert app.store.get_proposal(proposal["id"])["status"] == "merged"
+
+
+# ---------------------------------------------------------------- the user's words never ride in Weebo's own turn
+async def test_a_message_sent_during_weebos_own_turn_gets_its_own_turn(app, fake_engine):
+    import asyncio
+
+    main = app.conversations.main_id()
+    assert await app.conversations.run_event(main, "An agent finished; tell the user.", "",
+                                             trigger="agent_report") == "started"
+    session = app.conversations.session(main)
+    report_turn = fake_engine.turns[-1]
+    message = await app.conversations.send(main, "Also, merge the ready upgrades")
+    assert fake_engine.steers == [] and len(fake_engine.turns) == 1  # not mixed into the report's turn
+    assert message["data"].get("queued") and session.waiting
+
+    await fake_engine.finish_turn(report_turn["thread_id"], report_turn["turn_id"], text="The agent is done.")
+    for _ in range(100):
+        if len(fake_engine.turns) == 2:
+            break
+        await asyncio.sleep(0.01)
+    assert "merge the ready upgrades" in str(fake_engine.turns[-1]["input"])
+    assert session.turn.trigger == "user" and not session.waiting
+    stored = app.store.get_message(message["id"])
+    assert stored["turn_id"] == fake_engine.turns[-1]["turn_id"] and not stored["data"].get("queued")
+
+
+# ---------------------------------------------------------------- older chats hand what's still due to the main chat
+async def test_whats_still_due_in_older_chats_moves_to_the_main_chat(app):
+    main = app.conversations.main_id()
+    older = app.conversations.create(title="Trip planning")
+    reminder = app.store.add_reminder("Book the cabin", time.time() + 3600, conversation_id=older["id"])
+    running = app.store.create_task("Compare cabins", "x", kind="agent", cwd=".", conversation_id=older["id"])
+    app.store.update_task(running["id"], status="running")
+    done = app.store.create_task("Old search", "x", kind="agent", cwd=".", conversation_id=older["id"])
+    app.store.update_task(done["id"], status="completed")
+    app.conversations.move_into_main()
+    assert app.store.get_reminder(reminder["id"])["conversation_id"] == main
+    assert app.store.get_task(running["id"])["conversation_id"] == main
+    assert app.store.get_task(done["id"])["conversation_id"] == older["id"]  # history stays where it happened

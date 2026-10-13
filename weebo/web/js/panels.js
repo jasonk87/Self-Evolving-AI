@@ -200,7 +200,7 @@ export class Panels {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.currentConvId });
+        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.mainId || this.app.currentConvId });
         toast("Agent launched", task.title, { kind: "success" });
         this.opts = { task: task.id };
         this.refresh();

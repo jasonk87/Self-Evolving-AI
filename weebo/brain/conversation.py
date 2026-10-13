@@ -57,6 +57,7 @@ class Session:
     turn: TurnState | None = None
     pending_context: list[str] = field(default_factory=list)
     followups: list[dict[str, Any]] = field(default_factory=list)
+    waiting: list[dict[str, Any]] = field(default_factory=list)  # user messages sent during a turn Weebo started
 
 
 def tools_hash(scope: str = "chat") -> str:
@@ -292,6 +293,15 @@ class ConversationManager:
     def main_id(self) -> str:
         return self.desk()["id"]
 
+    def move_into_main(self) -> None:
+        """Older chats are kept to read, so anything still due to happen in one (a reminder and the routines it
+        starts, an agent still working) happens in the main chat instead, where the user is."""
+        main, store = self.main_id(), self.app.store
+        for table, statuses in (("reminders", ("pending",)), ("tasks", ("queued", "running"))):
+            marks = ", ".join("?" for _ in statuses)
+            store.execute(f"UPDATE {table} SET conversation_id=? WHERE conversation_id IS NOT NULL "
+                          f"AND conversation_id != ? AND status IN ({marks})", (main, main, *statuses))
+
     async def delete(self, conv_id: str) -> None:
         conv = self.app.store.get_conversation(conv_id)
         if not conv:
@@ -330,6 +340,13 @@ class ConversationManager:
             self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
             inputs = ([text_input(text)] if text else []) + [image_input(p) for p in images]
 
+            if session.turn and session.turn.trigger != "user":
+                # A turn Weebo started (an agent's report, a routine): the user's words get a turn of their own
+                # right after it, rather than mixing into one whose input the user didn't write.
+                session.waiting.append({"message_id": message["id"], "text": text, "inputs": inputs})
+                message = self.app.store.update_message(message["id"], data={**message["data"], "queued": True})
+                self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+                return message  # type: ignore[return-value]
             if session.turn and session.turn.turn_id and conv.get("thread_id"):
                 active_turn_id = session.turn.turn_id
                 try:
@@ -427,7 +444,7 @@ class ConversationManager:
     # ------------------------------------------------------------------ turns
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
                           trigger: str, query: str, occurrence_id: str | None = None,
-                          user_message_id: str | None = None) -> str:
+                          user_message_id: str | list[str] | None = None) -> str:
         state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
@@ -444,8 +461,8 @@ class ConversationManager:
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
                 raise ValueError("The engine did not confirm a turn id.")
-            if user_message_id:
-                message = self.app.store.update_message(user_message_id, turn_id=turn["id"])
+            for message_id in ([user_message_id] if isinstance(user_message_id, str) else user_message_id or []):
+                message = self.app.store.update_message(message_id, turn_id=turn["id"])
                 self.app.bus.publish("conv.message", {"conversation_id": conv["id"], "message": message})
             if occurrence_id:
                 self.app.scheduler.delivery_started(occurrence_id, turn["id"])
@@ -759,9 +776,35 @@ class ConversationManager:
             self._name_thread_once(conv)
         if turn:
             self.app.on_turn_finished(conv_id, turn, status)
-        if session.followups and status != "interrupted":
+        if session.waiting:  # what the user said meanwhile comes first
+            waiting, session.waiting = session.waiting, []
+            asyncio.create_task(self._answer_waiting(conv_id, waiting))
+        elif session.followups and status != "interrupted":
             event = session.followups.pop(0)
             asyncio.create_task(self.run_event(conv_id, **event))
+
+    async def _answer_waiting(self, conv_id: str, waiting: list[dict[str, Any]]) -> None:
+        """Start the user's own turn for messages sent while a turn Weebo started was running."""
+        session = self.session(conv_id)
+        async with session.lock:
+            conv = self.app.store.get_conversation(conv_id)
+            if conv is None:
+                return
+            if session.turn is not None:  # something else started meanwhile: answer right after it
+                session.waiting[:0] = waiting
+                return
+            text = "\n\n".join(w["text"] for w in waiting if w["text"])
+            inputs = [item for w in waiting for item in w["inputs"]]
+            for w in waiting:
+                message = self.app.store.get_message(w["message_id"])
+                if message:
+                    message = self.app.store.update_message(
+                        message["id"], data={k: v for k, v in (message.get("data") or {}).items() if k != "queued"})
+                    self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+            if text and looks_like_correction(text):
+                self._on_correction(session, conv_id, text)
+            await self._start_turn(session, conv, inputs, trigger="user", query=text,
+                                   user_message_id=[w["message_id"] for w in waiting])
 
     def _name_thread_once(self, conv: dict[str, Any]) -> None:
         """Codex persists a thread on its first turn; name it then so it reads well in the Codex app."""

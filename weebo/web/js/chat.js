@@ -147,6 +147,7 @@ export class ChatView {
   // ------------------------------------------------------------------ loading
   async open(convId) {
     this.convId = convId;
+    this.setReadOnly();  // right away: the composer must not keep the last chat's state while this one loads
     this.messages = [];
     this.byId.clear();
     this.nodes.clear();
@@ -170,14 +171,18 @@ export class ChatView {
     } finally {
       this.root.classList.remove("loading");
     }
-    const conv = this.app.conversation(convId);
-    this.readOnly = Boolean(conv && conv.kind !== "desk");  // older chats are kept to read; we talk in the main one
-    this.composer.hidden = this.readOnly;
-    this.oldChat.hidden = !this.readOnly;
+    this.setReadOnly();
     this._suggestKey = null;
     this.render(true);
     this.updateChips();
     if (!this.readOnly) this.input.focus({ preventScroll: true });
+  }
+
+  setReadOnly() {
+    const conv = this.app.conversation(this.convId);
+    this.readOnly = Boolean(conv && conv.kind !== "desk");  // older chats are kept to read; we talk in the main one
+    this.composer.hidden = this.readOnly;
+    this.oldChat.hidden = !this.readOnly;
   }
 
   async loadOlder() {

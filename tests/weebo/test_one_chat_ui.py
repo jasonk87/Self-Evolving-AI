@@ -119,5 +119,6 @@ async def test_one_chat_cards_chips_tabs_and_archive(app, fake_engine, monkeypat
             assert not await page.locator(".composer").is_visible()
             await page.get_by_role("button", name="Back to Weebo").click()
             await page.wait_for_function("id => weebo.chat.convId === id", arg=main)
-            assert await page.locator(".composer").is_visible()
+            await page.locator(".composer").wait_for(state="visible")
+            assert not await page.locator(".old-chat-bar").is_visible()
             assert errors == []

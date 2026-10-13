@@ -68,6 +68,7 @@ class WeeboApp:
 
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
+        self.conversations.move_into_main()  # first: whatever is recovered below then reports to the main chat
         self.conversations.recover_after_restart()
         self.scheduler.recover_after_restart()
         self.agents.recover_after_restart()

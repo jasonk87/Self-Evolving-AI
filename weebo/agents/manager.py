@@ -336,6 +336,10 @@ class AgentManager:
         report = (f"Background agent report [{task['id']}] \"{task['title']}\" — {task['status']} after {took}.\n"
                   f"Working directory: {task.get('cwd')}\n"
                   f"{(task.get('summary') or task.get('error') or 'No report.')[:6000]}")
+        # What reaches a turn the user starts is only that it finished, never the agent's own words: text it wrote
+        # (or read on a web page) must not ride along with the user's authority. agent_status fetches the report.
+        pointer = (f"Background agent {task['id']} \"{task['title']}\" {verb} ({took}). Its report is shown in the "
+                   f"chat; call agent_status {task['id']} if you need what it says.")
         conversations = self.app.conversations
         # The result goes in the chat now, whatever happens to Weebo's spoken follow-up (it may wait behind a busy
         # turn, and a Stop or a restart drops what waits).
@@ -348,9 +352,9 @@ class AgentManager:
                       "Tell the user what came back in a few friendly sentences: the outcome, where to find it, "
                       "and the obvious next step if there is one. Don't repeat the whole report.")
             asyncio.create_task(conversations.run_event(conv_id, prompt, "", trigger="agent_report",
-                                                        fallback=report))
+                                                        fallback=pointer))
         else:
-            conversations.add_context(conv_id, report)
+            conversations.add_context(conv_id, pointer)
 
     # ------------------------------------------------------------------ codex → agent
     async def _on_request(self, run: AgentRun, method: str, params: dict[str, Any]) -> Any:
