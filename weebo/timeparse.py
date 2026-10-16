@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import calendar
+import math
 from datetime import datetime, timedelta
 
 _UNITS = {
@@ -26,7 +28,9 @@ class TimeParseError(ValueError):
 
 
 def parse_duration(text: str) -> float | None:
-    text = text.lower().strip()
+    text = text.lower().strip().replace(" and ", " ").replace(",", " ")
+    if _DURATION_RE.sub("", text).strip():
+        return None
     total = 0.0
     matched = False
     for amount, unit in _DURATION_RE.findall(text):
@@ -34,12 +38,14 @@ def parse_duration(text: str) -> float | None:
             return None
         total += float(amount) * _UNITS[unit]
         matched = True
-    return total if matched else None
+    return total if matched and math.isfinite(total) else None
 
 
 def parse_when(text: str, now: datetime | None = None) -> datetime:
     """Parse ``text`` into a local naive datetime in the future."""
     now = now or datetime.now()
+    if not isinstance(text, str):
+        raise TimeParseError("Reminder time must be text.")
     raw = (text or "").strip()
     if not raw:
         raise TimeParseError("Give a time like 'in 20 minutes', 'tomorrow 9am', or '2026-10-04T15:30'.")
@@ -56,7 +62,10 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
         seconds = parse_duration(lowered[3:].replace(" and ", " ").replace(",", " "))
         if seconds is None:
             raise TimeParseError(f"Couldn't understand the duration in '{raw}'.")
-        return now + timedelta(seconds=seconds)
+        try:
+            return now + timedelta(seconds=seconds)
+        except OverflowError as exc:
+            raise TimeParseError("That duration is too large.") from exc
 
     day_offset = 0
     rest = lowered
@@ -88,6 +97,8 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
             hour = int(match.group(1))
             minute = int(match.group(2) or 0)
             meridiem = (match.group(3) or "").replace(".", "")
+            if meridiem and not 1 <= hour <= 12:
+                raise TimeParseError(f"'{raw}' is not a valid time of day.")
             if meridiem == "pm" and hour < 12:
                 hour += 12
             elif meridiem == "am" and hour == 12:
@@ -106,7 +117,7 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
         if delta == 0 and target <= now:
             delta = 7
         target = (now + timedelta(days=delta)).replace(hour=hour, minute=minute, second=0, microsecond=0)
-    elif day_offset == 0 and target <= now:
+    elif day_offset == 0 and target <= now and not lowered.startswith("today"):
         target += timedelta(days=1)
     return target
 
@@ -154,6 +165,16 @@ def next_occurrence(due_at: float, recurrence: str, now: float) -> float | None:
         return None
     current = datetime.fromtimestamp(due_at)
     now_dt = datetime.fromtimestamp(now)
+    interval = {"hourly": 3600, "daily": 86400, "weekly": 604800}.get(recurrence)
+    if recurrence.startswith("every ") and recurrence.endswith("s"):
+        interval = int(recurrence[6:-1])
+    if interval is not None:
+        if interval <= 0:
+            return None
+        step = timedelta(seconds=interval)
+        jumps = max(1, (now_dt - current) // step + 1)
+        return (current + jumps * step).timestamp()
+    month_day = current.day
     for _ in range(10000):
         if recurrence == "hourly":
             current += timedelta(hours=1)
@@ -169,7 +190,7 @@ def next_occurrence(due_at: float, recurrence: str, now: float) -> float | None:
             month = current.month + 1
             year = current.year + (1 if month > 12 else 0)
             month = 1 if month > 12 else month
-            day = min(current.day, 28)
+            day = min(month_day, calendar.monthrange(year, month)[1])
             current = current.replace(year=year, month=month, day=day)
         elif recurrence.startswith("every ") and recurrence.endswith("s"):
             current += timedelta(seconds=int(recurrence[6:-1]))

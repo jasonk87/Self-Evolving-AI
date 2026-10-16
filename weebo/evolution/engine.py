@@ -180,8 +180,12 @@ class EvolutionEngine:
             self._worker = asyncio.create_task(self._work(), name="evolution")
 
     async def stop(self) -> None:
-        """Stop Council sessions in flight; they are convened again on the next start."""
-        tasks = list(self._vetting)
+        """Settle builds, restart callbacks and Council sessions before storage closes."""
+        self.restart_after_build = None
+        if self._verify_handle:
+            self._verify_handle.cancel()
+            self._verify_handle = None
+        tasks = [*self._vetting, *(t for t in (self._worker, self._restart_task) if t is not None)]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

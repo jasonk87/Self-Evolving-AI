@@ -181,10 +181,7 @@ async def app(fake_engine):
     weebo.engine = fake_engine
     await weebo.start(with_engine=False, with_background=False)
     yield weebo
-    await weebo.evolution.stop()
-    await weebo.agents.shutdown()  # agent runs must not outlive the Store they write to
-    weebo.memory.stop()  # the background indexer thread must not outlive the Store it reads
-    weebo.store.close()
+    await weebo.stop()
 
 
 async def drain(cycles: int = 5) -> None:

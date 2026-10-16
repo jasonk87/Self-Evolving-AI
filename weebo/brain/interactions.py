@@ -149,6 +149,9 @@ class Interactions:
             self.app.notify("approval", title, _describe(summary), {"interaction_id": pending.id, "task_id": task_id})
         try:
             decision, answers = await pending.future
+        except asyncio.CancelledError:
+            self._finish(pending, "expired", None)
+            raise
         finally:
             self.pending.pop(pending.id, None)
         return self._response(pending, decision, answers)
@@ -166,6 +169,12 @@ class Interactions:
             return False
         if pending.kind != "question" and decision not in DECISIONS:
             raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
+        if answers is not None and (not isinstance(answers, dict) or any(
+            not isinstance(key, str) or not isinstance(values, list)
+            or any(not isinstance(value, str) for value in values)
+            for key, values in answers.items()
+        )):
+            raise ValueError("answers must map question IDs to lists of strings")
         pending.future.set_result((decision, answers or {}))
         status = "answered" if pending.kind == "question" else decision
         self._finish(pending, status, answers)
@@ -187,6 +196,9 @@ class Interactions:
                 self._finish(pending, "expired", None)
 
     def _finish(self, pending: Pending, status: str, answers: dict | None) -> None:
+        # Resolve once, including when cancellation races the user's answer.
+        if self.pending.pop(pending.id, None) is None:
+            return
         if pending.message_id and pending.conversation_id:
             data = pending.summary()
             data["decision"] = status

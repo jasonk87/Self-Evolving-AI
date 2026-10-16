@@ -69,6 +69,7 @@ class CodexEngine:
         self._ready = asyncio.Event()
         self._stopping = False
         self._supervisor: asyncio.Task | None = None
+        self._jobs: set[asyncio.Task] = set()
         self._restart_attempts = 0
         self._login_waiters: list[asyncio.Future] = []
 
@@ -87,11 +88,27 @@ class CodexEngine:
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._supervisor:
-            self._supervisor.cancel()
+        self._ready.clear()
+        tasks = [*self._jobs, *([self._supervisor] if self._supervisor else [])]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self.rpc:
             await self.rpc.stop()
         self._set_status("stopped")
+
+    def _start_job(self, coro: Any) -> None:
+        if self._stopping:
+            coro.close()
+            return
+        task = asyncio.create_task(coro)
+        self._jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    def _job_done(self, task: asyncio.Task) -> None:
+        self._jobs.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Engine background callback failed: %r", task.exception())
 
     async def restart(self) -> None:
         """Restart the app-server (for example after changing the binary)."""
@@ -182,7 +199,7 @@ class CodexEngine:
                 try:
                     result = listener("engine/closed", {"threadId": thread_id, "message": self.last_error})
                     if asyncio.iscoroutine(result):
-                        asyncio.create_task(result)
+                        self._start_job(result)
                 except Exception:
                     logger.exception("Thread listener failed during engine shutdown")
 
@@ -406,7 +423,7 @@ class CodexEngine:
             except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
                 logger.debug("thread/unsubscribe failed: %s", exc)
 
-        asyncio.get_running_loop().create_task(unsubscribe())
+        self._start_job(unsubscribe())
 
     async def start_review(self, thread_id: str, target: dict[str, Any]) -> dict[str, Any]:
         return await self.request("review/start", {"threadId": thread_id, "target": target, "delivery": "inline"}, timeout=90)
@@ -426,7 +443,7 @@ class CodexEngine:
             self.bus.publish("engine.usage", {"rateLimits": self.rate_limits})
             return
         if method in ("account/updated", "account/login/completed"):
-            asyncio.create_task(self._account_changed())
+            self._start_job(self._account_changed())
             return
         thread_id = _thread_id_of(params)
         if thread_id is None:

@@ -167,7 +167,8 @@ class Skills:
                           f"Not used in {days} days: {', '.join(archived)}. They're in weebo_data/skills_archive.")
             self.app.bus.publish("skills.updated", {"archived": archived})
             try:
-                asyncio.get_running_loop().create_task(self.sync_with_codex())
+                asyncio.get_running_loop()  # Avoid constructing a coroutine when called from a script.
+                self.app._start_job(self.sync_with_codex(), "sync-skills")
             except RuntimeError:
                 pass  # no loop (called from a script): Codex rescans its skill roots on the next start
         return archived

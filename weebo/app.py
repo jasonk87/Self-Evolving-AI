@@ -63,6 +63,8 @@ class WeeboApp:
         self.exit_code = 0
         self.shutdown_event = asyncio.Event()
         self._restart_reason = ""
+        self._stopping = False
+        self._jobs: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self, with_engine: bool = True, with_background: bool = True) -> None:
@@ -95,18 +97,38 @@ class WeeboApp:
             self.heartbeat.start()
             self.evolution.start()
             self.memory.start_indexing(self.settings.get("memory.semantic"))
-            asyncio.create_task(self.evals.detect_code_version(), name="code-version")
-            asyncio.create_task(self.remote.start(), name="tailnet")
+            self._start_job(self.evals.detect_code_version(), "code-version")
+            self._start_job(self.remote.start(), "tailnet")
         self.store.journal("system", f"Weebo {__version__} started")
         self.agents._pump()  # Also handles an engine that was already ready at startup.
 
     async def stop(self) -> None:
+        self._stopping = True
+        jobs = list(self._jobs)
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
         for component in (self.scheduler, self.heartbeat, self.evolution):
             await component.stop()
         await self.agents.shutdown()  # before the engine and the store they use go away
+        await self.threads.stop()
         await self.engine.stop()
+        await self.bus.stop()
         await asyncio.to_thread(self.memory.stop)  # joins the indexer thread; it reads the store we close next
         self.store.close()
+
+    def _start_job(self, coro: Any, name: str) -> None:
+        if self._stopping:
+            coro.close()
+            return
+        task = asyncio.create_task(coro, name=name)
+        self._jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    def _job_done(self, task: asyncio.Task) -> None:
+        self._jobs.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Background job %s failed: %r", task.get_name(), task.exception())
 
     def _infer_user_name(self) -> None:
         """If the user hasn't set a name but Weebo already remembers it, use their first name."""
@@ -129,17 +151,19 @@ class WeeboApp:
         asyncio.get_running_loop().call_later(1.5, self.shutdown_event.set)
 
     def _on_settings_changed(self, changed: dict[str, Any]) -> None:
+        if self._stopping:
+            return
         self.bus.publish_threadsafe("settings.updated", {"settings": self.settings.all(), "changed": changed})
         if "codex.binary" in changed:
             self.engine.binary_override = changed["codex.binary"]
-            asyncio.get_running_loop().create_task(self.engine.restart())
+            self._start_job(self.engine.restart(), "engine-restart")
         if "agents.max_parallel" in changed:
             self.agents._pump()
         if "memory.semantic" in changed:
             self.memory.start_indexing(changed["memory.semantic"])
 
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
-        if data.get("status") == "ready":
+        if not self._stopping and data.get("status") == "ready":
             self.threads.on_engine_ready()  # before the pump: a continued agent may need a thread put away first
             self.agents._pump()
             await self.skills.sync_with_codex()

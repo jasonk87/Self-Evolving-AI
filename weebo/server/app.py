@@ -161,6 +161,7 @@ class Hub:
                     break
         finally:
             writer.cancel()
+            await asyncio.gather(writer, return_exceptions=True)
             self.clients.pop(ws, None)
             self.app.clients = len(self.clients)
         return ws
@@ -178,7 +179,7 @@ class Hub:
             message = json.loads(raw)
         except json.JSONDecodeError:
             return
-        if message.get("type") == "activity":
+        if isinstance(message, dict) and message.get("type") == "activity":
             self.app.heartbeat.touch()
 
     async def close_all(self) -> None:
@@ -439,8 +440,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
         return _json({"settings": weebo.settings.all()})
 
     async def patch_settings(request: web.Request) -> web.Response:
-        body = await request.json()
-        changed = weebo.settings.update(body.get("changes") or body)
+        body = await _body(request)
+        changed = weebo.settings.update(body.get("changes", body))
         return _json({"settings": weebo.settings.all(), "changed": changed})
 
     async def engine_status(_: web.Request) -> web.Response:
@@ -491,6 +492,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
         if conv.get("unread"):
             conv = weebo.store.update_conversation(conv_id, unread=0, updated_at=conv["updated_at"])
         return _json({"conversation": conv, "messages": messages, "live": weebo.conversations.live_state(conv_id),
+                      "event_seq": weebo.bus.sequence,
                       "evolution_messages": weebo.store.list_proposal_messages(conv_id) if not before else []})
 
     async def patch_conversation(request: web.Request) -> web.Response:
@@ -513,12 +515,19 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     async def send_message(request: web.Request) -> web.Response:
         body = await _body(request)
+        text = body.get("text", "")
+        names = body.get("images", [])
+        if not isinstance(text, str):
+            raise ValueError("Message text must be a string.")
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise ValueError("Images must be a list of uploaded image names.")
         images = []
-        for name in body.get("images") or []:
-            candidate = (paths.uploads_dir() / Path(str(name)).name).resolve()
-            if candidate.parent == paths.uploads_dir().resolve() and candidate.is_file():
-                images.append(str(candidate))
-        message = await weebo.conversations.send(request.match_info["id"], body.get("text", ""), images)
+        for name in names:
+            candidate = (paths.uploads_dir() / name).resolve()
+            if candidate.parent != paths.uploads_dir().resolve() or not candidate.is_file():
+                raise ValueError("An attached image is no longer available. Please attach it again.")
+            images.append(str(candidate))
+        message = await weebo.conversations.send(request.match_info["id"], text, images)
         return _json({"message": message})
 
     async def interrupt(request: web.Request) -> web.Response:

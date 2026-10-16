@@ -141,11 +141,20 @@ class AgentManager:
 
     async def wait(self, task_id: str, timeout: float | None = None) -> dict[str, Any]:
         task = self.app.store.get_task(task_id)
-        if task and task["status"] not in ACTIVE:
+        if task is None:
+            raise ValueError(f"No agent {task_id}.")
+        if task["status"] not in ACTIVE:
             return task
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._waiters.setdefault(task_id, []).append(future)
-        return await asyncio.wait_for(future, timeout)
+        try:
+            return await asyncio.wait_for(future, timeout)
+        finally:
+            waiters = self._waiters.get(task_id, [])
+            if future in waiters:
+                waiters.remove(future)
+            if not waiters:
+                self._waiters.pop(task_id, None)
 
     async def message(self, task_id: str, text: str) -> None:
         run = self.runs.get(task_id)
@@ -164,6 +173,10 @@ class AgentManager:
         if run is None:
             raise ValueError(f"Agent {task_id} is not running.")
         run.cancelled = True
+        if run.thread_id and not run.turn_id:
+            # turn/start may already be running remotely. Keep its route until
+            # the acknowledgement gives us the turn id needed to interrupt it.
+            return
         if run.thread_id and run.turn_id:
             try:
                 await self.app.engine.interrupt(run.thread_id, run.turn_id)
@@ -241,7 +254,7 @@ class AgentManager:
 
     # ------------------------------------------------------------------ internals
     def _pump(self) -> None:
-        if self.app.engine.status != "ready":
+        if self.closing or self.app.engine.status != "ready":
             return
         limit = int(self.app.settings.get("agents.max_parallel") or 3)
         while self.queue and len(self.runs) < limit:
@@ -310,6 +323,8 @@ class AgentManager:
                 overrides["outputSchema"] = meta["output_schema"]
             turn = await engine.start_turn(run.thread_id, [text_input(task["prompt"])], context=context, **overrides)
             run.turn_id = run.turn_id or turn["id"]
+            if run.cancelled and not run.done.is_set():
+                await self.stop(run.task_id)
             limit = float(settings.get("agents.max_minutes") or 60) * 60
             try:
                 await asyncio.wait_for(run.done.wait(), limit)
@@ -446,8 +461,8 @@ class AgentManager:
             prompt = (f"[Event: one of your background agents just finished]\n{report}\n\n"
                       "Tell the user what came back in a few friendly sentences: the outcome, where to find it, "
                       "and the obvious next step if there is one. Don't repeat the whole report.")
-            asyncio.create_task(conversations.run_event(conv_id, prompt, "", trigger="agent_report",
-                                                        fallback=pointer))
+            self.app._start_job(conversations.run_event(conv_id, prompt, "", trigger="agent_report",
+                                                       fallback=pointer), "agent-report")
         else:
             conversations.add_context(conv_id, pointer)
 

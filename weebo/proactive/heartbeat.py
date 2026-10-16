@@ -119,6 +119,7 @@ class Heartbeat:
     async def stop(self) -> None:
         if self._task:
             self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
 
     async def _loop(self) -> None:
         await asyncio.sleep(20)
@@ -372,8 +373,8 @@ Return JSON:
                 title, description = str(idea.get("title", "")).strip(), str(idea.get("description", "")).strip()
                 if title and description:
                     addresses = [str(a) for a in idea.get("addresses") or []]
-                    asyncio.create_task(self.app.evolution.propose(title, description, str(idea.get("rationale", "")),
-                                                                   source="dream", meta={"addresses": addresses}))
+                    self.app._start_job(self.app.evolution.propose(title, description, str(idea.get("rationale", "")),
+                                                                 source="dream", meta={"addresses": addresses}), "dream-proposal")
                     applied["proposals"] += 1
         if self.app.evals.enabled():
             for case in (result.get("eval_cases") or [])[:2]:
@@ -387,8 +388,8 @@ Return JSON:
             for skill in (result.get("skills") or [])[:1]:
                 name = str(skill.get("name", "")).strip()
                 if name and name not in {s["name"] for s in self.app.skills.list()}:
-                    asyncio.create_task(self._learn_skill(name, str(skill.get("description", "")),
-                                                          str(skill.get("instructions", ""))))
+                    self.app._start_job(self._learn_skill(name, str(skill.get("description", "")),
+                                                         str(skill.get("instructions", ""))), "dream-skill")
                     applied["skills"] += 1
         return applied
 
@@ -468,6 +469,8 @@ return [] if nothing is worth changing.
 
     # ------------------------------------------------------------------ manual triggers
     async def trigger(self, name: str) -> dict[str, Any]:
+        if self.app._stopping:
+            raise ValueError("Weebo is shutting down")
         if self.busy:
             raise ValueError(f"Weebo is already busy with: {self.busy}")
         if self.app.engine.status != "ready":
@@ -480,7 +483,10 @@ return [] if nothing is worth changing.
             # A manual dream reflects on the last day even if a dream ran recently.
             self.app.store.kv_set("last_dream", min(float(self.app.store.kv_get("last_dream", 0) or 0),
                                                     time.time() - 86400))
-        asyncio.create_task(self._run(name, runners[name]()))
+        async def run_trigger() -> None:
+            await self._run(name, runners[name]())
+
+        self.app._start_job(run_trigger(), "manual-activity")
         return {"started": name}
 
     def status(self) -> dict[str, Any]:

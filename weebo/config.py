@@ -124,9 +124,11 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
             return value.lower() == "true"
         raise SettingsError(f"{key} must be true or false")
     if isinstance(default, int):
+        if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+            raise SettingsError(f"{key} must be a whole number")
         try:
             number = int(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise SettingsError(f"{key} must be a whole number") from None
         value = number
     elif isinstance(default, float):
@@ -197,9 +199,9 @@ class Settings:
             node[parts[-1]] = coerced
         return merged
 
-    def _save(self) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.replace(tmp, self._path)
 
     def all(self) -> dict[str, Any]:
@@ -216,6 +218,8 @@ class Settings:
 
     def update(self, patch: dict[str, Any]) -> dict[str, Any]:
         """Apply a nested or dotted patch. Returns the flat dict of changed keys."""
+        if not isinstance(patch, dict):
+            raise SettingsError("Settings changes must be a JSON object")
         flat_defaults = _flatten(DEFAULTS)
         flat_patch: dict[str, Any] = {}
         for key, value in patch.items():
@@ -232,14 +236,16 @@ class Settings:
                 coerced = _coerce(key, value, flat_defaults[key])
                 if current.get(key) != coerced:
                     changed[key] = coerced
+            candidate = copy.deepcopy(self._data)
             for key, value in changed.items():
-                node = self._data
+                node = candidate
                 parts = key.split(".")
                 for part in parts[:-1]:
                     node = node[part]
                 node[parts[-1]] = value
             if changed:
-                self._save()
+                self._save(candidate)
+                self._data = candidate
         if changed:
             for listener in list(self._listeners):
                 try:

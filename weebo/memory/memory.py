@@ -52,6 +52,19 @@ def looks_secret(text: str) -> bool:
     return any(p.search(text) for p in _SECRET_PATTERNS)
 
 
+def _memory_text(text: str) -> str:
+    if not isinstance(text, str):
+        raise MemoryError_("Memory text must be a string.")
+    text = " ".join(text.split())
+    if len(text) < 3:
+        raise MemoryError_("Memory text is too short.")
+    if len(text) > 1200:
+        raise MemoryError_("Memory text is too long; store one concise statement (under 1200 characters).")
+    if looks_secret(text):
+        raise MemoryError_("That looks like a secret (password, key or card number). Weebo never stores secrets.")
+    return text
+
+
 class Memory:
     def __init__(self, store: "Store", bus: "EventBus", embedder: "embeddings.Embedder | None" = None):
         self.store = store
@@ -99,8 +112,12 @@ class Memory:
         try:
             self.embedder.warm()  # type: ignore[union-attr]
             model = self.embedder.name  # type: ignore[union-attr]
-            with self._vectors_lock:
-                self._vectors = {r["memory_id"]: embeddings.unpack(r["vector"]) for r in self.store.memory_vectors(model)}
+            with self._worker_lock:
+                if self.semantic == "off":
+                    self._worker = None
+                    return
+                with self._vectors_lock:
+                    self._vectors = {r["memory_id"]: embeddings.unpack(r["vector"]) for r in self.store.memory_vectors(model)}
         except Exception as exc:
             logger.warning("Semantic memory unavailable: %s", exc)
             with self._worker_lock:
@@ -129,21 +146,29 @@ class Memory:
         if self.embedder is None:
             return 0
         done = 0
-        while self.semantic != "off":
-            rows = self.store.memories_needing_vectors(self.embedder.name, limit=INDEX_BATCH)
+        while True:
+            # stop() takes this lock before storage can close. Model loading and
+            # embedding may finish later, but must not touch the closed store.
+            with self._worker_lock:
+                if self.semantic == "off":
+                    return done
+                rows = self.store.memories_needing_vectors(self.embedder.name, limit=INDEX_BATCH)
             if not rows:
                 return done
             vectors = self.embedder.embed([r["text"] for r in rows])  # slow: the text may change meanwhile
             stored_any = False
             for row, vector in zip(rows, vectors):
                 text_hash = hashlib.sha1(row["text"].encode("utf-8")).hexdigest()[:16]
-                with self._vectors_lock:  # store + cache together, so an edit can't slip in between them
-                    # Refused if the memory was edited or forgotten mid-embedding; the next pass sees the new text.
-                    if self.store.set_memory_vector(row["id"], self.embedder.name, row["text"], text_hash,
-                                                    embeddings.pack(vector)):
-                        self._vectors[row["id"]] = vector
-                        done += 1
-                        stored_any = True
+                with self._worker_lock:
+                    if self.semantic == "off":
+                        return done
+                    with self._vectors_lock:  # store + cache together, so an edit can't slip in between them
+                        # Refused if the memory was edited or forgotten mid-embedding; the next pass sees the new text.
+                        if self.store.set_memory_vector(row["id"], self.embedder.name, row["text"], text_hash,
+                                                        embeddings.pack(vector)):
+                            self._vectors[row["id"]] = vector
+                            done += 1
+                            stored_any = True
             if not stored_any:
                 return done  # everything changed under us; those edits already woke the loop for another pass
         return done
@@ -198,17 +223,13 @@ class Memory:
 
     def remember(self, text: str, kind: str = "fact", importance: int = 3, source: str = "chat",
                  pinned: bool = False, meta: dict | None = None) -> tuple[dict[str, Any], str]:
-        text = " ".join((text or "").split())
-        if len(text) < 3:
-            raise MemoryError_("Memory text is too short.")
-        if len(text) > 1200:
-            raise MemoryError_("Memory text is too long; store one concise statement (under 1200 characters).")
-        if looks_secret(text):
-            raise MemoryError_("That looks like a secret (password, key or card number). Weebo never stores secrets.")
+        text = _memory_text(text)
         kind = kind if kind in KINDS else "fact"
         existing = self.store.find_similar_memory(text)
         if existing:
             updates: dict[str, Any] = {"importance": max(existing["importance"], int(importance))}
+            if pinned:
+                updates["pinned"] = 1
             if len(text) > len(existing["text"]):
                 updates["text"] = text
             if existing["status"] != "active":
@@ -237,8 +258,8 @@ class Memory:
 
     def update(self, memory_id: str, **values: Any) -> dict[str, Any] | None:
         allowed = {k: v for k, v in values.items() if k in ("text", "kind", "importance", "pinned", "status") and v is not None}
-        if "text" in allowed and looks_secret(allowed["text"]):
-            raise MemoryError_("That looks like a secret; not stored.")
+        if "text" in allowed:
+            allowed["text"] = _memory_text(allowed["text"])
         if "kind" in allowed and allowed["kind"] not in KINDS:
             raise MemoryError_(f"kind must be one of {', '.join(KINDS)}")
         mem = self.store.update_memory(memory_id, **allowed)

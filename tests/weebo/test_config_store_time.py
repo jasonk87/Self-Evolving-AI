@@ -150,3 +150,31 @@ def test_recurrence_normalization_and_next():
     assert datetime.fromtimestamp(next_occurrence(due, "weekdays", now)) == datetime(2026, 10, 5, 8, 0)
     assert next_occurrence(due, "", now) is None
     assert parse_duration("90s") == 90
+
+
+@pytest.mark.parametrize("value", ["-5 minutes", "1h garbage", "1.2.3h", "9" * 400 + " days"])
+def test_duration_rejects_unparsed_or_nonfinite_input(value):
+    assert parse_duration(value) is None
+    with pytest.raises(TimeParseError):
+        parse_when("in " + value, NOW)
+
+
+@pytest.mark.parametrize("value", ["13pm", "00am", "13:30am"])
+def test_twelve_hour_clock_rejects_invalid_hours(value):
+    with pytest.raises(TimeParseError):
+        parse_when(value, NOW)
+
+
+def test_explicit_today_does_not_silently_move_to_tomorrow():
+    assert parse_when("today 8am", NOW) == NOW.replace(hour=8)
+
+
+def test_repeated_reminder_survives_more_than_ten_thousand_missed_occurrences():
+    due = datetime(2026, 1, 1, 8, 0).timestamp()
+    now = datetime(2026, 2, 1, 8, 0, 30).timestamp()
+    assert next_occurrence(due, "every 60s", now) == datetime(2026, 2, 1, 8, 1).timestamp()
+
+
+def test_monthly_recurrence_does_not_truncate_days_in_a_long_month():
+    due = datetime(2026, 7, 31, 8).timestamp()
+    assert next_occurrence(due, "monthly", due) == datetime(2026, 8, 31, 8).timestamp()

@@ -75,6 +75,50 @@ async def test_settings_validation(client):
     assert (await ok.json())["changed"] == {"agents.max_parallel": 4}
 
 
+@pytest.mark.parametrize("body", [[], None, {"changes": []}, {"changes": None}])
+async def test_settings_rejects_non_object_patches(client, body):
+    response = await client.patch("/api/settings", data=json.dumps(body),
+                                  headers={**client.h, "Content-Type": "application/json"})
+    assert response.status == 400
+
+
+async def test_empty_settings_patch_is_a_noop(client):
+    response = await client.patch("/api/settings", json={"changes": {}}, headers=client.h)
+    assert response.status == 200
+    assert (await response.json())["changed"] == {}
+
+
+@pytest.mark.parametrize("field,value", [("text", 42), ("images", "image.png"), ("images", [42])])
+async def test_message_rejects_invalid_field_types_before_saving(client, app, fake_engine, field, value):
+    conv_id = app.conversations.main_id()
+    before = app.store.list_messages(conv_id)
+    resp = await client.post(f"/api/conversations/{conv_id}/messages", json={"text": "hello", field: value}, headers=client.h)
+    assert resp.status == 400
+    assert app.store.list_messages(conv_id) == before
+    assert not fake_engine.turns
+
+
+async def test_missing_attachment_is_not_silently_dropped(client, app, fake_engine):
+    conv_id = app.conversations.main_id()
+    resp = await client.post(f"/api/conversations/{conv_id}/messages",
+                             json={"text": "Explain this picture", "images": ["gone.png"]}, headers=client.h)
+    assert resp.status == 400
+    assert not fake_engine.turns
+
+
+@pytest.mark.parametrize("body", [[], 42, "activity", None])
+async def test_websocket_ignores_non_object_messages(client, body):
+    async with client.ws_connect(f"/ws?token={client.token}", headers=HOST) as ws:
+        assert (await ws.receive_json())["type"] == "hello"
+        await ws.send_json(body)
+        await ws.send_str('{"type":"activity"}')
+        await ws.ping(b"still-open")
+        import asyncio
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(ws.receive(), 0.05)
+        assert not ws.closed
+
+
 async def test_memories_and_reminders_api(client):
     added = await client.post("/api/memories", json={"text": "User runs every Sunday", "kind": "fact"}, headers=client.h)
     memory = (await added.json())["memory"]

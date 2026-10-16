@@ -33,6 +33,8 @@ class ThreadKeeper:
     def __init__(self, app: "WeeboApp"):
         self.app = app
         self._archiving: dict[str, asyncio.Task] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self._closing = False
         # Thread id -> name: to put away, saved so a restart (or Codex being down) doesn't lose any.
         pending = app.store.kv_get(PENDING_KEY, {})
         self._pending: dict[str, str] = dict(pending) if isinstance(pending, dict) else {}
@@ -60,7 +62,7 @@ class ThreadKeeper:
         """Name a finished thread (so it reads well in Codex's archive) and archive it, unless by then something is
         using it again. ``name`` is only for threads that took a turn: naming one saves it to disk. With ``retry``
         it is remembered until it's done, across restarts and Codex being down."""
-        if not thread_id:
+        if not thread_id or self._closing:
             return None
         previous = self._archiving.get(thread_id)
         if retry:
@@ -83,16 +85,20 @@ class ThreadKeeper:
 
         task = asyncio.get_running_loop().create_task(run())
         self._archiving[thread_id] = task
+        self._tasks.add(task)
         task.add_done_callback(lambda done, key=thread_id: self._forget(key, done))
         return task
 
     def _forget(self, thread_id: str, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
         if self._archiving.get(thread_id) is task:
             del self._archiving[thread_id]
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning("Could not archive thread %s: %r", thread_id, task.exception())
 
     def later(self, thread_id: str, name: str = "") -> None:
         """Put away once the engine is ready (an agent cut off by a restart)."""
-        if thread_id:
+        if thread_id and not self._closing:
             self._note(thread_id, name)
 
     async def settle(self, thread_id: str) -> None:
@@ -109,11 +115,24 @@ class ThreadKeeper:
         await self.app.engine.unarchive_thread(thread_id)
 
     def on_engine_ready(self) -> None:
+        if self._closing:
+            return
         for thread_id, name in list(self._pending.items()):
             if thread_id not in self._archiving:
                 self.put_away(thread_id, name)
         if self._sweep is None and int(self.app.store.kv_get(SWEEP_KEY, 0) or 0) < SWEEP_VERSION:
             self._sweep = asyncio.get_running_loop().create_task(self._sweep_once())
+
+    async def stop(self) -> None:
+        """Settle all archive work before its engine and store close; durable retries stay queued."""
+        self._closing = True
+        tasks = set(self._tasks)
+        if self._sweep:
+            tasks.add(self._sweep)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _sweep_once(self) -> None:
         """Once: archive the threads Weebo left in the Codex app before it put its threads away by itself."""

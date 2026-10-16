@@ -120,6 +120,7 @@ class App {
 
   setConnection(state) {
     document.body.classList.toggle("offline", state !== "online");
+    $(".offline-banner").setAttribute("aria-hidden", String(state === "online"));
     if (state !== "online") director.setBase("offline");
     else director.setBase(this.restingMood());
   }
@@ -315,11 +316,16 @@ class App {
 
   // ------------------------------------------------------------------ live events
   bindEvents() {
-    on("hello", () => { this.reconcileEvolution(); this.notifications.reconcile(); });
-    on("conv.message", ({ conversation_id, message }) => {
+    on("hello", () => {
+      if (this.connectedOnce && this.chat.convId) this.chat.open(this.chat.convId, { focus: false, refresh: true });
+      this.connectedOnce = true;
+      this.reconcileEvolution();
+      this.notifications.reconcile();
+    });
+    on("conv.message", (data) => {
+      const { conversation_id, message } = data;
       if (conversation_id === this.currentConvId) {
-        const existing = this.chat.byId.get(message.id);
-        if (message.kind !== "evolution_status" || !existing || message.updated_at >= existing.updated_at) this.chat.upsert(message);
+        this.chat.receiveEvent("message", data);
         if (message.kind === "agent_card" || message.kind === "evolution_status") this.readNotificationsShownInChat();
       }
       const conv = this.conversation(conversation_id);
@@ -330,18 +336,19 @@ class App {
       }
       if (message.kind === "reminder") { director.flash("alert", 3500); this.chat.stage.say(message.content.slice(0, 80), 6000); }
     });
-    on("conv.delta", (d) => this.chat.delta(d));
-    on("conv.output", (d) => this.chat.output(d));
-    on("conv.reasoning", (d) => this.chat.reasoningDelta(d));
-    on("conv.status", (d) => { if (d.conversation_id === this.currentConvId) this.chat.stage.say(d.text, 4000); });
-    on("conv.turn.started", ({ conversation_id }) => {
+    on("conv.delta", (d) => this.chat.receiveEvent("delta", d));
+    on("conv.output", (d) => this.chat.receiveEvent("output", d));
+    on("conv.reasoning", (d) => this.chat.receiveEvent("reasoning", d));
+    on("conv.status", (d) => this.chat.receiveEvent("status", d));
+    on("conv.turn.started", (data) => {
+      const { conversation_id } = data;
       this.busyConvs.add(conversation_id);
-      if (conversation_id === this.currentConvId) this.chat.turnStarted();
+      this.chat.receiveEvent("started", data);
       this.renderSidebar();
     });
     on("conv.turn.completed", (d) => {
       this.busyConvs.delete(d.conversation_id);
-      if (d.conversation_id === this.currentConvId) this.chat.turnCompleted(d);
+      if (d.conversation_id === this.currentConvId) this.chat.receiveEvent("completed", d);
       else if (d.final_text && d.status === "completed") {
         const conv = this.conversation(d.conversation_id);
         toast(conv?.title || "Weebo", d.final_text.slice(0, 160), { action: { label: "Open", run: () => this.openConversation(d.conversation_id) } });

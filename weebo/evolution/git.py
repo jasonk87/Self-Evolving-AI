@@ -44,9 +44,14 @@ async def run(args: list[str], cwd: str | Path, timeout: float = 120, env: dict[
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+    except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.communicate()  # drain the pipes as well as reaping the child
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         return GitResult(124, "", f"Timed out after {timeout:.0f}s: {' '.join(args)}")
     return GitResult(proc.returncode or 0, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
 

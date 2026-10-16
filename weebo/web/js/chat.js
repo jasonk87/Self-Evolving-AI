@@ -46,6 +46,7 @@ export class ChatView {
   constructor(app) {
     this.app = app;
     this.convId = null;
+    this.loadGeneration = 0;
     this.messages = [];
     this.byId = new Map();
     this.nodes = new Map();        // message id -> {node, version}
@@ -82,7 +83,7 @@ export class ChatView {
       const copy = e.target.closest(".code-copy");
       if (copy) {
         const code = copy.closest(".code")?.querySelector("code")?.innerText || "";
-        navigator.clipboard?.writeText(code).then(() => { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1200); });
+        copyText(code).then((copied) => { if (copied) { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1200); } });
       }
     });
     this.scroller.addEventListener("scroll", () => {
@@ -145,7 +146,12 @@ export class ChatView {
   }
 
   // ------------------------------------------------------------------ loading
-  async open(convId) {
+  async open(convId, { focus = true, refresh = false } = {}) {
+    const generation = ++this.loadGeneration;
+    const previous = refresh && convId === this.convId ? this.messages : [];
+    const scrollTop = this.scroller.scrollTop, wasAtBottom = this.stick;
+    this.loadingEvents = [];
+    this.snapshotSequence = 0;
     this.convId = convId;
     this.setReadOnly();  // right away: the composer must not keep the last chat's state while this one loads
     this.messages = [];
@@ -154,28 +160,44 @@ export class ChatView {
     this.groups.clear();
     this.streams.clear();
     this.list.replaceChildren();
-    this.busy = false;
+    this.setBusy(false);
     this.hasMore = false;
+    this.loadingMore = false;
     this.root.classList.add("loading");
     try {
       const data = await api.get(`/api/conversations/${encodeURIComponent(convId)}`);
-      if (this.convId !== convId) return;
-      this.setMessages(data.messages || []);
+      if (this.loadGeneration !== generation) return;
+      const messages = data.messages || [];
+      const firstSeq = messages[0]?.seq ?? 0;
+      this.setMessages([...previous.filter((m) => m.seq < firstSeq), ...messages]);
       this.hasMore = (data.messages || []).length >= 200;
       const live = data.live || {};
       for (const [id, text] of Object.entries(live.streams || {})) this.streams.set(id, text);
       this.setBusy(Boolean(live.busy), live.started_at, live.reasoning);
+      if (live.busy) this.app.busyConvs.add(convId); else this.app.busyConvs.delete(convId);
+      this.snapshotSequence = data.event_seq || 0;
       this.app.markRead(convId, data.conversation);
     } catch (err) {
+      if (this.loadGeneration !== generation) return;
       toast("Couldn't open that chat", err.message, { kind: "error" });
     } finally {
-      this.root.classList.remove("loading");
+      if (this.loadGeneration === generation) {
+        const events = this.loadingEvents;
+        this.loadingEvents = null;
+        this.root.classList.remove("loading");
+        this.render();  // Build work-item nodes before replaying command-output deltas.
+        // The snapshot already contains events up to its watermark. Replay only
+        // later events, including deltas, so text is neither lost nor duplicated.
+        for (const [type, data] of events) this.receiveEvent(type, data);
+      }
     }
     this.setReadOnly();
     this._suggestKey = null;
-    this.render(true);
+    this.render(!refresh || wasAtBottom);
+    if (refresh && !wasAtBottom) this.scroller.scrollTop = scrollTop;
     this.updateChips();
-    if (!this.readOnly) this.input.focus({ preventScroll: true });
+    this.app.renderSidebar();
+    if (focus && !this.readOnly) this.input.focus({ preventScroll: true });
   }
 
   setReadOnly() {
@@ -186,12 +208,14 @@ export class ChatView {
   }
 
   async loadOlder() {
+    const generation = this.loadGeneration;
     const first = this.messages[0];
-    if (!first) return;
+    if (!first || this.loadingMore) return;
     this.loadingMore = true;
     const before = this.scroller.scrollHeight;
     try {
       const data = await api.get(`/api/conversations/${encodeURIComponent(this.convId)}?before=${first.seq}&limit=150`);
+      if (this.loadGeneration !== generation) return;
       const older = data.messages || [];
       this.hasMore = older.length >= 150;
       if (older.length) {
@@ -199,8 +223,10 @@ export class ChatView {
         this.render();
         this.scroller.scrollTop += this.scroller.scrollHeight - before;
       }
+    } catch (err) {
+      if (this.loadGeneration === generation) toast("Couldn't load older messages", err.message, { kind: "error" });
     } finally {
-      this.loadingMore = false;
+      if (this.loadGeneration === generation) this.loadingMore = false;
     }
   }
 
@@ -210,6 +236,21 @@ export class ChatView {
   }
 
   // ------------------------------------------------------------------ events
+  receiveEvent(type, data) {
+    if (data.conversation_id !== this.convId) return;
+    if (this.loadingEvents) { this.loadingEvents.push([type, data]); return; }
+    if (data._seq != null && data._seq <= (this.snapshotSequence || 0)) return;
+    if (type === "message") {
+      const existing = this.byId.get(data.message.id);
+      if (!existing || data.message.updated_at >= existing.updated_at) this.upsert(data.message);
+    } else if (type === "delta") this.delta(data);
+    else if (type === "output") this.output(data);
+    else if (type === "reasoning") this.reasoningDelta(data);
+    else if (type === "status") this.stage.say(data.text, 4000);
+    else if (type === "started") { this.app.busyConvs.add(this.convId); this.turnStarted(); }
+    else if (type === "completed") { this.app.busyConvs.delete(this.convId); this.turnCompleted(data); }
+  }
+
   upsert(msg) {
     if (msg.conversation_id !== this.convId) return;
     const existing = this.byId.get(msg.id);
@@ -524,7 +565,8 @@ export class ChatView {
 
   async submit() {
     const text = this.input.value.trim();
-    const images = this.pendingImages.map((r) => r.name);
+    const submittedImages = [...this.pendingImages];
+    const images = submittedImages.map((r) => r.name);
     if (!text && !images.length) {
       if (this.busy) this.interrupt();
       return;
@@ -533,8 +575,8 @@ export class ChatView {
     this.input.value = "";
     autoGrow(this.input);
     this.pendingImages = [];
-    this.attachments.replaceChildren();
-    this.attachments.hidden = true;
+    for (const record of submittedImages) record.chip.remove();
+    this.attachments.hidden = !this.attachments.childElementCount;
     this.updateSendButton();
     if (isListening()) this.toggleMic();
     director.setBase("thinking");
@@ -543,7 +585,10 @@ export class ChatView {
       await api.post(`/api/conversations/${encodeURIComponent(this.convId)}/messages`, { text, images });
     } catch (err) {
       toast("Message not sent", err.message, { kind: "error" });
-      this.input.value = text;
+      this.input.value = [text, this.input.value].filter(Boolean).join("\n\n");
+      this.pendingImages.unshift(...submittedImages);
+      this.attachments.prepend(...submittedImages.map((r) => r.chip));
+      this.attachments.hidden = !this.attachments.childElementCount;
       autoGrow(this.input);
       this.updateSendButton();
       director.flash("sad", 2000);

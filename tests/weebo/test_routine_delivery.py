@@ -25,6 +25,33 @@ def routine_journal(app):
     return [r["title"] for r in app.store.query("SELECT * FROM journal WHERE kind='routine' ORDER BY seq")]
 
 
+async def test_stop_during_routine_start_records_a_terminal_outcome(app, fake_engine, monkeypatch):
+    conv_id = app.conversations.main_id()
+    due_routine(app, conv_id)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = fake_engine.start_thread
+
+    async def delayed(**params):
+        entered.set()
+        await release.wait()
+        return await original(**params)
+
+    monkeypatch.setattr(fake_engine, "start_thread", delayed)
+    tick = asyncio.create_task(app.scheduler.tick())
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        assert await app.conversations.interrupt(conv_id)
+        release.set()
+        await asyncio.wait_for(tick, 2)
+        saved = occurrences(app)[0]
+        assert saved["status"] == "interrupted" and saved["finished_at"]
+        await app.scheduler.tick()
+        assert fake_engine.turns == []
+    finally:
+        release.set()
+        await asyncio.gather(tick, return_exceptions=True)
+
+
 async def test_confirmed_start_failure_is_durable_and_retries_with_backoff(app, fake_engine, monkeypatch):
     conv = app.conversations.create()
     reminder = due_routine(app, conv["id"], "daily")

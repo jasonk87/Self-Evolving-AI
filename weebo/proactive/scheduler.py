@@ -72,6 +72,7 @@ class Scheduler:
     async def stop(self) -> None:
         if self._task:
             self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
 
     async def _loop(self) -> None:
         while True:

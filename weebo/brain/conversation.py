@@ -38,6 +38,7 @@ class TurnState:
     trigger: str = "user"
     occurrence_id: str | None = None
     turn_id: str | None = None
+    cancelled: bool = False
     started_at: float = field(default_factory=time.time)
     streams: dict[str, str] = field(default_factory=dict)
     reasoning: str = ""
@@ -321,7 +322,7 @@ class ConversationManager:
         if conv.get("thread_id"):
             self.thread_conv.pop(conv["thread_id"], None)
             self.app.engine.unroute(conv["thread_id"])
-            asyncio.create_task(self.app.engine.archive_thread(conv["thread_id"]))
+            self.app.threads.put_away(conv["thread_id"])
         self.app.store.delete_conversation(conv_id)
         self.app.bus.publish("conv.deleted", {"conversation_id": conv_id})
 
@@ -438,6 +439,11 @@ class ConversationManager:
         # Stop drops what was waiting to be said, but not what it was about: the next turn still knows.
         session.pending_context.extend(f["fallback"] for f in session.followups if f.get("fallback"))
         session.followups.clear()
+        session.turn.cancelled = True
+        if not session.turn.turn_id:
+            # Startup is in flight. Keep its state until we can either avoid
+            # starting the turn or interrupt the id confirmed by Codex.
+            return True
         if session.turn.turn_id and conv.get("thread_id"):
             try:
                 await self.app.engine.interrupt(conv["thread_id"], session.turn.turn_id)
@@ -457,12 +463,20 @@ class ConversationManager:
         try:
             thread_id = await self._ensure_thread(session, conv)
             conv = self.app.store.get_conversation(conv["id"]) or conv
+            if state.cancelled:
+                if session.turn is state:
+                    self._finish_turn(conv["id"], "interrupted", None)
+                return "interrupted"
             extra = list(session.pending_context)
             session.pending_context.clear()
             context, used = persona.turn_context(self.app, conv, query, extra)
             state.used_memories = used
             overrides = self._turn_overrides(conv)
             await self.app.engine.ensure_ready()
+            if state.cancelled:
+                if session.turn is state:
+                    self._finish_turn(conv["id"], "interrupted", None)
+                return "interrupted"
             requested = True
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
@@ -472,8 +486,11 @@ class ConversationManager:
                 self.app.bus.publish("conv.message", {"conversation_id": conv["id"], "message": message})
             if occurrence_id:
                 self.app.scheduler.delivery_started(occurrence_id, turn["id"])
-            if session.turn and not session.turn.turn_id:
-                session.turn.turn_id = turn["id"]
+            if session.turn is state:
+                state.turn_id = state.turn_id or turn["id"]
+                if state.cancelled:
+                    await self.interrupt(conv["id"])
+                    return "interrupted"
             return "started"
         except Exception as exc:
             message = str(exc) or type(exc).__name__
@@ -747,7 +764,9 @@ class ConversationManager:
         store = self.app.store
         if turn and turn.occurrence_id:
             occurrence = store.get_routine(turn.occurrence_id)
-            if occurrence and occurrence["status"] == "started":
+            if occurrence and occurrence["status"] == "starting" and status == "interrupted":
+                self.app.scheduler.delivery_interrupted(turn.occurrence_id, "Routine was stopped before it started.")
+            elif occurrence and occurrence["status"] == "started":
                 store.update_routine(turn.occurrence_id, finished_at=time.time())
         conv = store.get_conversation(conv_id)
         if turn and conv and conv.get("thread_id"):
@@ -792,10 +811,10 @@ class ConversationManager:
             self.app.on_turn_finished(conv_id, turn, status)
         if session.waiting:  # what the user said meanwhile comes first
             waiting, session.waiting = session.waiting, []
-            asyncio.create_task(self._answer_waiting(conv_id, waiting))
+            self.app._start_job(self._answer_waiting(conv_id, waiting), "queued-reply")
         elif session.followups and status != "interrupted":
             event = session.followups.pop(0)
-            asyncio.create_task(self.run_event(conv_id, **event))
+            self.app._start_job(self.run_event(conv_id, **event), "chat-followup")
 
     async def _answer_waiting(self, conv_id: str, waiting: list[dict[str, Any]]) -> None:
         """Start the user's own turn for messages sent while a turn Weebo started was running."""
@@ -829,7 +848,7 @@ class ConversationManager:
         meta["named_thread"] = thread_id
         self.app.store.update_conversation(conv["id"], meta=meta)
         title = conv.get("title") or "Weebo chat"
-        asyncio.create_task(self.app.engine.set_thread_name(thread_id, f"Weebo · {title}"))
+        self.app._start_job(self.app.engine.set_thread_name(thread_id, f"Weebo · {title}"), "name-chat")
 
     # ------------------------------------------------------------------ startup hygiene
     def recover_after_restart(self) -> None:
