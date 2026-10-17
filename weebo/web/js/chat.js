@@ -29,8 +29,9 @@ function reconcile(parent, desired) {
 }
 
 // What Weebo is doing picks its animation (avatar.js moods).
-const ACTIVITY_MOODS = { thinking: "thinking", coding: "coding", reviewing: "reviewing", researching: "researching",
-                         delegating: "delegating" };
+export const ACTIVITY_MOODS = { thinking: "thinking", coding: "coding", reviewing: "reviewing", researching: "researching",
+                         delegating: "delegating", writing: "writing", calling: "calling", syncing: "syncing",
+                         waiting: "waiting", dreaming: "dreaming", sleeping: "sleepy" };
 const CODEY = /[`\\/;$|<>]|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b/;
 const COMMANDY = /^(?:(?:running|using|executing)\s+)?(?:git|python\d*|py|node|npm|npx|pnpm|yarn|pip\d*|uv|pytest|cargo|go|curl|wget|rg|grep|ls|cat|echo|rm|cmd|powershell|pwsh|bash|sh|(?:get|set|remove|new|invoke|start|stop|write|test)-[a-z]+)(?:\s|$)/i;
 
@@ -76,7 +77,12 @@ export class ChatView {
     this.oldChat = el("div", { class: "old-chat-bar", hidden: true },
       el("span", { text: "An older chat, kept to read. Everything new happens in the main chat." }),
       btn("Back to Weebo", { kind: "primary", size: "sm", onClick: () => this.app.openMain() }));
-    this.root.append(this.scroller, this.oldChat, this.composer);
+    this.botName = el("strong", { text: "" });
+    this.botBar = el("div", { class: "bot-chat-bar", hidden: true },
+      el("span", {}, "Talking to ", this.botName, " directly. It reports to Weebo."),
+      btn("Profile", { kind: "soft", size: "sm", icon: "users", onClick: () => this.app.openPanel("bots", { bot: this.botId }) }),
+      btn("Back to Weebo", { kind: "primary", size: "sm", onClick: () => this.app.openMain() }));
+    this.root.append(this.botBar, this.scroller, this.oldChat, this.composer);
 
     this.root.addEventListener("click", (e) => {
       const fileLink = e.target.closest(".file-link:not(.openable)");
@@ -240,9 +246,15 @@ export class ChatView {
 
   setReadOnly() {
     const conv = this.app.conversation(this.convId);
-    this.readOnly = Boolean(conv && conv.kind !== "desk");  // older chats are kept to read; we talk in the main one
+    // Older chats are kept to read; we talk in the main one, or to a bot directly in its own chat.
+    const bot = conv && conv.kind === "bot" ? this.app.botFor(conv.id) : null;
+    // A retired bot (no longer on the team list) keeps its chat to read, like an older chat.
+    this.readOnly = Boolean(conv && (conv.kind === "chat" || (conv.kind === "bot" && !bot)));
     this.composer.hidden = this.readOnly;
     this.oldChat.hidden = !this.readOnly;
+    this.botId = bot?.id || conv?.meta?.bot_id || null;
+    this.botBar.hidden = !(conv && conv.kind === "bot");
+    this.botName.textContent = bot?.name || conv?.title || "";
   }
 
   async loadOlder() {
@@ -549,6 +561,15 @@ export class ChatView {
   ctx() {
     return {
       readOnly: this.readOnly,
+      botChat: Boolean(this.botBar && !this.botBar.hidden),
+      openBot: (id) => this.app.openPanel("bots", { bot: id }),
+      openConversation: (id) => { this.app.panels.close(); this.app.openConversation(id); },
+      act: async (path, body, button, confirmText) => {
+        if (confirmText && !window.confirm(confirmText)) return;
+        if (button) button.disabled = true;
+        try { await api.post(path, body || {}); }
+        catch (err) { toast("That didn't work", err.message, { kind: "error" }); if (button) button.disabled = false; }
+      },
       resolve: (id, decision, answers) => this.app.resolveInteraction(id, decision, answers),
       openTask: (id) => this.app.openPanel("agents", { task: id }),
       openProposal: (id) => this.app.openPanel("evolution", { proposal: id }),
@@ -579,7 +600,8 @@ export class ChatView {
     this.sendBtn.setAttribute("aria-label", this.sendBtn.title);
     this.sendBtn.classList.toggle("stop", stopMode);
     this.sendBtn.disabled = !stopMode && !hasText;
-    this.input.placeholder = this.busy ? "Add to the task… (Esc stops)" : "Message Weebo…";
+    const who = this.botBar && !this.botBar.hidden ? this.botName.textContent : "Weebo";
+    this.input.placeholder = this.busy ? "Add to the task… (Esc stops)" : `Message ${who}…`;
   }
 
   async addFiles(files) {

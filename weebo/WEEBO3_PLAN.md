@@ -5,23 +5,38 @@ credentials/model settings. Use only Codex as the model engine.
 
 ## Ordered releases
 
-1. **Facts and reliability — in progress (foundation slice).** Forward-only migration; provenanced
-   events, mail threads, people and commitments; incremental sync; deterministic
-   calendar computations; fresh tools; open items; grounded output checks;
-   reliability incidents and an upgrade-blocking reliability suite.
-2. **Bots and chief — pending.** Persistent specialist conversations, runtime
-   model tiers, scoped tools, approvals, budgets, reports, lifecycle and roster
-   proposals (not automatic creation).
-3. **Approval/reporting policy — pending.** Scoped standing permissions,
-   chief-only notifications, batching, explicit hard gates and escalation.
-4. **Connector onboarding — pending.** Schema-checked Codex apps, isolated MCP
-   tests, risk rules, explicit approval/assignment and monitoring.
-5. **Day sheet and Ideas — pending.** Evidence-backed enrichment and suggestions,
-   stale dependency regeneration, safe actions and feedback.
-6. **Growth — pending.** Workflows, capability gaps, gated proposals, pruning
-   and capabilities UI.
-7. **Activity — pending.** Event-driven priority registry, honest state display,
-   bot avatars, reduced motion and final navigation.
+1. **Facts and reliability — delivered.** Forward-only v4 migration; provenanced events, mail threads, people and
+   commitments; incremental sync; deterministic calendar computations; fresh tools; open items; grounded output
+   checks; reliability incidents and an upgrade-blocking reliability suite. Completed in the Weebo 3 release:
+   a deterministic fact-check of briefs and drafts plus a fast-tier second pass when they cite stored facts
+   (`weebo/facts/factcheck.py`); read-back verification for calendar bookings and texts; email threads recorded from
+   connectors' raw tool results (`weebo/facts/mail_ingest.py`).
+2. **Bots and chief — delivered.** v5 migration (`weebo/bots/schema.py`); persistent specialist conversations
+   (kind "bot") with their own threads, runtime model tiers, scoped dynamic tools, sandbox by autonomy, per-bot and
+   team budgets, jobs, three-line reports, hop limits, stuck/failure escalation, lifecycle (propose → approve →
+   change in two tiers → archive/delete), standing rules, bot-requested profile changes, starter roster as
+   proposals only, team digest in the brief (`weebo/bots/manager.py`, `weebo/bots/tools.py`).
+3. **Approval/reporting policy — delivered.** Three approval tiers, "always allow" as revocable standing rules,
+   hard gates opened only by the user's own rule, one bundled "needs you" card, urgent-only interruption,
+   interrupt/brief/log report rules with trouble escaping log-only, no bot notification reaching the user
+   (`weebo/bots/policy.py`).
+4. **Connector onboarding — delivered.** Registry with risk labels, isolated MCP tests over stdio/HTTP
+   (`weebo/connectors/mcp_client.py`), risk-gated approval, assignment as a gated bot change, per-bot scope
+   (thread config when the schema has `ThreadStartParams.config`, otherwise enforced in Weebo), failure flagging,
+   ChatGPT apps via `app/list` when the schema has it, documented template (`weebo/connectors/template`).
+5. **Day sheet and Ideas — delivered.** Evidence-backed enrichment without guessed travel time, dependency-driven
+   rebuilds, deterministic idea generators plus evidence-checked chief ideas, daily cap, dedupe, feedback learning,
+   staleness, Discuss / safe Do it / Not useful (`weebo/facts/daysheet.py`, `weebo/ideas.py`).
+6. **Growth — delivered.** Capability gaps → app or self-evolution proposals, repeated requests → workflow
+   proposals, step-by-step workflow runs through bots and schedules, pruning questions, capabilities registry and
+   page (`weebo/growth.py`, `weebo/connectors/tools.py`).
+7. **Activity — delivered.** Event-driven priority registry with honest staleness (`weebo/brain/activity_registry.py`),
+   now-showing slot with "+N more", waiting-on-you, idle and sleeping states, new avatar props with reduced motion,
+   final navigation (Chat, Ideas, Bots, Evolution, More) and the Bots, Ideas and Capabilities panels.
+
+Known limits: no directions source ships with Weebo (travel stays "unknown"); ChatGPT apps and per-thread connector
+config depend on the installed Codex schema; only briefs and drafts get the fact-check pass. Three existing browser
+tests now reach Agents and Memory through More (the spec's final tab layout); their assertions are unchanged.
 
 ## Release checks (every phase, before every push)
 
@@ -72,7 +87,5 @@ integration/smoke deselections, 13 subtests). The later-added real-service-worke
 test also passed in the full Weebo suite. GitHub CI must pass before marking this
 release green remotely.
 
-Phase 1 is NOT complete: free-form answer publication still needs an enforced
-claim-checking boundary and fast-tier second pass, integrations need verified
-read-before/after actions, and email ingestion awaits a schema-vetted app source.
-Do not label the grounding prompt/receipts as an implemented output guarantee.
+The Phase 1 items listed as missing here were completed in the Weebo 3 release (see release 1 above). Free-form
+chat answers are still grounded by rules and receipts rather than a publication-time check.

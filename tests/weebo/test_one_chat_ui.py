@@ -104,8 +104,9 @@ async def test_one_chat_cards_chips_tabs_and_archive(app, fake_engine, monkeypat
             await stage.get_by_text("Running the tests").wait_for()
             assert "pytest" not in await stage.inner_text()
 
-            # Tabs: Agents opens its panel, Chat brings you back.
-            await tabbar.get_by_role("button", name="Agents").click()
+            # Tabs: Agents (under More) opens its panel, Chat brings you back.
+            await tabbar.get_by_role("button", name="More").click()
+            await page.locator("#drawer .more-row").filter(has_text="Agents").first.click()
             await page.locator("#drawer h3").get_by_text("Agents", exact=True).wait_for()
             await tabbar.get_by_role("button", name="Chat").click()
             await page.wait_for_function("() => !document.body.classList.contains('drawer-open')")

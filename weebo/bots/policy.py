@@ -271,6 +271,12 @@ class ApprovalPolicy:
             risk = self.app.connectors.risk(server, tool)
             info.update(action=risk, target=f"{server}:{tool}".strip(":"), label=detail.get("title") or f"use {server}",
                         server=server, tool=tool)
+        elif kind == "confirm":
+            # Weebo's own outward actions (an integration that sends, books or texts) are always a hard gate.
+            title = str(params.get("title") or "")
+            name = title.split(":", 1)[-1].strip() if title.startswith("Use integration") else title
+            action = "contact_people" if re.search(r"text|sms|call|message|email", name, re.IGNORECASE) else "send"
+            info.update(action=action, target=name[:120], label=f"use {name}" if name else "take an outside action")
         else:
             info.update(action="act", label=str(params.get("title") or params.get("reason") or "go ahead"))
         info["hard"] = info["action"] in HARD

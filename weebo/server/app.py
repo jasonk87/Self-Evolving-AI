@@ -381,6 +381,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "read_notification_ids": weebo.store.read_notification_ids(),
             "reminders": weebo.store.list_reminders(),
             "bots": [weebo.bots.public(b) for b in weebo.bots.list(("proposed", "active", "paused"))],
+            "activity": weebo.activity.snapshot(),
+            "ideas_open": len(weebo.ideas.list()),
             "lan": lan_info(),
         })
 
@@ -817,6 +819,10 @@ def create_app(weebo: WeeboApp) -> web.Application:
             return _json({"idea": weebo.ideas.not_useful(idea_id)})
         raise ValueError("Unknown idea action.")
 
+    async def get_activity(_: web.Request) -> web.Response:
+        return _json(weebo.activity.snapshot())
+
+    r.add_get("/api/activity", get_activity)
     r.add_get("/api/daysheet", get_daysheet)
     r.add_get("/api/ideas", list_ideas)
     r.add_post("/api/ideas/{id}/{action}", idea_action)

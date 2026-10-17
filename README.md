@@ -6,12 +6,89 @@ and upgrades its own code safely.
 
 <p align="center"><img src="weebo/web/icon.svg" width="96" alt="Weebo"></p>
 
-## Weebo 3 rollout: facts foundation
+## Weebo 3: a chief of staff with a team
 
-The chief-of-staff/team upgrade is being delivered in ordered, tested slices.
-The first slice adds the durable facts foundation; **persistent bots and the
-remaining Weebo 3 phases are not shipped yet**. The delivery ledger is
+Weebo is now a **chief of staff**: the one Weebo you talk to (the main chat). It delegates, keeps the overview,
+decides what reaches you, and is the only one that ever interrupts you. The delivery ledger is
 [weebo/WEEBO3_PLAN.md](weebo/WEEBO3_PLAN.md).
+
+**Bots (the team).** Long-lived specialists, each with one continuous chat and one Codex thread, its own model tier
+(fast, standard or most capable, mapped at runtime from the models your Codex offers; pin them in Settings if you
+like), effort, tools, connectors, autonomy, daily budget and routines. Bots get jobs from the chief (or from you
+directly in their chat) and report back with a three-line summary; only that summary reaches the chief, never the
+transcript. Bots never talk to each other: the chief relays, with a hop limit so nothing ping-pongs. A bot that is
+stuck, keeps failing or goes over budget is reported, never silent.
+- Weebo **proposes** bots (with a write-up: job, goals, tier, tools, autonomy, budget, routines and why); a card in
+  the chat lets you approve, edit or decline. A typed "yes" works too. Bots can never create bots. On first run it
+  proposes a small starter team (Mail, Home, Research, Coder); nothing is created until you approve.
+- The chief may change a bot freely (wording, routines, pausing, a cheaper tier, rules you stated). New tools or
+  connectors, more autonomy, a bigger tier, effort or budget, creating and deleting all wait for your yes.
+  Retiring archives by default (the chat stays readable, its thread is put away); deleting needs your explicit word.
+- Talk to a bot directly from the Bots tab. When you tell it how to work, it saves a standing rule and tells the
+  chief. A bot can ask for a profile change; the chief reviews it under the same tiers.
+- The morning brief folds in a team digest: reports, what was decided for you, what waits on you, and per-bot usage
+  with a hint when a bot barely uses its tier. (The digest is built by code; it costs no extra model turns.)
+
+**Approvals and "don't bug me".** Three tiers: a bot just does what its autonomy allows; the chief approves what
+matches a standing rule you set ("decided for you", listed in the brief); you decide the hard gates (sending,
+paying, deleting, contacting people, new tools, bigger caps). A bot never waits on you: what needs you goes onto one
+bundled **needs you** card in the chat ("Allow once", "Always allow", "Deny"), and only urgent items reach your phone.
+"Always allow" is saved as a standing rule you can revoke. Reports go to **interrupt**, **brief** or **log** by rules
+learned from what you say ("I don't care about nightly PR fixes" → log); log-only stays searchable, and trouble always
+reaches at least the brief.
+
+**Connectors.** Your ChatGPT apps (through Codex's apps feature, when your Codex offers `app/list`) and MCP servers,
+including thin wrappers around your own programs ([template](weebo/connectors/template/README.md)). Every connector
+is registered from a manifest, **tested in isolation** (Weebo starts it, lists its tools, checks them against the
+manifest and makes read-only test calls), **approved** by you with a risk label per tool (tools that spend money or
+contact people need a rule in your words), **assigned** to bots as a gated change, and **monitored** (one that keeps
+failing is flagged to the chief). A bot can only use its own connectors: when your Codex accepts per-thread config
+its MCP servers are given only to its thread, and in any case Weebo denies, stops and reports use outside its scope.
+
+**Day sheet and Ideas.** For the next days, each event is enriched by code from the facts store and real sources:
+weather at its time and place (OpenWeather forecast, your own key), travel time **only from a directions source**
+(otherwise "unknown", never guessed, and a "maps/directions connector would help" gap appears on the Capabilities
+page), time zones, conflicts and back-to-backs, related email threads and the people involved. A moved or cancelled
+event rebuilds exactly the rows that depended on it. The **Ideas** tab shows specific suggestions with evidence chips
+("Dentist starts 10 min after you leave the Office; I can't check the drive, so plan a buffer"), capped per day,
+never repeated, ranked by your feedback, and dropped when their facts change. **Discuss** opens the chat with the idea
+and its evidence; **Do it** runs only safe actions (a reminder, a held slot as a reminder, a draft) after re-reading
+the evidence and verifying the result; **Not useful** teaches Weebo (and is remembered as a preference).
+
+**Growth.** Connectors are what Weebo can do, skills are procedures, workflows are repeatable multi-step jobs across
+bots. Weebo proposes workflows when you ask for substantially the same thing a few times, runs approved ones step by
+step through bots (each step gets the previous result), and turns recurring capability gaps into a proposal: an
+existing ChatGPT app with its install link, or an MCP wrapper built by self-evolution (isolated worktree, tests,
+gates) that then goes through onboarding. Idle bots, unused connectors and failing workflows are questioned, never
+removed on their own. The **Capabilities** page lists all of it with who uses it, risk, use and status.
+
+**Always know what it's doing.** One "now showing" line under the avatar shows the most important thing going on
+(your reply being written, then anything waiting on you, then work you asked for, then background work), with
+"+N more" for the rest. Every state comes from real events: when something goes quiet it says so ("Still running the
+tests · 3 min"), idle reads as resting, quiet hours as sleeping. New animations: typing on a laptop (coding and
+writing), a phone (calls), holding up a note (waiting on you), syncing arrows, plus the existing reading, research
+and hand-off props. Reduced motion (the setting or your system preference) keeps the props and drops the motion.
+
+**Reliability.** Facts about events, email, people and commitments come from the facts store with provenance and
+freshness, looked up in the same turn (see the facts section below). The brief and drafts are **fact-checked** before
+you rely on them: a deterministic pass flags wrong times and missed cancellations right on the message, and a cheap
+fast-tier second pass runs only when the text makes claims about stored facts (setting `facts.second_pass`).
+Calendar bookings are read back from the calendar after creating them and texts are checked against Twilio's own
+answer. Email threads are recorded from a mail connector's raw tool results, never from a model's summary. The
+reliability suite gates every upgrade, and every captured miss becomes a test.
+
+**Layout.** Bottom tabs: Chat (the chief), Ideas, Bots, Evolution, More (Agents for one-off jobs, Memory,
+Capabilities, Schedule, Activity, Settings, older chats).
+
+New settings: `bots.*`, `connectors.*` and `growth.*` (sensitive: only you can change them, journaled), `ideas.*` and
+`activity.*` (everyday), `facts.second_pass`. Existing model settings and keys are unchanged.
+
+**Not available yet, said plainly:** no directions source ships with Weebo (travel time stays unknown until you
+connect one); ChatGPT apps and per-thread connector config work only when your installed Codex offers them (Weebo
+reads its schema and says so otherwise); free-form chat answers are grounded by the facts rules and receipts, but
+only the brief and drafts get the fact-check pass.
+
+### Facts foundation (Phase 1)
 
 - **Source-backed facts:** events, email-thread records, people and commitments
   have provenance, freshness metadata and a durable change log in SQLite. The
@@ -19,32 +96,24 @@ remaining Weebo 3 phases are not shipped yet**. The delivery ledger is
 - **Calendar sync:** an existing Google Calendar sign-in can feed incremental,
   paginated sync. Expired sync tokens trigger reconciliation without deleting
   change history. No new OAuth flow, credential adoption or scope grant is
-  initiated by this service. Mail adapters and ChatGPT-app onboarding are still
-  pending; an absent source is explicitly unavailable, not an empty inbox.
+  initiated by this service. An absent source is explicitly unavailable, not an
+  empty inbox.
 - **Fresh tools:** `facts_query`, `facts_changes_since`, `commitments_list`,
-  `commitment_add` and `commitment_update`. Stale facts are re-fetched; a failure
+  `commitment_add`, `commitment_update` and `day_sheet`. Stale facts are re-fetched; a failure
   excludes them from verified results. Open-item pointers appear in turn context,
   and facts lookup receipts are isolated by turn. User-owned commitments cannot
   be created or changed by an autonomous turn.
 - **Inspect the source:** Memory → Source-backed facts shows verified records,
-  where they came from and when they were checked. Unavailable sources are
-  clearly distinguished from an empty result.
+  where they came from and when they were checked.
 - **Deterministic time math:** DST-aware local days, ambiguous/nonexistent local
   times, overlaps, back-to-back meetings, due items and cross-timezone travel
-  windows. Travel time remains unknown without a directions source.
+  windows.
 - **Change dependencies:** moved/cancelled/changed facts atomically invalidate
-  dependent artifacts; builders can regenerate them from the current records.
-- **Mandatory reliability gate:** five deterministic scenarios run independently
+  dependent artifacts (day-sheet rows, ideas); builders regenerate them from the current records.
+- **Mandatory reliability gate:** deterministic scenarios run independently
   of model budgets and the optional behavior-eval setting. The running version
   supplies the test source, so a candidate cannot pass by deleting its suite.
   Factual corrections captured as evals also create reliability incidents.
-
-New `facts.*` settings (TTL, refresh interval and timeout) are validated and
-user-gated. Existing model settings and keys are unchanged. **Still pending in
-Phase 1:** enforced pre-publication claim checking/fast-tier review, integration
-action read-back verification, and full email/app ingestion. The grounding
-instructions and receipts are groundwork, not a claim that every free-form
-model answer is already fact-checked.
 
 ## Quick start
 
@@ -60,7 +129,7 @@ If Codex isn't signed in, Weebo shows a **Sign in with ChatGPT** button in Setti
 
 | | |
 |---|---|
-| **One chat** | Everything happens in a single conversation: talk, briefs, routines, agent results, upgrades that need you. Weebo keeps up with it all: each turn knows what agents are doing, what finished today and which upgrades are waiting, and `search_history` looks back through everything said (and older chats, kept to read under **More → Older chats**). A tab bar (Chat, Memory, Evolution, Agents, More) gets you everywhere else. |
+| **One chat** | Everything happens in a single conversation: talk, briefs, routines, agent results, upgrades that need you. Weebo keeps up with it all: each turn knows what agents are doing, what finished today and which upgrades are waiting, and `search_history` looks back through everything said (and older chats, kept to read under **More → Older chats**). A tab bar (Chat, Ideas, Bots, Evolution, More) gets you everywhere else; Agents, Memory and Capabilities live under More. |
 | **Weebo delegates** | The chat talks, remembers, plans and keeps track; real work (commands, files, code, web research) goes to background Codex agents that run **in parallel** while you keep chatting. Each agent has a live card in the chat that says what it's doing in plain words ("Running the tests"), with a Stop button; when it finishes, Weebo tells you what came back. Follow-up work on the same job continues that agent's own session, so it remembers what it did. (Settings → `chat.delegate_work` turns this off and lets the chat work itself.) |
 | **Tidy in Codex** | Your Codex app shows one Weebo thread, the chat. Weebo archives agent and upgrade-build threads in Codex once they finish (restorable from Codex's archive; Weebo brings one back itself when work continues it), and background thinking never saves a thread at all. |
 | **Just ask** | Tell Weebo to change a setting, check on or redirect an agent, show you a build, build or reject an upgrade, or "merge them all and tell me when it's done": it merges them, restarts once, and reports back in the chat. Upgrade cards in the chat also have Merge / Rebuild / See changes buttons. Results come to you in the chat instead of an inbox to check. |

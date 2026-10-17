@@ -120,7 +120,8 @@ async def test_live_agent_progress_survives_reload_and_offline_completion(app):
     app.store.update_task(task["id"], status="running")
     app.agents.runs[task["id"]] = AgentRun(task["id"], progress="Running the tests")
     async with chat_page(app) as page:
-        await page.locator('#tabbar').get_by_role("button", name=re.compile("^Agents")).click()
+        await page.locator('#tabbar').get_by_role("button", name=re.compile("^More")).click()
+        await page.locator("#drawer .more-row").filter(has_text="Agents").first.click()
         await page.locator('#drawer').get_by_text("Running the tests", exact=True).wait_for()
         app.store.update_task(task["id"], status="completed")
         app.agents.runs.pop(task["id"])

@@ -346,6 +346,9 @@ class ConversationManager:
         images = [p for p in (images or []) if Path(p).is_file()]
         if not text and not images:
             raise ValueError("Message is empty")
+        bot = self.app.bots.for_conversation(conv_id)
+        if bot is not None and bot["status"] not in ("active", "paused"):
+            raise ValueError(f"{bot['name']} is retired; its chat is kept to read.")
         session = self.session(conv_id)
         self.app.heartbeat.touch()
         async with session.lock:

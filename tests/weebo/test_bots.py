@@ -278,6 +278,8 @@ async def test_archive_keeps_the_chat_and_delete_removes_it(app, fake_engine):
     archived = await app.bots.retire(bot["id"], actor="user")
     assert archived["status"] == "archived"
     assert app.store.get_conversation(bot["conversation_id"])  # still readable
+    with pytest.raises(ValueError, match="retired"):  # but not revived by talking to it
+        await app.conversations.send(bot["conversation_id"], "you there?")
     assert all(app.store.get_reminder(r)["status"] == "cancelled" for r in bot["data"].get("routine_ids", [])
                or app.bots.get(bot["id"])["data"]["routine_ids"])
     assert await wait_for(lambda: thread in fake_engine.archive_log)

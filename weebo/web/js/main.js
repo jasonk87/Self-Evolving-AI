@@ -1,7 +1,7 @@
 // Weebo 2.0 — app controller: state, sidebar, live events, moods.
 import { api, connect, on, onConnection } from "./api.js";
 import { director, WeeboAvatar } from "./avatar.js";
-import { ChatView } from "./chat.js";
+import { ChatView, ACTIVITY_MOODS } from "./chat.js";
 import { icon } from "./icons.js";
 import { Panels } from "./panels.js";
 import { el, btn, toast, modal, timeAgo, confirmDialog, $ } from "./ui.js";
@@ -15,7 +15,8 @@ const THEME_KEY = "weebo.theme";
 
 class App {
   constructor() {
-    this.state = { settings: {}, engine: {}, conversations: [], deskId: null, tasks: [], proposals: [], unread: 0, lan: {} };
+    this.state = { settings: {}, engine: {}, conversations: [], deskId: null, tasks: [], proposals: [], unread: 0, lan: {},
+      bots: [], activity: null, ideasOpen: 0 };
     this.currentConvId = null;
     this.busyConvs = new Set();
     this.taskProgress = new Map();
@@ -52,6 +53,8 @@ class App {
     this.state.conversations = data.conversations;
     this.state.deskId = data.desk_id;
     this.state.lan = data.lan;
+    this.state.bots = data.bots || [];
+    this.state.ideasOpen = data.ideas_open || 0;
     setWorkspaceRoot(data.snapshot.workspace);
     this.notifications.read(data.read_notification_ids || []);
     for (const note of data.notifications) this.notifications.receive(note);
@@ -70,6 +73,7 @@ class App {
     for (const p of data.snapshot.pending_interactions || []) this.announceInteraction(p);
     this.mainId = data.desk_id;  // the one chat; older chats are read from the archive
     await this.openMain();
+    if (data.activity) this.setActivity(data.activity);
     this.routeProposal();
     director.setBase(this.restingMood());
   }
@@ -132,6 +136,42 @@ class App {
     document.body.classList.toggle("reduce-motion", Boolean(settings.ui?.reduce_motion));
     document.body.classList.toggle("no-companion", settings.ui?.companion === false);
     this.chat?.updateChips();
+  }
+
+  // ------------------------------------------------------------------ the team, ideas, activity
+  botFor(convId) { return this.state.bots.find((b) => b.conversation_id === convId) || null; }
+
+  setBots(bots) {
+    this.state.bots = bots;
+    this.renderBadges();
+    if (this.conversation(this.currentConvId)?.kind === "bot") { this.renderHeader(); this.chat.setReadOnly(); }
+  }
+
+  upsertBot(bot) {
+    const bots = this.state.bots.filter((b) => b.id !== bot.id);
+    if (["proposed", "active", "paused"].includes(bot.status)) bots.push(bot);
+    this.setBots(bots);
+  }
+
+  setIdeasCount(n) { this.state.ideasOpen = n; this.renderBadges(); }
+
+  /** The activity registry's snapshot drives the "now showing" slot and, when the open chat is quiet, the mood. */
+  setActivity(snapshot) {
+    this.state.activity = snapshot;
+    this.chat.stage.setActivity(snapshot, (entry) => this.openActivity(entry));
+    this.renderBadges();
+    if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
+  }
+
+  openActivity(entry) {
+    const link = entry.link || {};
+    if (link.type === "task") this.panels.open("agents", { task: link.id });
+    else if (link.type === "card") this.showInChat(link.id);
+    else if (link.type === "conversation" && link.id) {
+      this.panels.close();
+      if (link.message) this.openConversation(link.id).then(() => this.showInChat(link.message, null, link.id));
+      else this.openConversation(link.id);
+    }
   }
 
   // ------------------------------------------------------------------ conversations
@@ -232,13 +272,17 @@ class App {
   renderHeader() {
     const conv = this.conversation(this.currentConvId);
     $("#conv-title").textContent = conv ? conv.title : "Weebo";
-    $("#conv-title").title = conv?.kind === "desk" ? "Your chat with Weebo" : "An older chat";
+    $("#conv-title").title = conv?.kind === "desk" ? "Your chat with Weebo" : conv?.kind === "bot" ? `Talking to ${conv.title} directly` : "An older chat";
   }
 
   renderBadges() {
     const set = (panel, n) => { document.querySelectorAll(`[data-panel="${panel}"] .badge`).forEach((b) => { b.textContent = n > 9 ? "9+" : String(n); b.hidden = !n; }); };
     set("agents", this.runningTasks);
+    set("more", this.runningTasks);
     set("evolution", this.readyProposals);
+    const waiting = (this.state.activity?.entries || []).filter((e) => e.id === "needs-you").length;
+    set("bots", this.state.bots.filter((b) => b.status === "proposed").length + waiting);
+    set("ideas", this.state.ideasOpen);
     set("activity", this.state.unread);
     const inboxLabel = this.state.unread ? `Notification inbox (${this.state.unread} unread)` : "Notification inbox";
     $("#inbox-btn").setAttribute("aria-label", inboxLabel);
@@ -270,6 +314,13 @@ class App {
   restingMood() {
     const e = this.state.engine || {};
     if (e.status && e.status !== "ready") return "offline";
+    const top = this.state.activity?.now;
+    if (top?.waiting_on_user) return "waiting";
+    if (top) {
+      const quiet = Date.now() / 1000 - top.last_event_at;
+      if (!(top.stale_after && quiet > top.stale_after * 6)) return ACTIVITY_MOODS[top.kind] || "thinking";
+    }
+    if (this.state.activity?.state === "sleeping") return "sleepy";
     if (this.heartbeatBusy === "dream") return "dreaming";
     if (this.heartbeatBusy === "audit") return "inspecting";
     if (this.evolving) return "evolving";
@@ -356,6 +407,16 @@ class App {
         toast(conv?.title || "Weebo", d.final_text.slice(0, 160), { action: { label: "Open", run: () => this.openConversation(d.conversation_id) } });
       }
       this.renderSidebar();
+    });
+    on("activity.updated", ({ activity }) => this.setActivity(activity));
+    on("bot.updated", ({ bot }) => { this.upsertBot(bot); this.panels.notify("bot.updated"); });
+    on("bot.deleted", ({ bot_id }) => { this.setBots(this.state.bots.filter((b) => b.id !== bot_id)); this.panels.notify("bot.deleted"); });
+    for (const t of ["bot.report", "bot.job", "bot.change", "policy.updated", "connector.updated", "capabilities.updated", "daysheet.updated"]) {
+      on(t, () => this.panels.notify(t));
+    }
+    on("ideas.updated", async () => {
+      this.panels.notify("ideas.updated");
+      try { this.setIdeasCount((await api.get("/api/ideas")).ideas.length); } catch { /* offline */ }
     });
     on("conv.created", ({ conversation }) => this.upsertConversation(conversation));
     on("conv.updated", ({ conversation }) => this.upsertConversation(conversation));
@@ -534,9 +595,10 @@ class App {
   openPanel(name, opts) { this.panels.open(name, opts); }
 
   /** Open the main chat at a card (an upgrade, an agent), or run ``fallback`` when the chat has no such card. */
-  async showInChat(messageId, fallback) {
+  async showInChat(messageId, fallback, convId = null) {
     this.panels.close();
-    if (this.currentConvId !== this.mainId) await this.openMain();
+    if (convId && this.currentConvId !== convId) await this.openConversation(convId);
+    else if (!convId && this.currentConvId !== this.mainId) await this.openMain();
     const node = document.querySelector(`#chat [data-id="${CSS.escape(messageId)}"]`);
     if (!node) { fallback?.(); return; }
     node.scrollIntoView({ behavior: "smooth", block: "center" });

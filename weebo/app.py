@@ -11,6 +11,7 @@ from typing import Any
 
 from . import __version__, log, paths
 from .agents.manager import AgentManager
+from .brain.activity_registry import ActivityRegistry
 from .brain.conversation import ConversationManager
 from .brain.interactions import Interactions
 from .brain.mind import Mind
@@ -64,6 +65,7 @@ class WeeboApp:
         self.daysheet = DaySheet(self)
         self.ideas = Ideas(self)
         self.factcheck = FactCheck(self)
+        self.activity = ActivityRegistry(self)
         self.scheduler = Scheduler(self)
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
@@ -92,6 +94,7 @@ class WeeboApp:
 
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
+        self.activity.start()  # from the first event on, the display reflects real work only
         self.conversations.move_into_main()  # first: whatever is recovered below then reports to the main chat
         self.conversations.recover_after_restart()
         self.scheduler.recover_after_restart()

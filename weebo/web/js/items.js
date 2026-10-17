@@ -313,6 +313,7 @@ function renderApproval(msg, ctx) {
       if ((d.persist || []).includes("session")) actions.append(btn("Allow for this session", { kind: "soft", onClick: () => ctx.resolve(id, "acceptForSession") }));
       if ((d.persist || []).includes("always")) actions.append(btn("Always allow", { kind: "soft", onClick: () => ctx.resolve(id, "acceptAlways") }));
     } else if (d.kind !== "confirm") actions.append(btn("Allow for this chat", { kind: "soft", onClick: () => ctx.resolve(id, "acceptForSession") }));
+    if (ctx.botChat && d.kind !== "elicitation" && d.kind !== "confirm") actions.append(btn("Always allow", { kind: "soft", onClick: () => ctx.resolve(id, "acceptAlways") }));
     actions.append(btn("Deny", { kind: "danger-soft", icon: "x", onClick: () => ctx.resolve(id, "decline") }));
     card.append(actions);
   } else {
@@ -425,7 +426,230 @@ function renderReview(msg) {
     el("div", { class: "md", html: renderMarkdown(msg.content || "") })));
 }
 
+// ---------------------------------------------------------------- the team: bots, approvals, reports
+export const TIER_LABEL = { fast: "Fast · cheap", standard: "Standard", capable: "Most capable" };
+const RISK_LABEL = { read: "reads", act: "acts", spend: "spends money", contact_people: "contacts people" };
+
+function kv(rows) {
+  return el("dl", { class: "kv" }, rows.filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: String(v) })]));
+}
+
+function settled(text) { return el("div", { class: "decision", text }); }
+
+/** A button that posts to the API; the card updates itself when the server says what happened. */
+function act(ctx, label, path, { kind = "soft", ic, body, confirm } = {}) {
+  return btn(label, { kind, size: "sm", icon: ic, onClick: (e) => ctx.act(path, body, e.currentTarget, confirm) });
+}
+
+function renderBotProposal(msg, ctx) {
+  const d = msg.data || {};
+  const bot = d.bot || {};
+  const p = bot.data || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card bot-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { class: "bot-face", text: (bot.name || "?").slice(0, 1) }),
+      el("strong", { text: `New bot: ${bot.name}` }),
+      el("span", { class: "muted small", text: `${TIER_LABEL[p.tier] || p.tier} · effort ${p.effort}` })));
+  card.append(el("p", { text: p.job || "" }));
+  if ((p.goals || []).length) card.append(el("ul", { class: "bullets" }, p.goals.map((g) => el("li", { text: g }))));
+  card.append(kv([
+    ["Model", bot.model || "picked at runtime"], ["Budget", `${p.turns_per_day} turns a day`],
+    ["Tools", (p.tools || []).join(", ") || "the basics only"], ["Connectors", (p.connectors || []).join(", ") || "none"],
+    ["Without asking", (p.autonomy || []).join(", ")],
+    ["Routines", (p.routines || []).map((r) => `${r.text} (${r.recurrence})`).join("; ") || "none"],
+  ]));
+  if (p.why) card.append(el("p", { class: "muted small", text: `Why: ${p.why}` }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending) {
+    actions.append(act(ctx, "Approve", `/api/bots/${bot.id}/approve`, { kind: "primary", ic: "check" }),
+      btn("Edit", { kind: "soft", size: "sm", icon: "edit", onClick: () => ctx.openBot(bot.id) }),
+      act(ctx, "Not now", `/api/bots/${bot.id}/reject`, { kind: "ghost" }));
+  } else {
+    actions.append(settled({ active: "Approved: it's on the team", paused: "Approved (paused now)", rejected: "Declined",
+      archived: "Retired", deleted: "Deleted" }[msg.status] || msg.status));
+    if (bot.conversation_id && ["active", "paused"].includes(msg.status)) {
+      actions.append(btn(`Talk to ${bot.name}`, { kind: "soft", size: "sm", icon: "chat", onClick: () => ctx.openConversation(bot.conversation_id) }));
+    }
+  }
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderBotRetire(msg, ctx) {
+  const d = msg.data || {};
+  const bot = d.bot || {};
+  const retire = d.retire || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card bot-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { html: icon("users", 17) }), el("strong", { text: `Retire ${bot.name}?` })));
+  card.append(el("p", { text: retire.reason || "" }),
+    el("p", { class: "muted small", text: retire.delete
+      ? "Delete removes the bot, its chat and its history for good."
+      : "Archiving keeps its chat to read, puts its Codex thread away and stops its routines." }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending) {
+    actions.append(act(ctx, "Archive it", `/api/bots/${bot.id}/archive`, { kind: "primary" }));
+    if (retire.delete) actions.append(act(ctx, "Delete for good", `/api/bots/${bot.id}/delete`, { kind: "danger-soft", confirm: `Delete ${bot.name} and its chat?` }));
+    actions.append(act(ctx, "Keep it", `/api/bots/${bot.id}/keep`, { kind: "ghost" }));
+  } else actions.append(settled({ kept: "Kept", archived: "Archived", deleted: "Deleted" }[msg.status] || msg.status));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderBotChange(msg, ctx) {
+  const d = msg.data || {};
+  const change = d.change || {};
+  const data = change.data || {};
+  const bot = d.bot || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card bot-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { html: icon("hand", 17) }), el("strong", { text: `Change ${bot.name || "a bot"}?` })));
+  const show = (v) => Array.isArray(v) ? v.map((x) => (typeof x === "object" ? x.text || JSON.stringify(x) : x)).join(", ") || "none"
+    : typeof v === "object" && v ? JSON.stringify(v) : String(v ?? "");
+  card.append(el("ul", { class: "bullets" }, Object.entries(data.patch || {}).map(([key, value]) =>
+    el("li", { text: `${key}: ${show((data.before || {})[key])} → ${show(value)}` }))));
+  if ((data.reasons || []).length) card.append(el("p", { class: "small warnline", text: `Needs your yes: ${data.reasons.join("; ")}` }));
+  if (data.reason) card.append(el("p", { class: "muted small", text: `Why: ${data.reason}` }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending) {
+    actions.append(act(ctx, "Approve", `/api/bot-changes/${change.id}/approve`, { kind: "primary", ic: "check" }),
+      act(ctx, "Reject", `/api/bot-changes/${change.id}/reject`, { kind: "ghost" }));
+  } else actions.append(settled({ applied: "Applied", rejected: "Rejected" }[msg.status] || msg.status));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderNeedsYou(msg, ctx) {
+  const items = (msg.data || {}).items || [];
+  const card = el("div", { class: `card needs-you-card${items.length ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { class: "approval-ic", html: icon("hand", 17) }),
+      el("strong", { text: items.length ? `${items.length} thing${items.length > 1 ? "s" : ""} from the team need${items.length > 1 ? "" : "s"} you` : "Nothing waiting on you" })));
+  for (const item of items) {
+    const d = item.data || {};
+    const row = el("div", { class: `ny-item${d.hard ? " hard" : ""}` },
+      el("div", { class: "ny-text" }, el("span", { text: d.summary }),
+        d.hard ? el("span", { class: "pill st-failed", text: d.action === "contact_people" ? "contacts people" : d.action }) : null));
+    if (!ctx.readOnly) {
+      row.append(el("div", { class: "card-actions" },
+        act(ctx, "Allow once", `/api/needs-you/${item.id}/approve`, { kind: "primary" }),
+        act(ctx, "Always allow", `/api/needs-you/${item.id}/always`),
+        act(ctx, "Deny", `/api/needs-you/${item.id}/deny`, { kind: "ghost" })));
+    }
+    card.append(row);
+  }
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+const OUTCOME_ICON = { done: "check", failed: "alert", blocked: "alert", update: "pulse", change: "bell" };
+
+function renderBotReport(msg, ctx) {
+  const d = msg.data || {};
+  const card = el("div", { class: `card bot-report o-${d.outcome}` },
+    el("div", { class: "card-head" }, el("span", { html: icon(OUTCOME_ICON[d.outcome] || "pulse", 16) }),
+      el("strong", { text: `${d.bot_name || "A bot"} reported` }),
+      d.needs_attention ? el("span", { class: "pill st-failed", text: "needs attention" }) : el("span", { class: "muted small", text: d.outcome })),
+    el("p", { class: "report-summary", text: d.summary || msg.content }));
+  if (d.conversation_id) card.append(el("div", { class: "card-actions" },
+    btn(`Open ${d.bot_name || "its"} chat`, { kind: "soft", size: "sm", icon: "chat", onClick: () => ctx.openConversation(d.conversation_id) })));
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderConnector(msg, ctx) {
+  const row = (msg.data || {}).connector || {};
+  const data = row.data || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card connector-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { html: icon("plug", 17) }), el("strong", { text: `Connector: ${row.name}` }),
+      el("span", { class: "muted small", text: row.kind === "app" ? "ChatGPT app" : `MCP · ${data.transport}` })));
+  if (data.description) card.append(el("p", { text: data.description }));
+  const rules = {};
+  card.append(el("ul", { class: "tool-risks" }, (data.tools || []).map((t) => {
+    const li = el("li", {}, el("strong", { text: t.name }), el("span", { class: `risk r-${t.risk}`, text: RISK_LABEL[t.risk] || t.risk }));
+    if (["spend", "contact_people"].includes(t.risk) && pending) {
+      const input = el("input", { class: "input", placeholder: "Rule, e.g. businesses only; never personal contacts",
+        value: (data.rules || {})[t.name] || "", oninput: (e) => { rules[t.name] = e.target.value; } });
+      rules[t.name] = input.value;
+      li.append(input);
+    }
+    return li;
+  })));
+  const test = data.test || {};
+  if (test.at) card.append(el("p", { class: `small ${test.ok ? "ok" : "bad"}`, text: test.ok ? `Tested: found ${(test.found || []).join(", ")}` : `Test failed: ${test.error || ""}` }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending) {
+    actions.append(btn("Approve", { kind: "primary", size: "sm", icon: "check", onClick: (e) => ctx.act(`/api/connectors/${row.id}/approve`, { rules }, e.currentTarget) }),
+      act(ctx, "Disable", `/api/connectors/${row.id}/disable`, { kind: "ghost" }));
+  } else actions.append(settled({ approved: "Approved", disabled: "Disabled", failed: "Failed its test" }[msg.status] || msg.status));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderGap(msg, ctx) {
+  const gap = (msg.data || {}).gap || {};
+  const data = gap.data || {};
+  const option = data.option || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card gap-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { html: icon("plug", 17) }), el("strong", { text: `Can't do yet: ${data.need}` }),
+      el("span", { class: "muted small", text: `${gap.count}×` })));
+  card.append(el("p", { text: option.kind === "app"
+    ? `Your ChatGPT app “${option.name}” could cover this. Connect it in ChatGPT, then register it on the Capabilities page.`
+    : "No app covers this. I can build a small MCP connector for it through self-evolution (tested and gated, then onboarded like any connector)." }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending) {
+    if (option.kind === "app" && option.install_url) actions.append(el("a", { class: "btn btn-primary btn-sm", href: option.install_url, target: "_blank", rel: "noopener", text: "Connect the app" }));
+    if (option.kind !== "app") actions.append(act(ctx, "Build a connector", `/api/gaps/${gap.id}/build`, { kind: "primary", ic: "wrench" }));
+    actions.append(act(ctx, "Not needed", `/api/gaps/${gap.id}/dismiss`, { kind: "ghost" }));
+  } else actions.append(settled({ proposed: "Building it through self-evolution", resolved: "Resolved", dismissed: "Not needed" }[msg.status] || msg.status));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderWorkflow(msg, ctx) {
+  const d = msg.data || {};
+  const wf = d.workflow || {};
+  const data = wf.data || {};
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const card = el("div", { class: `card workflow-card${pending ? " pending" : ""}` },
+    el("div", { class: "card-head" }, el("span", { html: icon("layers", 17) }), el("strong", { text: `Workflow: ${wf.name}` })));
+  if (d.question) card.append(el("p", { class: "warnline", text: d.question }));
+  card.append(el("ol", { class: "bullets" }, (data.steps || []).map((s) => el("li", { text: `${s.bot ? s.bot + ": " : ""}${s.instructions}` }))));
+  if (data.schedule) card.append(el("p", { class: "muted small", text: `Runs ${data.schedule.recurrence || ""} from ${data.schedule.when || ""}` }));
+  if (data.why) card.append(el("p", { class: "muted small", text: `Why: ${data.why}` }));
+  const actions = el("div", { class: "card-actions" });
+  if (pending && !d.question) {
+    actions.append(act(ctx, "Approve", `/api/workflows/${wf.id}/approve`, { kind: "primary", ic: "check" }),
+      act(ctx, "Not now", `/api/workflows/${wf.id}/reject`, { kind: "ghost" }));
+  } else if (pending) {
+    actions.append(act(ctx, "Keep", `/api/workflows/${wf.id}/resume`), act(ctx, "Pause", `/api/workflows/${wf.id}/pause`),
+      act(ctx, "Retire", `/api/workflows/${wf.id}/retire`, { kind: "ghost" }));
+  } else actions.append(settled({ active: "Active", paused: "Paused", retired: "Retired", rejected: "Not now" }[wf.status] || wf.status));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+function renderFactcheck(msg) {
+  return el("div", { class: "msg msg-card" }, el("div", { class: "card factcheck-card" },
+    el("div", { class: "card-head" }, el("span", { html: icon("alert", 16) }), el("strong", { text: "Fact-check" })),
+    el("ul", { class: "bullets" }, ((msg.data || {}).issues || []).map((i) => el("li", { text: `${i.claim}, but ${i.fact}` })))));
+}
+
+function renderBotJob(msg) {
+  return el("div", { class: "msg msg-notice" }, el("span", { class: "notice-ic", html: icon("list", 14) }), el("span", { text: msg.content }));
+}
+
 const RENDERERS = {
+  bot_proposal: renderBotProposal,
+  bot_retire: renderBotRetire,
+  bot_change: renderBotChange,
+  needs_you: renderNeedsYou,
+  bot_report: renderBotReport,
+  bot_job: renderBotJob,
+  connector: renderConnector,
+  gap: renderGap,
+  workflow: renderWorkflow,
+  factcheck: renderFactcheck,
   evolution_status: renderEvolutionStatus,
   text: renderAssistantText,
   plan: renderPlan,

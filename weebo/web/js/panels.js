@@ -4,9 +4,19 @@ import { icon } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
 import { el, btn, toast, timeAgo, dateTime, duration, renderDiff, modal, confirmDialog, debounce, escapeHtml, copyText } from "./ui.js";
 import { listVoices, speak, voiceSupport } from "./voice.js";
-import { renderPendingApproval } from "./items.js";
+import { renderPendingApproval, TIER_LABEL } from "./items.js";
+
+const GRANTABLE = ["remember", "recall", "search_history", "set_reminder", "list_reminders", "cancel_reminder",
+  "use_integration", "start_agent", "agent_status", "message_agent", "stop_agent", "save_skill", "propose_improvement",
+  "offer_replies", "day_sheet"];
+const AUTONOMY = ["read", "draft", "organize", "act", "send", "spend", "contact_people", "delete"];
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
+const BUCKETS = [["interrupt", "Tell me now"], ["brief", "In the brief"], ["log", "Just log it"]];
 
 const PANELS = {
+  ideas: { title: "Ideas", icon: "sparkles" },
+  bots: { title: "Bots", icon: "users" },
+  capabilities: { title: "Capabilities", icon: "plug" },
   agents: { title: "Agents", icon: "bot" },
   evolution: { title: "Evolution", icon: "dna" },
   memory: { title: "Memory", icon: "brain" },
@@ -157,6 +167,8 @@ export class Panels {
     const interest = {
       agents: ["task.", "interaction."], evolution: ["evolution.", "skills.", "evals."], memory: ["memory."], schedule: ["reminder."],
       activity: ["weebo.activity", "notify"], settings: ["engine.", "settings."],
+      bots: ["bot.", "policy.", "conv.created"], ideas: ["ideas.", "daysheet."],
+      capabilities: ["connector.", "capabilities.", "bot.", "skills."],
     }[this.current] || [];
     if (interest.some((p) => type.startsWith(p))) {
       if (this.current === "agents" && type === "task.progress" && !this.opts.task) return this.patchProgress();
@@ -560,6 +572,9 @@ export class Panels {
       el("span", { class: "grow" }, el("div", { text: label }), el("div", { class: "muted small", text: hint })),
       el("span", { html: icon("send", 14) }));
     wrap.append(el("div", { class: "stack" },
+      go("agents", `Agents${this.app.runningTasks ? ` (${this.app.runningTasks} running)` : ""}`, "bot", "One-off background jobs"),
+      go("memory", "Memory", "brain", "What Weebo remembers, and the source-backed facts"),
+      go("capabilities", "Capabilities", "plug", "Connectors, apps, skills, workflows and what's missing"),
       go("schedule", "Schedule", "clock", "Reminders and routines"),
       go("activity", "Activity", "pulse", "What Weebo did on its own, and its notifications"),
       go("settings", "Settings", "gear", "Or just tell Weebo what to change"),
@@ -567,11 +582,290 @@ export class Panels {
     return wrap;
   }
 
+  // ================================================================== BOTS (the team)
+  async render_bots(opts) {
+    if (opts.bot) return this.renderBot(opts.bot);
+    const [{ bots: all, changes }, policy] = await Promise.all([api.get("/api/bots?all=1"), api.get("/api/policy")]);
+    const bots = all.filter((b) => b.status !== "archived");
+    this.app.setBots(bots);
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Your team: specialist bots that work for Weebo, each in its own chat with its own model, tools and budget. Weebo proposes new ones; nothing joins the team without your yes." }));
+    const live = bots.filter((b) => b.status !== "proposed");
+    wrap.append(live.length ? el("div", { class: "bot-strip", role: "list" }, live.map((b) => this.botChip(b)))
+      : empty("No bots yet. Ask Weebo for one, or approve its proposals.", "users"));
+    const proposed = bots.filter((b) => b.status === "proposed");
+    if (proposed.length) {
+      wrap.append(section(`Proposed (${proposed.length})`, el("div", { class: "stack" }, proposed.map((b) => el("div", { class: "cap-row" },
+        el("div", { class: "row" }, el("span", { class: "bot-face", text: b.name.slice(0, 1) }), el("strong", { text: b.name }),
+          el("span", { class: "muted small", text: TIER_LABEL[b.data.tier] || b.data.tier })),
+        el("p", { class: "small", text: b.data.job }),
+        el("div", { class: "row" },
+          btn("Approve", { kind: "primary", size: "sm", icon: "check", onClick: () => this.botAction(b.id, "approve") }),
+          btn("Details", { kind: "soft", size: "sm", onClick: () => { this.opts = { bot: b.id }; this.refresh(); } }),
+          btn("Not now", { kind: "ghost", size: "sm", onClick: () => this.botAction(b.id, "reject") })))))));
+    }
+    if (policy.needs_you.length) {
+      wrap.append(section(`Waiting on you (${policy.needs_you.length})`, el("div", { class: "stack" }, policy.needs_you.map((item) => el("div", { class: "cap-row" },
+        el("span", { text: item.data.summary }),
+        el("div", { class: "row" },
+          btn("Allow once", { kind: "primary", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/approve`) }),
+          btn("Always allow", { kind: "soft", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/always`) }),
+          btn("Deny", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/deny`) })))))));
+    }
+    const asks = changes.filter((c) => c.status === "proposed");
+    if (asks.length) wrap.append(section("Changes waiting for your yes", el("div", { class: "stack" }, asks.map((c) => el("div", { class: "cap-row" },
+      el("span", { text: `${(bots.find((b) => b.id === c.bot_id) || {}).name || "A bot"}: ${(c.data.reasons || []).join("; ")}` }),
+      el("div", { class: "row" },
+        btn("Approve", { kind: "primary", size: "sm", onClick: () => this.post(`/api/bot-changes/${c.id}/approve`) }),
+        btn("Reject", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/bot-changes/${c.id}/reject`) })))))));
+    wrap.append(this.reportRules(policy.report_rules, bots));
+    wrap.append(section("Standing permissions", policy.standing_rules.length ? el("div", { class: "stack" }, policy.standing_rules.map((r) =>
+      el("div", { class: "row" }, el("span", { class: "grow small", text: `${r.effect === "deny" ? "Never" : "Always"} ${r.action} ${r.target || "(anything)"} · ${r.scope === "*" ? "every bot" : (bots.find((b) => b.id === r.scope) || {}).name || r.scope}${r.data.once ? " · once" : ""}` }),
+        btn("Revoke", { kind: "ghost", size: "sm", icon: "x", onClick: () => this.del(`/api/policy/standing/${r.id}`) }))))
+      : el("p", { class: "muted small", text: "None yet. “Always allow” on a request saves one here." })));
+    const retired = all.filter((b) => b.status === "archived");
+    if (retired.length) wrap.append(section("Retired", el("div", { class: "stack" }, retired.map((b) => el("button", { class: "more-row", type: "button",
+      onclick: () => { this.close(); this.app.openConversation(b.conversation_id); } },
+    el("span", { class: "bot-face", text: b.name.slice(0, 1) }),
+    el("span", { class: "grow" }, el("div", { text: b.name }), el("div", { class: "muted small", text: "Its chat, kept to read" })))))));
+    return wrap;
+  }
+
+  botChip(b) {
+    const busy = this.app.busyConvs.has(b.conversation_id);
+    const chip = el("button", { class: `bot-chip st-${b.status}${busy ? " busy" : ""}`, type: "button", role: "listitem",
+      onclick: () => { this.opts = { bot: b.id }; this.refresh(); } },
+    el("span", { class: "bot-face", text: b.name.slice(0, 1) }), el("span", { text: b.name }),
+    el("span", { class: "muted small", text: b.status === "paused" ? "paused" : busy ? "working" : `${b.usage_today}/${b.budget}` }));
+    if (b.unread) chip.append(el("b", { class: "badge", text: "•" }));
+    return chip;
+  }
+
+  reportRules(rules, bots) {
+    const name = (scope) => scope === "*" ? "Every bot" : (bots.find((b) => b.id === scope) || {}).name || scope;
+    const scope = el("select", { class: "input narrow" }, [el("option", { value: "*", text: "Every bot" }), ...bots.filter((b) => b.status !== "proposed").map((b) => el("option", { value: b.id, text: b.name }))]);
+    const match = el("input", { class: "input", placeholder: "About… e.g. nightly PR fixes" });
+    const bucket = el("select", { class: "input narrow" }, BUCKETS.map(([v, l]) => el("option", { value: v, text: l })));
+    const form = el("form", { class: "row wrap" }, scope, match, bucket, btn("Add", { kind: "soft", size: "sm", onClick: () => form.requestSubmit() }));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!match.value.trim()) return;
+      await this.post("/api/policy/report", { scope: scope.value, match: match.value, bucket: bucket.value });
+      match.value = "";
+    });
+    return section("What reaches you", el("p", { class: "muted small", text: "Reports go to you now, into the morning brief, or only into the log. Trouble always reaches at least the brief." }),
+      rules.length ? el("div", { class: "stack" }, rules.map((r) => el("div", { class: "row" },
+        el("span", { class: "grow small", text: `${name(r.scope)} · “${r.match}” → ${(BUCKETS.find(([v]) => v === r.bucket) || [, r.bucket])[1]}` }),
+        btn("Remove", { kind: "ghost", size: "sm", icon: "x", onClick: () => this.del(`/api/policy/report/${r.id}`) })))) : null,
+      form);
+  }
+
+  async renderBot(botId) {
+    const { bot, jobs, reports, usage, report_rules: rules } = await api.get(`/api/bots/${encodeURIComponent(botId)}`);
+    const p = bot.data;
+    const wrap = el("div", { class: "panel" });
+    wrap.append(btn("All bots", { kind: "link", icon: "chevronLeft", onClick: () => { this.opts = {}; this.refresh(); } }));
+    wrap.append(el("div", { class: "task-title" }, el("span", { class: "bot-face", text: bot.name.slice(0, 1) }), el("h3", { text: bot.name }), pill(bot.status)));
+    const actions = el("div", { class: "row wrap" });
+    if (bot.conversation_id) actions.append(btn("Open its chat", { kind: "primary", size: "sm", icon: "chat", onClick: () => { this.close(); this.app.openConversation(bot.conversation_id); } }));
+    if (bot.status === "proposed") actions.append(btn("Approve", { kind: "primary", size: "sm", icon: "check", onClick: () => this.botAction(bot.id, "approve") }));
+    if (bot.status === "active") actions.append(btn("Pause", { kind: "soft", size: "sm", onClick: () => this.botAction(bot.id, "pause") }));
+    if (bot.status === "paused") actions.append(btn("Resume", { kind: "soft", size: "sm", onClick: () => this.botAction(bot.id, "resume") }));
+    if (["active", "paused"].includes(bot.status)) {
+      actions.append(btn("Retire", { kind: "ghost", size: "sm", onClick: async () => {
+        if (await confirmDialog(`Retire ${bot.name}?`, "Its chat stays readable; its routines stop and its Codex thread is put away.", "Retire")) this.botAction(bot.id, "archive");
+      } }),
+      btn("Delete", { kind: "danger-soft", size: "sm", onClick: async () => {
+        if (await confirmDialog(`Delete ${bot.name}?`, "This removes the bot, its chat and its history for good.", "Delete")) this.botAction(bot.id, "delete");
+      } }));
+    }
+    wrap.append(actions);
+    wrap.append(el("div", { class: "task-meta", text: `${TIER_LABEL[p.tier] || p.tier} · ${bot.model || "model picked at runtime"} · ${bot.usage_today}/${bot.budget} turns today` }));
+
+    // Profile: your edits apply directly (you are the one who can say yes).
+    const save = async (changes) => {
+      try { await api.patch(`/api/bots/${bot.id}`, changes); toast("Saved", "", { kind: "success", timeout: 1200 }); this.refresh(); }
+      catch (err) { toast("Couldn't save", err.message, { kind: "error" }); }
+    };
+    const job = el("textarea", { class: "input", rows: 3, text: p.job || "" });  // a textarea's value is its text
+    const goals = el("textarea", { class: "input", rows: 3, text: (p.goals || []).join("\n"), placeholder: "One goal per line" });
+    const tier = el("select", { class: "input narrow" }, Object.entries(TIER_LABEL).map(([v, l]) => el("option", { value: v, text: l, selected: v === p.tier })));
+    const effort = el("select", { class: "input narrow" }, EFFORTS.map((v) => el("option", { value: v, text: v, selected: v === p.effort })));
+    const turns = el("input", { class: "input narrow", type: "number", min: 1, max: 500, value: p.turns_per_day });
+    const report = el("select", { class: "input narrow" }, BUCKETS.map(([v, l]) => el("option", { value: v, text: l, selected: v === p.report_default })));
+    const checks = (all, chosen) => el("div", { class: "chip-row" }, all.map((name) => el("label", { class: "chip" },
+      el("input", { type: "checkbox", value: name, checked: (chosen || []).includes(name) }), el("span", { text: name }))));
+    const tools = checks(GRANTABLE, p.tools);
+    const autonomy = checks(AUTONOMY, p.autonomy);
+    const picked = (box) => [...box.querySelectorAll("input:checked")].map((i) => i.value);
+    const form = el("form", { class: "stack form-card" },
+      el("label", { class: "field" }, el("span", { class: "field-label", text: "Job" }), job),
+      el("label", { class: "field" }, el("span", { class: "field-label", text: "Goals" }), goals),
+      el("div", { class: "row wrap" },
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Model tier" }), tier),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Effort" }), effort),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Turns a day" }), turns),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Reports" }), report)),
+      el("div", { class: "field" }, el("span", { class: "field-label", text: "Tools" }), tools),
+      el("div", { class: "field" }, el("span", { class: "field-label", text: "May do without asking" }), autonomy),
+      el("div", { class: "row end" }, btn("Save profile", { kind: "primary", size: "sm", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      save({ job: job.value, goals: goals.value.split("\n").map((g) => g.trim()).filter(Boolean), tier: tier.value,
+        effort: effort.value, turns_per_day: Number(turns.value), report_default: report.value,
+        tools: picked(tools), autonomy: picked(autonomy) });
+    });
+    wrap.append(section("Profile", form));
+
+    const ruleInput = el("input", { class: "input", placeholder: "Add a standing rule, e.g. never archive newsletters" });
+    wrap.append(section("Standing rules", el("div", { class: "stack" }, (p.rules || []).map((r) => el("div", { class: "row" },
+      el("span", { class: "grow small", text: `${r.text}${r.added_by === "user" ? "" : ` (from ${r.added_by})`}` }),
+      btn("Remove", { kind: "ghost", size: "sm", icon: "x", onClick: () => save({ rules_remove: r.text }) })))),
+    el("div", { class: "row" }, ruleInput, btn("Add", { kind: "soft", size: "sm", onClick: () => { if (ruleInput.value.trim()) save({ rules_add: ruleInput.value.trim() }); } }))));
+    if ((p.routines || []).length) wrap.append(section("Routines", el("ul", { class: "bullets" }, p.routines.map((r) => el("li", { text: `${r.text} · ${r.recurrence} from ${r.when}` })))));
+
+    const jobInput = el("textarea", { class: "input", rows: 2, placeholder: `Give ${bot.name} a job…` });
+    wrap.append(section("Jobs", bot.status === "active" ? el("div", { class: "row" }, jobInput, btn("Assign", { kind: "soft", size: "sm", icon: "send", onClick: async () => {
+      if (!jobInput.value.trim()) return;
+      try { await api.post(`/api/bots/${bot.id}/jobs`, { instructions: jobInput.value }); jobInput.value = ""; toast("Assigned", "", { kind: "success" }); this.refresh(); }
+      catch (err) { toast("Couldn't assign", err.message, { kind: "error" }); }
+    } })) : null,
+    jobs.length ? el("div", { class: "stack" }, jobs.slice(0, 12).map((j) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, pill(j.status), el("span", { class: "small grow", text: j.data.instructions.slice(0, 140) }), el("span", { class: "muted small", text: timeAgo(j.created_at) })),
+      j.data.result_summary ? el("p", { class: "small muted report-summary", text: j.data.result_summary }) : null))) : el("p", { class: "muted small", text: "No jobs yet." })));
+    wrap.append(section("Reports", reports.length ? el("div", { class: "stack" }, reports.slice(0, 15).map((r) => el("div", { class: "row" },
+      el("span", { class: "pill", text: r.bucket }), el("span", { class: "small grow report-summary", text: r.data.summary }), el("span", { class: "muted small", text: timeAgo(r.created_at) }))))
+      : el("p", { class: "muted small", text: "No reports yet." })));
+    wrap.append(section("Usage (last 14 days)", el("p", { class: "small", text: usage.map((u) => `${u.day.slice(5)}: ${u.turns}${u.failures ? ` (${u.failures} failed)` : ""}`).join(" · ") || "No turns yet." })));
+    if (rules.length) wrap.append(section("Report rules for this bot", el("ul", { class: "bullets" }, rules.map((r) => el("li", { text: `“${r.match}” → ${r.bucket}` })))));
+    return wrap;
+  }
+
+  async botAction(id, action) {
+    try { await api.post(`/api/bots/${encodeURIComponent(id)}/${action}`, {}); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  async post(path, body) {
+    try { await api.post(path, body || {}); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  async del(path) {
+    try { await api.del(path); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  // ================================================================== IDEAS (and the day sheet)
+  async render_ideas() {
+    const [{ ideas }, sheet] = await Promise.all([api.get("/api/ideas"), api.get("/api/daysheet")]);
+    this.app.setIdeasCount(ideas.length);
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Specific suggestions from your calendar, email and commitments, each with the facts behind it. Do it only runs safe things (reminders, drafts); anything involving other people goes through Weebo and your OK." }));
+    wrap.append(ideas.length ? el("div", { class: "stack" }, ideas.map((idea) => this.ideaCard(idea))) : empty("No ideas right now. They appear as your calendar and email fill in.", "sparkles"));
+    const rows = sheet.rows || [];
+    const days = {};
+    for (const row of rows) (days[row.day] = days[row.day] || []).push(row);
+    wrap.append(section("Day sheet", !sheet.travel_source ? el("p", { class: "muted small", text: "Travel times show as unknown: no maps/directions connector is set up (see Capabilities)." }) : null,
+      rows.length ? el("div", { class: "stack" }, Object.entries(days).map(([day, list]) => el("div", { class: "stack" },
+        el("h4", { text: day }), ...list.map((row) => this.dayRow(row))))) : empty("Nothing coming up, or no calendar is connected.", "calendar")));
+    return wrap;
+  }
+
+  ideaCard(idea) {
+    const d = idea.data;
+    const card = el("div", { class: `idea-card${idea.stale ? " stale" : ""}`, dataset: { idea: idea.id } },
+      el("h4", { text: d.title }), el("p", { text: d.statement }),
+      el("div", { class: "chip-row" }, d.evidence.map((e) => el("button", { class: "chip", type: "button", title: `Source: ${e.source || "?"}`,
+        onclick: () => toast(e.label, `${e.entity} from ${e.source || "unknown source"}${e.fetched_at ? `, checked ${timeAgo(e.fetched_at)}` : ""}`) },
+      el("span", { html: icon(e.entity === "events" ? "calendar" : e.entity === "threads" ? "mail" : "list", 12) }), el("span", { text: e.label })))));
+    if (idea.stale) card.append(el("p", { class: "muted small", text: "Something it was based on changed; refreshing." }));
+    const safe = d.actions.findIndex((a) => a.safe);
+    card.append(el("div", { class: "row wrap" },
+      btn("Discuss", { kind: "soft", size: "sm", icon: "chat", onClick: async () => {
+        try { await api.post(`/api/ideas/${idea.id}/discuss`, {}); this.close(); await this.app.openMain(); }
+        catch (err) { toast("Couldn't open it", err.message, { kind: "error" }); }
+      } }),
+      safe >= 0 && !idea.stale ? btn(`Do it: ${d.actions[safe].label}`, { kind: "primary", size: "sm", onClick: async () => {
+        try { await api.post(`/api/ideas/${idea.id}/do`, { action: safe }); toast("Done", d.actions[safe].label, { kind: "success" }); this.refresh(); }
+        catch (err) { toast("Didn't do it", err.message, { kind: "error" }); this.refresh(); }
+      } }) : null,
+      btn("Not useful", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/ideas/${idea.id}/dismiss`) })));
+    return card;
+  }
+
+  dayRow(row) {
+    const flags = [];
+    if (row.cancelled) flags.push("cancelled");
+    for (const c of row.conflicts || []) flags.push(`overlaps ${c.title}`);
+    const t = row.travel;
+    if (t) flags.push(t.status === "known" ? `${t.minutes} min travel (${t.source})${t.shortfall_minutes ? `, ${t.shortfall_minutes} min short` : ""}` : t.status === "unknown" ? `travel: unknown, ${t.gap_minutes} min gap` : "same place");
+    if (row.timezone) flags.push(`${row.timezone.there} in ${row.timezone.event_tz}`);
+    if (row.weather) flags.push(row.weather.source ? row.weather.summary : "weather unknown");
+    for (const th of row.threads || []) flags.push(`email: ${th.subject}`);
+    for (const p of row.people || []) flags.push(p.name);
+    return el("div", { class: "day-row" }, el("div", { class: "row" }, el("strong", { text: row.local_time }), el("span", { text: row.title })),
+      row.location ? el("span", { class: "muted small", text: row.location }) : null,
+      flags.length ? el("div", { class: "flags" }, flags.map((f) => el("span", { class: "chip", text: f }))) : null,
+      el("span", { class: "muted small", text: `Source: ${row.source || "?"}${row.stale ? " · refreshing" : ""}` }));
+  }
+
+  // ================================================================== CAPABILITIES (the growth layer)
+  async render_capabilities() {
+    const [caps, { apps }] = await Promise.all([api.get("/api/capabilities"), api.get("/api/connectors")]);
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Everything Weebo can do, who uses it and what it costs, plus what's missing. New connectors are registered, tested in isolation and approved by you before any bot can use them." }));
+    wrap.append(section("Connectors", caps.connectors.length ? el("div", { class: "stack" }, caps.connectors.map((c) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: c.name }), pill(c.status), el("span", { class: `risk r-${c.risk}`, text: c.risk })),
+      el("span", { class: "muted small", text: `${c.kind === "app" ? "ChatGPT app" : "MCP"} · used by ${c.used_by.join(", ") || "nobody yet"} · ${c.data.uses || 0} uses${c.data.last_used ? `, last ${timeAgo(c.data.last_used)}` : ""}${c.data.failures ? ` · ${c.data.failures} failures in a row` : ""}` }),
+      el("div", { class: "row" },
+        ["registered", "failed", "tested", "disabled"].includes(c.status) ? btn("Test", { kind: "soft", size: "sm", onClick: () => this.post(`/api/connectors/${c.id}/test`) }) : null,
+        c.status === "approved" ? btn("Disable", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/connectors/${c.id}/disable`) }) : null))))
+      : el("p", { class: "muted small", text: "No connectors yet." }), this.registerForm()));
+    wrap.append(section("ChatGPT apps", apps.available
+      ? el("div", { class: "chip-row" }, apps.apps.map((a) => el("span", { class: "chip", text: `${a.name || a.id}${a.isAccessible === false ? " (not connected)" : ""}` })))
+      : el("p", { class: "muted small", text: apps.reason || "Unavailable." })));
+    if (caps.gaps.length) wrap.append(section("Missing", el("div", { class: "stack" }, caps.gaps.map((g) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: g.data.need }), el("span", { class: "muted small", text: `${g.count}×` }), pill(g.status)),
+      g.status === "open" ? el("div", { class: "row" }, btn("Build a connector", { kind: "soft", size: "sm", onClick: () => this.post(`/api/gaps/${g.id}/build`) }),
+        btn("Not needed", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/gaps/${g.id}/dismiss`) })) : null)))));
+    wrap.append(section("Workflows", caps.workflows.length ? el("div", { class: "stack" }, caps.workflows.map((w) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: w.name }), pill(w.status)),
+      el("span", { class: "muted small", text: `${w.data.steps.length} step(s) · ${w.data.runs || 0} runs · ${w.data.failures || 0} failures · ${w.data.skips || 0} skipped` }),
+      el("div", { class: "row" },
+        w.status === "proposed" ? btn("Approve", { kind: "primary", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/approve`) }) : null,
+        w.status === "active" ? btn("Run now", { kind: "soft", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/run`) }) : null,
+        w.status === "active" ? btn("Pause", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/pause`) }) : null,
+        w.status === "paused" ? btn("Resume", { kind: "soft", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/resume`) }) : null))))
+      : el("p", { class: "muted small", text: "None yet. Ask for the same multi-step thing a few times and Weebo will offer one." })));
+    wrap.append(section("Skills", caps.skills.length ? el("div", { class: "chip-row" }, caps.skills.map((sk) => el("span", { class: "chip", title: sk.description, text: `${sk.name} · ${sk.uses} uses` })))
+      : el("p", { class: "muted small", text: "No skills yet." })));
+    wrap.append(section("Bots", caps.bots.length ? el("div", { class: "chip-row" }, caps.bots.map((b) => el("button", { class: "chip", type: "button", text: `${b.name} · ${b.status} · ${b.usage_today}/${b.budget} turns`, onclick: () => this.open("bots", { bot: b.id }) })))
+      : el("p", { class: "muted small", text: "No bots yet." })));
+    return wrap;
+  }
+
+  registerForm() {
+    const manifest = el("textarea", { class: "input", rows: 6, placeholder: '{"name": "My tool", "transport": "stdio", "command": ["python", "server.py"], "tools": [{"name": "lookup", "risk": "read"}]}' });
+    const form = el("form", { class: "stack form-card", hidden: true }, el("p", { class: "muted small", text: "Paste a connector manifest (see weebo/connectors/template). Registering grants nothing: it's tested in isolation, then you approve it." }), manifest,
+      el("div", { class: "row end" }, btn("Cancel", { kind: "ghost", size: "sm", onClick: () => { form.hidden = true; } }), btn("Register and test", { kind: "primary", size: "sm", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const { connector } = await api.post("/api/connectors", JSON.parse(manifest.value));
+        await api.post(`/api/connectors/${connector.id}/test`, {});
+        manifest.value = "";
+        this.refresh();
+      } catch (err) { toast("Couldn't register it", err.message, { kind: "error" }); }
+    });
+    return el("div", { class: "stack" }, btn("Add a connector", { kind: "soft", size: "sm", icon: "plus", onClick: () => { form.hidden = false; manifest.focus(); } }), form);
+  }
+
   // ================================================================== ARCHIVE (older chats, read-only)
   async render_archive() {
     const wrap = el("div", { class: "panel" });
     wrap.append(el("p", { class: "panel-intro", text: "Everything happens in one chat now. Your older chats are kept here to read; Weebo can also search them when you ask about something from back then." }));
-    const old = this.app.state.conversations.filter((c) => c.kind !== "desk");
+    const old = this.app.state.conversations.filter((c) => c.kind === "chat");
     wrap.append(old.length ? el("div", { class: "stack" }, old.map((c) => el("button", { class: "more-row", type: "button",
       onclick: () => { this.close(); this.app.openConversation(c.id); } },
       el("span", { class: "more-ic", html: icon("dot", 10) }),
@@ -742,6 +1036,23 @@ export class Panels {
       toggle("autonomy.dream", "Dreaming", "Consolidates memories and finds ways to help while you're away."),
       number("autonomy.dream_idle_minutes", "Dream after idle minutes", 1, 1440),
       toggle("autonomy.self_audit", "Self-audits", "Reviews its own code daily for bugs and upgrades.")));
+
+    wrap.append(section("Team (bots)",
+      toggle("bots.enabled", "Bots", "Specialist bots work for Weebo in their own chats. Off: none of them take turns on their own."),
+      number("bots.max_bots", "Most bots on the team", 0, 32),
+      number("bots.max_turns_per_day", "Turns a day across all bots", 0, 2000),
+      number("bots.hop_limit", "Relay limit (chief ↔ bot hops)", 1, 6),
+      number("bots.stuck_minutes", "Escalate a job silent this long (minutes)", 5, 1440),
+      text("bots.model_fast", "Fast tier model (optional)", "Picked at runtime"),
+      text("bots.model_standard", "Standard tier model (optional)", "Picked at runtime"),
+      text("bots.model_capable", "Most capable tier model (optional)", "Picked at runtime")));
+
+    wrap.append(section("Ideas and the day sheet",
+      toggle("ideas.enabled", "Ideas", "Specific suggestions from your calendar, email and commitments."),
+      number("ideas.max_per_day", "New ideas a day", 0, 50),
+      number("ideas.horizon_days", "Days ahead on the day sheet", 1, 31),
+      toggle("facts.second_pass", "Fact-check what I write", "A cheap second pass checks briefs and drafts against your calendar and email before you rely on them."),
+      number("activity.stale_seconds", "Say \u201cstill working\u201d after (seconds of silence)", 15, 3600)));
 
     wrap.append(section("Agents",
       number("agents.max_parallel", "Agents in parallel", 1, 12),

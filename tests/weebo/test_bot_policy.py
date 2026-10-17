@@ -155,3 +155,15 @@ async def test_decide_request_needs_the_users_yes(app, fake_engine):
     denied = await registry.call(ctx(app, trigger="bot_report"), "decide_request",
                                  {"item_id": item["id"], "decision": "deny"})
     assert denied.success and not app.approvals.open_items()  # saying no is always allowed
+
+
+async def test_outward_integrations_from_a_bot_are_hard_gates(app):
+    bot = new_bot(app, autonomy=["read", "act"])
+    ok = await app.interactions.confirm("Use integration: send_text_message", "send_text_message({...})",
+                                        conversation_id=bot["conversation_id"])
+    assert ok is False  # act autonomy doesn't cover texting people
+    item = app.approvals.open_items()[0]
+    assert item["data"]["action"] == "contact_people" and item["data"]["hard"]
+    booked = await app.interactions.confirm("Use integration: schedule_event", "schedule_event({...})",
+                                            conversation_id=bot["conversation_id"])
+    assert booked is False and app.approvals.open_items()[-1]["data"]["action"] == "send"
