@@ -560,7 +560,7 @@ class Store:
             values["importance"] = max(1, min(5, int(values["importance"])))
         values.setdefault("updated_at", time.time())
         self._update("memories", "id", memory_id, values)
-        if "text" in values:
+        if "text" in values or "status" in values:
             self.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))  # re-embedded later
         return self.get_memory(memory_id)
 
@@ -816,7 +816,7 @@ class Store:
         forgotten while the embedding is computed). Returns whether it was stored."""
         cur = self.execute(
             "INSERT INTO memory_vectors(memory_id, model, text_hash, vector, updated_at) "
-            "SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM memories WHERE id=? AND text=?) "
+            "SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM memories WHERE id=? AND text=? AND status='active') "
             "ON CONFLICT(memory_id) DO UPDATE SET model=excluded.model, text_hash=excluded.text_hash, "
             "vector=excluded.vector, updated_at=excluded.updated_at",
             (memory_id, model, text_hash, vector, time.time(), memory_id, text),

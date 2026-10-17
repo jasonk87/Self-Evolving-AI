@@ -90,7 +90,7 @@ async def test_one_chat_cards_chips_tabs_and_archive(app, fake_engine, monkeypat
             chip = page.get_by_role("button", name="I'll check with the seller tonight")
             await chip.click()
             for _ in range(100):
-                if fake_engine.turns:
+                if any("I'll check with the seller tonight" in str(turn["input"]) for turn in fake_engine.turns):
                     break
                 await page.wait_for_timeout(50)
             assert "I'll check with the seller tonight" in str(fake_engine.turns[-1])

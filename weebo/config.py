@@ -13,6 +13,7 @@ import re
 import threading
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import paths
 
@@ -132,9 +133,11 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
             raise SettingsError(f"{key} must be a whole number") from None
         value = number
     elif isinstance(default, float):
+        if isinstance(value, bool):
+            raise SettingsError(f"{key} must be a number")
         try:
             value = float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise SettingsError(f"{key} must be a number") from None
     elif isinstance(default, str):
         if not isinstance(value, str):
@@ -153,6 +156,11 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
         _validate_clock(key, value)
     if key == "server.tailnet_hostname" and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", value):
         raise SettingsError(f"{key} must be a lowercase name like 'weebo' (letters, digits, dashes)")
+    if key == "user.timezone" and value:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise SettingsError("user.timezone must be an IANA zone like America/Chicago") from None
     return value
 
 

@@ -39,6 +39,7 @@ class TurnState:
     occurrence_id: str | None = None
     turn_id: str | None = None
     cancelled: bool = False
+    stop_requested: asyncio.Event = field(default_factory=asyncio.Event)
     fallback: str = ""  # what the next turn should know if this one is stopped before it starts
     started_at: float = field(default_factory=time.time)
     streams: dict[str, str] = field(default_factory=dict)
@@ -444,6 +445,7 @@ class ConversationManager:
         session.pending_context.extend(f["fallback"] for f in session.followups if f.get("fallback"))
         session.followups.clear()
         session.turn.cancelled = True
+        session.turn.stop_requested.set()
         if not session.turn.turn_id:
             # Startup is in flight. Keep its state until we can either avoid
             # starting the turn or interrupt the id confirmed by Codex.
@@ -464,8 +466,9 @@ class ConversationManager:
         state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
+        extra: list[str] = []
         try:
-            thread_id = await self._ensure_thread(session, conv)
+            thread_id = await self._until_stopped(state, self._ensure_thread(session, conv))
             conv = self.app.store.get_conversation(conv["id"]) or conv
             if state.cancelled:
                 return self._stopped_before_start(session, state, conv["id"], thread_id)
@@ -474,7 +477,7 @@ class ConversationManager:
             context, used = persona.turn_context(self.app, conv, query, extra)
             state.used_memories = used
             overrides = self._turn_overrides(conv)
-            await self.app.engine.ensure_ready()
+            await self._until_stopped(state, self.app.engine.ensure_ready())
             if state.cancelled:
                 session.pending_context[:0] = extra  # not delivered: the next turn still gets it
                 return self._stopped_before_start(session, state, conv["id"], thread_id)
@@ -496,6 +499,8 @@ class ConversationManager:
             return "started"
         except Exception as exc:
             if state.cancelled:
+                if not requested:
+                    session.pending_context[:0] = extra
                 # Stopped, then startup failed: it was stopped, not failed, so no error and no routine retry. A
                 # turn Codex confirmed anyway (turn/started arrived, the reply was lost) is stopped too.
                 thread = (self.app.store.get_conversation(conv["id"]) or conv).get("thread_id")
@@ -526,9 +531,28 @@ class ConversationManager:
                     self.app.scheduler.delivery_interrupted(occurrence_id, "Routine startup was not confirmed: " + message)
                 else:
                     self.app.scheduler.delivery_failed(occurrence_id, message)
+            if state.turn_id and session.turn is state:
+                thread = (self.app.store.get_conversation(conv["id"]) or conv).get("thread_id")
+                if thread:
+                    await self._interrupt_started(thread, state.turn_id)
             if session.turn is state:
                 self._finish_turn(conv["id"], "failed", None, publish_error=False)
             return outcome
+
+    async def _until_stopped(self, state: TurnState, work: Any) -> Any:
+        """Cancel pre-turn waits promptly; never cancel a dispatched turn/start request."""
+        operation = asyncio.create_task(work)
+        stopped = asyncio.create_task(state.stop_requested.wait())
+        try:
+            await asyncio.wait((operation, stopped), return_when=asyncio.FIRST_COMPLETED)
+            if operation.done():
+                return operation.result()
+            raise RuntimeError("Turn stopped during startup")
+        finally:
+            for task in (operation, stopped):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(operation, stopped, return_exceptions=True)
 
     def _stopped_before_start(self, session: Session, state: TurnState, conv_id: str,
                               thread_id: str | None) -> str:
@@ -876,10 +900,16 @@ class ConversationManager:
         meta = dict(conv.get("meta") or {})
         if not thread_id or meta.get("named_thread") == thread_id:
             return
-        meta["named_thread"] = thread_id
-        self.app.store.update_conversation(conv["id"], meta=meta)
         title = conv.get("title") or "Weebo chat"
-        self.app._start_job(self.app.engine.set_thread_name(thread_id, f"Weebo · {title}"), "name-chat")
+
+        async def name() -> None:
+            if await self.app.engine.set_thread_name(thread_id, f"Weebo · {title}"):
+                current = self.app.store.get_conversation(conv["id"])
+                if current and current.get("thread_id") == thread_id:
+                    self.app.store.update_conversation(conv["id"],
+                                                       meta={**current["meta"], "named_thread": thread_id})
+
+        self.app._start_job(name(), "name-chat")
 
     # ------------------------------------------------------------------ startup hygiene
     def recover_after_restart(self) -> None:

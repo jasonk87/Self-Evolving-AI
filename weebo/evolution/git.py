@@ -78,14 +78,27 @@ async def is_repo(cwd: str | Path) -> bool:
 
 
 async def dirty_tracked(cwd: str | Path) -> list[str]:
-    result = await git(cwd, "status", "--porcelain", "--untracked-files=no", check=True)
-    return [line[3:] for line in result.out.splitlines() if line.strip()]
+    result = await git(cwd, "status", "--porcelain", "-z", "--untracked-files=no", check=True)
+    return _status_paths(result.out)
 
 
 async def working_changes(cwd: str | Path) -> list[str]:
     """Every uncommitted change, including new untracked files (ignored files excluded)."""
-    result = await git(cwd, "status", "--porcelain", "--untracked-files=all", check=True)
-    return [line[3:].strip() for line in result.out.splitlines() if line.strip()]
+    result = await git(cwd, "status", "--porcelain", "-z", "--untracked-files=all", check=True)
+    return _status_paths(result.out)
+
+
+def _status_paths(output: str) -> list[str]:
+    fields, paths = iter(output.split("\0")), []
+    for record in fields:
+        if not record:
+            continue
+        paths.append(record[3:])
+        if "R" in record[:2] or "C" in record[:2]:
+            original = next(fields, "")
+            if original:
+                paths.append(original)
+    return paths
 
 
 async def snapshot_commit(cwd: str | Path) -> str:
@@ -119,13 +132,13 @@ PLAIN_DIFF = (*DISPLAY_DIFF, "--no-renames", "--text", "--inter-hunk-context=0")
 
 async def changed_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
     """Every path the change touches; a rename lists both the old and the new path."""
-    result = await git(cwd, *PLAIN_DIFF, "--name-only", f"{base}...{ref}", check=True)
-    return [line.strip() for line in result.out.splitlines() if line.strip()]
+    result = await git(cwd, *PLAIN_DIFF, "--name-only", "-z", f"{base}...{ref}", check=True)
+    return [path for path in result.out.split("\0") if path]
 
 
 async def deleted_files(cwd: str | Path, base: str, ref: str = "HEAD") -> list[str]:
-    result = await git(cwd, *PLAIN_DIFF, "--diff-filter=D", "--name-only", f"{base}...{ref}", check=True)
-    return [line.strip() for line in result.out.splitlines() if line.strip()]
+    result = await git(cwd, *PLAIN_DIFF, "--diff-filter=D", "--name-only", "-z", f"{base}...{ref}", check=True)
+    return [path for path in result.out.split("\0") if path]
 
 
 async def clean_untracked(cwd: str | Path, keep: tuple[str, ...] = ()) -> GitResult:
@@ -142,9 +155,9 @@ async def rewritten_files(cwd: str | Path, base: str, ref: str = "HEAD", pathspe
     Appended code can skip or replace original tests and fixtures without deleting a line. Only entirely new
     files are excluded; the caller must review any change to an existing test's expectations.
     """
-    result = await git(cwd, *PLAIN_DIFF, "--name-only", "--diff-filter=a", f"{base}...{ref}", "--", pathspec,
+    result = await git(cwd, *PLAIN_DIFF, "--name-only", "-z", "--diff-filter=a", f"{base}...{ref}", "--", pathspec,
                        check=True)
-    return [line.strip() for line in result.out.splitlines() if line.strip()]
+    return [path for path in result.out.split("\0") if path]
 
 
 async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tuple[str, int, str]]:
@@ -166,13 +179,23 @@ async def added_lines(cwd: str | Path, base: str, ref: str = "HEAD") -> list[tup
                 number, old_left, new_left = number + 1, old_left - 1, new_left - 1
             continue  # "\ No newline at end of file" counts for neither side
         if raw.startswith("+++ "):
-            path = "" if raw == "+++ /dev/null" else raw[4:].strip('"').removeprefix("b/")
+            path = "" if raw == "+++ /dev/null" else _diff_path(raw[4:]).removeprefix("b/")
         elif raw.startswith("@@"):
             hunk = re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", raw)
             if hunk:
                 old_left, number = int(hunk.group(1) or 1), int(hunk.group(2))
                 new_left = int(hunk.group(3) or 1)
     return lines
+
+
+def _diff_path(value: str) -> str:
+    """Decode git's C-quoted header paths; unquoted paths with spaces end in a separator tab."""
+    if not value.startswith('"'):
+        return value.removesuffix("\t")
+    import ast
+    # Git quotes non-ASCII bytes as octal escapes, not Unicode code points.
+    literal = value.encode("utf-8").decode("latin1")
+    return ast.literal_eval(literal).encode("latin1").decode("utf-8", "replace")
 
 
 async def extract_tree(cwd: str | Path, ref: str, prefix: str, dest: Path) -> list[str]:
@@ -184,7 +207,15 @@ async def extract_tree(cwd: str | Path, ref: str, prefix: str, dest: Path) -> li
     proc = await asyncio.create_subprocess_exec(
         "git", "archive", "--format=tar", ref, "--", prefix, cwd=str(cwd),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
-    out, err = await asyncio.wait_for(proc.communicate(), 300)
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), 300)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.communicate()
+        raise
     if proc.returncode != 0:
         if b"did not match any files" in err:
             return []  # nothing under prefix at that commit

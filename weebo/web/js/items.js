@@ -191,16 +191,16 @@ function renderEvolutionStatus(msg, ctx) {
   const act = (action, label, kind = "soft", ic = "") => btn(label, { kind, size: "sm", icon: ic || undefined,
     onClick: (e) => ctx.proposalAction(d.proposal_id, action, e.currentTarget) });
   const actions = el("div", { class: "card-actions" });
-  if (d.status === "ready") actions.append(act("merge", "Merge", "primary", "check"));
-  if (["failed", "conflict", "rolled_back"].includes(d.status)) actions.append(act("rebuild", "Rebuild", "primary", "refresh"));
-  if (["proposed", "declined", "vetting"].includes(d.status)) actions.append(act("approve", "Build it", "primary", "play"));
+  if (!ctx.readOnly && d.status === "ready") actions.append(act("merge", "Merge", "primary", "check"));
+  if (!ctx.readOnly && ["failed", "conflict", "rolled_back"].includes(d.status)) actions.append(act("rebuild", "Rebuild", "primary", "refresh"));
+  if (!ctx.readOnly && ["proposed", "declined", "vetting"].includes(d.status)) actions.append(act("approve", "Build it", "primary", "play"));
   actions.append(el("a", { class: "btn btn-soft btn-sm", href: proposalHref(d.proposal_id),
     text: d.status === "ready" ? "See changes" : "Details", onclick: (e) => {
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       ctx.openProposal(d.proposal_id);
     } }));
-  if (["ready", "proposed", "declined", "vetting", "failed", "conflict"].includes(d.status)) actions.append(act("reject", "Not now", "ghost"));
+  if (!ctx.readOnly && ["ready", "proposed", "declined", "vetting", "failed", "conflict"].includes(d.status)) actions.append(act("reject", "Not now", "ghost"));
   card.append(actions);
   return el("div", { class: "msg msg-card" }, card);
 }
@@ -230,7 +230,7 @@ function renderAgentCard(msg, ctx) {
   }
   const actions = el("div", { class: "card-actions" },
     btn("Details", { kind: "soft", size: "sm", icon: "external", onClick: () => ctx.openTask(d.task_id) }));
-  if (live) actions.append(btn("Stop", { kind: "ghost", size: "sm", icon: "stop", onClick: (e) => ctx.stopTask(d.task_id, e.currentTarget) }));
+  if (live && !ctx.readOnly) actions.append(btn("Stop", { kind: "ghost", size: "sm", icon: "stop", onClick: (e) => ctx.stopTask(d.task_id, e.currentTarget) }));
   card.append(actions);
   return el("div", { class: "msg msg-card" }, card);
 }
@@ -286,7 +286,7 @@ function renderPlan(msg) {
 
 function renderApproval(msg, ctx) {
   const d = msg.data || {};
-  const pending = msg.status === "pending";
+  const pending = msg.status === "pending" && !ctx.readOnly;
   const who = d.agent ? `Agent “${d.agent}”` : "Weebo";  // a background agent's request lands in this chat too
   const titles = {
     command: `${who} wants to run a command`, file_change: `${who} wants to change files`,
@@ -324,7 +324,7 @@ function renderApproval(msg, ctx) {
 
 function renderQuestion(msg, ctx) {
   const d = msg.data || {};
-  const pending = msg.status === "pending";
+  const pending = msg.status === "pending" && !ctx.readOnly;
   const card = el("div", { class: `card question-card${pending ? " pending" : ""}` },
     el("div", { class: "card-head" }, el("span", { html: icon("sparkles", 16) }), el("strong", { text: "Weebo has a question" })));
   const answers = {};

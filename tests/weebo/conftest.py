@@ -66,7 +66,8 @@ class FakeEngine:
     async def wait_ready(self, timeout: float = 0) -> bool: return True
     async def ensure_ready(self, timeout: float = 0) -> None: ...
     async def set_skill_roots(self, roots) -> None: ...
-    async def set_thread_name(self, thread_id, name) -> None: ...
+    async def set_thread_name(self, thread_id, name) -> bool: return True
+    async def thread_idle(self, thread_id) -> bool: return True
     async def archive_thread(self, thread_id) -> bool:
         self.loaded_threads.discard(thread_id)
         self.archived.add(thread_id)

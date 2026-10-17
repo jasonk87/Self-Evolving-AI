@@ -175,16 +175,18 @@ class WeeboApp:
         return note
 
     def count_background_turn(self, label: str) -> None:
+        from .timeparse import zone
         key = "bg_turns"
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(zone(self.settings.get("user.timezone"))).strftime("%Y-%m-%d")
         counts = self.store.kv_get(key, {}) or {}
         counts = {today: int(counts.get(today, 0)) + 1}
         self.store.kv_set(key, counts)
         logger.debug("background turn (%s): %s today", label, counts[today])
 
     def background_turns_today(self) -> int:
+        from .timeparse import zone
         counts = self.store.kv_get("bg_turns", {}) or {}
-        return int(counts.get(datetime.now().strftime("%Y-%m-%d"), 0))
+        return int(counts.get(datetime.now(zone(self.settings.get("user.timezone"))).strftime("%Y-%m-%d"), 0))
 
     def on_turn_finished(self, conv_id: str, turn: Any, status: str) -> None:
         mood = {"completed": "happy", "failed": "sad", "interrupted": "idle"}.get(status, "idle")

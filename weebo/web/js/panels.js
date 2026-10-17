@@ -187,7 +187,7 @@ export class Panels {
   // ================================================================== AGENTS
   async render_agents(opts) {
     if (opts.task) return this.renderTask(opts.task);
-    const { tasks } = await api.get("/api/tasks");
+    const { tasks, live } = await api.get("/api/tasks");
     const wrap = el("div", { class: "panel" });
     wrap.append(el("p", { class: "panel-intro", text: "Background Codex agents work in parallel while you keep chatting. Weebo launches them for big jobs, or you can start one here." }));
     const form = el("form", { class: "stack form-card", hidden: true });
@@ -216,7 +216,7 @@ export class Panels {
       return el("button", { class: `task-card st-${t.status}`, type: "button", dataset: { task: t.id }, onclick: () => { this.opts = { task: t.id }; this.refresh(); } },
         el("div", { class: "task-top" }, el("span", { html: icon(t.kind === "evolution" ? "dna" : t.kind === "audit" ? "search" : "bot", 16) }),
           el("strong", { text: t.title }), pill(t.status)),
-        el("div", { class: "task-progress", text: t.status === "running" ? (this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
+        el("div", { class: "task-progress", text: t.status === "running" ? (live?.[t.id]?.progress || this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
         el("div", { class: "task-meta", text: `${kinds[t.kind] || t.kind} · ${t.status === "queued" ? "waiting" : duration(elapsed)} · ${timeAgo(t.created_at)}` }));
     };
     wrap.append(section(`Running (${active.length})`, active.length ? el("div", { class: "stack" }, active.map(card)) : empty("No agents running right now.", "bot")));

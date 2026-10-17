@@ -99,8 +99,9 @@ def developer_instructions(app: "WeeboApp", scope: str = "chat") -> str:
     )
 
 
-def _clock() -> str:
-    now = datetime.now().astimezone()
+def _clock(timezone: str = "") -> str:
+    from ..timeparse import zone
+    now = datetime.now(zone(timezone)) if timezone else datetime.now().astimezone()
     return now.strftime("%A %B %d, %Y %I:%M %p ") + (now.tzname() or "")
 
 
@@ -117,7 +118,9 @@ def _ago(ts: float) -> str:
 
 def turn_context(app: "WeeboApp", conversation: dict[str, Any], user_text: str,
                  extra: list[str] | None = None) -> tuple[str, list[str]]:
-    lines = [f"Now: {_clock()}"]
+    from ..timeparse import zone
+    timezone = app.settings.get("user.timezone")
+    lines = [f"Now: {_clock(timezone)}"]
     name = app.settings.get("user.name")
     if name:
         lines.append(f"User: {name}")
@@ -147,7 +150,7 @@ def turn_context(app: "WeeboApp", conversation: dict[str, Any], user_text: str,
     if soon:
         lines.append("Upcoming reminders:")
         for reminder in soon:
-            when = datetime.fromtimestamp(reminder["due_at"]).strftime("%a %I:%M %p")
+            when = datetime.fromtimestamp(reminder["due_at"], zone(timezone)).strftime("%a %I:%M %p")
             repeat = f", {describe_recurrence(reminder['recurrence'])}" if reminder["recurrence"] else ""
             lines.append(f"- {reminder['id']} {when}{repeat}: {reminder['text'][:120]}")
 

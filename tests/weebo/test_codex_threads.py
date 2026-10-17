@@ -7,7 +7,7 @@ import pytest
 
 from tests.weebo.conftest import drain
 from weebo.brain.conversation import tools_hash
-from weebo.brain.threads import SWEEP_KEY
+from weebo.brain.threads import SWEEP_KEY, SWEEP_VERSION
 from weebo.brain.tools import ToolContext, registry
 from weebo.codex.rpc import RpcError
 
@@ -192,8 +192,8 @@ async def test_weebos_older_threads_are_swept_once(app, fake_engine):
     app.store.update_task(busy["id"], status="running", thread_id="thread-busy-agent")
     fake_engine.codex_threads = [
         {"id": "thread-main", "name": "Weebo · Weebo"},
-        {"id": "thread-replaced-main", "name": "Weebo · Weebo"},
-        {"id": "thread-old-agent", "name": "Weebo agent · Build snake game"},
+        {"id": "thread-replaced-main", "name": "Weebo · Weebo", "originator": "weebo"},
+        {"id": "thread-old-agent", "name": "Weebo agent · Build snake game", "originator": "weebo"},
         {"id": "thread-users-own", "name": "Refactor the parser"},  # the user's own Codex work: never touched
         {"id": "thread-busy-agent", "name": "Weebo agent · Fix the build"},
     ]
@@ -213,7 +213,7 @@ async def test_weebos_older_threads_are_swept_once(app, fake_engine):
 async def test_an_agent_cut_off_by_a_restart_is_put_away_once_codex_is_ready(app, fake_engine):
     task = app.store.create_task("Fix the build", "x", conversation_id=app.conversations.main_id())
     app.store.update_task(task["id"], status="running", thread_id="thread-cut-off")
-    app.store.kv_set(SWEEP_KEY, 1)  # already tidied once: only the restart's leftovers
+    app.store.kv_set(SWEEP_KEY, SWEEP_VERSION)  # already tidied once: only the restart's leftovers
     app.agents.recover_after_restart()
     assert fake_engine.archive_log == []  # Codex isn't up yet at this point of a start
     app.bus.publish("engine.status", {"status": "ready"})
@@ -261,7 +261,7 @@ async def test_an_archive_cut_short_by_codex_going_down_happens_after_a_restart(
     assert app.store.kv_get(PENDING_KEY) == {"thread-agent": "Weebo agent · Compare cabins"}
     monkeypatch.undo()
     app.threads = ThreadKeeper(app)  # Weebo restarted before Codex came back
-    app.store.kv_set(SWEEP_KEY, 1)
+    app.store.kv_set(SWEEP_KEY, SWEEP_VERSION)
     app.bus.publish("engine.status", {"status": "ready"})
     await drain(10)
     assert fake_engine.archive_log == ["thread-agent"] and app.store.kv_get(PENDING_KEY) == {}
@@ -273,14 +273,14 @@ async def test_the_sweep_leaves_the_users_copies_of_weebo_threads_alone(app, fak
         {"id": "thread-fork", "name": "Weebo agent · Build snake game", "originator": "weebo",
          "forkedFromId": "thread-weebo"},  # forked in Codex to keep working on it: the user's now
         {"id": "thread-elsewhere", "name": "Weebo · Weebo", "originator": "codex_desktop"},
-        {"id": "thread-old-codex", "name": "Weebo · Weebo"},  # no originator reported: the name decides
+        {"id": "thread-old-codex", "name": "Weebo · Weebo"},  # unknown owner: never guess from the name
     ]
     app.bus.publish("engine.status", {"status": "ready"})
     for _ in range(100):
         if app.store.kv_get(SWEEP_KEY):
             break
         await asyncio.sleep(0.01)
-    assert set(fake_engine.archive_log) == {"thread-weebo", "thread-old-codex"}
+    assert set(fake_engine.archive_log) == {"thread-weebo"}
 
 
 async def test_the_sweep_tries_again_when_codex_cant_list_threads(app, fake_engine, monkeypatch):
@@ -297,14 +297,14 @@ async def test_the_sweep_tries_again_when_codex_cant_list_threads(app, fake_engi
         assert bool(app.store.kv_get(SWEEP_KEY)) == (attempt == SWEEP_TRIES)  # gives up listing after a few starts
 
 
-async def test_a_background_thought_that_timed_out_stays_followed(app, fake_engine):
+async def test_a_background_thought_that_timed_out_is_stopped_and_released(app, fake_engine):
     from weebo.codex import oneshot
 
     with pytest.raises(oneshot.OneShotError):
         await oneshot.ask(fake_engine, "Think about it.", timeout=0.05)
     thread = fake_engine.threads[-1]["id"]
-    # Its turn may still be running: unsubscribing would leave its questions with no one to decline them.
-    assert thread in fake_engine.held and thread not in fake_engine.released
+    assert fake_engine.interrupts[-1][0] == thread
+    assert thread in fake_engine.released and thread not in fake_engine.held
 
 
 async def test_releasing_a_thread_unsubscribes_only_once_its_turn_is_over():

@@ -13,6 +13,7 @@ skills from agent work that repeats, and auto-learned skills nobody has used in
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import shutil
 import time
@@ -43,7 +44,11 @@ def _frontmatter(text: str) -> dict[str, str]:
     for line in match.group(1).splitlines():
         if ":" in line:
             key, value = line.split(":", 1)
-            meta[key.strip()] = value.strip().strip('"')
+            value = value.strip()
+            try:
+                meta[key.strip()] = json.loads(value) if value.startswith('"') else value
+            except ValueError:
+                meta[key.strip()] = value.strip('"')
     return meta
 
 
@@ -51,6 +56,17 @@ class Skills:
     def __init__(self, app: "WeeboApp"):
         self.app = app
         self.root = paths.skills_dir()
+
+    def _folder(self, name: str) -> Path:
+        if not NAME_RE.fullmatch(name) or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", name, re.I):
+            raise ValueError("Invalid skill name.")
+        folder = self.root / name
+        root = self.root.resolve()
+        if (folder.is_symlink() or folder.is_junction() or folder.resolve().parent != root
+                or (folder / "SKILL.md").is_symlink()
+                or root not in (folder / "SKILL.md").resolve().parents):
+            raise ValueError("Skill paths must stay inside Weebo's skills folder, without links.")
+        return folder
 
     async def sync_with_codex(self) -> None:
         await self.app.engine.set_skill_roots([str(self.root)])
@@ -62,15 +78,15 @@ class Skills:
             raise ValueError("Skill name must be kebab-case: 2-48 characters, a-z, 0-9 and dashes.")
         if not description or len(description) > 300:
             raise ValueError("Description must be one line under 300 characters.")
-        if not instructions or len(instructions) > 20000:
+        if not instructions or not instructions.strip() or len(instructions) > 20000:
             raise ValueError("Instructions must be between 1 and 20,000 characters.")
         if looks_secret(instructions) or looks_secret(description):
             raise ValueError("Skills can't contain secrets (passwords, keys, card numbers).")
-        folder = self.root / name
+        folder = self._folder(name)
         existed = folder.exists()
         folder.mkdir(parents=True, exist_ok=True)
         body = instructions.strip()
-        content = f"---\nname: {name}\ndescription: {description.replace(chr(10), ' ')}\n---\n\n{body}\n"
+        content = f"---\nname: {name}\ndescription: {json.dumps(description, ensure_ascii=False)}\n---\n\n{body}\n"
         (folder / "SKILL.md").write_text(content, encoding="utf-8")
         meta = self._meta()
         meta[name] = {**meta.get(name, {"created_at": time.time(), "uses": 0}), "source": source or "chat"}
@@ -88,8 +104,9 @@ class Skills:
         usage = self._meta()
         for skill_file in sorted(self.root.glob("*/SKILL.md")):
             try:
+                self._folder(skill_file.parent.name)
                 text = skill_file.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, ValueError):
                 continue
             meta = _frontmatter(text)
             body = re.sub(r"^---.*?---\s*", "", text, count=1, flags=re.DOTALL)
@@ -147,6 +164,10 @@ class Skills:
         cutoff, meta, archived = now - days * 86400, self._meta(), []
         for skill_file in self.root.glob("*/SKILL.md"):
             name = skill_file.parent.name
+            try:
+                self._folder(name)
+            except ValueError:
+                continue
             entry = meta.get(name, {})
             if name in SEEDED or entry.get("source") != AUTO_LEARNED:
                 continue
@@ -174,16 +195,18 @@ class Skills:
         return archived
 
     def read(self, name: str) -> str:
-        path = self.root / name / "SKILL.md"
+        path = self._folder(name) / "SKILL.md"
         if not NAME_RE.match(name) or not path.exists():
             raise ValueError(f"No skill named {name}")
         return path.read_text(encoding="utf-8")
 
     async def delete(self, name: str) -> bool:
-        folder = self.root / name
-        if not NAME_RE.match(name) or not folder.exists():
+        if not NAME_RE.fullmatch(name):
             return False
-        shutil.rmtree(folder, ignore_errors=True)
+        folder = self._folder(name)
+        if not folder.exists():
+            return False
+        shutil.rmtree(folder)
         meta = self._meta()
         if meta.pop(name, None) is not None:
             self._save_meta(meta)

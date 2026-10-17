@@ -57,6 +57,7 @@ class App {
     for (const note of data.notifications) this.notifications.receive(note);
     await this.notifications.reconcile();
     this.runningTasks = data.tasks.filter((t) => t.status === "running" || t.status === "queued").length;
+    for (const [id, live] of Object.entries(data.task_live || {})) this.taskProgress.set(id, live.progress || "Working…");
     this.state.proposals = data.proposals;
     this.readyProposals = data.proposals.filter((p) => p.status === "ready").length;
     this.evolving = data.proposals.some((p) => ["building", "checking", "merging"].includes(p.status));
@@ -319,6 +320,7 @@ class App {
     on("hello", () => {
       if (this.connectedOnce && this.chat.convId) this.chat.open(this.chat.convId, { focus: false, refresh: true });
       this.connectedOnce = true;
+      this.refreshTaskCount();
       this.reconcileEvolution();
       this.notifications.reconcile();
     });
@@ -377,6 +379,7 @@ class App {
       this.panels.notify("task.updated");
     });
     on("task.progress", ({ task_id, progress }) => {
+      this.taskProgressVersion = (this.taskProgressVersion || 0) + 1;
       if (progress) this.taskProgress.set(task_id, progress);
       this.panels.notify("task.progress");
     });
@@ -422,9 +425,19 @@ class App {
   }
 
   async refreshTaskCount() {
+    const generation = this.taskRefreshGeneration = (this.taskRefreshGeneration || 0) + 1;
+    const progressVersion = this.taskProgressVersion || 0;
     try {
-      const { tasks } = await api.get("/api/tasks");
+      const { tasks, live } = await api.get("/api/tasks");
+      if (generation !== this.taskRefreshGeneration) return;
       this.runningTasks = tasks.filter((t) => t.status === "running" || t.status === "queued").length;
+      if (progressVersion === (this.taskProgressVersion || 0)) {
+        this.taskProgress.clear();
+        for (const task of tasks.filter((t) => ["running", "queued"].includes(t.status))) {
+          this.taskProgress.set(task.id, live?.[task.id]?.progress || "Working…");
+        }
+      }
+      this.panels.notify("task.updated");
       this.renderBadges();
       if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     } catch { /* offline */ }

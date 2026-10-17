@@ -16,7 +16,7 @@ const SUGGESTIONS = [
 ];
 
 function versionOf(msg) {
-  return `${msg.updated_at}|${msg.status}|${(msg.content || "").length}|${JSON.stringify(msg.data || {}).length}`;
+  return JSON.stringify([msg.updated_at, msg.status, msg.content, msg.data]);
 }
 
 function reconcile(parent, desired) {
@@ -31,13 +31,14 @@ function reconcile(parent, desired) {
 // What Weebo is doing picks its animation (avatar.js moods).
 const ACTIVITY_MOODS = { thinking: "thinking", coding: "coding", reviewing: "reviewing", researching: "researching",
                          delegating: "delegating" };
-const CODEY = /`|\\|\/|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b/;
+const CODEY = /[`\\/;$|<>]|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b/;
+const COMMANDY = /^(?:(?:running|using|executing)\s+)?(?:git|python\d*|py|node|npm|npx|pnpm|yarn|pip\d*|uv|pytest|cargo|go|curl|wget|rg|grep|ls|cat|echo|rm|cmd|powershell|pwsh|bash|sh|(?:get|set|remove|new|invoke|start|stop|write|test)-[a-z]+)(?:\s|$)/i;
 
 // The latest heading of a reasoning summary ("**Checking the forecast**"), if it reads as plain words.
 export function reasoningHeading(text) {
   const headings = [...String(text || "").matchAll(/\*\*([^*\n]{3,80})\*\*/g)].map((m) => m[1].trim().replace(/[.:]+$/, ""));
   for (let i = headings.length - 1; i >= 0; i--) {
-    if (headings[i] && headings[i].length <= 60 && !CODEY.test(headings[i])) return headings[i];
+    if (headings[i] && headings[i].length <= 60 && !CODEY.test(headings[i]) && !COMMANDY.test(headings[i])) return headings[i];
   }
   return "";
 }
@@ -153,6 +154,11 @@ export class ChatView {
     refresh = refresh && convId === this.convId;
     const previous = refresh ? this.messages : [];
     const scrollTop = this.scroller.scrollTop, wasAtBottom = this.stick;
+    const top = this.scroller.getBoundingClientRect().top;
+    const anchor = refresh && !wasAtBottom ? [...this.list.querySelectorAll('[data-id]')]
+      .find((node) => node.getBoundingClientRect().bottom > top) : null;
+    const anchorId = anchor?.dataset.id, anchorOffset = anchor?.getBoundingClientRect().top - top;
+    this.loadingMore = false;  // any earlier pagination request belongs to the previous generation
     this.loadingEvents = [];
     this.snapshotSequence = 0;
     if (!refresh) {
@@ -172,14 +178,20 @@ export class ChatView {
     try {
       const data = await api.get(`/api/conversations/${encodeURIComponent(convId)}`);
       if (this.loadGeneration !== generation) return;
-      const messages = data.messages || [];
-      const firstSeq = messages[0]?.seq ?? 0;
-      // Older history already on screen stays, except what the snapshot has a newer copy of (a card brought
-      // to the bottom while offline would otherwise show twice).
-      const fresh = new Set(messages.map((m) => m.id));
-      const older = previous.filter((m) => m.seq < firstSeq && !fresh.has(m.id));
-      this.setMessages([...older, ...messages]);
-      this.hasMore = older.length ? this.hasMore : messages.length >= 200;
+      let messages = data.messages || [];
+      let hasMore = messages.length >= 200;
+      const oldest = previous[0]?.seq;
+      // Revalidate the entire loaded range. Old cards can change while offline too.
+      // Nothing is committed to the visible chat unless every requested page succeeds.
+      while (refresh && hasMore && oldest != null && messages[0]?.seq > oldest) {
+        const page = await api.get(`/api/conversations/${encodeURIComponent(convId)}?before=${messages[0].seq}&limit=200`);
+        if (this.loadGeneration !== generation) return;
+        const older = page.messages || [];
+        hasMore = older.length >= 200;
+        messages = [...older, ...messages];
+      }
+      this.setMessages([...new Map(messages.map((m) => [m.id, m])).values()].sort((a, b) => a.seq - b.seq));
+      this.hasMore = hasMore;
       const live = data.live || {};
       if (refresh) {
         for (const id of this.streams.keys()) this.nodes.delete(id);  // redrawn from the snapshot's text
@@ -211,7 +223,9 @@ export class ChatView {
     if (refresh && !wasAtBottom) {
       this.stick = false;  // reading history: stay there
       this.render(false);
-      this.scroller.scrollTop = scrollTop;
+      const kept = anchorId && [...this.list.querySelectorAll('[data-id]')].find((node) => node.dataset.id === anchorId);
+      this.scroller.scrollTop = kept ? this.scroller.scrollTop + kept.getBoundingClientRect().top
+        - this.scroller.getBoundingClientRect().top - anchorOffset : scrollTop;
     } else {
       this.render(true);
     }
@@ -230,7 +244,7 @@ export class ChatView {
   async loadOlder() {
     const generation = this.loadGeneration;
     const first = this.messages[0];
-    if (!first || this.loadingMore) return;
+    if (!first || this.loadingMore || this.loadingEvents) return;
     this.loadingMore = true;
     const before = this.scroller.scrollHeight;
     try {
@@ -403,6 +417,8 @@ export class ChatView {
     if (cached && cached.version === version) return cached.node;
     const view = msg.status === "streaming" ? { ...msg, content: this.streams.get(msg.id) || msg.content } : msg;
     const node = renderMessage(view, this.ctx());
+    const expanded = [...(cached?.node?.querySelectorAll('details') || [])].map((detail) => detail.open);
+    node.querySelectorAll('details').forEach((detail, i) => { if (expanded[i]) detail.open = true; });
     if (cached?.node?.parentNode) cached.node.replaceWith(node);
     this.nodes.set(msg.id, { node, version });
     return node;
@@ -510,6 +526,7 @@ export class ChatView {
 
   ctx() {
     return {
+      readOnly: this.readOnly,
       resolve: (id, decision, answers) => this.app.resolveInteraction(id, decision, answers),
       openTask: (id) => this.app.openPanel("agents", { task: id }),
       openProposal: (id) => this.app.openPanel("evolution", { proposal: id }),
@@ -537,12 +554,14 @@ export class ChatView {
     const stopMode = this.busy && !hasText;
     this.sendBtn.innerHTML = icon(stopMode ? "stop" : "up", 20);
     this.sendBtn.title = stopMode ? "Stop (Esc)" : this.busy ? "Add to the current task" : "Send";
+    this.sendBtn.setAttribute("aria-label", this.sendBtn.title);
     this.sendBtn.classList.toggle("stop", stopMode);
     this.sendBtn.disabled = !stopMode && !hasText;
     this.input.placeholder = this.busy ? "Add to the task… (Esc stops)" : "Message Weebo…";
   }
 
   async addFiles(files) {
+    if (this.readOnly) return;
     for (const file of files.filter((f) => f.type.startsWith("image/")).slice(0, 6)) {
       const chip = el("div", { class: "attachment uploading" }, el("img", { src: URL.createObjectURL(file), alt: file.name }));
       this.attachments.append(chip);
@@ -584,6 +603,7 @@ export class ChatView {
   }
 
   async submit() {
+    if (this.readOnly) return;
     const text = this.input.value.trim();
     const submittedImages = [...this.pendingImages];
     const images = submittedImages.map((r) => r.name);

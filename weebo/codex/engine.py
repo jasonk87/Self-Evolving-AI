@@ -373,11 +373,13 @@ class CodexEngine:
     async def interrupt(self, thread_id: str, turn_id: str) -> None:
         await self.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=30)
 
-    async def set_thread_name(self, thread_id: str, name: str) -> None:
+    async def set_thread_name(self, thread_id: str, name: str) -> bool:
         try:
             await self.request("thread/name/set", {"threadId": thread_id, "name": name[:80]}, timeout=15)
+            return True
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/name/set failed: %s", exc)
+            return False
 
     async def archive_thread(self, thread_id: str) -> bool | None:
         """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too.
@@ -394,6 +396,15 @@ class CodexEngine:
             return None
         finally:
             self.loaded_threads.discard(thread_id)
+
+    async def thread_idle(self, thread_id: str) -> bool:
+        """Check runtime metadata without loading history; unknown state must never authorize archiving."""
+        try:
+            result = await self.request("thread/read", {"threadId": thread_id, "includeTurns": False}, timeout=15)
+            status = (result.get("thread") or {}).get("status") or {}
+            return isinstance(status, dict) and status.get("type") in ("idle", "notLoaded", "systemError")
+        except (RpcError, EngineClosed, asyncio.TimeoutError):
+            return False
 
     async def unarchive_thread(self, thread_id: str) -> bool:
         """Bring an archived thread back so it can be resumed (resuming an archived thread is refused)."""
@@ -414,7 +425,19 @@ class CodexEngine:
         timed out) would ask questions nobody receives and never end; staying subscribed, Weebo declines them."""
         self.unroute(thread_id)
         self.loaded_threads.discard(thread_id)
-        if self.status != "ready" or not finished:
+        if self.status != "ready":
+            return
+        if not finished:
+            # A stop that could not be confirmed still needs a terminal-event listener, otherwise the eventual
+            # completion is dropped and the server retains this thread until restart. Unowned requests use
+            # the engine's default deny handler, never the caller's expired tools/approvals.
+            def completed(method: str, params: dict[str, Any]) -> None:
+                if method == "turn/completed":
+                    self.release_thread(thread_id)
+                elif method == "engine/closed":
+                    self.unroute(thread_id)
+
+            self.route(thread_id, listener=completed)
             return
 
         async def unsubscribe() -> None:

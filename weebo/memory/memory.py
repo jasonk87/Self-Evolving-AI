@@ -234,13 +234,17 @@ class Memory:
                 updates["text"] = text
             if existing["status"] != "active":
                 updates["status"] = "active"
-            mem = self.store.update_memory(existing["id"], **updates)
-            if "text" in updates:
-                self._changed(existing["id"])
+            with self._vectors_lock:
+                mem = self.store.update_memory(existing["id"], **updates)
+                if "text" in updates or "status" in updates:
+                    self._vectors.pop(existing["id"], None)
+            self._wake.set()
             self.bus.publish("memory.updated", {"memory": mem})
             return mem, "updated"  # type: ignore[return-value]
-        mem = self.store.add_memory(text, kind, importance, source, pinned, meta)
-        self._changed(mem["id"])
+        with self._vectors_lock:
+            mem = self.store.add_memory(text, kind, importance, source, pinned, meta)
+            self._vectors.pop(mem["id"], None)
+        self._wake.set()
         self.bus.publish("memory.added", {"memory": mem})
         return mem, "added"
 
@@ -262,10 +266,13 @@ class Memory:
             allowed["text"] = _memory_text(allowed["text"])
         if "kind" in allowed and allowed["kind"] not in KINDS:
             raise MemoryError_(f"kind must be one of {', '.join(KINDS)}")
-        mem = self.store.update_memory(memory_id, **allowed)
+        with self._vectors_lock:
+            mem = self.store.update_memory(memory_id, **allowed)
+            if mem and ("text" in allowed or "status" in allowed):
+                self._vectors.pop(memory_id, None)
         if mem:
-            if "text" in allowed:
-                self._changed(memory_id)
+            if "text" in allowed or "status" in allowed:
+                self._wake.set()
             self.bus.publish("memory.updated", {"memory": mem})
         return mem
 

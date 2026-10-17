@@ -24,7 +24,8 @@ ORIGINATOR = "weebo"  # the client name Weebo gives Codex, recorded on every thr
 PENDING_KEY = "codex.put_away_pending"  # threads still to put away, kept across restarts
 SWEEP_KEY = "codex.thread_sweep"
 SWEEP_TRIES_KEY = "codex.thread_sweep_tries"
-SWEEP_VERSION = 1  # raise to tidy up once more on the next start
+SWEEP_CURSOR_KEY = "codex.thread_sweep_cursor"
+SWEEP_VERSION = 2  # retry older cleanup failures that weren't previously saved in the pending list
 SWEEP_TRIES = 3  # starts on which the Codex thread list may fail before the sweep makes do with Weebo's own records
 SWEEP_PAGES = 20  # of 100 threads each: how far back the sweep looks through the Codex thread list
 
@@ -55,7 +56,13 @@ class ThreadKeeper:
         main = store.find_conversation_by_kind("desk")
         if main and main.get("thread_id") == thread_id:
             return True
-        return store.query_one("SELECT 1 AS busy FROM tasks WHERE thread_id=? AND status IN ('queued', 'running')",
+        for conv_id, session in self.app.conversations.sessions.items():
+            if session.turn:
+                conv = store.get_conversation(conv_id)
+                if conv and conv.get("thread_id") == thread_id:
+                    return True
+        return store.query_one("SELECT 1 AS busy FROM tasks WHERE thread_id=? AND "
+                               "(status IN ('queued', 'running') OR json_extract(meta, '$.unsettled_thread') = 1)",
                                (thread_id,)) is not None
 
     def put_away(self, thread_id: str, name: str = "", retry: bool = True) -> asyncio.Task | None:
@@ -79,6 +86,11 @@ class ThreadKeeper:
                 return  # still noted: done once Codex is ready
             if name:
                 await engine.set_thread_name(thread_id, name)
+            if not await engine.thread_idle(thread_id):
+                return  # it may be running in another client; keep the durable retry
+            if self.in_use(thread_id):  # naming awaits Codex; a continuation may have claimed it meanwhile
+                self._note(thread_id, None)
+                return
             archived = await engine.archive_thread(thread_id)
             if archived is not None or not retry:  # done, or refused for good (gone, already archived)
                 self._note(thread_id, None)
@@ -144,7 +156,7 @@ class ThreadKeeper:
         for row in store.query("SELECT thread_id FROM conversations WHERE thread_id IS NOT NULL AND thread_id != '' "
                                "AND kind != 'desk'"):
             found[row["thread_id"]] = None  # older chats are kept to read in Weebo, which has their messages
-        cursor, listed = None, True
+        cursor, listed = store.kv_get(SWEEP_CURSOR_KEY), True
         try:  # threads Weebo named but no longer tracks, such as main-chat threads it replaced
             for _ in range(SWEEP_PAGES):
                 page = await engine.list_threads(limit=100, cursor=cursor, searchTerm="Weebo")
@@ -154,18 +166,27 @@ class ThreadKeeper:
                 cursor = page.get("nextCursor")
                 if not cursor:
                     break
+            if cursor:
+                listed = False  # a page limit is not a completed sweep
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             listed = False
+            store.kv_set(SWEEP_CURSOR_KEY, None)  # a saved server cursor may have expired; restart the list next time
             logger.warning("Could not list Codex threads to tidy up (%s); trying again on the next start", exc)
+        else:
+            # Do not start at page one forever when a large list contains threads we must leave alone.
+            # Save only after their ids are durably queued below, so an interrupted sweep cannot skip work.
+            for thread_id in found:
+                self.later(thread_id)
+            store.kv_set(SWEEP_CURSOR_KEY, cursor)
         for thread_id in found:
             if engine.status != "ready":
                 return  # not marked done: the next start tries again
-            task = self.put_away(thread_id, retry=False)
+            task = self.put_away(thread_id)  # failed archives must survive even after the sweep is marked done
             if task:
                 await task
         tries = int(store.kv_get(SWEEP_TRIES_KEY, 0) or 0) + 1
         store.kv_set(SWEEP_TRIES_KEY, tries)
-        if listed or tries >= SWEEP_TRIES:
+        if listed or (tries >= SWEEP_TRIES and not cursor):
             store.kv_set(SWEEP_KEY, SWEEP_VERSION)
         if found:
             logger.info("Tidied up %d of Weebo's older Codex threads", len(found))
@@ -177,5 +198,6 @@ class ThreadKeeper:
             return False
         if thread.get("forkedFromId") or thread.get("parentThreadId"):
             return False
-        originator = thread.get("originator")  # older Codex versions don't report it: the name has to do
-        return not originator or originator == ORIGINATOR
+        # A display name alone is not ownership: users can name their own threads "Weebo · ...".
+        # Older Codex versions are covered by the explicit ids in our own database instead.
+        return thread.get("originator") == ORIGINATOR

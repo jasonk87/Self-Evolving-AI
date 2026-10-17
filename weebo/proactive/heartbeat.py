@@ -18,6 +18,7 @@ from .. import log, paths
 from ..brain.mind import ThinkError, extract_json
 from ..evolution import outcomes
 from ..memory.memory import KINDS, MemoryError_
+from ..timeparse import zone
 from . import heatmap
 
 if TYPE_CHECKING:
@@ -135,7 +136,8 @@ class Heartbeat:
     # ------------------------------------------------------------------ gating
     def quiet(self) -> bool:
         s = self.app.settings
-        return in_quiet_hours(s.get("autonomy.quiet_hours_start"), s.get("autonomy.quiet_hours_end"))
+        return in_quiet_hours(s.get("autonomy.quiet_hours_start"), s.get("autonomy.quiet_hours_end"),
+                              datetime.now(zone(s.get("user.timezone"))))
 
     def budget(self) -> tuple[bool, str]:
         s = self.app.settings
@@ -179,7 +181,8 @@ class Heartbeat:
         if self.quiet() or self._quiet_system():
             return
         if (s.get("autonomy.dream") and self.idle_minutes >= float(s.get("autonomy.dream_idle_minutes"))
-                and now - float(store.kv_get("last_dream", 0) or 0) >= float(s.get("autonomy.dream_min_hours_between")) * 3600
+                and now - max(float(store.kv_get("last_dream", 0) or 0), float(store.kv_get("last_dream_attempt", 0) or 0))
+                >= float(s.get("autonomy.dream_min_hours_between")) * 3600
                 and self._new_dialogue_count() >= 4):
             await self._run("dream", self.dream())
             return
@@ -223,7 +226,7 @@ class Heartbeat:
     # ------------------------------------------------------------------ brief
     def _brief_due(self) -> bool:
         s = self.app.settings
-        now = datetime.now()
+        now = datetime.now(zone(s.get("user.timezone")))
         today = now.strftime("%Y-%m-%d")
         if self.app.store.kv_get("last_brief_date") == today:
             return False
@@ -233,7 +236,7 @@ class Heartbeat:
         return brief_at <= minutes < brief_at + 180 and not self.quiet()
 
     async def daily_brief(self) -> dict[str, Any]:
-        self.app.store.kv_set("last_brief_date", datetime.now().strftime("%Y-%m-%d"))
+        self.app.store.kv_set("last_brief_date", datetime.now(zone(self.app.settings.get("user.timezone"))).strftime("%Y-%m-%d"))
         desk = self.app.conversations.desk()
         user = self.app.settings.get("user.name") or "the user"
         prompt = (
@@ -258,7 +261,8 @@ class Heartbeat:
     async def dream(self) -> dict[str, Any]:
         store = self.app.store
         since = float(store.kv_get("last_dream", 0) or 0)
-        store.kv_set("last_dream", time.time())
+        started_at = time.time()
+        store.kv_set("last_dream_attempt", started_at)
         dialogue = store.dialogue_since(since, limit=400)
         if not dialogue:
             return {"skipped": "nothing new"}
@@ -312,7 +316,10 @@ Return JSON:
 - skills: {"up to 1 reusable procedure that the background agent jobs above carried out successfully at least twice (or that clearly will recur), not already a skill: name (kebab-case), description (one line), instructions (step by step, general, no personal data). Otherwise []." if learn_skills else "always []."}
 """
         result = await self.app.mind.think(prompt, DREAM_SCHEMA, label="dream", timeout=420)
-        applied = self._apply_dream(result if isinstance(result, dict) else {})
+        if not isinstance(result, dict):
+            raise ThinkError("Dream response was not an object; conversation checkpoint was preserved.")
+        applied = self._apply_dream(result)
+        store.kv_set("last_dream", started_at)  # a failure must never skip the conversations it did not learn from
         extras = [f"{applied[k]} {label}" for k, label in (("proposals", "improvement idea(s)"),
                                                           ("eval_cases", "behavior check(s)"),
                                                           ("skills", "skill(s) learned")) if applied[k]]
@@ -487,6 +494,7 @@ return [] if nothing is worth changing.
             await self._run(name, runners[name]())
 
         self.app._start_job(run_trigger(), "manual-activity")
+        self.busy = name  # reserve before yielding: two immediate requests must not start overlapping jobs
         return {"started": name}
 
     def status(self) -> dict[str, Any]:
@@ -505,7 +513,7 @@ return [] if nothing is worth changing.
         if not s.get("autonomy.daily_brief"):
             return "off"
         hh, mm = s.get("autonomy.daily_brief_time").split(":")
-        now = datetime.now()
+        now = datetime.now(zone(s.get("user.timezone")))
         target = now.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
         if self.app.store.kv_get("last_brief_date") == now.strftime("%Y-%m-%d") or target < now:
             target += timedelta(days=1)

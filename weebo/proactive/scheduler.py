@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .. import log
-from ..timeparse import TimeParseError, describe_recurrence, next_occurrence, normalize_recurrence, parse_when
+from ..timeparse import TimeParseError, describe_recurrence, next_occurrence, normalize_recurrence, parse_when, zone
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -34,16 +34,18 @@ class Scheduler:
             raise TimeParseError("Reminder text is empty.")
         if action not in ("notify", "prompt"):
             raise TimeParseError("action must be 'notify' or 'prompt'.")
-        due = parse_when(when).timestamp()
+        timezone = self.app.settings.get("user.timezone")
+        due = parse_when(when, timezone=timezone).timestamp()
         if due < time.time() - 60:
             raise TimeParseError(f"{datetime.fromtimestamp(due):%b %d %I:%M %p} is in the past.")
         rec = normalize_recurrence(recurrence)
         if action == "prompt" and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
             raise TimeParseError("Routines can repeat at most every 15 minutes.")
-        reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action)
+        reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action,
+                                               meta={"timezone": timezone, "anchor_at": due})
         self.app.bus.publish("reminder.updated", {"reminder": reminder})
         self.app.store.journal("schedule", f"Scheduled {'routine' if action == 'prompt' else 'reminder'}",
-                               f"{text[:200]} — {datetime.fromtimestamp(due):%a %b %d %I:%M %p}"
+                               f"{text[:200]} — {datetime.fromtimestamp(due, zone(timezone)):%a %b %d %I:%M %p}"
                                + (f", {describe_recurrence(rec)}" if rec else ""))
         self._wake.set()
         return reminder
@@ -195,9 +197,13 @@ class Scheduler:
             if occurrence:
                 store.journal("routine", "Queued a routine", reminder["text"][:300],
                               data={"occurrence_id": occurrence["id"]})
-        next_due = next_occurrence(reminder["due_at"], reminder["recurrence"], now)
+        meta = dict(reminder.get("meta") or {})
+        meta.setdefault("timezone", self.app.settings.get("user.timezone"))
+        meta.setdefault("anchor_at", reminder["due_at"])
+        next_due = next_occurrence(reminder["due_at"], reminder["recurrence"], now,
+                                   timezone=meta["timezone"], anchor_at=meta["anchor_at"])
         if next_due:
-            updated = store.update_reminder(reminder["id"], due_at=next_due, fired_at=now)
+            updated = store.update_reminder(reminder["id"], due_at=next_due, fired_at=now, meta=meta)
         else:
             updated = store.update_reminder(reminder["id"], status="done", fired_at=now)
         self.app.bus.publish("reminder.updated", {"reminder": updated})

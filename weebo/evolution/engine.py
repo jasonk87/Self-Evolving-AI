@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import log, paths
 from ..codex.rpc import EngineClosed, RpcError
+from ..codex.oneshot import stop_and_release
 from . import council, git
 from .evals import touches_behavior
 from .gates import GateResult, run_gates
@@ -665,10 +666,12 @@ class EvolutionEngine:
             return {"text": f"Review unavailable: {exc}", "blocking": True, "error": str(exc) or type(exc).__name__}
         thread_id = result["thread"]["id"]
         done = asyncio.Event()
-        state: dict[str, Any] = {"review": "", "messages": [], "status": None}
+        state: dict[str, Any] = {"review": "", "messages": [], "status": None, "turn_id": None}
 
         def listener(method: str, params: dict[str, Any]) -> None:
-            if method == "item/completed":
+            if method == "turn/started":
+                state["turn_id"] = (params.get("turn") or {}).get("id")
+            elif method == "item/completed":
                 item = params.get("item") or {}
                 if item.get("type") == "exitedReviewMode":
                     state["review"] = item.get("review", "")
@@ -683,12 +686,13 @@ class EvolutionEngine:
 
         engine.route(thread_id, listener=listener, request_handler=deny)
         try:
-            await engine.start_review(thread_id, {"type": "baseBranch", "branch": base_ref})
+            review = await engine.start_review(thread_id, {"type": "baseBranch", "branch": base_ref})
+            state["turn_id"] = ((review or {}).get("turn") or {}).get("id") or state["turn_id"]
             await asyncio.wait_for(done.wait(), 1200)
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             return {"text": f"Review did not complete: {exc}", "blocking": True, "error": str(exc) or "timed out"}
         finally:
-            engine.release_thread(thread_id, finished=done.is_set())
+            await stop_and_release(engine, thread_id, state["turn_id"], done)
             if count:
                 self.app.count_background_turn("review")
         text = (state["review"] or "\n\n".join(state["messages"])).strip()

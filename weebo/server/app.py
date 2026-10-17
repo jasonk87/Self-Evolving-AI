@@ -375,6 +375,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "conversations": weebo.store.list_conversations(),
             "desk_id": weebo.conversations.desk()["id"],
             "tasks": weebo.store.list_tasks(limit=40),
+            "task_live": {task_id: weebo.agents.live(task_id) for task_id in weebo.agents.runs},
             "proposals": _slim_proposals(weebo.store.list_proposals(limit=60)),
             "notifications": weebo.store.list_notifications(limit=None, unread_only=True),
             "read_notification_ids": weebo.store.read_notification_ids(),
@@ -580,7 +581,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     # ------------------------------------------------------------------ agents
     async def list_tasks(_: web.Request) -> web.Response:
-        return _json({"tasks": weebo.store.list_tasks(limit=80)})
+        return _json({"tasks": weebo.store.list_tasks(limit=80),
+                      "live": {task_id: weebo.agents.live(task_id) for task_id in weebo.agents.runs}})
 
     async def get_task(request: web.Request) -> web.Response:
         task_id = request.match_info["id"]

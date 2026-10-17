@@ -79,7 +79,11 @@ _INTEGRATIONS: dict[str, tuple[str, str]] = {
 _MCP_NAMES = {"gmail": "Gmail", "google_calendar": "your calendar", "calendar": "your calendar",
               "google_drive": "Google Drive", "drive": "Google Drive", "github": "GitHub", "slack": "Slack"}
 
-_CODEY = re.compile(r"`|\\|/|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b")
+_CODEY = re.compile(r"[`\\/;$|<>]|--|\(\)|==|=>|\$\{|\b\w+\.(py|js|ts|json|md|txt|ps1|sh|exe)\b|\b\w+_\w+\b")
+_COMMANDY = re.compile(
+    r"^(?:(?:running|using|executing)\s+)?(?:git|python\d*|py|node|npm|npx|pnpm|yarn|pip\d*|uv|"
+    r"pytest|cargo|go|curl|wget|rg|grep|ls|cat|echo|rm|cmd|powershell|pwsh|bash|sh|"
+    r"(?:get|set|remove|new|invoke|start|stop|write|test)-[a-z]+)(?:\s|$)", re.IGNORECASE)
 
 
 def strip_shell(command: str) -> str:
@@ -93,7 +97,8 @@ def strip_shell(command: str) -> str:
 
 
 def _name(path: Any) -> str:
-    return PurePath(str(path or "")).name or "a file"
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+    return name if name and not re.search(r"[\r\n`;$|<>]", name) else "a file"
 
 
 def describe_command(command: str, actions: list[dict[str, Any]] | None = None) -> tuple[str, str]:
@@ -101,7 +106,7 @@ def describe_command(command: str, actions: list[dict[str, Any]] | None = None) 
     if actions:
         kinds = {a.get("type") for a in actions}
         if kinds == {"read"}:
-            names = [a.get("name") or _name(a.get("path")) for a in actions][:2]
+            names = [_name(a.get("name") or a.get("path")) for a in actions][:2]
             return (f"Reading {' and '.join(names)}" if len(actions) <= 2 else f"Reading {len(actions)} files"), "reviewing"
         if kinds == {"search"}:
             return "Searching the code", "reviewing"
@@ -138,7 +143,7 @@ def describe_tool(source: str, tool: str, arguments: Any = None, server: str = "
                 return "Putting together a view for you", "coding"
             return "Looking that up", "researching"
         return _TOOLS.get(tool, ("Working on it", "thinking"))
-    nice = _MCP_NAMES.get((server or "").lower(), (server or "a connected app").replace("_", " "))
+    nice = _MCP_NAMES.get((server or "").lower(), "a connected app")
     return f"Using {nice}", "researching"
 
 
@@ -147,7 +152,7 @@ def reasoning_heading(summary: str) -> str:
     headings = re.findall(r"\*\*([^*\n]{3,80})\*\*", summary or "")
     for heading in reversed(headings):
         heading = heading.strip().rstrip(".:")
-        if heading and not _CODEY.search(heading) and len(heading) <= 60:
+        if heading and not _CODEY.search(heading) and not _COMMANDY.search(heading) and len(heading) <= 60:
             return heading
     return ""
 

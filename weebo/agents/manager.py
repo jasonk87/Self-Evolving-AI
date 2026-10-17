@@ -130,6 +130,8 @@ class AgentManager:
             raise ValueError(f"{task_id} isn't that kind of agent, so it can't be continued here.")
         if source["status"] in ACTIVE:
             raise ValueError(f"Agent {task_id} is still {source['status']}; send it a message instead.")
+        if (source.get("meta") or {}).get("unsettled_thread"):
+            raise ValueError("That agent's stop is not confirmed yet; wait for Codex or start a new agent.")
         if not source.get("thread_id") or (source.get("meta") or {}).get("ephemeral"):
             raise ValueError(f"Agent {task_id} left no thread to continue; start a new agent instead.")
         # One turn at a time per thread: a second continuation would collide with the first.
@@ -168,6 +170,9 @@ class AgentManager:
         if task_id in self.queue:
             self.queue.remove(task_id)
             self._finalize(task_id, "cancelled", "", "Cancelled before it started.")
+            task = self.app.store.get_task(task_id)
+            if task and task.get("thread_id"):
+                self.app.threads.put_away(task["thread_id"])
             return
         run = self.runs.get(task_id)
         if run is None:
@@ -228,6 +233,9 @@ class AgentManager:
 
     def recover_after_restart(self) -> None:
         """Restore unstarted ordinary agents; running work must never be replayed."""
+        for task in self.app.store.query("SELECT * FROM tasks WHERE json_extract(meta, '$.unsettled_thread') = 1"):
+            self.app.store.update_task(task["id"], meta={k: v for k, v in task["meta"].items() if k != "unsettled_thread"})
+            self.app.threads.later(task["thread_id"])
         known = set(self.queue) | self.runs.keys()
         tasks = self.app.store.query(
             "SELECT * FROM tasks WHERE status IN ('queued', 'running') ORDER BY created_at, rowid"
@@ -346,6 +354,16 @@ class AgentManager:
             run.status, run.error = "failed", str(exc) or type(exc).__name__
             self.app.diagnostics.record("agent_crash", f"Agent runner crashed: {exc!r}")
         finally:
+            if run.thread_id and run.turn_id and not run.done.is_set() and not self.closing:
+                final_status = run.status
+                try:
+                    async with asyncio.timeout(3):
+                        await engine.interrupt(run.thread_id, run.turn_id)
+                        await run.done.wait()
+                except (RpcError, EngineClosed, asyncio.TimeoutError):
+                    pass
+                if final_status == "failed":
+                    run.status = final_status
             if run.thread_id:
                 engine.unroute(run.thread_id)
             self.runs.pop(run.task_id, None)
@@ -392,6 +410,27 @@ class AgentManager:
 
     def _put_away(self, run: AgentRun, task: dict[str, Any]) -> None:
         """Done with this thread for now: out of the Codex app's thread list (follow-up work brings it back)."""
+        if run.turn_id and not run.done.is_set():
+            # Never archive or continue a remote turn whose stop wasn't confirmed. Keep cleanup durable and
+            # watch for its terminal notification, with expired tools/approvals detached.
+            current = self.app.store.get_task(run.task_id)
+            self.app.store.update_task(run.task_id, meta={**current["meta"], "unsettled_thread": True})
+            self.app.threads.later(run.thread_id)
+
+            def finished(method, params):
+                if method not in ("turn/completed", "engine/closed"):
+                    return
+                run.done.set()
+                saved = self.app.store.get_task(run.task_id)
+                if saved:
+                    self.app.store.update_task(run.task_id,
+                                               meta={k: v for k, v in saved["meta"].items() if k != "unsettled_thread"})
+                self.app.engine.unroute(run.thread_id)
+                if method == "turn/completed":
+                    self._put_away(run, task)
+
+            self.app.engine.route(run.thread_id, listener=finished)
+            return
         if (task.get("meta") or {}).get("ephemeral") or (run.fresh and not run.turn_id):
             # Nothing on disk: just let Codex unload it (once its turn is over, if one started).
             self.app.engine.release_thread(run.thread_id, finished=run.done.is_set() or not run.turn_id)
@@ -557,7 +596,10 @@ class AgentManager:
                 run.last_message = content
                 if data.get("phase") != "commentary":
                     run.final_text = content
-                run.progress = content[:240]
+                # Commentary/final answers may contain commands or code fences. They belong in the report,
+                # never in the short live-status line.
+                self._set_progress(run, "Reporting back" if data.get("phase") != "commentary" else "Working on it",
+                                   "thinking")
                 self._event(run, "message", content, {"phase": data.get("phase")})
             elif kind == "command":
                 run.commands += 1
