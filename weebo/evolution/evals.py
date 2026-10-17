@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 logger = log.get("evolution.evals")
 
-BEHAVIOR_PREFIXES = ("weebo/brain/", "weebo/memory/", "weebo/skills.py")
+BEHAVIOR_PREFIXES = ("weebo/brain/", "weebo/memory/", "weebo/facts/", "weebo/skills.py")
 BASELINE_KEY = "eval_baseline"
 BASELINE_MAX_AGE = 7 * 86400
 CONTEXT_MEMORIES = 20
@@ -309,8 +309,13 @@ class Evals:
                   "A good reply gets it right the first time and respects that correction.")
         conv = self.app.store.get_conversation(conv_id) or {}
         try:
-            return self.add_case(asked, rubric, source="correction", dialogue=dialogue,
+            case = self.add_case(asked, rubric, source="correction", dialogue=dialogue,
                                  conversation_title=conv.get("title", ""), meta={"conversation_id": conv_id})
+            if re.search(r"\b(?:already told|forgot|moved|cancelled|canceled|email|calendar|commitment|that's wrong|that is wrong)\b",
+                         correction, re.IGNORECASE):
+                self.app.store.journal("reliability.incident", "User corrected a factual miss", correction[:1000],
+                                       {"case_id": case["id"], "conversation_id": conv_id})
+            return case
         except EvalError:
             return None
 
@@ -470,9 +475,14 @@ class Evals:
 
     async def gate(self, worktree: Path, count: bool) -> dict[str, Any]:
         """Compare a build against the running Weebo. Returns {"ok", "skipped", "summary", "regressed", ...}."""
+        from .reliability import check_reliability
+        reliability = await check_reliability(worktree)
+        if not reliability["ok"]:
+            return {"ok": False, "skipped": False, "summary": reliability["summary"], "reliability": reliability}
         cases = self.active_cases()
         if not cases:
-            return {"ok": True, "skipped": True, "summary": "No eval cases yet; they come from corrections and dreams."}
+            return {"ok": True, "skipped": True, "summary": reliability["summary"] + "\nNo behavior eval cases yet; they come from corrections and dreams.",
+                    "reliability": reliability}
 
         def require_verdicts(graded: dict[str, dict[str, Any]], checked: list[dict[str, Any]], stage: str) -> None:
             errors = [f"- {c['title']}: {graded[c['id']]['reason']}" for c in checked if graded[c["id"]].get("error")]

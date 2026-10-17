@@ -418,7 +418,7 @@ async def weebo_status(ctx: ToolContext) -> ToolResult:
 EVERYDAY_SETTINGS = ("voice.", "ui.", "user.", "autonomy.daily_brief", "autonomy.dream", "autonomy.quiet_hours",
                      "autonomy.proactive", "codex.chat_effort", "codex.agent_effort", "codex.fast_mode")
 # Of those the user may change, the ones that loosen Weebo's own safety are written to the journal.
-SENSITIVE_SETTINGS = ("evolution.", "evals.", "autonomy.level", "autonomy.usage_ceiling_percent",
+SENSITIVE_SETTINGS = ("evolution.", "evals.", "facts.", "autonomy.level", "autonomy.usage_ceiling_percent",
                       "autonomy.max_background_turns_per_day", "server.", "codex.binary", "chat.delegate_work",
                       "agents.auto_followup")
 

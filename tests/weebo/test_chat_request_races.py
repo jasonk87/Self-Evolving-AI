@@ -23,7 +23,9 @@ async def browser_page(app):
                 pytest.skip("Install the browser with python -m playwright install chromium")
             raise
         async with browser:
-            page = await browser.new_page(viewport={"width": 390, "height": 844})
+            # These tests deliberately intercept/delay network requests. A service
+            # worker can bypass page.route; keep real-worker coverage separate.
+            page = await browser.new_page(viewport={"width": 390, "height": 844}, service_workers="block")
             await page.goto(str(server.make_url("/")))
             await page.wait_for_function("() => window.weebo?.chat?.convId && "
                                          "!weebo.chat.root.classList.contains('loading')")

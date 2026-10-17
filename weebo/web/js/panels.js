@@ -10,6 +10,7 @@ const PANELS = {
   agents: { title: "Agents", icon: "bot" },
   evolution: { title: "Evolution", icon: "dna" },
   memory: { title: "Memory", icon: "brain" },
+  facts: { title: "Source-backed facts", icon: "brain" },
   schedule: { title: "Schedule", icon: "clock" },
   activity: { title: "Activity", icon: "pulse" },
   settings: { title: "Settings", icon: "gear" },
@@ -459,11 +460,41 @@ export class Panels {
   }
 
   // ================================================================== MEMORY
+  async render_facts(opts) {
+    const entity = opts.entity || "events";
+    const offset = opts.offset || 0;
+    const result = await api.get(`/api/facts/${encodeURIComponent(entity)}?offset=${offset}`);
+    const wrap = el("div", { class: "panel facts-panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Facts are looked up from their sources, not remembered from chat. Disconnected sources are shown as unverified." }));
+    wrap.append(el("div", { class: "chips" }, ["events", "threads", "commitments", "people"].map(key => btn(key, {
+      kind: key === entity ? "primary" : "soft", onClick: () => { this.opts = { entity: key }; this.refresh(); }
+    }))));
+    for (const source of result.sources || []) {
+      wrap.append(el("p", { class: "muted small", text: source.ok
+        ? `${source.source} · checked ${dateTime(source.fetched_at)}`
+        : `${source.source || entity}: ${source.error}` }));
+    }
+    if (result.unverified?.length) wrap.append(el("p", { role: "status", text: `${result.unverified.length} stored facts are unverified. Reconnect the source to check them.` }));
+    if (!result.facts.length) wrap.append(empty(result.complete ? "No matching facts in this slice." : "Current facts could not be verified.", "brain"));
+    for (const fact of result.facts) {
+      const p = fact.provenance || {};
+      const details = [fact.status, fact.start != null ? `${new Date(fact.start * 1000).toLocaleString(undefined, { timeZone: fact.tz })} · ${fact.tz}` : "",
+        fact.due != null ? `Due ${dateTime(fact.due)}` : ""].filter(Boolean).join(" · ");
+      wrap.append(section(fact.title || fact.subject || fact.text || fact.name,
+        el("p", { text: details }),
+        el("p", { class: "muted small", text: `Source: ${p.source} · checked ${dateTime(p.fetched_at)} · ${fact.id}` })));
+    }
+    if (offset > 0) wrap.append(btn("Previous facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: Math.max(0, offset - 50) }; this.refresh(); } }));
+    if (result.next_offset != null) wrap.append(btn("More facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: result.next_offset }; this.refresh(); } }));
+    return wrap;
+  }
+
   async render_memory(opts) {
     const q = opts.q || "";
     const kind = opts.kind || "";
     const { memories, stats } = await api.get(`/api/memories?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`);
     const wrap = el("div", { class: "panel" });
+    wrap.append(btn("Source-backed facts", { kind: "soft", icon: "brain", onClick: () => this.open("facts") }));
     wrap.append(el("p", { class: "panel-intro", text: `Everything Weebo remembers about you and your world: ${stats.total} memories. Weebo adds to this as you talk and tidies it up while it dreams.` }));
     const search = el("input", { class: "input", type: "search", placeholder: "Search memories…", value: q });
     search.addEventListener("input", debounce(() => { this.opts = { ...this.opts, q: search.value }; this.refresh(); }, 300));

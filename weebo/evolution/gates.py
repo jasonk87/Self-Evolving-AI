@@ -200,6 +200,9 @@ async def run_gates(worktree: Path, changed: list[str], test_command: str = "", 
            "PYTHONIOENCODING": "utf-8"}
     try:
         report.results.append(await personal_details(worktree, base_commit, personal_terms))
+        from .reliability import check_reliability
+        reliability = await check_reliability(worktree)
+        report.results.append(GateResult("Reliability", reliability["ok"], reliability["summary"], reliability["seconds"]))
 
         py_files = [f for f in changed if f.endswith(".py") and (worktree / f).exists()]
         if py_files:

@@ -22,6 +22,7 @@ from .events import EventBus
 from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
 from .evolution.evals import Evals
+from .facts.service import Facts
 from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
@@ -43,6 +44,7 @@ class WeeboApp:
         self.engine = CodexEngine(self.bus, self.settings.get("codex.binary"))
         self.diagnostics = Diagnostics(self.store)
         self.memory = Memory(self.store, self.bus)
+        self.facts = Facts(self)
         self.interactions = Interactions(self)
         self.conversations = ConversationManager(self)
         self.agents = AgentManager(self)
@@ -69,6 +71,7 @@ class WeeboApp:
     # ------------------------------------------------------------------ lifecycle
     async def start(self, with_engine: bool = True, with_background: bool = True) -> None:
         from .brain import builtin_tools  # noqa: F401  (registers Weebo's tools)
+        from .facts import tools as facts_tools  # noqa: F401
 
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
@@ -93,6 +96,10 @@ class WeeboApp:
         if with_engine:
             await self.engine.start()
         if with_background:
+            from .facts.calendar import GoogleCalendarSource
+            if GoogleCalendarSource.available():
+                self.facts.sync.register(GoogleCalendarSource(self.facts.repository))
+            self.facts.sync.start()
             self.scheduler.start()
             self.heartbeat.start()
             self.evolution.start()
@@ -108,7 +115,7 @@ class WeeboApp:
         for job in jobs:
             job.cancel()
         await asyncio.gather(*jobs, return_exceptions=True)
-        for component in (self.scheduler, self.heartbeat, self.evolution):
+        for component in (self.scheduler, self.heartbeat, self.evolution, self.facts.sync):
             await component.stop()
         await self.agents.shutdown()  # before the engine and the store they use go away
         await self.threads.stop()

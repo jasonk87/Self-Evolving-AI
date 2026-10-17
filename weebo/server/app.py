@@ -650,6 +650,21 @@ def create_app(weebo: WeeboApp) -> web.Application:
     r.add_delete("/api/memories/{id}", delete_memory)
     r.add_post("/api/memories/import-legacy", import_legacy)
 
+    # Source-backed facts use the same authentication boundary as every other API.
+    async def get_facts(request: web.Request) -> web.Response:
+        entity = request.match_info["entity"]
+        filters = {"limit": min(100, max(1, int(request.query.get("limit", 50)))),
+                   "offset": max(0, int(request.query.get("offset", 0)))}
+        if entity == "commitments":
+            filters["status"] = request.query.get("status", "open")
+        return _json(await weebo.facts.query(entity, **filters))
+
+    async def fact_changes(request: web.Request) -> web.Response:
+        return _json({"changes": weebo.facts.repository.changes_since(int(request.query.get("cursor", 0)))})
+
+    r.add_get("/api/facts/changes", fact_changes)
+    r.add_get("/api/facts/{entity}", get_facts)
+
     # ------------------------------------------------------------------ schedule
     async def list_reminders(request: web.Request) -> web.Response:
         return _json({"reminders": weebo.store.list_reminders(include_done=request.query.get("all") == "1")})

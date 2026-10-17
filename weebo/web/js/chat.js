@@ -89,7 +89,7 @@ export class ChatView {
     });
     this.scroller.addEventListener("scroll", () => {
       this.stick = this.scroller.scrollTop + this.scroller.clientHeight >= this.scroller.scrollHeight - 120;
-      if (this.scroller.scrollTop < 60 && this.hasMore && !this.loadingMore) this.loadOlder();
+      if (this.scroller.scrollTop < 60 && this.hasMore && !this.loadingMore && !this.loadingEvents) this.loadOlder();
     }, { passive: true });
     this.stick = true;
 
@@ -149,6 +149,8 @@ export class ChatView {
   // ------------------------------------------------------------------ loading
   async open(convId, { focus = true, refresh = false } = {}) {
     const generation = ++this.loadGeneration;
+    let settleLoad;
+    this.loadingDone = new Promise(resolve => { settleLoad = resolve; });
     // A refresh (after reconnecting) catches up the chat on screen in place: it stays as it is until the
     // snapshot arrives (and if that fails), and keeps its nodes, so scroll position and open items survive.
     refresh = refresh && convId === this.convId;
@@ -208,15 +210,17 @@ export class ChatView {
       // the next reconnect tries again.
       if (!refresh) toast("Couldn't open that chat", err.message, { kind: "error" });
     } finally {
-      if (this.loadGeneration === generation) {
-        const events = this.loadingEvents;
-        this.loadingEvents = null;
-        this.root.classList.remove("loading");
-        this.render();  // Build work-item nodes before replaying command-output deltas.
-        // The snapshot already contains events up to its watermark. Replay only
-        // later events, including deltas, so text is neither lost nor duplicated.
-        for (const [type, data] of events) this.receiveEvent(type, data);
-      }
+      try {
+        if (this.loadGeneration === generation) {
+          const events = this.loadingEvents;
+          this.loadingEvents = null;
+          this.root.classList.remove("loading");
+          this.render();  // Build work-item nodes before replaying command-output deltas.
+          // The snapshot already contains events up to its watermark. Replay only
+          // later events, including deltas, so text is neither lost nor duplicated.
+          for (const [type, data] of events) this.receiveEvent(type, data);
+        }
+      } finally { settleLoad(); }
     }
     this.setReadOnly();
     this._suggestKey = null;
@@ -242,6 +246,13 @@ export class ChatView {
   }
 
   async loadOlder() {
+    const convId = this.convId;
+    // An explicit history request must survive a concurrent reconnect refresh.
+    // Automatic scrolling during loading is ignored by the scroll handler.
+    while (this.loadingEvents && this.loadingDone) {
+      await this.loadingDone;
+      if (this.convId !== convId) return;
+    }
     const generation = this.loadGeneration;
     const first = this.messages[0];
     if (!first || this.loadingMore || this.loadingEvents) return;
@@ -521,7 +532,18 @@ export class ChatView {
   }
 
   keepBottom(force = false) {
-    if (force || this.stick) requestAnimationFrame(() => { this.scroller.scrollTop = this.scroller.scrollHeight; });
+    if (force) {
+      // Opening a conversation must finish at the bottom before callers can
+      // paginate. A deferred frame leaves a window for top-of-list scroll events.
+      this.stick = true;
+      this.scroller.scrollTop = this.scroller.scrollHeight;
+    }
+    if (this.stick) {
+      const generation = this.loadGeneration;
+      requestAnimationFrame(() => {
+        if (generation === this.loadGeneration && this.stick) this.scroller.scrollTop = this.scroller.scrollHeight;
+      });
+    }
   }
 
   ctx() {

@@ -12,12 +12,13 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
 from . import paths
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 V3_SCHEMA = """
 CREATE TABLE IF NOT EXISTS eval_cases (
@@ -291,12 +292,30 @@ class Store:
                 self._conn.executescript(ROUTINE_SCHEMA)
             if version < 3:
                 self._conn.executescript(V3_SCHEMA)
+            if version < 4:
+                from .facts.schema import FACTS_SCHEMA
+                self._conn.executescript(FACTS_SCHEMA)
             if version < SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    @contextmanager
+    def transaction(self):
+        """Atomic synchronous work, including nested transactions. Never await inside."""
+        with self._lock:
+            name = "tx_" + uuid.uuid4().hex
+            self._conn.execute(f"SAVEPOINT {name}")
+            try:
+                yield self
+            except BaseException:
+                self._conn.execute(f"ROLLBACK TO {name}")
+                self._conn.execute(f"RELEASE {name}")
+                raise
+            else:
+                self._conn.execute(f"RELEASE {name}")
 
     def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
         if row is None:

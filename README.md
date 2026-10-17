@@ -6,6 +6,46 @@ and upgrades its own code safely.
 
 <p align="center"><img src="weebo/web/icon.svg" width="96" alt="Weebo"></p>
 
+## Weebo 3 rollout: facts foundation
+
+The chief-of-staff/team upgrade is being delivered in ordered, tested slices.
+The first slice adds the durable facts foundation; **persistent bots and the
+remaining Weebo 3 phases are not shipped yet**. The delivery ledger is
+[weebo/WEEBO3_PLAN.md](weebo/WEEBO3_PLAN.md).
+
+- **Source-backed facts:** events, email-thread records, people and commitments
+  have provenance, freshness metadata and a durable change log in SQLite. The
+  migration preserves existing conversations, memories and settings.
+- **Calendar sync:** an existing Google Calendar sign-in can feed incremental,
+  paginated sync. Expired sync tokens trigger reconciliation without deleting
+  change history. No new OAuth flow, credential adoption or scope grant is
+  initiated by this service. Mail adapters and ChatGPT-app onboarding are still
+  pending; an absent source is explicitly unavailable, not an empty inbox.
+- **Fresh tools:** `facts_query`, `facts_changes_since`, `commitments_list`,
+  `commitment_add` and `commitment_update`. Stale facts are re-fetched; a failure
+  excludes them from verified results. Open-item pointers appear in turn context,
+  and facts lookup receipts are isolated by turn. User-owned commitments cannot
+  be created or changed by an autonomous turn.
+- **Inspect the source:** Memory → Source-backed facts shows verified records,
+  where they came from and when they were checked. Unavailable sources are
+  clearly distinguished from an empty result.
+- **Deterministic time math:** DST-aware local days, ambiguous/nonexistent local
+  times, overlaps, back-to-back meetings, due items and cross-timezone travel
+  windows. Travel time remains unknown without a directions source.
+- **Change dependencies:** moved/cancelled/changed facts atomically invalidate
+  dependent artifacts; builders can regenerate them from the current records.
+- **Mandatory reliability gate:** five deterministic scenarios run independently
+  of model budgets and the optional behavior-eval setting. The running version
+  supplies the test source, so a candidate cannot pass by deleting its suite.
+  Factual corrections captured as evals also create reliability incidents.
+
+New `facts.*` settings (TTL, refresh interval and timeout) are validated and
+user-gated. Existing model settings and keys are unchanged. **Still pending in
+Phase 1:** enforced pre-publication claim checking/fast-tier review, integration
+action read-back verification, and full email/app ingestion. The grounding
+instructions and receipts are groundwork, not a claim that every free-form
+model answer is already fact-checked.
+
 ## Quick start
 
 1. **Install Codex and sign in with ChatGPT.** Either the Codex desktop app, or `npm i -g @openai/codex` then
