@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import webbrowser
 from datetime import datetime
 from typing import Any
@@ -153,25 +154,38 @@ async def cancel_reminder(ctx: ToolContext, reminder_id: str) -> ToolResult:
     "start_agent",
     "Launch a background Codex agent for a long or multi-step job. Returns immediately with a task id; the agent works "
     "in parallel and its report is delivered to you automatically when it finishes. Give complete, self-contained "
-    "instructions: the agent does not see this conversation.",
+    "instructions: the agent does not see this conversation. For follow-up work on a job an agent already did (fix "
+    "what it found, extend or redo part of its result), pass continue_agent with that agent's id: the new agent "
+    "picks up in the same session and remembers the job, so the instructions can be just the follow-up.",
     {
         "properties": {
             "title": {"type": "string", "description": "Short name shown to the user, e.g. 'Build snake game'."},
             "instructions": {"type": "string", "description": "Full task description with goals, constraints and where to work."},
             "cwd": {"type": "string", "description": "Absolute working directory. Defaults to Weebo's workspace."},
             "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh"]},
+            "continue_agent": {"type": "string", "description": "Id of a finished agent whose work this continues "
+                               "(it works where that agent did). Leave out for unrelated jobs."},
         },
         "required": ["title", "instructions"],
     },
 )
-async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str = "", effort: str = "") -> ToolResult:
+async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str = "", effort: str = "",
+                      continue_agent: str = "") -> ToolResult:
+    agents = ctx.app.agents
+    if continue_agent and continue_agent in agents.runs:  # still at it: tell it rather than start a second one
+        try:
+            await agents.message(continue_agent, instructions)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        return ToolResult(f"Agent {continue_agent} is still working on that, so I passed this on to it instead.")
     try:
-        task = await ctx.app.agents.start(title, instructions, cwd=cwd or None, effort=effort or None,
-                                          conversation_id=ctx.conversation_id)
+        task = await agents.start(title, instructions, cwd=cwd or None, effort=effort or None,
+                                  conversation_id=ctx.conversation_id, continue_from=continue_agent or None)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
     position = "starting now" if task["status"] == "running" else "queued (other agents are busy)"
-    return ToolResult(f"Agent {task['id']} \"{task['title']}\" is {position} in {task['cwd']}.")
+    picks_up = f", picking up where {continue_agent} left off," if continue_agent else ""
+    return ToolResult(f"Agent {task['id']} \"{task['title']}\" is {position}{picks_up} in {task['cwd']}.")
 
 
 @registry.register(
@@ -192,6 +206,10 @@ async def message_agent(ctx: ToolContext, task_id: str, message: str) -> ToolRes
     try:
         await ctx.app.agents.message(task_id, message)
     except ValueError as exc:
+        task = ctx.app.store.get_task(task_id)
+        if task and task["kind"] == "agent" and task["status"] not in ("queued", "running"):
+            raise ToolError(f"Agent {task_id} has finished ({task['status']}). To give it more to do on the same job, "
+                            f"use start_agent with continue_agent={task_id}: it picks up where it left off.") from exc
         raise ToolError(str(exc)) from exc
     return ToolResult(f"Sent to {task_id}.")
 
@@ -356,29 +374,31 @@ async def open_in_browser(ctx: ToolContext, url: str) -> ToolResult:
     return ToolResult("Opened." if opened else "Could not open a browser on this machine.", success=bool(opened))
 
 
-def _legacy_description() -> str:
-    from ..legacy.bridge import LegacyBridge
+def _integrations_description() -> str:
+    from ..integrations import Integrations
+    # Without what's set up on this machine: a Codex thread keeps the tool descriptions it started with, so adding
+    # an API key must not mean a new chat thread. An integration that isn't set up says what it needs when called.
     return (
-        "Use one of Weebo 1.x's built-in abilities (they run on Codex too). Prefer your own tools when they do the "
-        "job; use these for: \n" + LegacyBridge.describe_catalog()
+        "Use one of Weebo's integrations (the user's own keys and accounts). Prefer your own tools when they do the "
+        "job; use these for: \n" + Integrations.describe_catalog(availability=False)
     )
 
 
 @registry.register(
-    "weebo1_tool",
-    _legacy_description,
+    "use_integration",
+    _integrations_description,
     {
         "properties": {
-            "name": {"type": "string", "description": "Tool name from the list."},
-            "arguments": {"type": "object", "description": "Keyword arguments for the tool."},
+            "name": {"type": "string", "description": "Integration name from the list."},
+            "arguments": {"type": "object", "description": "Keyword arguments for the integration."},
         },
         "required": ["name"],
     },
     scopes=("chat", "agent"),
 )
-async def weebo1_tool(ctx: ToolContext, name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
-    text, success, extras = await ctx.app.legacy.run(name, arguments or {}, conversation_id=ctx.conversation_id,
-                                                     task_id=ctx.task_id)
+async def use_integration(ctx: ToolContext, name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
+    text, success, extras = await ctx.app.integrations.run(name, arguments or {}, conversation_id=ctx.conversation_id,
+                                                           task_id=ctx.task_id)
     if ctx.conversation_id and (extras.get("html") or extras.get("images")):
         kind = "widget" if extras.get("html") else "images"
         message = ctx.app.store.add_message(ctx.conversation_id, "assistant", "", kind=kind,
@@ -392,28 +412,255 @@ async def weebo_status(ctx: ToolContext) -> ToolResult:
     return ToolResult(ctx.app.status_text())
 
 
-SAFE_SETTING_PREFIXES = ("voice.", "ui.", "user.", "autonomy.daily_brief", "autonomy.dream", "autonomy.self_audit",
-                         "autonomy.quiet_hours", "autonomy.proactive", "agents.max_parallel", "codex.chat_effort",
-                         "codex.agent_effort", "codex.fast_mode")
+# What a turn Weebo started itself (a routine, a brief, an agent's report) may change: everyday preferences. Anything
+# else changes only because the user asked in their own message, since in Weebo's own turns an agent's report or a
+# web page could have put the idea there.
+EVERYDAY_SETTINGS = ("voice.", "ui.", "user.", "autonomy.daily_brief", "autonomy.dream", "autonomy.quiet_hours",
+                     "autonomy.proactive", "codex.chat_effort", "codex.agent_effort", "codex.fast_mode")
+# Of those the user may change, the ones that loosen Weebo's own safety are written to the journal.
+SENSITIVE_SETTINGS = ("evolution.", "evals.", "facts.", "autonomy.level", "autonomy.usage_ceiling_percent",
+                      "autonomy.max_background_turns_per_day", "server.", "codex.binary", "chat.delegate_work",
+                      "agents.auto_followup")
+
+
+def _flat_settings(changes: dict[str, Any]) -> dict[str, Any]:
+    """Dotted keys exactly as Settings.update reads the patch (it accepts nested sections too)."""
+    from ..config import DEFAULTS, _flatten
+
+    flat: dict[str, Any] = {}
+    for key, value in changes.items():
+        if isinstance(value, dict) and key in DEFAULTS:
+            flat.update(_flatten(value, key + "."))
+        else:
+            flat[key] = value
+    return flat
+
+
+def asked_by_user(ctx: ToolContext) -> bool:
+    """True in a turn the user started with their own message (not a routine, report, brief or agent)."""
+    return ctx.trigger == "user" and not ctx.task_id
+
+
+def _need_user(ctx: ToolContext, what: str) -> None:
+    if not asked_by_user(ctx):
+        raise ToolError(f"Only the user can ask for {what}, in their own message. Tell them what you'd do and let "
+                        "them say go.")
 
 
 @registry.register(
     "update_settings",
-    "Change Weebo settings when the user asks (e.g. {'voice.speak_replies': true, 'autonomy.daily_brief_time': '07:45'}). "
-    "Safety-critical settings (autonomy level, evolution mode, server) can only be changed by the user in Settings.",
+    "Change Weebo's settings when the user asks, e.g. {'voice.speak_replies': true, 'evolution.mode': 'auto_merge', "
+    "'agents.max_parallel': 5}. Use dotted keys from weebo_status / the Settings page. Beyond everyday preferences "
+    "(voice, ui, name, brief and quiet hours, effort), settings change only when the user asked in their own message.",
     {"properties": {"changes": {"type": "object", "description": "Map of dotted setting keys to new values."}},
      "required": ["changes"]},
 )
 async def update_settings(ctx: ToolContext, changes: dict[str, Any]) -> ToolResult:
     from ..config import SettingsError
 
-    blocked = [k for k in changes if not k.startswith(SAFE_SETTING_PREFIXES)]
-    if blocked:
-        raise ToolError(f"These need the user to change them in Settings: {', '.join(blocked)}")
+    if not isinstance(changes, dict) or not changes:
+        raise ToolError("Pass the settings to change as {\"dotted.key\": value}.")
+    flat = _flat_settings(changes)
+    if not asked_by_user(ctx):
+        held = [k for k in flat if not k.startswith(EVERYDAY_SETTINGS)]
+        if held:
+            _need_user(ctx, "changes to " + ", ".join(held))
+    sensitive = [k for k in flat if k.startswith(SENSITIVE_SETTINGS)]
     try:
-        changed = ctx.app.settings.update(changes)
+        changed = ctx.app.settings.update(flat)
     except SettingsError as exc:
         raise ToolError(str(exc)) from exc
     if not changed:
         return ToolResult("Nothing changed (already set).")
+    if sensitive:
+        ctx.app.store.journal("settings", "Changed at the user's request in chat",
+                              ", ".join(f"{k}={v}" for k, v in changed.items()))
     return ToolResult("Updated: " + ", ".join(f"{k}={v}" for k, v in changed.items()))
+
+
+# ---------------------------------------------------------------- upgrades, from the chat
+REJECTABLE = ("ready", "proposed", "declined", "vetting", "failed", "conflict", "rolled_back", "queued")
+
+def _upgrade_brief(ctx: ToolContext, proposal: dict[str, Any]) -> str:
+    meta = proposal.get("meta") or {}
+    lines = [f"{proposal['id']} \"{proposal['title']}\": {_evolution_state(ctx, proposal)}"]
+    governance = meta.get("governance") or {}
+    if governance:
+        lines.append("Can merge on its own: yes." if governance.get("autonomous")
+                     else f"Needs the user's OK to merge: {governance.get('why') or 'it touches core code'}")
+    if proposal.get("diff_stat"):
+        lines.append("Changes: " + proposal["diff_stat"].splitlines()[-1].strip())
+    try:
+        report = json.loads(proposal.get("gate_report") or "{}")
+    except json.JSONDecodeError:
+        report = {}
+    failing = [r["name"] for r in report.get("results") or [] if not r.get("ok") and not r.get("skipped")]
+    if report:
+        lines.append("Checks: all passed." if not failing else "Checks that failed or need a look: " + ", ".join(failing))
+    if meta.get("review_blocking"):
+        lines.append("Code review: found blocking issues.")
+    return "\n".join(lines)
+
+
+@registry.register(
+    "show_upgrade",
+    "Bring one of your self-upgrades in front of the user: its card (status, checks, review, the diff, and buttons) "
+    "appears at the bottom of the chat, and you get a summary to talk about.",
+    {"properties": {"proposal_id": {"type": "string"}}, "required": ["proposal_id"]},
+)
+async def show_upgrade(ctx: ToolContext, proposal_id: str) -> ToolResult:
+    from ..evolution.engine import EvolutionError
+
+    try:
+        proposal = ctx.app.evolution.present(proposal_id, ctx.conversation_id or ctx.app.conversations.main_id())
+    except EvolutionError as exc:
+        raise ToolError(str(exc)) from exc
+    return ToolResult(_upgrade_brief(ctx, proposal) + "\n(The card is in the chat now.)")
+
+
+@registry.register(
+    "build_upgrade",
+    "Build (or rebuild) a self-upgrade the user wants: an idea waiting for a go-ahead, one the Council declined, or one "
+    "that failed or conflicts and should be tried again on the latest code.",
+    {"properties": {"proposal_id": {"type": "string"}}, "required": ["proposal_id"]},
+)
+async def build_upgrade(ctx: ToolContext, proposal_id: str) -> ToolResult:
+    from ..evolution.engine import EvolutionError
+
+    _need_user(ctx, "a build")
+    try:
+        proposal = await ctx.app.evolution.approve(proposal_id)
+    except EvolutionError as exc:
+        raise ToolError(str(exc)) from exc
+    return ToolResult(f"{proposal['id']} \"{proposal['title']}\": {_evolution_state(ctx, proposal)}")
+
+
+@registry.register(
+    "reject_upgrade",
+    "Set a self-upgrade aside for good when the user doesn't want it.",
+    {"properties": {"proposal_id": {"type": "string"}}, "required": ["proposal_id"]},
+)
+async def reject_upgrade(ctx: ToolContext, proposal_id: str) -> ToolResult:
+    from ..evolution.engine import EvolutionError
+
+    _need_user(ctx, "rejecting an upgrade")
+    proposal = ctx.app.store.get_proposal(proposal_id)
+    if proposal is None:
+        raise ToolError(f"No upgrade {proposal_id}.")
+    if proposal["status"] == "merged":
+        raise ToolError("It's already merged and live. To undo it, roll it back (its card or the Evolution panel).")
+    if proposal["status"] not in REJECTABLE or proposal_id == ctx.app.evolution.current:
+        raise ToolError(f"It can't be set aside while it is {proposal['status']}.")
+    try:
+        await ctx.app.evolution.reject(proposal_id)
+    except EvolutionError as exc:
+        raise ToolError(str(exc)) from exc
+    return ToolResult(f"Rejected {proposal_id}.")
+
+
+@registry.register(
+    "merge_upgrades",
+    "Merge self-upgrades into Weebo when the user tells you to (\"merge it\", \"merge them all\"). Pass their ids, or "
+    "all_ready=true for every upgrade that is ready. They merge one after another; if any changes Python code, Weebo "
+    "restarts once at the end (right after this reply) and then tells the user in this chat whether they're live. "
+    "Say so in your reply.",
+    {"properties": {"proposal_ids": {"type": "array", "items": {"type": "string"}},
+                    "all_ready": {"type": "boolean"}}},
+)
+async def merge_upgrades(ctx: ToolContext, proposal_ids: list[str] | None = None, all_ready: bool = False) -> ToolResult:
+    _need_user(ctx, "a merge")
+    ids = list(proposal_ids or [])
+    if all_ready:
+        ids += [p["id"] for p in ctx.app.store.list_proposals(limit=50, statuses=("ready",))][::-1]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise ToolError("Nothing to merge: no upgrade is ready." if all_ready else "Which upgrades? Pass their ids.")
+    conv_id = ctx.conversation_id or ctx.app.conversations.main_id()
+    result = await ctx.app.evolution.merge_many(ids, approved_by="user in chat", report_to=conv_id)
+    titles = {p["id"]: p["title"] for p in (ctx.app.store.get_proposal(i) for i in ids) if p}
+    lines = []
+    if result["merged"]:
+        lines.append("Merged: " + "; ".join(titles.get(i, i) for i in result["merged"]) + ".")
+    if result["problem"]:
+        problem = result["problem"]
+        lines.append(f"Stopped at {titles.get(problem['proposal_id'], problem['proposal_id'])}: {problem['error']}")
+    if result["skipped"]:
+        lines.append("Not merged (stopped before them): " + "; ".join(titles.get(i, i) for i in result["skipped"]) + ".")
+    if result["restarting"] == "after_build":
+        lines.append("An upgrade build is running, so Weebo restarts to load the new code as soon as it finishes, "
+                     "then reports back in this chat.")
+    elif result["restarting"]:
+        lines.append("Weebo restarts right after this reply to load the new code, then reports back in this chat.")
+    elif result["merged"]:
+        lines.append("No restart needed: they're live now.")
+    return ToolResult(" ".join(lines), success=bool(result["merged"]))
+
+
+@registry.register(
+    "restart_weebo",
+    "Restart Weebo when the user asks (to load new code or recover). Waits for this reply to finish, and for any "
+    "running upgrade build.",
+)
+async def restart_weebo(ctx: ToolContext) -> ToolResult:
+    _need_user(ctx, "a restart")
+    evolution = ctx.app.evolution
+    if evolution.current or not evolution._queue.empty():
+        evolution.restart_after_build = "Restart requested in chat"
+        return ToolResult("A build is running; Weebo restarts as soon as it finishes.")
+    conv_id = ctx.conversation_id or ctx.app.conversations.main_id()
+    evolution._restart_task = asyncio.create_task(evolution._restart_when_quiet(conv_id,
+                                                                                reason="Restart requested in chat"))
+    return ToolResult("Restarting right after this reply.")
+
+
+# ---------------------------------------------------------------- keeping up in one long chat
+@registry.register(
+    "search_history",
+    "Look back through everything said in the chat (and older archived chats) and what agents reported, for things "
+    "that are no longer in your context: \"what did we decide about the trip\", \"what did the agent find\". "
+    "Use a few distinctive words.",
+    {"properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+     "required": ["query"]},
+)
+async def search_history(ctx: ToolContext, query: str, limit: int = 8) -> ToolResult:
+    from ..store import search_terms
+
+    store = ctx.app.store
+    if not search_terms(query):
+        raise ToolError("Search with a few distinctive words (names, places, things), not just common ones.")
+    limit = max(1, min(int(limit or 8), 20))
+    rows, tasks = store.search_messages(query, limit=limit), store.search_tasks(query, limit=4)
+    lines = []
+    if not rows and not tasks:  # nothing has every word: the closest matches, most words first
+        rows, tasks = store.search_messages(query, limit=limit, every=False), store.search_tasks(query, 4, every=False)
+        if not rows and not tasks:
+            return ToolResult(f"Nothing in the history mentions any of: {query}. Try different words.")
+        lines.append(f"Nothing mentions all of \"{query}\"; the closest matches:")
+    user = ctx.app.settings.get("user.name") or "User"
+    for row in reversed(rows):
+        when = datetime.fromtimestamp(row["created_at"]).strftime("%b %d %I:%M %p")
+        who = user if row["role"] == "user" else "Weebo"
+        where = "" if row["conversation_id"] == ctx.conversation_id else f" (in “{row['conversation_title']}”)"
+        lines.append(f"[{when}]{where} {who}: {row['content'][:500]}")
+    for task in tasks:
+        when = datetime.fromtimestamp(task["created_at"]).strftime("%b %d")
+        lines.append(f"[{when}] Agent {task['id']} “{task['title']}” ({task['status']}): {(task['summary'] or '')[:600]}")
+    return ToolResult("\n".join(lines))
+
+
+@registry.register(
+    "offer_replies",
+    "Offer the user up to 4 short tap-to-send replies under your answer, when the obvious next steps are clear "
+    "(\"I'll check with the seller tonight\", \"Merge them\", \"Not now\"). Each under 40 characters, written as "
+    "the user would say it. Call it once, alongside your final answer.",
+    {"properties": {"replies": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}, "required": ["replies"]},
+)
+async def offer_replies(ctx: ToolContext, replies: list[str]) -> ToolResult:
+    if not ctx.conversation_id:
+        raise ToolError("Replies can only be offered in a chat.")
+    clean = [r.strip()[:60] for r in replies if isinstance(r, str) and r.strip()][:4]
+    turn = ctx.app.conversations.session(ctx.conversation_id).turn
+    if turn is None or not clean:
+        raise ToolError("Nothing to offer.")
+    turn.suggestions = clean
+    return ToolResult("They'll show under your answer.")

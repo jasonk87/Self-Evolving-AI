@@ -16,7 +16,7 @@ def chat_status(proposal: dict) -> dict:
         "queued": "Queued for building",
         "building": "Building the change",
         "checking": "Verifying the change",
-        "ready": "Ready for review; awaiting Jason's approval to merge",
+        "ready": "Ready for review; awaiting your approval to merge",
         "merging": "Merging the change",
         "merged": "Merged",
         "failed": "Build or verification failed",
@@ -27,14 +27,15 @@ def chat_status(proposal: dict) -> dict:
     }
     text = labels.get(status, status.replace("_", " ").capitalize())
     if status == "checking":
-        text = {"testing": "Running verification tests", "reviewing": "Reviewing the code"}.get(meta.get("stage"), text)
+        text = {"testing": "Running verification tests", "reviewing": "Reviewing the code",
+                "evaluating": "Rehearsing real conversations"}.get(meta.get("stage"), text)
     if status == "merged" and meta.get("verified_at"):
         text = "Merged and running; startup verified"
     if status == "merged":
-        text += "; merged automatically under the existing policy" if meta.get("automatic") else "; Jason approved the merge"
+        text += "; merged automatically under the existing policy" if meta.get("automatic") else "; you approved the merge"
     decision = ""
     if council.get("approved") is True:
-        decision = "Council approved building; this is not Jason's approval to merge."
+        decision = "Council approved building; this is not your approval to merge."
     elif council.get("approved") is False:
         decision = "Council declined to build."
     elif council:

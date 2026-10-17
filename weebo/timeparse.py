@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
+import calendar
+import math
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 _UNITS = {
     "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
@@ -13,7 +16,7 @@ _UNITS = {
     "w": 604800, "week": 604800, "weeks": 604800,
 }
 _DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([a-z]+)")
-_CLOCK_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b")
+_CLOCK_RE = re.compile(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.?|p\.m\.?)?")
 _WORD_TIMES = {"noon": (12, 0), "midnight": (0, 0), "morning": (9, 0), "afternoon": (15, 0),
                "evening": (19, 0), "tonight": (20, 0)}
 _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -26,7 +29,9 @@ class TimeParseError(ValueError):
 
 
 def parse_duration(text: str) -> float | None:
-    text = text.lower().strip()
+    text = text.lower().strip().replace(" and ", " ").replace(",", " ")
+    if _DURATION_RE.sub("", text).strip():
+        return None
     total = 0.0
     matched = False
     for amount, unit in _DURATION_RE.findall(text):
@@ -34,41 +39,67 @@ def parse_duration(text: str) -> float | None:
             return None
         total += float(amount) * _UNITS[unit]
         matched = True
-    return total if matched else None
+    return total if matched and math.isfinite(total) else None
 
 
-def parse_when(text: str, now: datetime | None = None) -> datetime:
-    """Parse ``text`` into a local naive datetime in the future."""
-    now = now or datetime.now()
+def zone(name: str = "") -> ZoneInfo | None:
+    """An explicit user zone, or the operating system's local time when unset."""
+    return ZoneInfo(name) if name else None
+
+
+def _valid_wall_time(value: datetime) -> datetime:
+    # A nonexistent spring-forward wall time must not silently become a different appointment.
+    normalized = datetime.fromtimestamp(value.timestamp(), value.tzinfo)
+    if normalized.replace(tzinfo=None) != value.replace(tzinfo=None):
+        raise TimeParseError("That local time does not exist because the clocks change. Choose another time.")
+    return value
+
+
+def _upcoming_fold(value: datetime, now: datetime) -> datetime:
+    """During the repeated autumn hour, use its second occurrence if the first has already passed."""
+    later = value.replace(fold=1)
+    return later if value.timestamp() <= now.timestamp() < later.timestamp() else value
+
+
+def parse_when(text: str, now: datetime | None = None, timezone: str = "") -> datetime:
+    """Parse a reminder in the user's zone; relative durations measure elapsed time."""
+    now = now or datetime.now(zone(timezone))
+    if not isinstance(text, str):
+        raise TimeParseError("Reminder time must be text.")
     raw = (text or "").strip()
     if not raw:
         raise TimeParseError("Give a time like 'in 20 minutes', 'tomorrow 9am', or '2026-10-04T15:30'.")
     lowered = raw.lower().strip().rstrip(".")
 
-    iso = _parse_iso(raw)
+    iso = _parse_iso(raw, now.tzinfo)
     if iso is not None:
         return iso
 
     if lowered in ("now", "right now"):
-        return now + timedelta(seconds=5)
+        return datetime.fromtimestamp(now.timestamp() + 5, now.tzinfo)
 
     if lowered.startswith("in "):
         seconds = parse_duration(lowered[3:].replace(" and ", " ").replace(",", " "))
-        if seconds is None:
+        if seconds is None or seconds <= 0:
             raise TimeParseError(f"Couldn't understand the duration in '{raw}'.")
-        return now + timedelta(seconds=seconds)
+        try:
+            return datetime.fromtimestamp(now.timestamp() + seconds, now.tzinfo)
+        except (OverflowError, OSError, ValueError) as exc:
+            raise TimeParseError("That duration is too large.") from exc
 
     day_offset = 0
     rest = lowered
-    if rest.startswith("tomorrow"):
+    if re.match(r"^tomorrow\b", rest):
         day_offset, rest = 1, rest[len("tomorrow"):]
-    elif rest.startswith("today"):
+    elif re.match(r"^today\b", rest):
         rest = rest[len("today"):]
     weekday_target = None
+    next_week = False
     for index, name in enumerate(_WEEKDAYS):
         for prefix in (f"next {name}", name):
-            if rest.strip().startswith(prefix):
+            if re.match(rf"^{prefix}\b", rest.strip()):
                 weekday_target = index
+                next_week = prefix.startswith("next ")
                 rest = rest.strip()[len(prefix):]
                 break
         if weekday_target is not None:
@@ -79,15 +110,17 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
 
     hour, minute = None, 0
     for word, (h, m) in _WORD_TIMES.items():
-        if word in rest:
+        if word == rest:
             hour, minute = h, m
             break
     if hour is None:
-        match = _CLOCK_RE.search(rest)
+        match = _CLOCK_RE.fullmatch(rest)
         if match:
             hour = int(match.group(1))
             minute = int(match.group(2) or 0)
             meridiem = (match.group(3) or "").replace(".", "")
+            if meridiem and not 1 <= hour <= 12:
+                raise TimeParseError(f"'{raw}' is not a valid time of day.")
             if meridiem == "pm" and hour < 12:
                 hour += 12
             elif meridiem == "am" and hour == 12:
@@ -95,23 +128,24 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
             if hour > 23 or minute > 59:
                 raise TimeParseError(f"'{raw}' is not a valid time of day.")
     if hour is None:
-        if day_offset or weekday_target is not None:
+        if not rest and (day_offset or weekday_target is not None):
             hour, minute = 9, 0
         else:
             raise TimeParseError(f"Couldn't understand '{raw}'. Try 'in 20 minutes', 'tomorrow 9am' or an ISO time.")
 
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=day_offset)
+    target = _upcoming_fold(now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                            + timedelta(days=day_offset), now)
     if weekday_target is not None:
         delta = (weekday_target - now.weekday()) % 7
-        if delta == 0 and target <= now:
+        if delta == 0 and (target.timestamp() <= now.timestamp() or next_week):
             delta = 7
-        target = (now + timedelta(days=delta)).replace(hour=hour, minute=minute, second=0, microsecond=0)
-    elif day_offset == 0 and target <= now:
+        target = _upcoming_fold((now + timedelta(days=delta)).replace(hour=hour, minute=minute, second=0, microsecond=0), now)
+    elif day_offset == 0 and target.timestamp() <= now.timestamp() and not lowered.startswith("today"):
         target += timedelta(days=1)
-    return target
+    return _valid_wall_time(target)
 
 
-def _parse_iso(raw: str) -> datetime | None:
+def _parse_iso(raw: str, tz=None) -> datetime | None:
     candidate = raw.strip().replace("Z", "+00:00")
     for fmt in (None, "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
@@ -119,8 +153,8 @@ def _parse_iso(raw: str) -> datetime | None:
         except ValueError:
             continue
         if value.tzinfo is not None:
-            value = value.astimezone().replace(tzinfo=None)
-        return value
+            return value.astimezone(tz) if tz else value.astimezone().replace(tzinfo=None)
+        return _valid_wall_time(value.replace(tzinfo=tz))
     return None
 
 
@@ -149,15 +183,29 @@ def normalize_recurrence(text: str) -> str:
     )
 
 
-def next_occurrence(due_at: float, recurrence: str, now: float) -> float | None:
+def next_occurrence(due_at: float, recurrence: str, now: float, timezone: str = "",
+                    anchor_at: float | None = None) -> float | None:
     if not recurrence:
         return None
-    current = datetime.fromtimestamp(due_at)
-    now_dt = datetime.fromtimestamp(now)
+    tz = zone(timezone)
+    current = datetime.fromtimestamp(due_at, tz)
+    anchor = datetime.fromtimestamp(anchor_at if anchor_at is not None else due_at, tz)
+    now_dt = datetime.fromtimestamp(now, tz)
+    interval = 3600 if recurrence == "hourly" else None
+    if recurrence.startswith("every ") and recurrence.endswith("s"):
+        interval = int(recurrence[6:-1])
+    if interval is not None:
+        if interval <= 0:
+            return None
+        jumps = max(1, math.floor((now - due_at) / interval) + 1)
+        return due_at + jumps * interval
+    month_day = anchor.day
+    if recurrence in ("daily", "weekly", "weekdays"):
+        step = 7 if recurrence == "weekly" else 1
+        days = max(step, ((now_dt.date() - current.date()).days // step) * step)
+        current += timedelta(days=days - step)
     for _ in range(10000):
-        if recurrence == "hourly":
-            current += timedelta(hours=1)
-        elif recurrence == "daily":
+        if recurrence == "daily":
             current += timedelta(days=1)
         elif recurrence == "weekly":
             current += timedelta(weeks=1)
@@ -169,14 +217,17 @@ def next_occurrence(due_at: float, recurrence: str, now: float) -> float | None:
             month = current.month + 1
             year = current.year + (1 if month > 12 else 0)
             month = 1 if month > 12 else month
-            day = min(current.day, 28)
+            day = min(month_day, calendar.monthrange(year, month)[1])
             current = current.replace(year=year, month=month, day=day)
-        elif recurrence.startswith("every ") and recurrence.endswith("s"):
-            current += timedelta(seconds=int(recurrence[6:-1]))
         else:
             return None
-        if current > now_dt:
-            return current.timestamp()
+        current = current.replace(hour=anchor.hour, minute=anchor.minute, second=anchor.second,
+                                  microsecond=anchor.microsecond, fold=anchor.fold)
+        # timestamp normalizes nonexistent recurring wall times forward; the anchor restores the requested
+        # clock/day on the following occurrence (March after February, or the day after a DST gap).
+        candidate = current.timestamp()
+        if candidate > max(now, due_at):
+            return candidate
     return None
 
 

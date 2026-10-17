@@ -13,6 +13,7 @@ import re
 import threading
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import paths
 
@@ -43,12 +44,23 @@ DEFAULTS: dict[str, Any] = {
         "self_audit_min_hours_between": 24,
     },
     "agents": {"max_parallel": 3, "default_cwd": "", "max_minutes": 60, "auto_followup": True},
+    # The chat talks, remembers, plans and keeps track; real work (commands, files, research) goes to background
+    # agents, so chat turns run read-only. Off: the chat may do work itself, like an agent.
+    "chat": {"delegate_work": True},
     "evolution": {
         "mode": "build",  # off | propose | build | auto_merge
         "test_command": "",  # blank = built-in gate (pytest tests/weebo + syntax checks)
         "checkpoint_commits": True,  # save uncommitted work in a commit right before merging an upgrade
-        "protect_paths": ["weebo/evolution/", "weebo/supervisor.py"],
+        "protect_paths": ["weebo/evolution/", "weebo/supervisor.py"],  # never auto-merged (files, folders or globs)
     },
+    # Behavior checks rehearsed from real moments Weebo got wrong; upgrades to its brain/memory must not do worse.
+    "evals": {"enabled": True, "max_cases": 10},
+    # Semantic recall: a small local embedding model (pip install fastembed) alongside keyword search.
+    "memory": {"semantic": True},
+    "facts": {"ttl_seconds": 300, "sync_interval_seconds": 300, "sync_timeout_seconds": 30},
+    # Learned skills: suggested from repeated agent work; ones Weebo learned while dreaming that go unused this long are
+    # archived (0 = never). Skills saved in a chat are never archived automatically.
+    "skills": {"auto_learn": True, "prune_unused_days": 60},
     "voice": {"speak_replies": False, "voice_name": "", "rate": 1.05, "pitch": 1.25},
     "ui": {"companion": True, "reduce_motion": False},
     "user": {"name": "", "timezone": ""},
@@ -71,6 +83,11 @@ RANGES: dict[str, tuple[float, float]] = {
     "autonomy.self_audit_min_hours_between": (0, 24 * 30),
     "agents.max_parallel": (1, 12),
     "agents.max_minutes": (1, 24 * 60),
+    "evals.max_cases": (1, 50),
+    "facts.ttl_seconds": (30, 86400),
+    "facts.sync_interval_seconds": (30, 86400),
+    "facts.sync_timeout_seconds": (1, 120),
+    "skills.prune_unused_days": (0, 365),
     "voice.rate": (0.5, 2.0),
     "voice.pitch": (0.0, 2.0),
 }
@@ -112,15 +129,19 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
             return value.lower() == "true"
         raise SettingsError(f"{key} must be true or false")
     if isinstance(default, int):
+        if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+            raise SettingsError(f"{key} must be a whole number")
         try:
             number = int(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise SettingsError(f"{key} must be a whole number") from None
         value = number
     elif isinstance(default, float):
+        if isinstance(value, bool):
+            raise SettingsError(f"{key} must be a number")
         try:
             value = float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise SettingsError(f"{key} must be a number") from None
     elif isinstance(default, str):
         if not isinstance(value, str):
@@ -139,6 +160,11 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
         _validate_clock(key, value)
     if key == "server.tailnet_hostname" and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", value):
         raise SettingsError(f"{key} must be a lowercase name like 'weebo' (letters, digits, dashes)")
+    if key == "user.timezone" and value:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise SettingsError("user.timezone must be an IANA zone like America/Chicago") from None
     return value
 
 
@@ -185,9 +211,9 @@ class Settings:
             node[parts[-1]] = coerced
         return merged
 
-    def _save(self) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.replace(tmp, self._path)
 
     def all(self) -> dict[str, Any]:
@@ -204,6 +230,8 @@ class Settings:
 
     def update(self, patch: dict[str, Any]) -> dict[str, Any]:
         """Apply a nested or dotted patch. Returns the flat dict of changed keys."""
+        if not isinstance(patch, dict):
+            raise SettingsError("Settings changes must be a JSON object")
         flat_defaults = _flatten(DEFAULTS)
         flat_patch: dict[str, Any] = {}
         for key, value in patch.items():
@@ -220,14 +248,16 @@ class Settings:
                 coerced = _coerce(key, value, flat_defaults[key])
                 if current.get(key) != coerced:
                     changed[key] = coerced
+            candidate = copy.deepcopy(self._data)
             for key, value in changed.items():
-                node = self._data
+                node = candidate
                 parts = key.split(".")
                 for part in parts[:-1]:
                     node = node[part]
                 node[parts[-1]] = value
             if changed:
-                self._save()
+                self._save(candidate)
+                self._data = candidate
         if changed:
             for listener in list(self._listeners):
                 try:

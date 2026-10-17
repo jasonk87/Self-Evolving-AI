@@ -14,12 +14,16 @@ from .agents.manager import AgentManager
 from .brain.conversation import ConversationManager
 from .brain.interactions import Interactions
 from .brain.mind import Mind
+from .brain.threads import ThreadKeeper
 from .codex.engine import CodexEngine
 from .config import Settings
 from .diagnostics import Diagnostics
 from .events import EventBus
+from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
-from .legacy.bridge import LegacyBridge
+from .evolution.evals import Evals
+from .facts.service import Facts
+from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
 from .proactive.scheduler import Scheduler
@@ -40,15 +44,18 @@ class WeeboApp:
         self.engine = CodexEngine(self.bus, self.settings.get("codex.binary"))
         self.diagnostics = Diagnostics(self.store)
         self.memory = Memory(self.store, self.bus)
+        self.facts = Facts(self)
         self.interactions = Interactions(self)
         self.conversations = ConversationManager(self)
         self.agents = AgentManager(self)
+        self.threads = ThreadKeeper(self)
         self.scheduler = Scheduler(self)
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
         self.evolution = EvolutionEngine(self)
+        self.evals = Evals(self)
         self.skills = Skills(self)
-        self.legacy = LegacyBridge(self)
+        self.integrations = Integrations(self)
         self.remote = TailnetEndpoint(self)
         # Where the server actually listens (CLI flags can override the settings); set by server.main.
         self.bind_host: str = str(self.settings.get("server.host"))
@@ -58,13 +65,17 @@ class WeeboApp:
         self.exit_code = 0
         self.shutdown_event = asyncio.Event()
         self._restart_reason = ""
+        self._stopping = False
+        self._jobs: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self, with_engine: bool = True, with_background: bool = True) -> None:
         from .brain import builtin_tools  # noqa: F401  (registers Weebo's tools)
+        from .facts import tools as facts_tools  # noqa: F401
 
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
+        self.conversations.move_into_main()  # first: whatever is recovered below then reports to the main chat
         self.conversations.recover_after_restart()
         self.scheduler.recover_after_restart()
         self.agents.recover_after_restart()
@@ -73,6 +84,10 @@ class WeeboApp:
                 self.memory.import_legacy()
             except Exception as exc:
                 logger.warning("Legacy memory import failed: %s", exc)
+            try:  # copied now, so deleting the 1.x folder can't take the Google OAuth client file with it
+                gcalendar.credentials_path(adopt=True)
+            except OSError as exc:
+                logger.warning("Couldn't copy the Weebo 1.x Google credentials: %s", exc)
         self._infer_user_name()
         self.conversations.desk()
         self.skills.seed_defaults()
@@ -81,19 +96,46 @@ class WeeboApp:
         if with_engine:
             await self.engine.start()
         if with_background:
+            from .facts.calendar import GoogleCalendarSource
+            if GoogleCalendarSource.available():
+                self.facts.sync.register(GoogleCalendarSource(self.facts.repository))
+            self.facts.sync.start()
             self.scheduler.start()
             self.heartbeat.start()
             self.evolution.start()
-            self.legacy.start()
-            asyncio.create_task(self.remote.start(), name="tailnet")
+            self.memory.start_indexing(self.settings.get("memory.semantic"))
+            self._start_job(self.evals.detect_code_version(), "code-version")
+            self._start_job(self.remote.start(), "tailnet")
         self.store.journal("system", f"Weebo {__version__} started")
         self.agents._pump()  # Also handles an engine that was already ready at startup.
 
     async def stop(self) -> None:
-        for component in (self.scheduler, self.heartbeat, self.evolution):
+        self._stopping = True
+        jobs = list(self._jobs)
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
+        for component in (self.scheduler, self.heartbeat, self.evolution, self.facts.sync):
             await component.stop()
+        await self.agents.shutdown()  # before the engine and the store they use go away
+        await self.threads.stop()
         await self.engine.stop()
+        await self.bus.stop()
+        await asyncio.to_thread(self.memory.stop)  # joins the indexer thread; it reads the store we close next
         self.store.close()
+
+    def _start_job(self, coro: Any, name: str) -> None:
+        if self._stopping:
+            coro.close()
+            return
+        task = asyncio.create_task(coro, name=name)
+        self._jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    def _job_done(self, task: asyncio.Task) -> None:
+        self._jobs.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Background job %s failed: %r", task.get_name(), task.exception())
 
     def _infer_user_name(self) -> None:
         """If the user hasn't set a name but Weebo already remembers it, use their first name."""
@@ -116,15 +158,20 @@ class WeeboApp:
         asyncio.get_running_loop().call_later(1.5, self.shutdown_event.set)
 
     def _on_settings_changed(self, changed: dict[str, Any]) -> None:
+        if self._stopping:
+            return
         self.bus.publish_threadsafe("settings.updated", {"settings": self.settings.all(), "changed": changed})
         if "codex.binary" in changed:
             self.engine.binary_override = changed["codex.binary"]
-            asyncio.get_running_loop().create_task(self.engine.restart())
+            self._start_job(self.engine.restart(), "engine-restart")
         if "agents.max_parallel" in changed:
             self.agents._pump()
+        if "memory.semantic" in changed:
+            self.memory.start_indexing(changed["memory.semantic"])
 
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
-        if data.get("status") == "ready":
+        if not self._stopping and data.get("status") == "ready":
+            self.threads.on_engine_ready()  # before the pump: a continued agent may need a thread put away first
             self.agents._pump()
             await self.skills.sync_with_codex()
 
@@ -135,16 +182,18 @@ class WeeboApp:
         return note
 
     def count_background_turn(self, label: str) -> None:
+        from .timeparse import zone
         key = "bg_turns"
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(zone(self.settings.get("user.timezone"))).strftime("%Y-%m-%d")
         counts = self.store.kv_get(key, {}) or {}
         counts = {today: int(counts.get(today, 0)) + 1}
         self.store.kv_set(key, counts)
         logger.debug("background turn (%s): %s today", label, counts[today])
 
     def background_turns_today(self) -> int:
+        from .timeparse import zone
         counts = self.store.kv_get("bg_turns", {}) or {}
-        return int(counts.get(datetime.now().strftime("%Y-%m-%d"), 0))
+        return int(counts.get(datetime.now(zone(self.settings.get("user.timezone"))).strftime("%Y-%m-%d"), 0))
 
     def on_turn_finished(self, conv_id: str, turn: Any, status: str) -> None:
         mood = {"completed": "happy", "failed": "sad", "interrupted": "idle"}.get(status, "idle")
@@ -161,7 +210,7 @@ class WeeboApp:
             "uptime": time.time() - self.started_at,
             "engine": self.engine.snapshot(),
             "heartbeat": self.heartbeat.status(),
-            "legacy": self.legacy.snapshot(),
+            "integrations": self.integrations.snapshot(),
             "agents": {"running": len(self.agents.runs), "queued": len(self.agents.queue)},
             "active_turns": self.conversations.active_turns(),
             "memory": self.memory.stats(),
@@ -169,7 +218,9 @@ class WeeboApp:
                 "mode": self.settings.get("evolution.mode"),
                 "current": self.evolution.current,
                 "ready": len(self.store.list_proposals(limit=50, statuses=("ready",))),
+                "track_record": outcomes.stats(self),
             },
+            "evals": self.evals.stats(),
             "pending_interactions": self.interactions.list(),
             "workspace": str(paths.workspace_dir()),
             "project_root": str(paths.PROJECT_ROOT),
@@ -181,6 +232,7 @@ class WeeboApp:
         limits = engine.get("rateLimits") or {}
         primary = (limits.get("primary") or {}).get("usedPercent")
         account = engine.get("account") or {}
+        record, evals = snap["evolution"]["track_record"], snap["evals"]
         lines = [
             f"Weebo {snap['version']}, up {int(snap['uptime'] // 60)} min.",
             f"Codex engine {engine.get('version')} is {engine['status']}"
@@ -190,9 +242,13 @@ class WeeboApp:
             f"background turns today {snap['heartbeat']['background_turns_today']}"
             f"/{self.settings.get('autonomy.max_background_turns_per_day')}.",
             f"Agents: {snap['agents']['running']} running, {snap['agents']['queued']} queued.",
-            f"Memory: {snap['memory']['total']} memories. Skills: {len(self.skills.list())}.",
-            f"Self-evolution: mode {snap['evolution']['mode']}, {snap['evolution']['ready']} upgrade(s) waiting for review.",
-            f"Weebo 1.x tools: {snap['legacy']['status']} ({len(snap['legacy']['tools'])} available).",
+            f"Memory: {snap['memory']['total']} memories (recall: {snap['memory']['recall']}). "
+            f"Skills: {len(self.skills.list())}.",
+            f"Self-evolution: mode {snap['evolution']['mode']}, {snap['evolution']['ready']} upgrade(s) waiting for review. "
+            f"Track record: {record['merged']} merged, {record['held']} fixes held, {record['regressed']} came back, "
+            f"{record['rolled_back']} rolled back.",
+            f"Behavior checks: {evals['passing']}/{evals['checked']} passing ({evals['cases']} cases).",
+            f"Integrations: {self.integrations.ready_count()} of {len(snap['integrations']['tools'])} set up on this machine.",
         ]
         if snap["heartbeat"]["busy"]:
             lines.append(f"Currently busy with: {snap['heartbeat']['busy']}.")
@@ -200,7 +256,7 @@ class WeeboApp:
 
 
 def _load_dotenv() -> None:
-    """Expose the project's .env (Google search keys etc.) to Weebo 1.x integrations without overriding real env."""
+    """Expose the project's .env (Google search keys etc.) to the integrations without overriding real env."""
     env_file = paths.PROJECT_ROOT / ".env"
     if not env_file.exists():
         return

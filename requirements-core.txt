@@ -1,6 +1,7 @@
 requests
 aiohttp
 aiofiles
+tzdata; sys_platform == "win32"
 duckduckgo_search
 prompt_toolkit
 flask

@@ -22,6 +22,8 @@ class EventBus:
         self._ids = itertools.count(1)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._tasks: set[asyncio.Task] = set()
+        self._closed = False
+        self.sequence = 0
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -36,8 +38,12 @@ class EventBus:
         return unsubscribe
 
     def publish(self, topic: str, data: dict[str, Any] | None = None) -> None:
+        if self._closed:
+            return
+        self.sequence += 1
         payload = dict(data or {})
         payload.setdefault("ts", time.time())
+        payload["_seq"] = self.sequence
         for pattern, callback in list(self._subs.values()):
             if pattern != "*" and pattern != topic and not fnmatch.fnmatchcase(topic, pattern):
                 continue
@@ -52,9 +58,23 @@ class EventBus:
                 task.add_done_callback(self._task_done)
 
     def publish_threadsafe(self, topic: str, data: dict[str, Any] | None = None) -> None:
-        if self._loop is None:
+        if self._closed or self._loop is None or self._loop.is_closed():
             return
-        self._loop.call_soon_threadsafe(self.publish, topic, data)
+        try:
+            self._loop.call_soon_threadsafe(self.publish, topic, data)
+        except RuntimeError:
+            if not self._loop.is_closed():
+                raise
+
+    async def stop(self) -> None:
+        """Settle callbacks before their storage and other dependencies go away."""
+        self._closed = True
+        tasks = list(self._tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.difference_update(tasks)
+        self._subs.clear()
 
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

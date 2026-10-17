@@ -24,6 +24,9 @@ os.environ.setdefault("WEEBO_SKIP_LEGACY_IMPORT", "1")
 def data_dir(tmp_path, monkeypatch):
     path = tmp_path / "weebo_data"
     monkeypatch.setenv("WEEBO_DATA_DIR", str(path))
+    # Never look at the developer's real Weebo 1.x Google credentials in the checkout.
+    from weebo.integrations import gcalendar
+    monkeypatch.setattr(gcalendar, "_legacy_dirs", lambda: [])
     return path
 
 
@@ -48,6 +51,12 @@ class FakeEngine:
         self.reviews: list[dict[str, Any]] = []
         self._ids = itertools.count(1)
         self.on_turn = None  # optional async callback(engine, thread_id, turn_id, params)
+        self.archived: set[str] = set()  # threads put away in Codex's archive
+        self.archive_log: list[str] = []
+        self.released: list[str] = []
+        self.held: list[str] = []
+        self.listed: list[dict[str, Any]] = []
+        self.codex_threads: list[dict[str, Any]] = []  # what thread/list returns (the user's Codex thread list)
         self.binary_override = ""
 
     # --- surface used by Weebo -------------------------------------------------
@@ -57,8 +66,27 @@ class FakeEngine:
     async def wait_ready(self, timeout: float = 0) -> bool: return True
     async def ensure_ready(self, timeout: float = 0) -> None: ...
     async def set_skill_roots(self, roots) -> None: ...
-    async def set_thread_name(self, thread_id, name) -> None: ...
-    async def archive_thread(self, thread_id) -> None: self.loaded_threads.discard(thread_id)
+    async def set_thread_name(self, thread_id, name) -> bool: return True
+    async def thread_idle(self, thread_id) -> bool: return True
+    async def archive_thread(self, thread_id) -> bool:
+        self.loaded_threads.discard(thread_id)
+        self.archived.add(thread_id)
+        self.archive_log.append(thread_id)
+        return True
+
+    async def unarchive_thread(self, thread_id) -> bool:
+        was = thread_id in self.archived
+        self.archived.discard(thread_id)
+        return was
+
+    async def list_threads(self, **params):
+        self.listed.append(params)
+        return {"data": [t for t in self.codex_threads if t["id"] not in self.archived], "nextCursor": None}
+
+    def release_thread(self, thread_id, finished=True) -> None:
+        self.routes.pop(thread_id, None)
+        self.loaded_threads.discard(thread_id)
+        (self.released if finished else self.held).append(thread_id)  # held: its turn may still be running
     async def refresh_rate_limits(self): return self.rate_limits
     async def refresh_models(self): return self.models
 
@@ -91,6 +119,9 @@ class FakeEngine:
         return {"thread": {"id": thread_id}}
 
     async def resume_thread(self, thread_id, **params):
+        if thread_id in self.archived:  # as Codex does: an archived thread must be unarchived first
+            from weebo.codex.rpc import RpcError
+            raise RpcError(-32600, f"session {thread_id} is archived. Run `codex unarchive {thread_id}` first.")
         self.loaded_threads.add(thread_id)
         self.threads.append({"id": thread_id, "resumed": True, **params})
         return {"thread": {"id": thread_id}}
@@ -151,8 +182,7 @@ async def app(fake_engine):
     weebo.engine = fake_engine
     await weebo.start(with_engine=False, with_background=False)
     yield weebo
-    await weebo.evolution.stop()
-    weebo.store.close()
+    await weebo.stop()
 
 
 async def drain(cycles: int = 5) -> None:

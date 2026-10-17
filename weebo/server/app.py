@@ -29,12 +29,13 @@ from .. import __version__, log, paths
 from ..app import WeeboApp
 from ..config import SettingsError
 from ..evolution.engine import EvolutionError
+from ..evolution.evals import EvalError
 from ..memory.memory import MemoryError_
 from ..timeparse import TimeParseError
 
 logger = log.get("server")
 
-USER_ERRORS = (ValueError, SettingsError, EvolutionError, MemoryError_, TimeParseError, KeyError)
+USER_ERRORS = (ValueError, SettingsError, EvolutionError, EvalError, MemoryError_, TimeParseError, KeyError)
 IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 MAX_UPLOAD = 20 * 1024 * 1024
 
@@ -160,6 +161,7 @@ class Hub:
                     break
         finally:
             writer.cancel()
+            await asyncio.gather(writer, return_exceptions=True)
             self.clients.pop(ws, None)
             self.app.clients = len(self.clients)
         return ws
@@ -177,7 +179,7 @@ class Hub:
             message = json.loads(raw)
         except json.JSONDecodeError:
             return
-        if message.get("type") == "activity":
+        if isinstance(message, dict) and message.get("type") == "activity":
             self.app.heartbeat.touch()
 
     async def close_all(self) -> None:
@@ -373,6 +375,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "conversations": weebo.store.list_conversations(),
             "desk_id": weebo.conversations.desk()["id"],
             "tasks": weebo.store.list_tasks(limit=40),
+            "task_live": {task_id: weebo.agents.live(task_id) for task_id in weebo.agents.runs},
             "proposals": _slim_proposals(weebo.store.list_proposals(limit=60)),
             "notifications": weebo.store.list_notifications(limit=None, unread_only=True),
             "read_notification_ids": weebo.store.read_notification_ids(),
@@ -438,8 +441,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
         return _json({"settings": weebo.settings.all()})
 
     async def patch_settings(request: web.Request) -> web.Response:
-        body = await request.json()
-        changed = weebo.settings.update(body.get("changes") or body)
+        body = await _body(request)
+        changed = weebo.settings.update(body.get("changes", body))
         return _json({"settings": weebo.settings.all(), "changed": changed})
 
     async def engine_status(_: web.Request) -> web.Response:
@@ -490,6 +493,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
         if conv.get("unread"):
             conv = weebo.store.update_conversation(conv_id, unread=0, updated_at=conv["updated_at"])
         return _json({"conversation": conv, "messages": messages, "live": weebo.conversations.live_state(conv_id),
+                      "event_seq": weebo.bus.sequence,
                       "evolution_messages": weebo.store.list_proposal_messages(conv_id) if not before else []})
 
     async def patch_conversation(request: web.Request) -> web.Response:
@@ -512,12 +516,19 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     async def send_message(request: web.Request) -> web.Response:
         body = await _body(request)
+        text = body.get("text", "")
+        names = body.get("images", [])
+        if not isinstance(text, str):
+            raise ValueError("Message text must be a string.")
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise ValueError("Images must be a list of uploaded image names.")
         images = []
-        for name in body.get("images") or []:
-            candidate = (paths.uploads_dir() / Path(str(name)).name).resolve()
-            if candidate.parent == paths.uploads_dir().resolve() and candidate.is_file():
-                images.append(str(candidate))
-        message = await weebo.conversations.send(request.match_info["id"], body.get("text", ""), images)
+        for name in names:
+            candidate = (paths.uploads_dir() / name).resolve()
+            if candidate.parent != paths.uploads_dir().resolve() or not candidate.is_file():
+                raise ValueError("An attached image is no longer available. Please attach it again.")
+            images.append(str(candidate))
+        message = await weebo.conversations.send(request.match_info["id"], text, images)
         return _json({"message": message})
 
     async def interrupt(request: web.Request) -> web.Response:
@@ -570,7 +581,8 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     # ------------------------------------------------------------------ agents
     async def list_tasks(_: web.Request) -> web.Response:
-        return _json({"tasks": weebo.store.list_tasks(limit=80)})
+        return _json({"tasks": weebo.store.list_tasks(limit=80),
+                      "live": {task_id: weebo.agents.live(task_id) for task_id in weebo.agents.runs}})
 
     async def get_task(request: web.Request) -> web.Response:
         task_id = request.match_info["id"]
@@ -638,6 +650,21 @@ def create_app(weebo: WeeboApp) -> web.Application:
     r.add_delete("/api/memories/{id}", delete_memory)
     r.add_post("/api/memories/import-legacy", import_legacy)
 
+    # Source-backed facts use the same authentication boundary as every other API.
+    async def get_facts(request: web.Request) -> web.Response:
+        entity = request.match_info["entity"]
+        filters = {"limit": min(100, max(1, int(request.query.get("limit", 50)))),
+                   "offset": max(0, int(request.query.get("offset", 0)))}
+        if entity == "commitments":
+            filters["status"] = request.query.get("status", "open")
+        return _json(await weebo.facts.query(entity, **filters))
+
+    async def fact_changes(request: web.Request) -> web.Response:
+        return _json({"changes": weebo.facts.repository.changes_since(int(request.query.get("cursor", 0)))})
+
+    r.add_get("/api/facts/changes", fact_changes)
+    r.add_get("/api/facts/{entity}", get_facts)
+
     # ------------------------------------------------------------------ schedule
     async def list_reminders(request: web.Request) -> web.Response:
         return _json({"reminders": weebo.store.list_reminders(include_done=request.query.get("all") == "1")})
@@ -694,12 +721,41 @@ def create_app(weebo: WeeboApp) -> web.Application:
     async def delete_skill(request: web.Request) -> web.Response:
         return _json({"ok": await weebo.skills.delete(request.match_info["name"])})
 
+    async def list_evals(_: web.Request) -> web.Response:
+        return _json({"cases": weebo.store.list_eval_cases(None, limit=200), "stats": weebo.evals.stats(),
+                      "enabled": weebo.evals.enabled()})
+
+    async def add_eval(request: web.Request) -> web.Response:
+        body = await _body(request)
+        case = weebo.evals.add_case(str(body.get("prompt", "")), str(body.get("rubric", "")),
+                                    title=str(body.get("title", "")), source="user")
+        return _json({"case": case})
+
+    async def eval_action(request: web.Request) -> web.Response:
+        case_id, action = request.match_info["id"], request.match_info["action"]
+        if not weebo.store.get_eval_case(case_id):
+            raise web.HTTPNotFound()
+        if action == "retire":
+            return _json({"case": weebo.evals.retire(case_id)})
+        if action == "restore":
+            return _json({"case": weebo.store.update_eval_case(case_id, status="active")})
+        raise web.HTTPNotFound()
+
+    async def delete_eval(request: web.Request) -> web.Response:
+        ok = weebo.store.delete_eval_case(request.match_info["id"])
+        weebo.bus.publish("evals.updated", {})
+        return _json({"ok": ok})
+
     r.add_get("/api/proposals", list_proposals)
     r.add_post("/api/proposals", create_proposal)
     r.add_get("/api/proposals/{id}", get_proposal)
     r.add_post("/api/proposals/{id}/{action}", proposal_action)
     r.add_get("/api/skills", list_skills)
     r.add_delete("/api/skills/{name}", delete_skill)
+    r.add_get("/api/evals", list_evals)
+    r.add_post("/api/evals", add_eval)
+    r.add_post("/api/evals/{id}/{action}", eval_action)
+    r.add_delete("/api/evals/{id}", delete_eval)
 
     # ------------------------------------------------------------------ notifications
     async def list_notifications(request: web.Request) -> web.Response:

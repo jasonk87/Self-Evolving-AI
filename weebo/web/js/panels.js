@@ -10,9 +10,12 @@ const PANELS = {
   agents: { title: "Agents", icon: "bot" },
   evolution: { title: "Evolution", icon: "dna" },
   memory: { title: "Memory", icon: "brain" },
+  facts: { title: "Source-backed facts", icon: "brain" },
   schedule: { title: "Schedule", icon: "clock" },
   activity: { title: "Activity", icon: "pulse" },
   settings: { title: "Settings", icon: "gear" },
+  more: { title: "More", icon: "menu" },
+  archive: { title: "Older chats", icon: "inbox" },
 };
 
 const STATUS_LABEL = {
@@ -29,7 +32,7 @@ function proposalStep(p) {
   if (p.status === "vetting") return "The Council is deciding whether it's worth building…";
   if (p.status === "declined") return `Council declined: ${council.reason || "no reason given"}`;
   if (["building", "checking"].includes(p.status)) {
-    const stage = { building: "Building", testing: "Testing", reviewing: "Code review" }[meta.stage] || (p.status === "building" ? "Building" : "Verifying");
+    const stage = { building: "Building", testing: "Testing", reviewing: "Code review", evaluating: "Rehearsing real conversations" }[meta.stage] || (p.status === "building" ? "Building" : "Verifying");
     return `${stage} · round ${meta.round || 1} of 3`;
   }
   if (p.status === "proposed" && council.approved === true) return `Council approved: ${council.reason || ""}`;
@@ -37,22 +40,42 @@ function proposalStep(p) {
   return "";
 }
 
-const BUILD_STEPS = [["council", "Council"], ["building", "Build"], ["testing", "Test"], ["reviewing", "Review"], ["ready", "Ready"]];
+const BUILD_STEPS = [["council", "Council"], ["building", "Build"], ["testing", "Test"], ["reviewing", "Review"], ["evaluating", "Rehearse"], ["ready", "Ready"]];
 
 function stepper(p) {
   const meta = p.meta || {};
   const skipCouncil = !(meta.council && "reason" in meta.council); // only ideas the (new, up-front) Council vetted
+  // Only changes to Weebo's brain or memory are rehearsed against real conversations.
+  const rehearsed = meta.stage === "evaluating" || (p.gate_report || "").includes("Behavior evals");
   const current = p.status === "vetting" || p.status === "declined" ? "council"
     : ["building", "checking"].includes(p.status) ? (meta.stage || "building")
     : ["ready", "merging", "merged"].includes(p.status) ? "ready" : "";
   if (!current) return null;
   const at = BUILD_STEPS.findIndex(([key]) => key === current);
-  const steps = BUILD_STEPS.filter(([key]) => !(key === "council" && skipCouncil));
+  const steps = BUILD_STEPS.filter(([key]) => !(key === "council" && skipCouncil) && !(key === "evaluating" && !rehearsed));
   return el("ol", { class: "stepper", "aria-label": "Build progress" }, steps.map(([key, label]) => {
     const i = BUILD_STEPS.findIndex(([k]) => k === key);
     const state = p.status === "declined" && key === "council" ? "fail" : i < at ? "done" : i === at ? (current === "ready" ? "done" : "now") : "todo";
     return el("li", { class: `step ${state}` }, el("span", { class: "step-dot", html: state === "done" ? icon("check", 12) : state === "fail" ? icon("x", 12) : "" }), el("span", { text: label }));
   }));
+}
+
+/** After a merge: did the recorded failures this upgrade claimed to fix stay fixed? */
+function proposalOutcome(p) {
+  const meta = p.meta || {};
+  const addresses = meta.addresses || [];
+  const outcome = meta.outcome || {};
+  if (!addresses.length) return p.status === "merged" ? el("p", { class: "muted small", text: "Not measured: this upgrade didn't name a recorded failure it fixes." }) : null;
+  const n = `${addresses.length} recorded failure${addresses.length > 1 ? "s" : ""}`;
+  if (outcome.result === "held") return el("div", { class: "check pass" }, el("span", { html: icon("check", 14) }), el("span", { text: `The fix held: none of the ${n} it targeted came back.` }));
+  if (outcome.result === "regressed") {
+    return el("details", { class: "check fail", open: true },
+      el("summary", { html: `${icon("x", 14)}<span>The failure came back after merging. Weebo's next self-audit will look at it again.</span>` }),
+      el("pre", { class: "cmd-out", text: (outcome.issues || []).join("\n") }));
+  }
+  if (p.status === "merged" && meta.awaiting_live) return el("p", { class: "muted small", text: `Goes live when Weebo restarts; then it watches ${n} for a few days to see whether the fix holds.` });
+  if (p.status === "merged") return el("p", { class: "muted small", text: `Watching ${n} for a few days to see whether the fix holds.` });
+  return el("p", { class: "muted small", text: `Targets ${n}; Weebo checks whether it stays fixed after merging.` });
 }
 
 function pill(status) {
@@ -90,7 +113,8 @@ export class Panels {
     this.current = null;
     this.opts = {};
     document.getElementById("drawer-close").addEventListener("click", () => this.close());
-    this._refresh = debounce(() => this.refresh(), 250);
+    // Live updates are debounced; editing is checked again when they fire, not only when they're scheduled.
+    this._refresh = debounce(() => this.refresh({ live: true }), 250);
     this.pending = false;
     // Live updates wait while you're typing in a panel, so drafts and focus survive; they catch up after.
     this.body.addEventListener("focusout", () => setTimeout(() => {
@@ -131,8 +155,8 @@ export class Panels {
   notify(type) {
     if (!this.current) return;
     const interest = {
-      agents: ["task.", "interaction."], evolution: ["evolution.", "skills."], memory: ["memory."], schedule: ["reminder."],
-      activity: ["weebo.activity", "notify", "legacy."], settings: ["engine.", "settings.", "legacy."],
+      agents: ["task.", "interaction."], evolution: ["evolution.", "skills.", "evals."], memory: ["memory."], schedule: ["reminder."],
+      activity: ["weebo.activity", "notify"], settings: ["engine.", "settings."],
     }[this.current] || [];
     if (interest.some((p) => type.startsWith(p))) {
       if (this.current === "agents" && type === "task.progress" && !this.opts.task) return this.patchProgress();
@@ -141,14 +165,18 @@ export class Panels {
     }
   }
 
-  async refresh() {
+  /** Re-render the open panel. A live update (`live`) never replaces a form you're using: it waits until you
+   *  leave it, even if you started typing while the update was loading. Refreshes you trigger always run. */
+  async refresh({ live = false } = {}) {
     const name = this.current;
     if (!name) return;
+    if (live && this.editing()) { this.pending = true; return; }
     const opts = this.opts;
     const scrollTop = this.body.scrollTop;
     try {
       const content = await this[`render_${name}`](opts);
       if (this.current !== name || this.opts !== opts) return;
+      if (live && this.editing()) { this.pending = true; return; }
       this.body.replaceChildren(content);
       this.body.scrollTop = scrollTop;
     } catch (err) {
@@ -160,7 +188,7 @@ export class Panels {
   // ================================================================== AGENTS
   async render_agents(opts) {
     if (opts.task) return this.renderTask(opts.task);
-    const { tasks } = await api.get("/api/tasks");
+    const { tasks, live } = await api.get("/api/tasks");
     const wrap = el("div", { class: "panel" });
     wrap.append(el("p", { class: "panel-intro", text: "Background Codex agents work in parallel while you keep chatting. Weebo launches them for big jobs, or you can start one here." }));
     const form = el("form", { class: "stack form-card", hidden: true });
@@ -173,7 +201,7 @@ export class Panels {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.currentConvId });
+        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.mainId || this.app.currentConvId });
         toast("Agent launched", task.title, { kind: "success" });
         this.opts = { task: task.id };
         this.refresh();
@@ -189,7 +217,7 @@ export class Panels {
       return el("button", { class: `task-card st-${t.status}`, type: "button", dataset: { task: t.id }, onclick: () => { this.opts = { task: t.id }; this.refresh(); } },
         el("div", { class: "task-top" }, el("span", { html: icon(t.kind === "evolution" ? "dna" : t.kind === "audit" ? "search" : "bot", 16) }),
           el("strong", { text: t.title }), pill(t.status)),
-        el("div", { class: "task-progress", text: t.status === "running" ? (this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
+        el("div", { class: "task-progress", text: t.status === "running" ? (live?.[t.id]?.progress || this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
         el("div", { class: "task-meta", text: `${kinds[t.kind] || t.kind} · ${t.status === "queued" ? "waiting" : duration(elapsed)} · ${timeAgo(t.created_at)}` }));
     };
     wrap.append(section(`Running (${active.length})`, active.length ? el("div", { class: "stack" }, active.map(card)) : empty("No agents running right now.", "bot")));
@@ -253,7 +281,7 @@ export class Panels {
   // ================================================================== EVOLUTION
   async render_evolution(opts) {
     if (opts.proposal) return this.renderProposal(opts.proposal);
-    const [{ proposals, mode, current }, { skills }] = await Promise.all([api.get("/api/proposals"), api.get("/api/skills")]);
+    const [{ proposals, mode, current }, { skills }, evals] = await Promise.all([api.get("/api/proposals"), api.get("/api/skills"), api.get("/api/evals")]);
     const wrap = el("div", { class: "panel" });
     const modeText = {
       off: "Self-evolution is off. Ideas are saved but nothing is built.",
@@ -280,25 +308,72 @@ export class Panels {
     const history = proposals.filter((p) => !needs.includes(p) && !progress.includes(p));
     const card = (p) => {
       const step = proposalStep(p);
+      const result = ((p.meta || {}).outcome || {}).result;
+      const outcome = result === "held" ? " · fix held" : result === "regressed" ? " · failure came back" : "";
       return el("button", { class: `proposal-card st-${p.status}`, type: "button", onclick: () => this.open("evolution", { proposal: p.id }) },
         el("div", { class: "task-top" }, el("span", { html: icon(p.id === current ? "gear" : "dna", 16, p.id === current ? "spinning" : "") }), el("strong", { text: p.title }), pill(p.status)),
         step ? el("div", { class: "task-progress", text: step }) : null,
-        el("div", { class: "task-meta", text: `${p.source === "user" ? "you asked" : p.source} · ${timeAgo(p.created_at)}${p.diff_stat ? " · " + p.diff_stat.split("\n").pop().trim() : ""}` }));
+        el("div", { class: "task-meta", text: `${p.source === "user" ? "you asked" : p.source} · ${timeAgo(p.created_at)}${p.diff_stat ? " · " + p.diff_stat.split("\n").pop().trim() : ""}${outcome}` }));
     };
     wrap.append(section("Needs you", needs.length ? el("div", { class: "stack" }, needs.map(card)) : empty("Nothing waiting for review.", "check")));
     if (progress.length) wrap.append(section("In progress", el("div", { class: "stack" }, progress.map(card))));
     if (history.length) wrap.append(section("History", el("div", { class: "stack" }, history.slice(0, 30).map(card))));
 
+    wrap.append(this.renderEvals(evals));
+
+    const used = (s) => (s.uses ? `Used ${s.uses} time${s.uses > 1 ? "s" : ""}, last ${timeAgo(s.last_used_at)}` : "Not used yet");
     const skillList = skills.length ? el("div", { class: "stack" }, skills.map((s) => el("div", { class: "skill-row" },
-      el("div", {}, el("strong", { text: s.name }), el("p", { class: "muted small", text: s.description })),
+      el("div", {}, el("strong", { text: s.name }), el("p", { class: "muted small", text: s.description }), el("p", { class: "muted small", text: used(s) })),
       el("div", { class: "row" },
         btn("", { icon: "eye", title: "View", size: "sm", onClick: () => modal(s.name, el("div", { class: "md", html: renderMarkdown(s.preview) }), { wide: true }) }),
         btn("", { icon: "trash", title: "Forget skill", size: "sm", onClick: async () => {
           if (await confirmDialog("Forget skill?", `Weebo will no longer know "${s.name}".`, "Forget")) { await api.del(`/api/skills/${s.name}`); this.refresh(); }
         } })))))
       : empty("No learned skills yet. Weebo saves reusable procedures here as it figures them out.", "sparkles");
-    wrap.append(section("Learned skills", skillList));
+    wrap.append(section("Learned skills", el("p", { class: "muted small", text: "Skills Weebo learned on its own while dreaming are archived after a stretch of not being used (Settings → Memory & skills). Skills saved in a chat stay." }), skillList));
     return wrap;
+  }
+
+  /** Behavior checks: real moments Weebo got wrong, replayed so upgrades to its brain can't make it worse. */
+  renderEvals({ cases, stats, enabled }) {
+    const active = cases.filter((c) => c.status === "active");
+    const retired = cases.filter((c) => c.status !== "active");
+    const last = stats.last_run ? `last run ${timeAgo(stats.last_run)}` : "not run yet";
+    const intro = enabled
+      ? `${active.length} check${active.length === 1 ? "" : "s"} · ${stats.passing}/${stats.checked} passing on the running Weebo · ${last}. They come from your corrections and from dreams; any upgrade to Weebo's brain or memory must pass at least as many.`
+      : "Behavior checks are off (Settings → Self-evolution).";
+    const run = btn("Run checks now", { kind: "soft", size: "sm", icon: "play", onClick: async () => {
+      try { await api.post("/api/autonomy/eval"); toast("Running behavior checks", "Results land here when they finish.", { kind: "success" }); }
+      catch (err) { toast("Couldn't start", err.message, { kind: "error" }); }
+    } });
+    const form = el("form", { class: "stack form-card", hidden: true });
+    const prompt = el("textarea", { class: "input", rows: 2, placeholder: "What you'd say to Weebo, e.g. \"Book my usual table for Friday\"", required: true });
+    const rubric = el("textarea", { class: "input", rows: 2, placeholder: "What a good reply must do, e.g. \"Uses the restaurant I always pick and asks only for the time\"", required: true });
+    form.append(prompt, rubric, el("div", { class: "row end" }, btn("Cancel", { onClick: () => { form.hidden = true; } }), btn("Add check", { kind: "primary", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try { await api.post("/api/evals", { prompt: prompt.value, rubric: rubric.value }); toast("Check added", "", { kind: "success" }); this.refresh(); }
+      catch (err) { toast("Couldn't add", err.message, { kind: "error" }); }
+    });
+    const add = btn("Add a check", { kind: "ghost", size: "sm", icon: "plus", onClick: () => { form.hidden = false; prompt.focus(); } });
+    const row = (c) => {
+      const result = (c.meta || {}).last;
+      const mark = !result ? icon("dot", 14) : result.passed ? icon("check", 14, "ok") : icon("x", 14, "bad");
+      const status = !result ? "Not checked yet" : `${result.passed ? "Passes" : "Fails"}: ${result.reason || ""}`;
+      const act = async (action) => {
+        try { await api.post(`/api/evals/${c.id}/${action}`); this.refresh(); } catch (err) { toast("Couldn't update", err.message, { kind: "error" }); }
+      };
+      return el("div", { class: `eval-row${c.status === "active" ? "" : " retired"}` },
+        el("span", { html: mark, title: status }),
+        el("div", {}, el("strong", { text: c.title }), el("p", { class: "muted small", text: c.rubric }),
+          el("p", { class: "muted small", text: `${c.source === "correction" ? "from your correction" : c.source === "dream" ? "noticed while dreaming" : "added by you"} · ${status}` })),
+        c.status === "active"
+          ? btn("", { icon: "x", title: "Retire this check", size: "sm", onClick: () => act("retire") })
+          : btn("", { icon: "undo", title: "Use this check again", size: "sm", onClick: () => act("restore") }));
+    };
+    const list = active.length ? el("div", {}, active.map(row)) : empty("No behavior checks yet. When you correct Weebo, that moment becomes one.", "shield");
+    const old = retired.length ? el("details", { class: "fold" }, el("summary", { text: `Retired (${retired.length})` }), el("div", {}, retired.map(row))) : null;
+    return section("Behavior checks", el("p", { class: "muted small", text: intro }), el("div", { class: "row" }, run, add), form, list, old);
   }
 
   async renderProposal(id) {
@@ -341,8 +416,11 @@ export class Panels {
     try { gates = JSON.parse(p.gate_report || "{}"); } catch { gates = {}; }
     const checks = el("div", { class: "checks" });
     for (const r of gates.results || []) {
-      const row = el("details", { class: `check ${r.skipped ? "skip" : r.ok ? "pass" : "fail"}` },
-        el("summary", { html: `${icon(r.skipped ? "dot" : r.ok ? "check" : "x", 14)}<span>${escapeHtml(r.name)}</span><span class="muted small">${r.skipped ? "skipped" : r.seconds.toFixed(1) + "s"}</span>` }),
+      // Advisory checks (the original versions of rewritten tests) inform your review; they don't fail the build.
+      const state = r.skipped ? "skip" : r.ok ? "pass" : r.advisory ? "warn" : "fail";
+      const note = r.skipped ? "skipped" : `${r.advisory ? (r.ok ? "for review · " : "needs your eyes · ") : ""}${r.seconds.toFixed(1)}s`;
+      const row = el("details", { class: `check ${state}`, open: r.advisory && !r.ok },
+        el("summary", { html: `${icon(r.skipped ? "dot" : r.ok ? "check" : r.advisory ? "alert" : "x", 14)}<span>${escapeHtml(r.name)}</span><span class="muted small">${note}</span>` }),
         el("pre", { class: "cmd-out", text: r.output || "" }));
       checks.append(row);
     }
@@ -365,9 +443,12 @@ export class Panels {
 
     if (meta.governance && meta.governance.files) {
       const gov = meta.governance;
-      wrap.append(section("Governance", el("p", { class: "muted small", text: gov.autonomous ? "Low-risk zones only: eligible for automatic merge." : "Touches protected zones: needs your approval to merge." }),
-        el("table", { class: "gov" }, gov.files.map((f) => el("tr", {}, el("td", { class: "mono", text: f.path }), el("td", { text: f.zone.replace("_", " ") }), el("td", {}, el("span", { class: `pill tier-${f.tier}`, text: f.tier.replace("_", " ") })))))));
+      const summary = gov.autonomous ? "Low-risk zones only: eligible for automatic merge." : (gov.why || "Touches protected zones: needs your approval to merge.");
+      wrap.append(section("Governance", el("p", { class: "muted small", text: summary }),
+        el("table", { class: "gov" }, gov.files.map((f) => el("tr", { title: f.reason || "" }, el("td", { class: "mono", text: f.path }), el("td", { text: f.zone.replace("_", " ") }), el("td", {}, el("span", { class: `pill tier-${f.tier}`, text: f.tier.replace("_", " ") })))))));
     }
+    const outcome = proposalOutcome(p);
+    if (outcome) wrap.append(section("Did it help?", outcome));
     if (meta.diff) {
       wrap.append(section(`Changes ${p.diff_stat ? "· " + p.diff_stat.split("\n").pop().trim() : ""}`,
         btn("View full diff", { kind: "soft", icon: "diff", onClick: () => modal(p.title, renderDiff(meta.diff), { wide: true }) })));
@@ -379,11 +460,41 @@ export class Panels {
   }
 
   // ================================================================== MEMORY
+  async render_facts(opts) {
+    const entity = opts.entity || "events";
+    const offset = opts.offset || 0;
+    const result = await api.get(`/api/facts/${encodeURIComponent(entity)}?offset=${offset}`);
+    const wrap = el("div", { class: "panel facts-panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Facts are looked up from their sources, not remembered from chat. Disconnected sources are shown as unverified." }));
+    wrap.append(el("div", { class: "chips" }, ["events", "threads", "commitments", "people"].map(key => btn(key, {
+      kind: key === entity ? "primary" : "soft", onClick: () => { this.opts = { entity: key }; this.refresh(); }
+    }))));
+    for (const source of result.sources || []) {
+      wrap.append(el("p", { class: "muted small", text: source.ok
+        ? `${source.source} · checked ${dateTime(source.fetched_at)}`
+        : `${source.source || entity}: ${source.error}` }));
+    }
+    if (result.unverified?.length) wrap.append(el("p", { role: "status", text: `${result.unverified.length} stored facts are unverified. Reconnect the source to check them.` }));
+    if (!result.facts.length) wrap.append(empty(result.complete ? "No matching facts in this slice." : "Current facts could not be verified.", "brain"));
+    for (const fact of result.facts) {
+      const p = fact.provenance || {};
+      const details = [fact.status, fact.start != null ? `${new Date(fact.start * 1000).toLocaleString(undefined, { timeZone: fact.tz })} · ${fact.tz}` : "",
+        fact.due != null ? `Due ${dateTime(fact.due)}` : ""].filter(Boolean).join(" · ");
+      wrap.append(section(fact.title || fact.subject || fact.text || fact.name,
+        el("p", { text: details }),
+        el("p", { class: "muted small", text: `Source: ${p.source} · checked ${dateTime(p.fetched_at)} · ${fact.id}` })));
+    }
+    if (offset > 0) wrap.append(btn("Previous facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: Math.max(0, offset - 50) }; this.refresh(); } }));
+    if (result.next_offset != null) wrap.append(btn("More facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: result.next_offset }; this.refresh(); } }));
+    return wrap;
+  }
+
   async render_memory(opts) {
     const q = opts.q || "";
     const kind = opts.kind || "";
     const { memories, stats } = await api.get(`/api/memories?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`);
     const wrap = el("div", { class: "panel" });
+    wrap.append(btn("Source-backed facts", { kind: "soft", icon: "brain", onClick: () => this.open("facts") }));
     wrap.append(el("p", { class: "panel-intro", text: `Everything Weebo remembers about you and your world: ${stats.total} memories. Weebo adds to this as you talk and tidies it up while it dreams.` }));
     const search = el("input", { class: "input", type: "search", placeholder: "Search memories…", value: q });
     search.addEventListener("input", debounce(() => { this.opts = { ...this.opts, q: search.value }; this.refresh(); }, 300));
@@ -441,6 +552,34 @@ export class Panels {
     return wrap;
   }
 
+  // ================================================================== MORE (the tab bar's overflow)
+  async render_more() {
+    const wrap = el("div", { class: "panel" });
+    const go = (name, label, ic, hint) => el("button", { class: "more-row", type: "button", onclick: () => this.open(name) },
+      el("span", { class: "more-ic", html: icon(ic, 18) }),
+      el("span", { class: "grow" }, el("div", { text: label }), el("div", { class: "muted small", text: hint })),
+      el("span", { html: icon("send", 14) }));
+    wrap.append(el("div", { class: "stack" },
+      go("schedule", "Schedule", "clock", "Reminders and routines"),
+      go("activity", "Activity", "pulse", "What Weebo did on its own, and its notifications"),
+      go("settings", "Settings", "gear", "Or just tell Weebo what to change"),
+      go("archive", "Older chats", "inbox", "Conversations from before there was one chat")));
+    return wrap;
+  }
+
+  // ================================================================== ARCHIVE (older chats, read-only)
+  async render_archive() {
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Everything happens in one chat now. Your older chats are kept here to read; Weebo can also search them when you ask about something from back then." }));
+    const old = this.app.state.conversations.filter((c) => c.kind !== "desk");
+    wrap.append(old.length ? el("div", { class: "stack" }, old.map((c) => el("button", { class: "more-row", type: "button",
+      onclick: () => { this.close(); this.app.openConversation(c.id); } },
+      el("span", { class: "more-ic", html: icon("dot", 10) }),
+      el("span", { class: "grow" }, el("div", { text: c.title }), el("div", { class: "muted small", text: timeAgo(c.updated_at) })))))
+      : empty("No older chats.", "inbox"));
+    return wrap;
+  }
+
   // ================================================================== SCHEDULE
   async render_schedule(opts) {
     const { reminders } = await api.get(`/api/reminders${opts.all ? "?all=1" : ""}`);
@@ -493,9 +632,9 @@ export class Panels {
       try { await api.post(`/api/autonomy/${name}`); toast(`${label} started`, "Watch Weebo's desk and this feed.", { kind: "success" }); this.refresh(); }
       catch (err) { toast("Couldn't start", err.message, { kind: "error" }); }
     } });
-    wrap.append(el("div", { class: "row wrap" }, trigger("dream", "Dream now", "moon"), trigger("brief", "Brief me now", "bell"), trigger("audit", "Self-audit now", "search")));
+    wrap.append(el("div", { class: "row wrap" }, trigger("dream", "Dream now", "moon"), trigger("brief", "Brief me now", "bell"), trigger("audit", "Self-audit now", "search"), trigger("eval", "Run behavior checks", "shield")));
 
-    const kindIcon = { dream: "moon", brief: "bell", audit: "search", evolution: "dna", skill: "sparkles", memory: "brain", schedule: "clock", routine: "zap", system: "gear" };
+    const kindIcon = { dream: "moon", brief: "bell", audit: "search", evolution: "dna", skill: "sparkles", memory: "brain", schedule: "clock", routine: "zap", system: "gear", evals: "shield" };
     wrap.append(section("What Weebo has been up to", journal.length ? el("ol", { class: "timeline" }, journal.map((j) => el("li", {},
       el("span", { class: "tl-ic", html: icon(kindIcon[j.kind] || "dot", 14) }),
       el("div", { class: "tl-body" }, el("strong", { text: j.title }), j.detail ? el("p", { class: "muted small", text: j.detail }) : null, el("span", { class: "tl-time", text: timeAgo(j.created_at) })))))
@@ -616,7 +755,18 @@ export class Panels {
         ["build", "Build", "Builds and verifies upgrades; you approve merges.", "branch"],
         ["auto_merge", "Auto-merge", "Merges low-risk upgrades itself; core changes wait for you.", "dna"],
       ]),
-      text("evolution.test_command", "Custom test command (optional)", "Default: selftest + pytest tests/weebo")));
+      text("evolution.test_command", "Custom test command (optional)", "Default: selftest + pytest tests/weebo"),
+      field("Protected paths", el("textarea", { class: "input", rows: 3,
+        onchange: (e) => save("evolution.protect_paths", e.target.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)) },
+        (get("evolution.protect_paths") || []).join("\n")),
+        "One per line: files, folders or globs (weebo/web/*.js). Upgrades touching these always wait for you, even in auto-merge."),
+      toggle("evals.enabled", "Behavior checks", "Replays moments Weebo got wrong; upgrades to its brain or memory must pass at least as many."),
+      number("evals.max_cases", "Checks per run", 1, 50, 1, "Each check costs about two quick model turns.")));
+
+    wrap.append(section("Memory & skills",
+      toggle("memory.semantic", "Semantic recall", `Finds memories by meaning, not just words, with a small model on this computer. Now: ${(status.memory || {}).recall || "keyword"}.`),
+      toggle("skills.auto_learn", "Learn skills from repeated work", "While dreaming, Weebo turns procedures its agents keep repeating into skills."),
+      number("skills.prune_unused_days", "Archive unused dream-learned skills after (days, 0 = never)", 0, 365)));
 
     // --- Voice
     const voices = listVoices();
@@ -630,10 +780,12 @@ export class Panels {
       toggle("ui.companion", "Show Weebo's stage", "Weebo at the top of the chat with live reactions."),
       toggle("ui.reduce_motion", "Reduce motion")));
 
-    // --- Weebo 1.x
-    const legacy = status.legacy || {};
-    wrap.append(section("Weebo 1.x abilities", el("p", { class: "muted small", text: `Bridge: ${legacy.status}${legacy.error ? " — " + legacy.error : ""}. These old tools now think with Codex too.` }),
-      el("div", { class: "chips" }, (legacy.tools || []).map((t) => el("span", { class: `chip static${t.risk === "confirm" ? " warn" : ""}`, title: t.about, text: t.name })))));
+    // --- Integrations
+    const integrations = (status.integrations || {}).tools || [];
+    wrap.append(section("Integrations", el("p", { class: "muted small", text: "Abilities that use your own keys from .env (Google, OpenWeather, Twilio) or your Google Calendar sign-in. Dimmed ones aren't set up yet; hover for what they need." }),
+      el("div", { class: "chips" }, integrations.map((t) => el("span", {
+        class: `chip static${t.risk === "confirm" ? " warn" : ""}${t.missing.length ? " off" : ""}`,
+        title: t.missing.length ? `${t.about}\nNeeds: ${t.missing.join(", ")}` : t.about, text: t.name })))));
 
     const { tailnet, lan } = await api.get("/api/remote");
     const phone = section("Phone app (Tailscale)");

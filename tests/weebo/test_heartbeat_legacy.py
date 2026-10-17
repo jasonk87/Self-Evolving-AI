@@ -92,13 +92,15 @@ async def test_legacy_requirements_and_presentation(app, monkeypatch):
 
 
 async def test_legacy_tool_refuses_unknown_and_unconfigured(app, monkeypatch):
+    from weebo.legacy.bridge import LegacyBridge
     monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
-    app.legacy.status = "ready"
-    app.legacy.tool_system = type("TS", (), {"_tool_registry": {"get_weather": {}}})()
-    app.legacy._ready.set()
-    text, ok, _ = await app.legacy.run("rm_rf", {})
+    bridge = LegacyBridge(app)  # no longer wired into the app; the integrations replace it
+    bridge.status = "ready"
+    bridge.tool_system = type("TS", (), {"_tool_registry": {"get_weather": {}}})()
+    bridge._ready.set()
+    text, ok, _ = await bridge.run("rm_rf", {})
     assert not ok and "not an available" in text
-    text, ok, _ = await app.legacy.run("get_weather", {"location": "Paris"})
+    text, ok, _ = await bridge.run("get_weather", {"location": "Paris"})
     assert not ok and "OPENWEATHER_API_KEY" in text
 
 

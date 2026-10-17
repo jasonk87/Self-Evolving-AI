@@ -12,12 +12,37 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
 from . import paths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
+
+V3_SCHEMA = """
+CREATE TABLE IF NOT EXISTS eval_cases (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    rubric TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'user',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_eval_cases_status ON eval_cases(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    updated_at REAL NOT NULL
+);
+"""
 
 ROUTINE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS routine_occurrences (
@@ -194,6 +219,25 @@ STOPWORDS = {
 }
 
 
+def _like_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _casefold(text: Any) -> str:
+    # SQLite's lower() folds only ASCII: "ZÜRICH" would never match "zürich".
+    return str(text).casefold() if text is not None else ""
+
+
+def search_terms(query: str, max_terms: int = 6) -> list[str]:
+    """The words of a history search worth matching: "what did we decide about the trip" -> ["decide", "trip"]."""
+    terms: list[str] = []
+    for word in re.findall(r"[\w'@.-]+", query.casefold()):
+        word = word.strip("'.-")
+        if len(word) >= 3 and word not in STOPWORDS and word not in terms:
+            terms.append(word)
+    return terms[:max_terms]
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
@@ -232,6 +276,7 @@ class Store:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
+        self._conn.create_function("casefold", 1, _casefold, deterministic=True)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -245,11 +290,32 @@ class Store:
                 self._conn.executescript(SCHEMA)
             if version < 2:
                 self._conn.executescript(ROUTINE_SCHEMA)
+            if version < 3:
+                self._conn.executescript(V3_SCHEMA)
+            if version < 4:
+                from .facts.schema import FACTS_SCHEMA
+                self._conn.executescript(FACTS_SCHEMA)
+            if version < SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    @contextmanager
+    def transaction(self):
+        """Atomic synchronous work, including nested transactions. Never await inside."""
+        with self._lock:
+            name = "tx_" + uuid.uuid4().hex
+            self._conn.execute(f"SAVEPOINT {name}")
+            try:
+                yield self
+            except BaseException:
+                self._conn.execute(f"ROLLBACK TO {name}")
+                self._conn.execute(f"RELEASE {name}")
+                raise
+            else:
+                self._conn.execute(f"RELEASE {name}")
 
     def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
         if row is None:
@@ -377,6 +443,28 @@ class Store:
         })
         return self.get_message(message_id)  # type: ignore[return-value]
 
+    def bring_forward(self, message_id: str, conversation_id: str | None = None) -> dict[str, Any] | None:
+        """Move a message to the end of its conversation, or of ``conversation_id`` (a card that needs the user
+        again shows up where they are, not hundreds of messages up). It keeps its id, so the chat updates it in
+        place from then on."""
+        with self._lock:
+            row = self.get_message(message_id)
+            if row is None:
+                return None
+            moving = bool(conversation_id) and conversation_id != row["conversation_id"]
+            last = self.query_one("SELECT MAX(seq) AS seq FROM messages WHERE conversation_id=?",
+                                  (row["conversation_id"],))
+            if not moving and last and last["seq"] == row["seq"]:
+                return row
+            if moving:
+                row["conversation_id"] = conversation_id
+            self.execute("DELETE FROM messages WHERE id=?", (message_id,))
+            row.pop("seq", None)
+            row["updated_at"] = time.time()
+            self._insert("messages", row)
+            self.execute("UPDATE conversations SET updated_at=? WHERE id=?", (row["updated_at"], row["conversation_id"]))
+        return self.get_message(message_id)
+
     def update_message(self, message_id: str, **values: Any) -> dict[str, Any] | None:
         values.setdefault("updated_at", time.time())
         self._update("messages", "id", message_id, values)
@@ -400,6 +488,46 @@ class Store:
         rows.reverse()
         return rows
 
+    def recent_messages(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
+        """Recent rows including the events that separate user and autonomous turns."""
+        rows = self.query(
+            "SELECT * FROM messages WHERE conversation_id=? ORDER BY seq DESC LIMIT ?",
+            (conversation_id, limit),
+        )
+        rows.reverse()
+        return rows
+
+    def _search(self, select: str, text: str, where: str, order: str, terms: list[str], every: bool,
+                limit: int) -> list[dict[str, Any]]:
+        """Rows whose ``text`` contains every term (``every``), or else any of them, best matched first."""
+        likes = [f"casefold({text}) LIKE ? ESCAPE '\\'" for _ in terms]
+        params = [f"%{_like_escape(t)}%" for t in terms]
+        if every:
+            return self.query(f"{select} WHERE {where} AND {' AND '.join(likes)} ORDER BY {order} LIMIT ?",
+                              (*params, limit))
+        score = " + ".join(f"({like})" for like in likes)
+        return self.query(f"{select} WHERE {where} AND ({' OR '.join(likes)}) ORDER BY {score} DESC, {order} LIMIT ?",
+                          (*params, *params, limit))
+
+    def search_messages(self, query: str, limit: int = 8, every: bool = True) -> list[dict[str, Any]]:
+        """What was said (by the user or Weebo, in any chat) that contains every word of ``query`` (or, with
+        ``every=False``, the most of them), newest first."""
+        terms = search_terms(query)
+        if not terms:
+            return []
+        return self._search(
+            "SELECT m.seq, m.conversation_id, m.role, m.content, m.created_at, c.title AS conversation_title "
+            "FROM messages m JOIN conversations c ON c.id=m.conversation_id", "m.content",
+            "m.kind='text' AND m.role IN ('user','assistant')", "m.seq DESC", terms, every, limit)
+
+    def search_tasks(self, query: str, limit: int = 5, every: bool = True) -> list[dict[str, Any]]:
+        """Agents whose title or report mentions every word of ``query`` (or the most of them), newest first."""
+        terms = search_terms(query)
+        if not terms:
+            return []
+        return self._search("SELECT id, title, status, summary, created_at, finished_at FROM tasks",
+                            "title || ' ' || summary", "kind='agent'", "created_at DESC", terms, every, limit)
+
     def recent_dialogue(self, conversation_id: str, limit: int = 30) -> list[dict[str, Any]]:
         rows = self.query(
             "SELECT * FROM messages WHERE conversation_id=? AND kind='text' AND role IN ('user','assistant') "
@@ -413,6 +541,15 @@ class Store:
         return self.query(
             "SELECT m.*, c.title AS conversation_title FROM messages m JOIN conversations c ON c.id=m.conversation_id "
             "WHERE m.created_at>? AND m.kind='text' AND m.role IN ('user','assistant') ORDER BY m.seq LIMIT ?",
+            (since, limit),
+        )
+
+    def trouble_since(self, since: float, limit: int = 20) -> list[dict[str, Any]]:
+        """Turns that failed (error notices) or were cut off (interrupted replies) since ``since``."""
+        return self.query(
+            "SELECT m.*, c.title AS conversation_title FROM messages m JOIN conversations c ON c.id=m.conversation_id "
+            "WHERE m.created_at>? AND (m.kind='error' OR (m.status='interrupted' AND m.role='assistant')) "
+            "ORDER BY m.seq DESC LIMIT ?",
             (since, limit),
         )
 
@@ -442,9 +579,12 @@ class Store:
             values["importance"] = max(1, min(5, int(values["importance"])))
         values.setdefault("updated_at", time.time())
         self._update("memories", "id", memory_id, values)
+        if "text" in values or "status" in values:
+            self.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))  # re-embedded later
         return self.get_memory(memory_id)
 
     def delete_memory(self, memory_id: str) -> bool:
+        self.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))
         cur = self.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return cur.rowcount > 0
 
@@ -641,6 +781,8 @@ class Store:
         message_id = f"evolution:{proposal['id']}"
         data = chat_status(proposal)
         existing = self.get_message(message_id)
+        if existing and existing["conversation_id"] != conversation_id:
+            existing = self.bring_forward(message_id, conversation_id)  # its card moves to the chat it now belongs to
         if existing and existing["data"] == data:
             return existing
         return self.upsert_message(message_id, conversation_id, "assistant", "evolution_status",
@@ -661,6 +803,55 @@ class Store:
                 (*status_list, limit),
             )
         return self.query("SELECT * FROM proposals ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    # -- behavior eval cases ----------------------------------------------
+    def add_eval_case(self, title: str, prompt: str, rubric: str, source: str = "user",
+                      data: dict | None = None) -> dict[str, Any]:
+        now = time.time()
+        case = {"id": new_id("ev"), "title": title, "prompt": prompt, "rubric": rubric, "source": source,
+                "created_at": now, "updated_at": now, "data": data or {}, "meta": {}}
+        self._insert("eval_cases", case)
+        return self.get_eval_case(case["id"])  # type: ignore[return-value]
+
+    def get_eval_case(self, case_id: str) -> dict[str, Any] | None:
+        return self.query_one("SELECT * FROM eval_cases WHERE id=?", (case_id,))
+
+    def update_eval_case(self, case_id: str, **values: Any) -> dict[str, Any] | None:
+        values.setdefault("updated_at", time.time())
+        self._update("eval_cases", "id", case_id, values)
+        return self.get_eval_case(case_id)
+
+    def list_eval_cases(self, status: str | None = "active", limit: int = 200) -> list[dict[str, Any]]:
+        if status:
+            return self.query("SELECT * FROM eval_cases WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, limit))
+        return self.query("SELECT * FROM eval_cases ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    def delete_eval_case(self, case_id: str) -> bool:
+        return self.execute("DELETE FROM eval_cases WHERE id=?", (case_id,)).rowcount > 0
+
+    # -- memory vectors ---------------------------------------------------
+    def set_memory_vector(self, memory_id: str, model: str, text: str, text_hash: str, vector: bytes) -> bool:
+        """Store the embedding of ``text``, but only if the memory still says exactly that (it can be edited or
+        forgotten while the embedding is computed). Returns whether it was stored."""
+        cur = self.execute(
+            "INSERT INTO memory_vectors(memory_id, model, text_hash, vector, updated_at) "
+            "SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM memories WHERE id=? AND text=? AND status='active') "
+            "ON CONFLICT(memory_id) DO UPDATE SET model=excluded.model, text_hash=excluded.text_hash, "
+            "vector=excluded.vector, updated_at=excluded.updated_at",
+            (memory_id, model, text_hash, vector, time.time(), memory_id, text),
+        )
+        return cur.rowcount > 0
+
+    def memory_vectors(self, model: str) -> list[dict[str, Any]]:
+        """Vectors of active memories embedded with ``model``."""
+        return self.query(
+            "SELECT v.memory_id, v.text_hash, v.vector FROM memory_vectors v JOIN memories m ON m.id = v.memory_id "
+            "WHERE v.model=? AND m.status='active'", (model,))
+
+    def memories_needing_vectors(self, model: str, limit: int = 256) -> list[dict[str, Any]]:
+        return self.query(
+            "SELECT m.id, m.text FROM memories m LEFT JOIN memory_vectors v ON v.memory_id = m.id AND v.model=? "
+            "WHERE m.status='active' AND (v.memory_id IS NULL) ORDER BY m.updated_at DESC LIMIT ?", (model, limit))
 
     # -- journal & notifications ------------------------------------------
     def journal(self, kind: str, title: str, detail: str = "", data: dict | None = None) -> dict[str, Any]:

@@ -13,7 +13,7 @@ Lifecycle of a proposal::
 * Weebo then verifies the result itself: syntax, a boot self-test and the test suite
   (gates.py), then a Codex code review of exactly the agent's change. Failures go back
   to the agent for up to two revision rounds. A review that can't run fails the build.
-* Weebo 1.x's change policy classifies every touched file. Only UI/tests/docs/skills
+* The change policy (policy.py) classifies every touched file. Only UI/tests/docs/skills
   changes may merge without a human; core, execution and governance code always wait
   for the user.
 * After a merge Weebo restarts into the new code. The supervisor reverts the merge
@@ -23,17 +23,23 @@ Lifecycle of a proposal::
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
+import os
 import re
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .. import log, paths
 from ..codex.rpc import EngineClosed, RpcError
+from ..codex.oneshot import stop_and_release
 from . import council, git
-from .gates import run_gates
+from .evals import touches_behavior
+from .gates import GateResult, run_gates
+from .policy import decide_governance
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -41,8 +47,11 @@ if TYPE_CHECKING:
 logger = log.get("evolution")
 
 MAX_ROUNDS = 3
+BEHAVIOR_GATE = "Behavior evals"
 OPEN_STATES = ("vetting", "proposed", "queued", "building", "checking", "ready", "merging")
 PENDING_FILE = "evolution_pending.json"
+NEEDS_YOU = ("ready", "conflict", "rolled_back", "merged")  # states that bring the upgrade's card to the chat
+VERIFY_AFTER_SECONDS = 65  # past the supervisor's EARLY_CRASH_SECONDS (60): until then a crash is rolled back
 SCRATCH_DIR = ".weebo-tmp"  # build agents keep temp files, logs and test dirs here; never committed
 SCRATCH_EXCLUDES = tuple(f":(exclude){name}" for name in (SCRATCH_DIR, ".verification-tmp"))
 
@@ -51,14 +60,64 @@ class EvolutionError(RuntimeError):
     pass
 
 
+CASE_INSENSITIVE_FS = os.name == "nt" or sys.platform == "darwin"
+
+
+def _within(pattern: str, root: str, fold: bool) -> str | None:
+    """``pattern`` relative to ``root`` ("*" for the root itself), or None when it doesn't start there."""
+    pattern, root = pattern.replace("\\", "/"), root.replace("\\", "/").rstrip("/")
+    same = (lambda a, b: a.lower() == b.lower()) if fold else (lambda a, b: a == b)
+    if same(pattern.rstrip("/"), root):
+        return "*"  # the whole repository
+    if same(pattern[:len(root) + 1], root + "/"):
+        return pattern[len(root) + 1:]
+    return None
+
+
+def _protect_pattern(pattern: str, root: str, fold: bool) -> str:
+    """One protect_paths entry as a repo-relative path or glob. Accepts what people paste: quotes (Explorer's
+    "Copy as path"), backslashes, an absolute path into the repo, or a leading slash meaning the repo root."""
+    pattern = pattern.strip().strip("\"'").strip()
+    relative = _within(pattern, root, fold)
+    if relative is None and os.path.isabs(pattern):
+        # The repository root is fully resolved, but a pasted path may reach it another way (a symlink, a
+        # junction, a mapped or subst drive): resolve it the same way. A glob tail survives non-strict realpath.
+        try:
+            relative = _within(os.path.realpath(pattern), root, fold)
+        except (OSError, ValueError):
+            relative = None
+    pattern = (pattern if relative is None else relative).replace("\\", "/").lstrip("/")
+    while pattern.startswith("./"):
+        pattern = pattern[2:]
+    return pattern
+
+
+def is_protected(path: str, patterns: list[str], root: str | None = None, fold: bool | None = None) -> bool:
+    """evolution.protect_paths entries: a file, a folder (with or without a trailing slash) or a glob.
+    Case-insensitive where the file system is (Windows, macOS)."""
+    fold = CASE_INSENSITIVE_FS if fold is None else fold
+    root = str(paths.PROJECT_ROOT) if root is None else root
+    path = path.replace("\\", "/")
+    if fold:
+        path = path.lower()
+    for raw in patterns:
+        pattern = _protect_pattern(raw, root, fold)
+        if fold:
+            pattern = pattern.lower()
+        folder = pattern.rstrip("/")
+        if folder and (path == folder or path.startswith(folder + "/") or fnmatch.fnmatchcase(path, pattern)):
+            return True
+    return False
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:32] or "change"
 
 
 BUILD_PROMPT = """You are improving Weebo, a self-evolving AI assistant, by changing its own source code.
 You are working in an isolated git worktree of Weebo's repository: {worktree}
-Weebo 2.0 lives in weebo/ (Python, asyncio + aiohttp, Codex app-server integration) with the web UI in weebo/web/
-(vanilla ES modules, no build step). Weebo 1.x lives in ai_assistant/ and is reused through weebo/legacy/.
+Weebo lives in weebo/ (Python, asyncio + aiohttp, Codex app-server integration) with the web UI in weebo/web/
+(vanilla ES modules, no build step) and integrations (search, calendar, SMS, widgets) in weebo/integrations/.
 
 ## Improvement to implement
 Title: {title}
@@ -69,7 +128,12 @@ Why: {rationale}
 
 ## Rules
 - Make the smallest complete change that fully implements this. Match the surrounding code style.
-- Add or update tests under tests/weebo/ that prove the change works (pytest, pytest-asyncio available).
+- Add tests under tests/weebo/ that prove the change works (pytest, pytest-asyncio available).
+- Never weaken, skip or delete an existing test to make checks pass. If an existing expectation genuinely has to
+  change, change only that assertion and explain why in your report: the original tests are re-run against your
+  code and every rewritten expectation is shown to the user.
+- Never hardcode who the user is (their name, email, accounts) in code, prompts or tests. Read user.name from
+  settings at runtime or write for "you" / "the user"; use made-up names in tests.
 - Run the checks yourself before finishing:
     python -m weebo --selftest
     python -m pytest tests/weebo -q -p no:cacheprovider
@@ -77,12 +141,21 @@ Why: {rationale}
 - Do not commit; Weebo verifies and commits your work.
 - Keep scratch files (temp dirs, logs, patches; point TEMP/TMP there if tests need it) in `.weebo-tmp/` at the
   worktree root. It is never committed. Don't leave other files that aren't part of the change.
+- Files git ignores (see .gitignore: *.json, data/, build/ ...) are never committed and are deleted before Weebo's
+  checks run, so nothing the change needs may live in one: keep test data inside the test itself.
 - Do not touch weebo_data/, .git, or anything outside this worktree.
 - Finish with a short report: what you changed (files), how you verified it, and any caveats.
 """
 
 REVISION_PROMPT = """Your previous attempt at "{title}" did not pass Weebo's verification. Fix these problems in the
-same worktree ({worktree}), re-run the checks, and report back. Do not commit.
+same worktree ({worktree}), re-run the checks (python -m weebo --selftest; python -m pytest tests/weebo -q
+-p no:cacheprovider), and report back. Do not commit. Files git ignores (*.json, data/, build/ ...) are deleted
+before the checks run, so keep anything the change needs out of them; scratch files go in `.weebo-tmp/` at the
+worktree root.
+
+The goal, as a reminder: {description}
+The same rules still hold: never weaken, skip or delete an existing test to make checks pass, and never hardcode
+who the user is.
 
 {feedback}
 """
@@ -96,6 +169,10 @@ class EvolutionEngine:
         self._vetting: set[asyncio.Task] = set()
         self.current: str | None = None
         self.restart_after_build: str | None = None  # a merged upgrade waits for the running build before restarting
+        self._merge_mutex: asyncio.Lock | None = None
+        self._restart_task: asyncio.Task | None = None
+        self.restarting: str | None = None  # a restart is decided: no more merges until Weebo is back
+        self._verify_handle: asyncio.TimerHandle | None = None
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -104,8 +181,12 @@ class EvolutionEngine:
             self._worker = asyncio.create_task(self._work(), name="evolution")
 
     async def stop(self) -> None:
-        """Stop Council sessions in flight; they are convened again on the next start."""
-        tasks = list(self._vetting)
+        """Settle builds, restart callbacks and Council sessions before storage closes."""
+        self.restart_after_build = None
+        if self._verify_handle:
+            self._verify_handle.cancel()
+            self._verify_handle = None
+        tasks = [*self._vetting, *(t for t in (self._worker, self._restart_task) if t is not None)]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -119,6 +200,20 @@ class EvolutionEngine:
             self._start_vetting(proposal["id"])  # the Council was interrupted; convene again
         self._empty_trash()
         self._verify_after_upgrade()
+        self._go_live()
+
+    def _go_live(self) -> None:
+        """Python fixes merged before this process started are running now: from here on, a recurrence of the
+        failures they addressed is evidence the fix didn't hold (outcomes.py)."""
+        for proposal in self.app.store.list_proposals(limit=200, statuses=("merged",)):
+            meta = dict(proposal.get("meta") or {})
+            if not meta.get("awaiting_live") or float(meta.get("merged_at") or 0) >= self.app.started_at:
+                continue
+            meta.pop("awaiting_live", None)
+            meta["live_at"] = time.time()
+            self.app.diagnostics.mark_fixed(meta.get("addresses") or [], proposal["id"])
+            self.app.store.update_proposal(proposal["id"], meta=meta)
+            self._publish(proposal["id"])
 
     def _verify_after_upgrade(self) -> None:
         """Read the supervisor's note about the last merge (verified boot or rollback)."""
@@ -130,36 +225,72 @@ class EvolutionEngine:
         except (OSError, json.JSONDecodeError):
             pending_path.unlink(missing_ok=True)
             return
-        proposal_id = pending.get("proposal_id")
-        proposal = self.app.store.get_proposal(proposal_id) if proposal_id else None
+        proposal_ids = [i for i in (pending.get("proposal_ids") or [pending.get("proposal_id")]) if i]
+        report_to = pending.get("report_to")
+        reported = pending.get("reported") or proposal_ids
         if pending.get("rolled_back"):
-            if proposal:
-                self._set(proposal_id, "rolled_back")
-            self.app.store.journal("evolution", "Rolled back an upgrade that failed to boot",
-                                   proposal["title"] if proposal else "", pending)
+            titles = []
+            for proposal_id in proposal_ids:
+                proposal = self.app.store.get_proposal(proposal_id)
+                if proposal:
+                    titles.append(proposal["title"])
+                    self._set(proposal_id, "rolled_back")
+                    self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
+            self.app.store.journal("evolution", "Rolled back an upgrade that failed to boot", ", ".join(titles), pending)
             self.app.notify("evolution", "Upgrade rolled back",
-                            "The new version failed to start, so Weebo reverted it automatically.", {"proposal_id": proposal_id})
+                            "The new version failed to start, so Weebo reverted it automatically.",
+                            {"proposal_id": proposal_ids[-1] if proposal_ids else None})
+            if report_to:
+                # Only what was reverted: upgrades in the same batch that needed no restart are still in.
+                kept = [p["title"] for p in (self.app.store.get_proposal(i) for i in reported
+                                             if i not in proposal_ids) if p]
+                note = ("Still in (they didn't need the restart): " + "; ".join(kept) + ".\n\n" if kept else "")
+                self._report_upgrades(report_to, proposal_ids, live=False,
+                                      note=note + "Nothing is lost; I can look into what broke and rebuild it.")
             pending_path.unlink(missing_ok=True)
             return
-        # This boot runs the merged code; confirm it once the server has been healthy for a bit.
-        asyncio.get_event_loop().call_later(20, self._mark_verified, proposal_id, pending_path)
+        # This boot runs the merged code; confirm it once it has stayed up as long as the supervisor watches for a
+        # crash (a crash before then is rolled back, so "live" must not be said sooner).
+        self._verify_handle = asyncio.get_event_loop().call_later(
+            VERIFY_AFTER_SECONDS, self._mark_verified, proposal_ids, pending_path, report_to, reported, pending.get("at"))
 
-    def _mark_verified(self, proposal_id: str | None, pending_path: Path) -> None:
-        pending_path.unlink(missing_ok=True)
-        if proposal_id and self.app.store.get_proposal(proposal_id):
+    def _mark_verified(self, proposal_ids: list[str] | str | None, pending_path: Path, report_to: str | None = None,
+                       reported: list[str] | None = None, at: float | None = None) -> None:
+        self._verify_handle = None
+        # The note is only this boot's: a merge since may have written its own, which the supervisor still needs.
+        if at is None or self._pending_at(pending_path) == at:
+            pending_path.unlink(missing_ok=True)
+        if isinstance(proposal_ids, str) or proposal_ids is None:
+            proposal_ids = [proposal_ids] if proposal_ids else []
+        for proposal_id in proposal_ids:
             proposal = self.app.store.get_proposal(proposal_id)
+            if not proposal or proposal["status"] != "merged":  # rolled back meanwhile: not live
+                continue
             meta = dict(proposal.get("meta") or {})
             meta["verified_at"] = time.time()
             self.app.store.update_proposal(proposal_id, meta=meta)
             self.app.store.journal("evolution", "Upgrade is live", proposal["title"])
             self._publish(proposal_id)
+        if report_to:
+            live = [i for i in (reported or proposal_ids)
+                    if (self.app.store.get_proposal(i) or {}).get("status") == "merged"]
+            if live:
+                self._report_upgrades(report_to, live, live=True)
+
+    @staticmethod
+    def _pending_at(path: Path) -> float | None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get("at")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return None
 
     async def _work(self) -> None:
         while True:
             proposal_id = await self._queue.get()
             proposal = self.app.store.get_proposal(proposal_id)
             if proposal is None or proposal["status"] != "queued":
-                continue  # rejected or discarded while waiting in line
+                self._restart_if_idle()  # rejected or discarded while waiting in line: it may have been the last
+                continue
             self.current = proposal_id
             try:
                 await self._build(proposal_id)
@@ -170,9 +301,29 @@ class EvolutionEngine:
                 self._fail(proposal_id, f"Build crashed: {exc}")
             finally:
                 self.current = None
-                if self.restart_after_build and self._queue.empty():
-                    reason, self.restart_after_build = self.restart_after_build, None
-                    self.app.request_restart(reason)
+                self._restart_if_idle()
+
+    def _restart_if_idle(self) -> None:
+        """A restart that waited for the builds to finish happens as soon as none is running or waiting."""
+        if self.restart_after_build and not self.current and self._queue.empty():
+            reason, self.restart_after_build = self.restart_after_build, None
+            if self._merge_lock().locked():  # a merge is mid-way: restart once it is done
+                self._restart_task = asyncio.create_task(self._restart(reason))
+            else:
+                self._restart_now(reason)
+
+    def _restart_now(self, reason: str) -> None:
+        """Restart, and refuse merges from here on (the process is about to exit). Call it holding the merge lock,
+        or when no merge is running."""
+        self.restarting = reason
+        self.app.request_restart(reason)
+
+    async def _restart(self, reason: str) -> None:
+        async with self._merge_lock():
+            if self.current or not self._queue.empty():
+                self.restart_after_build = reason  # a build started meanwhile: after it, then
+            else:
+                self._restart_now(reason)
 
     # ------------------------------------------------------------------ public API
     async def propose(self, title: str, description: str, rationale: str = "", source: str = "user",
@@ -184,8 +335,14 @@ class EvolutionEngine:
         duplicate = self._find_duplicate(title)
         if duplicate:
             return duplicate
+        meta = dict(meta or {})
+        # The recorded failures this claims to fix (diagnostic ids). Only real ones count: they are how the
+        # upgrade's outcome gets measured after it merges (outcomes.py).
+        addresses = self.app.diagnostics.known([str(a) for a in meta.pop("addresses", None) or []])[:10]
+        if addresses:
+            meta["addresses"] = addresses
         proposal = self.app.store.add_proposal(title, description, rationale.strip(), source,
-                                               meta={"conversation_id": conversation_id, **(meta or {})})
+                                               meta={"conversation_id": conversation_id, **meta})
         self.app.store.journal("evolution", f"New self-improvement idea: {title}", rationale[:400], {"proposal_id": proposal["id"]})
         self._publish(proposal["id"])
         if self.app.settings.get("evolution.mode") == "off":
@@ -308,7 +465,7 @@ class EvolutionEngine:
         self._publish(proposal_id)
         self.app.bus.publish("weebo.mood", {"mood": "evolving", "background": True})
 
-        feedback = ""
+        feedback, previous_task = "", None
         gate_report = None
         review: dict[str, Any] = {}
         changed: list[str] = []
@@ -317,11 +474,9 @@ class EvolutionEngine:
             prompt = (BUILD_PROMPT if round_number == 1 else REVISION_PROMPT).format(
                 worktree=worktree, title=proposal["title"], description=proposal["description"],
                 rationale=proposal["rationale"] or "(not given)", feedback=feedback)
-            task = await self.app.agents.start(
-                f"Evolve: {proposal['title']}" + (f" (revision {round_number - 1})" if round_number > 1 else ""),
-                prompt, cwd=str(worktree), kind="evolution",
-                meta={"sandbox_mode": "workspace-write-auto", "proposal_id": proposal_id, "tools_scope": "none"},
-                effort=self.app.settings.get("codex.agent_effort"))
+            # A revision continues the previous round's session: the agent remembers what it tried and why.
+            task = await self._build_agent(proposal, round_number, prompt, worktree, previous_task)
+            previous_task = task["id"]
             self.app.store.update_proposal(proposal_id, task_id=task["id"])
             finished = await self.app.agents.wait(task["id"])
             if finished["status"] != "completed":
@@ -329,18 +484,28 @@ class EvolutionEngine:
                 return
             await self._commit_all(worktree, f"Weebo evolution: {proposal['title']}"
                                    + (f" (revision {round_number - 1})" if round_number > 1 else ""))
+            # Judge exactly what would merge. Files git ignores (a nested .gitignore can hide a conftest.py, or a
+            # .gitattributes that blanks the diff) were never committed, yet the tests and the review would see them.
+            await git.clean_untracked(worktree, keep=(SCRATCH_DIR, ".verification-tmp"))
             changed = await git.changed_files(worktree, base_commit)
             if not changed:
                 self._fail(proposal_id, "The build agent finished without changing any files.")
                 return
             self._stage(proposal_id, "checking", "testing", round_number)
-            gate_report = await run_gates(worktree, changed, self.app.settings.get("evolution.test_command"))
+            gate_report = await run_gates(worktree, changed, self.app.settings.get("evolution.test_command"),
+                                          base_commit=base_commit, personal_terms=self._personal_terms())
             self._stage(proposal_id, "checking", "reviewing", round_number)
             # Work the user asked for doesn't spend Weebo's proactive (background) budget.
             counted = proposal.get("source") not in council.USER_SOURCES
             review = await self._codex_review(worktree, base_ref, count=counted)
             if review.get("error"):
                 review = await self._codex_review(worktree, base_ref, count=counted)  # one retry, then fail closed
+            if gate_report.ok and not review.get("blocking") and touches_behavior(changed):
+                # Only worth rehearsing once everything else passes: it costs real model turns.
+                self._stage(proposal_id, "checking", "evaluating", round_number)
+                behavior = await self._behavior_gate(worktree, counted)
+                if behavior:
+                    gate_report.results.append(behavior)
             round_info = {"round": round_number, "gates_ok": gate_report.ok, "review_blocking": review.get("blocking"),
                           "task_id": task["id"]}
             meta = dict(self._get(proposal_id).get("meta") or {})
@@ -355,10 +520,14 @@ class EvolutionEngine:
             feedback = self._feedback(gate_report, review)
 
         assert gate_report is not None
-        diff_text = (await git.git(worktree, "diff", f"{base_commit}...HEAD", timeout=60)).out
-        diff_stat = (await git.git(worktree, "diff", "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
+        # A changed .gitattributes can mark files "-diff" and blank them in the diff a person approves from.
+        shown = (*git.DISPLAY_DIFF, "--text") if any(Path(f).name == ".gitattributes" for f in changed) \
+            else git.DISPLAY_DIFF
+        diff_text = (await git.git(worktree, *shown, f"{base_commit}...HEAD", timeout=60)).out
+        diff_stat = (await git.git(worktree, *shown, "--stat", f"{base_commit}...HEAD", timeout=60)).out.strip()
         head_commit = await git.head(worktree)
-        governance = self._governance(changed)
+        governance = self._governance(changed, await git.deleted_files(worktree, base_commit),
+                                      await git.rewritten_files(worktree, base_commit, pathspec="tests"))
         meta = dict(self._get(proposal_id).get("meta") or {})
         meta.update({"diff": diff_text[:400_000], "changed": changed, "governance": governance,
                      "review_blocking": review.get("blocking", False), "stage": None})
@@ -383,9 +552,22 @@ class EvolutionEngine:
                 return
             except EvolutionError as exc:
                 logger.info("Auto-merge skipped: %s", exc)
-        why = "" if governance["autonomous"] else " It touches core code, so it needs your OK."
+        why = "" if governance["autonomous"] else f" {governance['why']}"
         self.app.notify("evolution", "Upgrade ready to review", f"{proposal['title']}.{why}", {"proposal_id": proposal_id})
         self.app.bus.publish("weebo.mood", {"mood": "proud", "background": True})
+
+    async def _build_agent(self, proposal: dict[str, Any], round_number: int, prompt: str, worktree: Path,
+                           previous_task: str | None) -> dict[str, Any]:
+        title = f"Evolve: {proposal['title']}" + (f" (revision {round_number - 1})" if round_number > 1 else "")
+        options = dict(cwd=str(worktree), kind="evolution", effort=self.app.settings.get("codex.agent_effort"),
+                       meta={"sandbox_mode": "workspace-write-auto", "proposal_id": proposal["id"],
+                             "tools_scope": "none"})
+        if previous_task:
+            try:
+                return await self.app.agents.start(title, prompt, continue_from=previous_task, **options)
+            except ValueError as exc:  # it left no session to continue: a fresh one has the whole prompt
+                logger.info("Revision of %s starts a fresh session: %s", proposal["id"], exc)
+        return await self.app.agents.start(title, prompt, **options)
 
     async def _checkpoint(self, root: Path, title: str) -> str:
         """Save the user's uncommitted work as a normal commit (their identity, their hooks) before merging."""
@@ -417,18 +599,60 @@ class EvolutionEngine:
             parts.append("## Code review found blocking issues\n" + review.get("text", "")[-5000:])
         return "\n\n".join(parts)
 
-    def _governance(self, changed: list[str]) -> dict[str, Any]:
-        try:
-            from ai_assistant.core.change_policy import decide_governance
-        except Exception as exc:  # the policy module is required for any automatic merge
-            return {"autonomous": False, "files": [], "error": str(exc)}
+    def _governance(self, changed: list[str], deleted: list[str] = (), rewritten_tests: list[str] = ()) -> dict[str, Any]:
+        """Classify every touched file. Low-risk zones may auto-merge, except files the user protected
+        (evolution.protect_paths) and existing tests the change modified or deleted."""
+        protect = [p for p in (self.app.settings.get("evolution.protect_paths") or []) if p.strip()]
         files = []
         for path in changed:
-            decision = decide_governance(path, project_root=paths.PROJECT_ROOT)
-            files.append({"path": path, "zone": decision.zone.value, "tier": decision.tier.value,
-                          "reason": decision.reason})
+            decision = decide_governance(path, "delete" if path in deleted else "modify",
+                                         project_root=paths.PROJECT_ROOT)
+            tier, reason = decision.tier.value, decision.reason
+            if tier == "autonomous" and is_protected(path, protect):
+                tier, reason = "human_required", "Listed in Settings → evolution.protect_paths."
+            if tier == "autonomous" and path in rewritten_tests:
+                tier, reason = "human_required", ("Changes an existing test: a person should confirm the old "
+                                                  "expectation was meant to change.")
+            files.append({"path": path, "zone": decision.zone.value, "tier": tier, "reason": reason})
         autonomous = bool(files) and all(f["tier"] == "autonomous" for f in files)
-        return {"autonomous": autonomous, "files": files}
+        held = [f for f in files if f["tier"] != "autonomous"]
+        if not held:
+            why = ""
+        elif any(f["path"] in rewritten_tests for f in held):
+            why = "It changes existing tests, so it needs your OK."
+        elif any("protect_paths" in f["reason"] for f in held):
+            why = "It touches files you protected, so it needs your OK."
+        else:
+            why = "It touches core code, so it needs your OK."
+        return {"autonomous": autonomous, "files": files, "why": why,
+                "rewritten_tests": [p for p in rewritten_tests if p in changed]}
+
+    def _personal_terms(self) -> tuple[str, ...]:
+        """Who the user is, so the gates can refuse changes that hardcode it."""
+        terms = [str(self.app.settings.get("user.name") or "").strip()]
+        account = (self.app.engine.snapshot() or {}).get("account") or {}
+        terms.append(str(account.get("email") or "").strip())
+        return tuple(t for t in terms if t)
+
+    async def _behavior_gate(self, worktree: Path, count: bool) -> GateResult | None:
+        """Rehearse real situations with the build's code and compare with the running Weebo (evals.py)."""
+        evals = self.app.evals
+        if not evals.enabled():
+            return None
+        started = time.perf_counter()
+        if count:
+            ok, why = self.app.heartbeat.budget()
+            if not ok:
+                return GateResult(BEHAVIOR_GATE, True, f"Not run: {why}", skipped=True)
+        try:
+            result = await evals.gate(worktree, count=count)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # a check that couldn't run is shown, not silently passed
+            logger.warning("Behavior evals couldn't run: %s", exc)
+            return GateResult(BEHAVIOR_GATE, True, f"Couldn't run: {exc}", time.perf_counter() - started, skipped=True)
+        return GateResult(BEHAVIOR_GATE, result["ok"], result["summary"], time.perf_counter() - started,
+                          skipped=result["skipped"])
 
     async def _codex_review(self, worktree: Path, base_ref: str, count: bool = True) -> dict[str, Any]:
         """Codex's built-in code review of the agent's change (everything since ``base_ref``).
@@ -442,10 +666,12 @@ class EvolutionEngine:
             return {"text": f"Review unavailable: {exc}", "blocking": True, "error": str(exc) or type(exc).__name__}
         thread_id = result["thread"]["id"]
         done = asyncio.Event()
-        state: dict[str, Any] = {"review": "", "messages": [], "status": None}
+        state: dict[str, Any] = {"review": "", "messages": [], "status": None, "turn_id": None}
 
         def listener(method: str, params: dict[str, Any]) -> None:
-            if method == "item/completed":
+            if method == "turn/started":
+                state["turn_id"] = (params.get("turn") or {}).get("id")
+            elif method == "item/completed":
                 item = params.get("item") or {}
                 if item.get("type") == "exitedReviewMode":
                     state["review"] = item.get("review", "")
@@ -460,13 +686,13 @@ class EvolutionEngine:
 
         engine.route(thread_id, listener=listener, request_handler=deny)
         try:
-            await engine.start_review(thread_id, {"type": "baseBranch", "branch": base_ref})
+            review = await engine.start_review(thread_id, {"type": "baseBranch", "branch": base_ref})
+            state["turn_id"] = ((review or {}).get("turn") or {}).get("id") or state["turn_id"]
             await asyncio.wait_for(done.wait(), 1200)
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             return {"text": f"Review did not complete: {exc}", "blocking": True, "error": str(exc) or "timed out"}
         finally:
-            engine.unroute(thread_id)
-            engine.loaded_threads.discard(thread_id)
+            await stop_and_release(engine, thread_id, state["turn_id"], done)
             if count:
                 self.app.count_background_turn("review")
         text = (state["review"] or "\n\n".join(state["messages"])).strip()
@@ -477,8 +703,39 @@ class EvolutionEngine:
         return {"text": text, "blocking": blocking}
 
     # ------------------------------------------------------------------ merge & rollback
-    async def merge(self, proposal_id: str, automatic: bool = False) -> dict[str, Any]:
+    async def merge(self, proposal_id: str, automatic: bool = False, approved_by: str = "") -> dict[str, Any]:
+        async with self._merge_lock():
+            merged = await self._merge_one(proposal_id, automatic, approved_by)
+            self._after_merge([merged])  # under the lock: a merge waiting behind this one can't race the restart
+        return self._get(proposal_id)
+
+    async def merge_many(self, proposal_ids: list[str], approved_by: str = "",
+                         report_to: str | None = None) -> dict[str, Any]:
+        """Merge several upgrades in a row ("merge them all"), stopping at the first that can't merge. Weebo
+        restarts once at the end (after the reply that asked for it, and after any running build), then says in
+        ``report_to`` whether they're live."""
+        done, problem = [], None
+        async with self._merge_lock():
+            for proposal_id in dict.fromkeys(proposal_ids):
+                try:
+                    done.append(await self._merge_one(proposal_id, False, approved_by))
+                except EvolutionError as exc:
+                    problem = {"proposal_id": proposal_id, "error": str(exc)}
+                    break
+            restarting = self._after_merge(done, report_to=report_to, when_quiet=report_to)
+        return {"merged": [d["proposal_id"] for d in done], "problem": problem, "restarting": restarting,
+                "skipped": [p for p in proposal_ids if p not in {d["proposal_id"] for d in done}
+                            and p != (problem or {}).get("proposal_id")]}
+
+    def _merge_lock(self) -> asyncio.Lock:
+        if self._merge_mutex is None:
+            self._merge_mutex = asyncio.Lock()  # one merge at a time: the panel and the chat share one checkout
+        return self._merge_mutex
+
+    async def _merge_one(self, proposal_id: str, automatic: bool, approved_by: str) -> dict[str, Any]:
         proposal = self._get(proposal_id)
+        if self.restarting:
+            raise EvolutionError("Weebo is restarting to load the upgrades just merged; merge this once it's back.")
         if proposal["status"] != "ready":
             raise EvolutionError(f"Only ready proposals can be merged (this one is {proposal['status']}).")
         root = paths.PROJECT_ROOT
@@ -512,9 +769,25 @@ class EvolutionEngine:
             self._publish(proposal_id)
             raise EvolutionError("The upgrade conflicts with newer changes. Rebuild it on the latest code.")
         merged = await git.head(root)
+        needs_restart = any(f.endswith(".py") for f in meta.get("changed", []))
         meta.update({"previous_head": previous_head, "merged_into": current, "merged_at": time.time(),
                      "automatic": automatic, "checkpoint": checkpoint})
+        if approved_by:
+            meta["approved_by"] = approved_by
+        # The failures this fixes count as fixed only once the fix is live: a recurrence before then comes from the
+        # old code and says nothing about the fix. Python changes go live when Weebo restarts into them (which a
+        # running build can postpone for a long time), so they're marked by _go_live() on that next start.
+        if meta.get("addresses"):
+            if needs_restart:
+                meta["awaiting_live"] = True
+            else:
+                meta["live_at"] = time.time()
         self.app.store.update_proposal(proposal_id, status="merged", merged_commit=merged, meta=meta)
+        if meta.get("addresses"):
+            if needs_restart:
+                self.app.diagnostics.mark_pending_live(meta["addresses"], proposal_id)
+            else:
+                self.app.diagnostics.mark_fixed(meta["addresses"], proposal_id)
         await self._cleanup(self._get(proposal_id), delete_branch=True)
         self.app.store.journal("evolution", f"Upgraded myself: {proposal['title']}",
                                ("Merged automatically" if automatic else "Merged with your approval") + f" ({merged[:8]}).",
@@ -522,21 +795,95 @@ class EvolutionEngine:
         self._publish(proposal_id)
         self.app.bus.publish("weebo.mood", {"mood": "celebrate"})
         self.app.notify("evolution", "Weebo upgraded itself", proposal["title"], {"proposal_id": proposal_id})
-        needs_restart = any(f.endswith(".py") for f in meta.get("changed", []))
-        if needs_restart:
-            (paths.data_dir() / PENDING_FILE).write_text(json.dumps({
-                "proposal_id": proposal_id, "merged_commit": merged, "previous_head": previous_head, "at": time.time(),
-            }), encoding="utf-8")
-            if self.current or not self._queue.empty():
-                # Restarting now would kill the build in progress; the merged code goes live right after it.
-                self.restart_after_build = "Applying a self-upgrade"
-                self.app.notify("evolution", "Upgrade merged", f"{proposal['title']}: Weebo restarts to apply it as soon "
-                                "as the current build finishes.", {"proposal_id": proposal_id})
-            else:
-                self.app.request_restart("Applying a self-upgrade")
+        return {"proposal_id": proposal_id, "title": proposal["title"], "merged_commit": merged,
+                "previous_head": previous_head, "needs_restart": needs_restart}
+
+    def _after_merge(self, done: list[dict[str, Any]], report_to: str | None = None,
+                     when_quiet: str | None = None) -> str:
+        """Python changes need a restart to go live; anything else just reloads the page. Called holding the merge
+        lock. Returns when the restart comes: "now" (after the reply, if ``when_quiet``), "after_build" (a build is
+        running), or "" (none needed)."""
+        if not done:
+            return ""
+        if not any(d["needs_restart"] for d in done):
+            self.app.bus.publish("ui.reload", {"reason": done[-1]["title"]})
+            if report_to:
+                self._report_upgrades(report_to, [d["proposal_id"] for d in done], live=True)
+            return ""
+        self._write_pending(done, report_to)
+        if self.current or not self._queue.empty():
+            # Restarting now would kill the build in progress; the merged code goes live right after it.
+            self.restart_after_build = "Applying a self-upgrade"
+            titles = ", ".join(d["title"] for d in done)
+            self.app.notify("evolution", "Upgrade merged", f"{titles}: Weebo restarts to apply it as soon "
+                            "as the current build finishes.", {"proposal_id": done[-1]["proposal_id"]})
+            return "after_build"
+        if when_quiet:
+            self._restart_task = asyncio.create_task(self._restart_when_quiet(when_quiet))
         else:
-            self.app.bus.publish("ui.reload", {"reason": proposal["title"]})
-        return self._get(proposal_id)
+            self._restart_now("Applying a self-upgrade")
+        return "now"
+
+    def _write_pending(self, done: list[dict[str, Any]], report_to: str | None) -> None:
+        """The supervisor's note: what to revert if the new version fails to start. Merges still waiting for their
+        restart (deferred behind a build) stay in it, so a bad one among them is reverted too."""
+        path = paths.data_dir() / PENDING_FILE
+        ids, commits, previous, reports, reported = [], [], done[0]["previous_head"], [], []
+        try:
+            old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            old = {}
+        if old and not old.get("rolled_back") and float(old.get("at") or 0) >= self.app.started_at:
+            ids = list(old.get("proposal_ids") or [old.get("proposal_id")])
+            commits = list(old.get("merged_commits") or [old.get("merged_commit")])
+            previous = old.get("previous_head") or previous
+            reports = [r for r in [old.get("report_to")] if r]
+            reported = list(old.get("reported") or ids)
+        elif old and not old.get("rolled_back") and self._verify_handle is not None:
+            # The last upgrade's note, still waiting to confirm this boot: this process has run its code long
+            # enough to merge another, so confirm it now rather than let its timer delete the note written here.
+            self._verify_handle.cancel()
+            self._verify_after_upgrade_now(old, path)
+        ids += [d["proposal_id"] for d in done if d["needs_restart"]]
+        commits += [d["merged_commit"] for d in done if d["needs_restart"]]
+        reported += [d["proposal_id"] for d in done if d["proposal_id"] not in reported]
+        path.write_text(json.dumps({
+            "proposal_id": ids[-1], "merged_commit": commits[-1],  # the newest (older readers)
+            "proposal_ids": ids, "merged_commits": commits, "previous_head": previous, "at": time.time(),
+            "report_to": report_to or (reports[0] if reports else None),
+            "reported": reported,
+        }), encoding="utf-8")
+
+    def _verify_after_upgrade_now(self, pending: dict[str, Any], path: Path) -> None:
+        proposal_ids = [i for i in (pending.get("proposal_ids") or [pending.get("proposal_id")]) if i]
+        self._mark_verified(proposal_ids, path, pending.get("report_to"), pending.get("reported") or proposal_ids,
+                            pending.get("at"))
+
+    async def _restart_when_quiet(self, conv_id: str, limit: float = 90.0,
+                                  reason: str = "Applying a self-upgrade") -> None:
+        """Let the reply that asked for the merge finish (it says what's about to happen), then restart."""
+        deadline = time.monotonic() + limit
+        session = self.app.conversations.sessions.get(conv_id)
+        while session is not None and session.turn is not None and time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
+        await self._restart(reason)
+
+    def _report_upgrades(self, conv_id: str, proposal_ids: list[str], live: bool, note: str = "") -> None:
+        """Say in the chat how a batch of upgrades went (the follow-up to "merge them, tell me when it's done")."""
+        if not self.app.store.get_conversation(conv_id):
+            return
+        titles = [p["title"] for p in (self.app.store.get_proposal(i) for i in proposal_ids) if p]
+        if not titles:
+            return
+        listed = "\n".join(f"- {t}" for t in titles)
+        if live:
+            text = (f"I'm back! {'That upgrade is' if len(titles) == 1 else f'All {len(titles)} upgrades are'} "
+                    f"live:\n{listed}")
+        else:
+            text = (f"The new version didn't start, so I rolled back to the one before:\n{listed}\n\n"
+                    f"{note or 'Nothing is lost; I can look into what broke and rebuild it.'}")
+        message = self.app.store.add_message(conv_id, "assistant", text, data={"source": "upgrade"})
+        self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
 
     async def _replay(self, proposal: dict[str, Any], onto: str) -> "git.GitResult":
         """Rebase the build branch's commits (everything after its snapshot base) onto ``onto``.
@@ -557,6 +904,10 @@ class EvolutionEngine:
         return result
 
     async def rollback(self, proposal_id: str) -> dict[str, Any]:
+        async with self._merge_lock():  # the same checkout as merges
+            return await self._rollback(proposal_id)
+
+    async def _rollback(self, proposal_id: str) -> dict[str, Any]:
         proposal = self._get(proposal_id)
         if proposal["status"] != "merged" or not proposal.get("merged_commit"):
             raise EvolutionError("Only merged upgrades can be rolled back.")
@@ -575,12 +926,41 @@ class EvolutionEngine:
                 await git.git(root, "reset", "-q", before)
             raise EvolutionError("Couldn't revert cleanly: " + result.text()[-500:])
         self._set(proposal_id, "rolled_back")
+        self._drop_from_pending(proposal_id)
+        self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
         self.app.store.journal("evolution", f"Rolled back: {proposal['title']}", "Reverted at the user's request.")
         if any(f.endswith(".py") for f in (proposal.get("meta") or {}).get("changed", [])):
-            self.app.request_restart("Rolling back an upgrade")
+            self._restart_now("Rolling back an upgrade")
         else:
             self.app.bus.publish("ui.reload", {"reason": "rollback"})
         return self._get(proposal_id)
+
+    def _drop_from_pending(self, proposal_id: str) -> None:
+        """A rolled-back upgrade comes off the supervisor's note: it isn't waiting to be confirmed live any more, and
+        reverting its merge again (were the next boot to crash) would fail and stop the rest of the batch reverting."""
+        path = paths.data_dir() / PENDING_FILE
+        try:
+            note = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            return
+        if not note or note.get("rolled_back"):
+            return
+        ids = [i for i in (note.get("proposal_ids") or [note.get("proposal_id")]) if i]
+        commits = [c for c in (note.get("merged_commits") or [note.get("merged_commit")]) if c]
+        reported = [i for i in (note.get("reported") or ids) if i != proposal_id]
+        keep = [(i, c) for i, c in zip(ids, commits) if i != proposal_id]
+        if len(keep) == len(ids) and len(reported) == len(note.get("reported") or ids):
+            return  # not in this note
+        if not keep and not reported:
+            if self._verify_handle is not None:
+                self._verify_handle.cancel()
+                self._verify_handle = None
+            path.unlink(missing_ok=True)
+            return
+        note.update({"proposal_ids": [i for i, _ in keep], "merged_commits": [c for _, c in keep],
+                     "proposal_id": keep[-1][0] if keep else None, "merged_commit": keep[-1][1] if keep else None,
+                     "reported": reported})  # "at" stays: a timer waiting on this note still owns it
+        path.write_text(json.dumps(note), encoding="utf-8")
 
     # ------------------------------------------------------------------ helpers
     @staticmethod
@@ -658,11 +1038,49 @@ class EvolutionEngine:
     def _publish(self, proposal_id: str) -> None:
         proposal = self.app.store.get_proposal(proposal_id)
         if proposal:
+            proposal = self._bring_to_chat(proposal)
             slim = {k: v for k, v in proposal.items() if k != "meta"}
             meta = dict(proposal.get("meta") or {})
             meta.pop("diff", None)
             slim["meta"] = meta
             self.app.bus.publish("evolution.updated", {"proposal": slim})
             message = self.app.store.sync_proposal_message(proposal)
+            if message and proposal.get("_forward"):
+                message = self.app.store.bring_forward(message["id"]) or message
             if message:
                 self.app.bus.publish("conv.message", {"conversation_id": message["conversation_id"], "message": message})
+
+    def present(self, proposal_id: str, conversation_id: str) -> dict[str, Any]:
+        """Put an upgrade's card at the bottom of a chat ("show me that build")."""
+        proposal = self._get(proposal_id)
+        meta = dict(proposal.get("meta") or {})
+        if meta.get("conversation_id") != conversation_id:  # it comes to the chat that asked (its card moves)
+            meta["conversation_id"] = conversation_id
+            self.app.store.update_proposal(proposal_id, meta=meta)
+            proposal = self._get(proposal_id)
+        message = self.app.store.sync_proposal_message(proposal)
+        if message:
+            message = self.app.store.bring_forward(message["id"]) or message
+            self.app.bus.publish("conv.message", {"conversation_id": message["conversation_id"], "message": message})
+        return proposal
+
+    def _bring_to_chat(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        """An upgrade that needs the user (ready to merge, conflicting, rolled back, or a failed one they asked for)
+        shows up at the bottom of the main chat, once per state, instead of only as an inbox notification."""
+        status, meta = proposal["status"], dict(proposal.get("meta") or {})
+        wanted = status in NEEDS_YOU or (status == "failed" and proposal.get("source") in ("user", "conversation"))
+        if not wanted:
+            if meta.get("shown_status"):  # it moved on (rebuilding, say): the next time it needs the user, show it
+                meta.pop("shown_status")
+                self.app.store.update_proposal(proposal["id"], meta=meta)
+                return {**proposal, "meta": meta}
+            return proposal
+        if meta.get("shown_status") == status:
+            return proposal
+        meta["shown_status"] = status
+        if not meta.get("conversation_id"):  # ideas from dreams, audits or the panel: the main chat is theirs
+            meta["conversation_id"] = self.app.conversations.main_id()
+        elif not self.app.store.get_conversation(meta["conversation_id"]):
+            return proposal  # its chat was deleted on purpose: never bring it back
+        self.app.store.update_proposal(proposal["id"], meta=meta)
+        return {**proposal, "meta": meta, "_forward": True}

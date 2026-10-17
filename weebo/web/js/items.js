@@ -71,8 +71,9 @@ export function workLabel(msg) {
     }
     case "tool": {
       if (d.source === "weebo") {
-        const label = d.tool === "weebo1_tool" ? `Used ${(d.arguments || {}).name || "a Weebo 1.x tool"}` : (TOOL_LABELS[d.tool] || d.tool);
-        const detail = d.tool === "weebo1_tool" ? argSummary((d.arguments || {}).arguments) : argSummary(d.arguments);
+        const wrapped = d.tool === "use_integration" || d.tool === "weebo1_tool";  // weebo1_tool: older chats
+        const label = wrapped ? `Used ${(d.arguments || {}).name || "an integration"}` : (TOOL_LABELS[d.tool] || d.tool);
+        const detail = wrapped ? argSummary((d.arguments || {}).arguments) : argSummary(d.arguments);
         return { ic: d.tool === "start_agent" ? "bot" : d.tool === "propose_improvement" ? "dna" : d.tool === "remember" ? "brain" : "sparkles", text: label, detail };
       }
       return { ic: "wrench", text: `${d.server}: ${d.tool}`, detail: argSummary(d.arguments) };
@@ -186,12 +187,58 @@ function renderEvolutionStatus(msg, ctx) {
     el("p", { class: "evolution-status", text: d.status_text || msg.content }));
   if (d.decision) card.append(el("p", { class: "small muted", text: d.decision }));
   for (const reason of d.reasons || []) card.append(el("p", { class: "small evolution-reason", text: reason }));
-  card.append(el("a", { class: "btn btn-soft btn-sm", href: proposalHref(d.proposal_id), text: "Open in Evolution", onclick: (e) => {
-    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    ctx.openProposal(d.proposal_id);
-  } }));
+  // Act right here: a tap on these is the user's decision (the same as the Evolution panel's buttons).
+  const act = (action, label, kind = "soft", ic = "") => btn(label, { kind, size: "sm", icon: ic || undefined,
+    onClick: (e) => ctx.proposalAction(d.proposal_id, action, e.currentTarget) });
+  const actions = el("div", { class: "card-actions" });
+  if (!ctx.readOnly && d.status === "ready") actions.append(act("merge", "Merge", "primary", "check"));
+  if (!ctx.readOnly && ["failed", "conflict", "rolled_back"].includes(d.status)) actions.append(act("rebuild", "Rebuild", "primary", "refresh"));
+  if (!ctx.readOnly && ["proposed", "declined", "vetting"].includes(d.status)) actions.append(act("approve", "Build it", "primary", "play"));
+  actions.append(el("a", { class: "btn btn-soft btn-sm", href: proposalHref(d.proposal_id),
+    text: d.status === "ready" ? "See changes" : "Details", onclick: (e) => {
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      ctx.openProposal(d.proposal_id);
+    } }));
+  if (!ctx.readOnly && ["ready", "proposed", "declined", "vetting", "failed", "conflict"].includes(d.status)) actions.append(act("reject", "Not now", "ghost"));
+  card.append(actions);
   return el("div", { class: "msg msg-card" }, card);
+}
+
+// A background agent, live: what it's doing now in plain words, then how it went.
+const AGENT_STATES = {
+  queued: ["Waiting", "clock"], running: ["Working", "bot"], completed: ["Done", "check"], failed: ["Failed", "alert"],
+  cancelled: ["Stopped", "x"], interrupted: ["Interrupted", "x"],
+};
+
+function renderAgentCard(msg, ctx) {
+  const d = msg.data || {};
+  const [label, ic] = AGENT_STATES[d.status] || [d.status, "bot"];
+  const live = d.status === "running" || d.status === "queued";
+  const card = el("div", { class: `card agent-live as-${d.status}` },
+    el("div", { class: "card-head" },
+      el("span", { class: "agent-ic", html: live ? '<span class="spin"></span>' : icon(ic, 16) }),
+      el("strong", { text: d.title || msg.content }),
+      el("span", { class: "agent-state", text: label })));
+  if (live) {
+    card.append(el("p", { class: "agent-doing", text: d.status === "queued" ? "Starts when an agent slot frees up." : (d.doing || "Getting started…") }));
+  } else {
+    // The result itself is in the report further down (and Weebo tells you about it); this card just says how it went.
+    const took = d.finished_at && (d.started_at || d.created_at) ? ` in ${duration(d.finished_at - (d.started_at || d.created_at))}` : "";
+    card.classList.add("compact");
+    card.append(el("p", { class: "agent-doing", text: `${label}${took}.${d.status === "failed" && d.error ? " " + d.error : ""}` }));
+  }
+  const actions = el("div", { class: "card-actions" },
+    btn("Details", { kind: "soft", size: "sm", icon: "external", onClick: () => ctx.openTask(d.task_id) }));
+  if (live && !ctx.readOnly) actions.append(btn("Stop", { kind: "ghost", size: "sm", icon: "stop", onClick: (e) => ctx.stopTask(d.task_id, e.currentTarget) }));
+  card.append(actions);
+  return el("div", { class: "msg msg-card" }, card);
+}
+
+// Tap-to-send replies Weebo offered under its latest answer.
+export function renderSuggestions(replies, onPick) {
+  return el("div", { class: "reply-chips" }, replies.map((text) =>
+    el("button", { class: "reply-chip", type: "button", text, onclick: () => onPick(text) })));
 }
 
 function renderUser(msg) {
@@ -239,10 +286,11 @@ function renderPlan(msg) {
 
 function renderApproval(msg, ctx) {
   const d = msg.data || {};
-  const pending = msg.status === "pending";
+  const pending = msg.status === "pending" && !ctx.readOnly;
+  const who = d.agent ? `Agent “${d.agent}”` : "Weebo";  // a background agent's request lands in this chat too
   const titles = {
-    command: "Weebo wants to run a command", file_change: "Weebo wants to change files",
-    permissions: "Weebo is asking for more access", confirm: d.title || "Weebo wants to take an action",
+    command: `${who} wants to run a command`, file_change: `${who} wants to change files`,
+    permissions: `${who} is asking for more access`, confirm: d.title || `${who} wants to take an action`,
     elicitation: d.title || "A tool needs your OK",
   };
   const card = el("div", { class: `card approval-card${pending ? " pending" : ""}` });
@@ -276,7 +324,7 @@ function renderApproval(msg, ctx) {
 
 function renderQuestion(msg, ctx) {
   const d = msg.data || {};
-  const pending = msg.status === "pending";
+  const pending = msg.status === "pending" && !ctx.readOnly;
   const card = el("div", { class: `card question-card${pending ? " pending" : ""}` },
     el("div", { class: "card-head" }, el("span", { html: icon("sparkles", 16) }), el("strong", { text: "Weebo has a question" })));
   const answers = {};
@@ -384,6 +432,7 @@ const RENDERERS = {
   approval: renderApproval,
   question: renderQuestion,
   agent_report: renderAgentReport,
+  agent_card: renderAgentCard,
   reminder: renderReminder,
   notice: renderNotice,
   error: renderError,

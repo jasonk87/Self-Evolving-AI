@@ -38,14 +38,19 @@ def repo(tmp_path, monkeypatch):
 @pytest_asyncio.fixture
 async def evolving(app, repo, monkeypatch):
     """App whose build agent edits files according to ``script`` and whose gates are scripted too."""
-    state = {"script": [], "gates": [], "reviews": [], "council": [], "restarts": [], "stages": [], "convened": []}
+    state = {"script": [], "gates": [], "reviews": [], "council": [], "restarts": [], "stages": [], "convened": [],
+             "gate_kwargs": [], "continued": []}
 
-    async def fake_start(title, instructions, cwd=None, kind="agent", meta=None, effort=None, **_):
+    async def fake_start(title, instructions, cwd=None, kind="agent", meta=None, effort=None, continue_from=None, **_):
+        state["continued"].append(continue_from)
         task = app.store.create_task(title, instructions, kind=kind, cwd=cwd, meta=meta or {})
         edit = state["script"].pop(0) if state["script"] else None
         if edit:
             for rel, content in edit.items():
                 target = Path(cwd) / rel
+                if content is None:  # the agent deleted (or, with a new path alongside, moved) this file
+                    target.unlink()
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content)
         app.store.update_task(task["id"], status="completed", summary="done", finished_at=time.time())
@@ -58,8 +63,9 @@ async def evolving(app, repo, monkeypatch):
         meta = app.store.get_proposal(app.evolution.current)["meta"]
         state["stages"].append((meta.get("stage"), meta.get("round")))
 
-    async def fake_gates(worktree, changed, test_command=""):
+    async def fake_gates(worktree, changed, test_command="", **kwargs):
         note_stage()
+        state["gate_kwargs"].append(kwargs)
         ok = state["gates"].pop(0) if state["gates"] else True
         return GateReport([GateResult("Tests", ok, "" if ok else "1 failed: test_thing")])
 
@@ -121,6 +127,10 @@ async def test_failed_checks_trigger_revision_round(evolving):
     rounds = ready["meta"]["rounds"]
     assert [r["gates_ok"] for r in rounds] == [False, True]
     assert ready["meta"]["governance"]["autonomous"] is False  # core code needs a human
+    # The revision continues the first round's session (one Codex thread per build, and it remembers its attempt).
+    assert state["continued"] == [None, rounds[0]["task_id"]]
+    revision = app.store.get_task(rounds[1]["task_id"])
+    assert "Set VALUE correctly." in revision["prompt"]  # the goal is restated, should a fresh session take over
 
 
 async def test_build_fails_after_max_rounds(evolving):

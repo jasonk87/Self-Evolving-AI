@@ -69,6 +69,7 @@ class CodexEngine:
         self._ready = asyncio.Event()
         self._stopping = False
         self._supervisor: asyncio.Task | None = None
+        self._jobs: set[asyncio.Task] = set()
         self._restart_attempts = 0
         self._login_waiters: list[asyncio.Future] = []
 
@@ -87,11 +88,27 @@ class CodexEngine:
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._supervisor:
-            self._supervisor.cancel()
+        self._ready.clear()
+        tasks = [*self._jobs, *([self._supervisor] if self._supervisor else [])]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self.rpc:
             await self.rpc.stop()
         self._set_status("stopped")
+
+    def _start_job(self, coro: Any) -> None:
+        if self._stopping:
+            coro.close()
+            return
+        task = asyncio.create_task(coro)
+        self._jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    def _job_done(self, task: asyncio.Task) -> None:
+        self._jobs.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Engine background callback failed: %r", task.exception())
 
     async def restart(self) -> None:
         """Restart the app-server (for example after changing the binary)."""
@@ -182,7 +199,7 @@ class CodexEngine:
                 try:
                     result = listener("engine/closed", {"threadId": thread_id, "message": self.last_error})
                     if asyncio.iscoroutine(result):
-                        asyncio.create_task(result)
+                        self._start_job(result)
                 except Exception:
                     logger.exception("Thread listener failed during engine shutdown")
 
@@ -356,18 +373,80 @@ class CodexEngine:
     async def interrupt(self, thread_id: str, turn_id: str) -> None:
         await self.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=30)
 
-    async def set_thread_name(self, thread_id: str, name: str) -> None:
+    async def set_thread_name(self, thread_id: str, name: str) -> bool:
         try:
             await self.request("thread/name/set", {"threadId": thread_id, "name": name[:80]}, timeout=15)
+            return True
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/name/set failed: %s", exc)
+            return False
 
-    async def archive_thread(self, thread_id: str) -> None:
+    async def archive_thread(self, thread_id: str) -> bool | None:
+        """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too.
+        True when archived, False when Codex refused (gone, already archived), None when Codex couldn't be reached
+        (worth trying again later)."""
         try:
             await self.request("thread/archive", {"threadId": thread_id}, timeout=15)
-        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            return True
+        except RpcError as exc:
+            logger.debug("thread/archive refused: %s", exc)
+            return False
+        except (EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/archive failed: %s", exc)
+            return None
+        finally:
+            self.loaded_threads.discard(thread_id)
+
+    async def thread_idle(self, thread_id: str) -> bool:
+        """Check runtime metadata without loading history; unknown state must never authorize archiving."""
+        try:
+            result = await self.request("thread/read", {"threadId": thread_id, "includeTurns": False}, timeout=15)
+            status = (result.get("thread") or {}).get("status") or {}
+            return isinstance(status, dict) and status.get("type") in ("idle", "notLoaded", "systemError")
+        except (RpcError, EngineClosed, asyncio.TimeoutError):
+            return False
+
+    async def unarchive_thread(self, thread_id: str) -> bool:
+        """Bring an archived thread back so it can be resumed (resuming an archived thread is refused)."""
+        try:
+            await self.request("thread/unarchive", {"threadId": thread_id}, timeout=15)
+            return True
+        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            logger.debug("thread/unarchive failed: %s", exc)
+            return False
+
+    async def list_threads(self, timeout: float = 120, **params: Any) -> dict[str, Any]:
+        # A search scans the session files on disk, which can be slow when there are many.
+        return await self.request("thread/list", {k: v for k, v in params.items() if v is not None}, timeout=timeout)
+
+    def release_thread(self, thread_id: str, finished: bool = True) -> None:
+        """Done with a thread for good: stop following it, so the app-server can unload it (ephemeral threads stay
+        in its memory while anyone is subscribed). Only once its turn has finished: a turn still running (one that
+        timed out) would ask questions nobody receives and never end; staying subscribed, Weebo declines them."""
+        self.unroute(thread_id)
         self.loaded_threads.discard(thread_id)
+        if self.status != "ready":
+            return
+        if not finished:
+            # A stop that could not be confirmed still needs a terminal-event listener, otherwise the eventual
+            # completion is dropped and the server retains this thread until restart. Unowned requests use
+            # the engine's default deny handler, never the caller's expired tools/approvals.
+            def completed(method: str, params: dict[str, Any]) -> None:
+                if method == "turn/completed":
+                    self.release_thread(thread_id)
+                elif method == "engine/closed":
+                    self.unroute(thread_id)
+
+            self.route(thread_id, listener=completed)
+            return
+
+        async def unsubscribe() -> None:
+            try:
+                await self.request("thread/unsubscribe", {"threadId": thread_id}, timeout=15)
+            except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+                logger.debug("thread/unsubscribe failed: %s", exc)
+
+        self._start_job(unsubscribe())
 
     async def start_review(self, thread_id: str, target: dict[str, Any]) -> dict[str, Any]:
         return await self.request("review/start", {"threadId": thread_id, "target": target, "delivery": "inline"}, timeout=90)
@@ -387,7 +466,7 @@ class CodexEngine:
             self.bus.publish("engine.usage", {"rateLimits": self.rate_limits})
             return
         if method in ("account/updated", "account/login/completed"):
-            asyncio.create_task(self._account_changed())
+            self._start_job(self._account_changed())
             return
         thread_id = _thread_id_of(params)
         if thread_id is None:
