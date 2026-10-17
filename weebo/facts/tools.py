@@ -90,3 +90,38 @@ async def commitment_update(ctx: ToolContext, id: str, **patch) -> dict:
     row, _ = ctx.app.facts.repository.upsert("commitments", {"id": id, **patch}, source="local:commitments", ttl_seconds=86400)
     ctx.app.store.journal("facts.commitment", "Commitment updated", data={"id": id, "actor": ctx.trigger, "fields": list(patch)})
     return row
+
+
+@registry.register("day_sheet", "The day sheet: upcoming events enriched from sources (weather, travel time only when a "
+                   "directions source exists, time zones, conflicts, related email threads, people). Each row has its "
+                   "source and fetched_at; stale rows are being rebuilt.",
+                   {"properties": {"day": {"type": "string", "description": "YYYY-MM-DD in the user's timezone"}}},
+                   scopes=("chat", "agent", "bot"))
+async def day_sheet(ctx: ToolContext, day: str = "") -> dict:
+    await ctx.app.daysheet.build()
+    rows = ctx.app.daysheet.rows()
+    if day:
+        rows = [r for r in rows if r.get("day") == day]
+    return {"rows": rows, "travel_source": bool(ctx.app.daysheet.directions)}
+
+
+@registry.register("suggest_idea", "Add an idea to the user's Ideas tab: specific and actionable, citing facts from the "
+                   "store (evidence ids from facts_query). Actions: reminder, hold_slot or draft_email run with Do it; "
+                   "propose_time, reply, accept, decline or reschedule always go through you and the user's approval.",
+                   {"properties": {"kind": {"type": "string"}, "title": {"type": "string"},
+                                   "statement": {"type": "string", "description": "One or two specific sentences."},
+                                   "evidence": {"type": "array", "items": {"type": "object", "properties": {
+                                       "entity": {"type": "string", "enum": ["events", "threads", "commitments", "people"]},
+                                       "id": {"type": "string"}}}},
+                                   "actions": {"type": "array", "items": {"type": "object", "properties": {
+                                       "kind": {"type": "string"}, "label": {"type": "string"},
+                                       "params": {"type": "object"}}}},
+                                   "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
+                    "required": ["kind", "title", "statement", "evidence"]})
+async def suggest_idea(ctx: ToolContext, kind: str, title: str, statement: str, evidence: list, actions: list | None = None,
+                       confidence: float = 0.6) -> str:
+    try:
+        idea = ctx.app.ideas.add(kind, title, statement, evidence, actions or [], confidence, source="chief")
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    return f"Added idea {idea['id']}." if idea else "Not added: a duplicate, today's cap is reached, or the user finds these unhelpful."

@@ -25,8 +25,11 @@ from .events import EventBus
 from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
 from .evolution.evals import Evals
+from .facts.daysheet import DaySheet
+from .facts.factcheck import FactCheck
 from .facts.service import Facts
 from .growth import Growth
+from .ideas import Ideas
 from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
@@ -58,6 +61,9 @@ class WeeboApp:
         self.approvals = ApprovalPolicy(self)
         self.connectors = Connectors(self)
         self.growth = Growth(self)
+        self.daysheet = DaySheet(self)
+        self.ideas = Ideas(self)
+        self.factcheck = FactCheck(self)
         self.scheduler = Scheduler(self)
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
@@ -104,6 +110,7 @@ class WeeboApp:
         self.skills.seed_defaults()
         self.settings.on_change(self._on_settings_changed)
         self.bus.subscribe("engine.status", self._on_engine_status)
+        self.bus.subscribe("facts.synced", self._on_facts_synced)
         if with_engine:
             await self.engine.start()
         if with_background:
@@ -182,6 +189,15 @@ class WeeboApp:
         if "memory.semantic" in changed:
             self.memory.start_indexing(changed["memory.semantic"])
 
+    async def _on_facts_synced(self, _topic: str, data: dict[str, Any]) -> None:
+        """New or changed facts: rebuild the affected day-sheet rows and refresh the ideas (code only, no model)."""
+        if self._stopping or not data.get("changed"):
+            return
+        try:
+            await self.ideas.generate()
+        except Exception:
+            logger.exception("Couldn't refresh the day sheet and ideas")
+
     async def _on_engine_status(self, _topic: str, data: dict[str, Any]) -> None:
         if not self._stopping and data.get("status") == "ready":
             self.threads.on_engine_ready()  # before the pump: a continued agent may need a thread put away first
@@ -221,6 +237,9 @@ class WeeboApp:
         if self.bots.owns(conv_id):  # a bot's turn reports to the chief, never to the user directly
             self.bots.on_turn_finished(conv_id, turn, status)
             return
+        if turn.trigger in ("brief", "idea") and status == "completed" and turn.final_text \
+                and not getattr(turn, "factchecked", False):
+            self._start_job(self.factcheck.review_turn(conv_id, turn.final_message_id, turn.final_text), "factcheck")
         if turn.trigger in ("brief", "routine", "agent_report", "followup", "bot_report") and status == "completed":
             conv = self.store.get_conversation(conv_id)
             if conv and self.clients == 0 and turn.final_text:

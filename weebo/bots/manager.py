@@ -42,7 +42,7 @@ BOT_ALWAYS = ("report_to_chief", "save_standing_rule", "propose_profile_change",
 # upgrades, restarts or anything that steers Weebo itself.
 GRANTABLE = ("remember", "recall", "search_history", "set_reminder", "list_reminders", "cancel_reminder",
              "use_integration", "start_agent", "agent_status", "message_agent", "stop_agent", "save_skill",
-             "propose_improvement", "offer_replies")
+             "propose_improvement", "offer_replies", "day_sheet")
 # Hints the engine's own model descriptions give about a smaller, cheaper model (no model names are hardcoded).
 FAST_HINTS = ("mini", "nano", "small", "lite", "fast", "flash", "spark", "cheap")
 

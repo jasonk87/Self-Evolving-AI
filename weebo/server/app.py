@@ -797,6 +797,29 @@ def create_app(weebo: WeeboApp) -> web.Application:
             workflow = weebo.growth.set_workflow_status(ref, status, actor="user")
         return _json({"workflow": workflow})
 
+    async def get_daysheet(_: web.Request) -> web.Response:
+        await weebo.daysheet.build()
+        return _json({"rows": weebo.daysheet.rows(), "travel_source": bool(weebo.daysheet.directions)})
+
+    async def list_ideas(request: web.Request) -> web.Response:
+        if request.query.get("refresh") == "1":
+            await weebo.ideas.generate()
+        return _json({"ideas": weebo.ideas.list()})
+
+    async def idea_action(request: web.Request) -> web.Response:
+        idea_id, action = request.match_info["id"], request.match_info["action"]
+        if action == "discuss":
+            return _json({"idea": await weebo.ideas.discuss(idea_id)})
+        if action == "do":
+            body = await _body(request)
+            return _json(await weebo.ideas.do_it(idea_id, int(body.get("action") or 0)))
+        if action == "dismiss":
+            return _json({"idea": weebo.ideas.not_useful(idea_id)})
+        raise ValueError("Unknown idea action.")
+
+    r.add_get("/api/daysheet", get_daysheet)
+    r.add_get("/api/ideas", list_ideas)
+    r.add_post("/api/ideas/{id}/{action}", idea_action)
     r.add_get("/api/bots", list_bots)
     r.add_get("/api/bots/{id}", get_bot)
     r.add_patch("/api/bots/{id}", patch_bot)

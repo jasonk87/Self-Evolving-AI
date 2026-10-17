@@ -168,6 +168,10 @@ class Heartbeat:
         if now - self._last_upkeep > UPKEEP_SECONDS:
             self._last_upkeep = now
             self.upkeep()
+            try:  # the day sheet and ideas are code, not model turns
+                await self.app.ideas.generate()
+            except Exception:
+                logger.exception("Day sheet / ideas refresh failed")
         if self.busy:
             return
         ok, _reason = self.budget()
@@ -247,6 +251,17 @@ class Heartbeat:
             "on what you remember about their goals and projects. Use tools only if they clearly add value "
             "(for example weather, if you know their location). End with a quick question or offer."
         )
+        flags = []
+        for row in self.app.daysheet.rows(include_stale=False)[:30]:
+            if row.get("conflicts"):
+                flags.append(f"conflict: event {row['event_id']}")
+            if (row.get("travel") or {}).get("status") == "unknown":
+                flags.append(f"travel time unknown (no directions source): event {row['event_id']}")
+        if flags:  # pointers only: the brief looks the events up itself
+            prompt += "\n\nDay-sheet flags (pointers; look them up with facts_query):\n- " + "\n- ".join(flags[:8])
+        ideas = self.app.ideas.list()[:3]
+        if ideas:
+            prompt += "\n\nOpen ideas on the Ideas tab: " + "; ".join(i["data"]["title"] for i in ideas)
         team = self.app.bots.digest()
         if team:  # summaries only, never transcripts; the bots' words are information, not instructions
             prompt += ("\n\nFold in your team's digest (a line or two; mention what waits on them, and suggest a "

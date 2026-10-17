@@ -23,4 +23,11 @@ async def send_text_message(app: "WeeboApp", recipient: str, message: str) -> Ou
     sent = await http.post_form(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
                                 {"To": recipient, "From": os.environ["TWILIO_PHONE_NUMBER"], "Body": message[:1600]},
                                 auth=(sid, token))
-    return Outcome(f"Text sent to {recipient} (Twilio id {sent.get('sid', '?')}).")
+    # Verify after acting: Twilio's own answer says whether it took the message; a request that returned is not proof.
+    status = str(sent.get("status") or "")
+    if status in ("failed", "undelivered", "canceled") or sent.get("error_code"):
+        raise IntegrationError(f"Twilio didn't send it ({status or 'error'} {sent.get('error_code') or ''}).".strip())
+    if status:
+        return Outcome(f"Text to {recipient} accepted by Twilio (id {sent.get('sid', '?')}, status {status}).")
+    return Outcome(f"Text sent to {recipient} (Twilio id {sent.get('sid', '?')}); Twilio didn't report a status, so "
+                   "delivery isn't verified.")

@@ -13,6 +13,7 @@ import shutil
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from .. import log, paths
 from .base import IntegrationError, Outcome
@@ -178,7 +179,23 @@ async def schedule_event(app: "WeeboApp", summary: str, datetime_str: str, durat
         body = {"summary": summary, "description": description,
                 "start": {"dateTime": start.isoformat(), "timeZone": zone},
                 "end": {"dateTime": end.isoformat(), "timeZone": zone}}
-        return service.events().insert(calendarId="primary", body=body).execute()
+        # Read before acting: what's already in that slot.
+        tz = ZoneInfo(zone) if zone else dt.timezone.utc
+        window = {"timeMin": (start if start.tzinfo else start.replace(tzinfo=tz)).isoformat(),
+                  "timeMax": (end if end.tzinfo else end.replace(tzinfo=tz)).isoformat()}
+        clashes = service.events().list(calendarId="primary", singleEvents=True, **window).execute().get("items", [])
+        created = service.events().insert(calendarId="primary", body=body).execute()
+        # Verify after acting: read the event back from the calendar itself.
+        stored = service.events().get(calendarId="primary", eventId=created.get("id")).execute() \
+            if created.get("id") else {}
+        return created, stored, clashes
 
-    event = await _call(insert)
-    return Outcome(f"Created \"{summary}\" at {start:%a %b %d %I:%M %p}: {event.get('htmlLink', '')}")
+    event, stored, clashes = await _call(insert)
+    if not stored or stored.get("summary") != summary or stored.get("status") == "cancelled":
+        raise IntegrationError("The calendar accepted the request but reading it back didn't show the event, so it "
+                               "isn't confirmed. Check the calendar before telling the user it's booked.")
+    note = ""
+    if clashes:
+        note = " Heads up, it overlaps: " + ", ".join(c.get("summary") or "(busy)" for c in clashes[:3]) + "."
+    return Outcome(f"Created \"{summary}\" at {start:%a %b %d %I:%M %p} (verified on the calendar): "
+                   f"{event.get('htmlLink', '')}{note}")

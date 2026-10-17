@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from .. import log, paths
 from ..codex.engine import image_input, text_input
 from ..codex.rpc import EngineClosed, RpcError
+from ..facts import mail_ingest
 from . import activity, persona
 from .tools import ToolContext, ToolResult, registry
 
@@ -40,6 +41,7 @@ class TurnState:
     hops: int = 0  # relays (chief -> bot -> chief ...) that led to this turn; capped by bots.hop_limit
     job_id: str | None = None  # the bot job this turn works on
     reported: bool = False  # a bot reported to the chief during this turn
+    factchecked: bool = False  # the deterministic fact check already flagged this turn's answer
     turn_id: str | None = None
     cancelled: bool = False
     stop_requested: asyncio.Event = field(default_factory=asyncio.Event)
@@ -854,6 +856,12 @@ class ConversationManager:
             turn.streams.pop(str(item.get("id")), None)
             if data.get("phase") != "commentary":
                 turn.final_text, turn.final_message_id = content, message_id
+                if turn.trigger in ("brief", "idea"):  # what Weebo wrote for the user, checked against the source
+                    issues = self.app.factcheck.check(content)
+                    if issues:
+                        data["factcheck"] = issues
+                        content = f"{content}\n\n> ⚠️ {self.app.factcheck.note(issues)}"
+                        turn.factchecked = True
         if not completed and status == "done":
             status = "running"
         message = self.app.store.upsert_message(message_id, conv_id, role, kind, content, data,
@@ -874,7 +882,14 @@ class ConversationManager:
             return
         if completed:
             error = (item.get("error") or {}).get("message") or ""
-            self.app.connectors.record_use(server, ok=item.get("status") != "failed" and not error, error=error)
+            ok = item.get("status") != "failed" and not error
+            self.app.connectors.record_use(server, ok=ok, error=error)
+            tool = str(item.get("tool") or "")
+            if ok and mail_ingest.MAIL_HINT.search(f"{server} {tool}"):
+                # Email facts come from the mailbox's raw answer, not from what the model makes of it.
+                stored = mail_ingest.ingest(self.app.facts.repository, f"app:{server}:{tool}"[:120], item.get("result"))
+                if stored:
+                    self.app.store.journal("facts.mail", f"Recorded {stored} email thread(s) from {server}")
 
     def _publish_image(self, saved_path: str) -> str | None:
         src = Path(saved_path)
