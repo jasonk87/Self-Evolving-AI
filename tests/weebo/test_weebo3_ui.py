@@ -170,3 +170,21 @@ async def test_reduced_motion_is_calm(app):
             app.settings.update({"ui.reduce_motion": True})
             await page.wait_for_function("() => document.body.classList.contains('reduce-motion')")
             assert errors == []
+
+
+async def test_idle_activity_updates_when_a_bot_needs_approval(app):
+    from playwright import async_api as playwright
+    bot = app.bots.approve(app.bots.propose({"name": "Scout", "job": "Review examples.", "tier": "fast"})["id"])
+    errors = []
+    async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
+        browser, page = await open_page(pw, server, errors)
+        async with browser:
+            slot = page.locator(".now-showing")
+            await slot.get_by_text("Resting · nothing running").wait_for()
+            await app.interactions.ask("item/commandExecution/requestApproval", {"command": "make deploy"},
+                                       conversation_id=bot["conversation_id"])
+            await slot.get_by_text("1 thing from the team needs you").wait_for()
+            assert await slot.get_attribute("data-state") == "waiting"
+            await page.locator('[data-id="needs-you"]').get_by_role("button", name="Deny").click()
+            await slot.get_by_text("Resting · nothing running").wait_for()
+            assert not app.approvals.open_items() and errors == []

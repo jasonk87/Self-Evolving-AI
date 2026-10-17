@@ -40,6 +40,7 @@ class TurnState:
     occurrence_id: str | None = None
     hops: int = 0  # relays (chief -> bot -> chief ...) that led to this turn; capped by bots.hop_limit
     job_id: str | None = None  # the bot job this turn works on
+    workflow: dict[str, Any] | None = None  # chief workflow step; completes with the turn, not dispatch
     reported: bool = False  # a bot reported to the chief during this turn
     factchecked: bool = False  # the deterministic fact check already flagged this turn's answer
     turn_id: str | None = None
@@ -398,7 +399,7 @@ class ConversationManager:
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
                         notice_kind: str = "notice", notice_data: dict | None = None,
                         occurrence_id: str | None = None, fallback: str = "", hops: int = 0,
-                        job_id: str | None = None) -> str:
+                        job_id: str | None = None, workflow: dict[str, Any] | None = None) -> str:
         """Run a turn Weebo starts itself (routine, agent report, brief). The prompt is hidden;
         the UI shows ``notice`` instead of a user bubble. Return the dispatch outcome
         so a caught startup error cannot be mistaken for an accepted turn."""
@@ -420,7 +421,7 @@ class ConversationManager:
                     session.followups.append({"prompt": prompt, "notice": notice, "trigger": trigger,
                                               "notice_kind": notice_kind, "notice_data": notice_data,
                                               "occurrence_id": occurrence_id, "fallback": fallback,
-                                              "hops": hops, "job_id": job_id})
+                                              "hops": hops, "job_id": job_id, "workflow": workflow})
                 return "queued"
             bot = self.app.bots.for_conversation(conv_id)
             if bot is not None:  # a bot's turn spends its own budget; one that can't run is reported, not dropped
@@ -438,7 +439,8 @@ class ConversationManager:
                 note = self.app.store.add_message(conv_id, "event", notice, kind=notice_kind, data=notice_data or {})
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
             return await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt,
-                                          occurrence_id=occurrence_id, fallback=fallback, hops=hops, job_id=job_id)
+                                          occurrence_id=occurrence_id, fallback=fallback, hops=hops, job_id=job_id,
+                                          workflow=workflow)
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
@@ -461,6 +463,15 @@ class ConversationManager:
             return False
         # Stop drops what was waiting to be said, but not what it was about: the next turn still knows.
         session.pending_context.extend(f["fallback"] for f in session.followups if f.get("fallback"))
+        for followup in session.followups:
+            if followup.get("workflow"):
+                self.app._start_job(self.app.growth.on_step_finished(followup["workflow"], "failed", "Stopped"),
+                                    "workflow-stopped")
+            elif followup.get("job_id"):
+                job = self.app.bots._set_job(followup["job_id"], "cancelled", "Stopped before starting")
+                if job:
+                    self.app._start_job(self.app.growth.on_job_finished(job, "cancelled", "Stopped"),
+                                        "workflow-stopped")
         session.followups.clear()
         session.turn.cancelled = True
         session.turn.stop_requested.set()
@@ -481,9 +492,9 @@ class ConversationManager:
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
                           trigger: str, query: str, occurrence_id: str | None = None,
                           user_message_id: str | list[str] | None = None, fallback: str = "", hops: int = 0,
-                          job_id: str | None = None) -> str:
+                          job_id: str | None = None, workflow: dict[str, Any] | None = None) -> str:
         state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback,
-                                         hops=hops, job_id=job_id)
+                                         hops=hops, job_id=job_id, workflow=workflow)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
         extra: list[str] = []
@@ -501,10 +512,28 @@ class ConversationManager:
             if state.cancelled:
                 session.pending_context[:0] = extra  # not delivered: the next turn still gets it
                 return self._stopped_before_start(session, state, conv["id"], thread_id)
-            requested = True
             bot = self.app.bots.for_conversation(conv["id"])
             if bot is not None:
+                # Startup awaits can let other bots spend the shared budget.
+                # Recheck and reserve synchronously immediately before dispatch.
+                refusal = self.app.bots.refuse_turn(bot, trigger)
+                if refusal:
+                    self.app.bots.turn_refused(bot, refusal, trigger, query, occurrence_id, job_id)
+                    session.pending_context[:0] = extra
+                    self._finish_turn(conv["id"], "interrupted", None)
+                    return "refused"
                 self.app.bots.count_turn(bot)
+                if trigger != "user":
+                    self.app.count_background_turn("bot")
+            elif trigger == "workflow":
+                if (self.app.background_turns_today() >= self.app.settings.get("autonomy.max_background_turns_per_day")
+                        or self.app.engine.usage_percent() >= self.app.settings.get("autonomy.usage_ceiling_percent")):
+                    session.pending_context[:0] = extra
+                    self._finish_turn(conv["id"], "failed", {"message": "Workflow did not run: the background-turn "
+                                      "budget or plan-usage ceiling has been reached."})
+                    return "refused"
+                self.app.count_background_turn("workflow")
+            requested = True
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
                 raise ValueError("The engine did not confirm a turn id.")

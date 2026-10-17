@@ -58,6 +58,9 @@ async def register_connector(ctx: ToolContext, manifest: dict[str, Any]) -> Tool
     {"properties": {"connector": {"type": "string"}}, "required": ["connector"]},
 )
 async def test_connector(ctx: ToolContext, connector: str) -> ToolResult:
+    # A test launches arbitrary manifest code / contacts its URL before it has
+    # been vetted. A separate process is not a security sandbox.
+    _need_user(ctx, "running an untrusted connector test")
     try:
         row = await ctx.app.connectors.test(connector)
     except ValueError as exc:

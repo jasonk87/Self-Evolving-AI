@@ -224,7 +224,7 @@ async def test_email_facts_come_from_the_connectors_raw_answer(app, fake_engine)
     from weebo.facts import mail_ingest
     raw = {"content": [{"type": "text", "text": _json.dumps({"threads": [
         {"threadId": "t-1", "subject": "Contract review", "from": "pat@example.com", "labelIds": ["UNREAD", "INBOX"],
-         "internalDate": "1790000000000", "snippet": "Can you look this over?"},
+         "internalDate": "1790000000000", "snippet": "Can you look this over?", "needs_reply": True},
         {"threadId": "t-2", "subject": "No date here", "from": "x@example.com"}]})}]}
     assert mail_ingest.ingest(app.facts.repository, "app:gmail", raw) == 1  # no timestamp: skipped, not guessed
     thread = app.facts.repository.query("threads", needs_reply=True)[0]

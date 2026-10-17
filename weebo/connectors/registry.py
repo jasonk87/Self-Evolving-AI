@@ -172,7 +172,7 @@ class Connectors:
     def approve(self, ref: str, actor: str, rules: dict[str, str] | None = None) -> dict[str, Any]:
         """The hard gate: only after a passing test, and tools that spend or contact people need explicit rules."""
         row = self.require(ref)
-        if row["status"] not in ("tested", "disabled"):
+        if row["status"] not in ("tested", "disabled") or not row["data"].get("test", {}).get("ok"):
             raise ConnectorError(f"{row['name']} must pass its test first (it's {row['status']}).")
         merged = {**row["data"].get("rules", {}), **{str(k): str(v)[:400] for k, v in (rules or {}).items() if v}}
         missing = [t["name"] for t in row["data"]["tools"] if t["risk"] in NEEDS_RULE and not merged.get(t["name"])]
@@ -248,7 +248,7 @@ class Connectors:
                 row["data"].get("key", ""), str(row["data"].get("app_id", "")).lower(),
                 row["name"].lower().replace(" ", "_"))) for row in approved)
         row = self._match_server(server)
-        return bool(row and row in approved)
+        return bool(row and row in approved and (not tool or any(t["name"] == tool for t in row["data"].get("tools", []))))
 
     def thread_config(self, bot: dict[str, Any]) -> dict[str, Any]:
         """Extra thread/start params giving a bot its approved MCP connectors, when the installed Codex accepts

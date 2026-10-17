@@ -25,6 +25,8 @@ class _Stdio:
     def __init__(self, command: list[str], env: dict[str, str] | None, cwd: str | None):
         self.command, self.env, self.cwd = command, env, cwd
         self.proc: asyncio.subprocess.Process | None = None
+        self._stderr_task: asyncio.Task | None = None
+        self._stderr_tail = b""
 
     async def open(self) -> None:
         env = {**os.environ, **(self.env or {})}
@@ -34,6 +36,12 @@ class _Stdio:
                 stderr=asyncio.subprocess.PIPE, env=env, cwd=self.cwd)
         except (OSError, ValueError) as exc:
             raise MCPError(f"Couldn't start {self.command[0]!r}: {exc}") from exc
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
+
+    async def _drain_stderr(self) -> None:
+        assert self.proc and self.proc.stderr
+        while chunk := await self.proc.stderr.read(8192):
+            self._stderr_tail = (self._stderr_tail + chunk)[-2000:]
 
     async def send(self, message: dict[str, Any]) -> None:
         assert self.proc and self.proc.stdin
@@ -45,7 +53,7 @@ class _Stdio:
         while True:
             line = await self.proc.stdout.readline()
             if not line:
-                err = (await self.proc.stderr.read(2000)).decode(errors="replace") if self.proc.stderr else ""
+                err = self._stderr_tail.decode(errors="replace")
                 raise MCPError("The server closed the connection." + (f" It said: {err.strip()[:300]}" if err else ""))
             try:
                 message = json.loads(line)
@@ -55,14 +63,20 @@ class _Stdio:
                 return message
 
     async def close(self) -> None:
-        if self.proc and self.proc.returncode is None:
-            try:
-                if self.proc.stdin:
-                    self.proc.stdin.close()
-                await asyncio.wait_for(self.proc.wait(), 2)
-            except (asyncio.TimeoutError, OSError):
-                self.proc.kill()
-                await self.proc.wait()
+        try:
+            if self.proc and self.proc.returncode is None:
+                try:
+                    if self.proc.stdin:
+                        self.proc.stdin.close()
+                    await asyncio.wait_for(self.proc.wait(), 2)
+                except (asyncio.TimeoutError, OSError):
+                    if self.proc.returncode is None:
+                        self.proc.kill()
+                    await asyncio.wait_for(self.proc.wait(), 2)
+        finally:
+            if self._stderr_task:
+                self._stderr_task.cancel()
+                await asyncio.gather(self._stderr_task, return_exceptions=True)
 
 
 class _Http:
@@ -141,9 +155,10 @@ class MCPClient:
 
     async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         request_id = next(self._ids)
-        await self._io.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
         try:
-            reply = await asyncio.wait_for(self._io.receive(request_id), self.timeout)
+            async with asyncio.timeout(self.timeout):
+                await self._io.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
+                reply = await self._io.receive(request_id)
         except asyncio.TimeoutError as exc:
             raise MCPError(f"{method} timed out after {self.timeout:g}s") from exc
         if "error" in reply:

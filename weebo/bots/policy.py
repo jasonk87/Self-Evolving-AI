@@ -139,9 +139,10 @@ class ReportDesk:
                            "why": why, "bot_name": bot["name"],
                            "job": (job["data"].get("instructions", "")[:200] if job else "")}}
         store._insert("reports", report)
-        if job:
+        if job and job["status"] in ("open", "running"):
             status = {"done": "done", "failed": "failed"}.get(outcome)
-            finished = bots._set_job(job["id"], status or "running", summary, escalated=False, reported_at=time.time())
+            finished = bots._set_job(job["id"], status or "running", summary,
+                                     escalated=source == "escalation", reported_at=time.time())
             if status and finished:  # a workflow step hands its result to the next step
                 self.app._start_job(self.app.growth.on_job_finished(finished, outcome, summary), "workflow-step")
         store.journal("bots.report", f"{bot['name']} reported: {outcome} ({bucket})", summary[:300],

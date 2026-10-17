@@ -39,11 +39,14 @@ reaches at least the brief.
 
 **Connectors.** Your ChatGPT apps (through Codex's apps feature, when your Codex offers `app/list`) and MCP servers,
 including thin wrappers around your own programs ([template](weebo/connectors/template/README.md)). Every connector
-is registered from a manifest, **tested in isolation** (Weebo starts it, lists its tools, checks them against the
-manifest and makes read-only test calls), **approved** by you with a risk label per tool (tools that spend money or
+is registered from a manifest, **tested with your authorization** (Weebo starts a separate process, lists its tools,
+checks them against the manifest and makes declared read-only test calls), **approved** by you with a risk label per tool (tools that spend money or
 contact people need a rule in your words), **assigned** to bots as a gated change, and **monitored** (one that keeps
-failing is flagged to the chief). A bot can only use its own connectors: when your Codex accepts per-thread config
-its MCP servers are given only to its thread, and in any case Weebo denies, stops and reports use outside its scope.
+failing is flagged to the chief). Onboarding is not an OS sandbox; only test trusted programs. Weebo scopes its own
+dynamic tools and supplies per-thread MCP configuration when supported. Native Codex connector calls still have
+an isolation gap: inherited global servers are not comprehensively disabled, and notification-based interruption
+can happen after a call starts. Do not treat this fallback as a security boundary; see the
+[bug audit and remaining issues](weebo/AUDIT_2026_10_17.md).
 
 **Day sheet and Ideas.** For the next days, each event is enriched by code from the facts store and real sources:
 weather at its time and place (OpenWeather forecast, your own key), travel time **only from a directions source**
@@ -70,11 +73,13 @@ writing), a phone (calls), holding up a note (waiting on you), syncing arrows, p
 and hand-off props. Reduced motion (the setting or your system preference) keeps the props and drops the motion.
 
 **Reliability.** Facts about events, email, people and commitments come from the facts store with provenance and
-freshness, looked up in the same turn (see the facts section below). The brief and drafts are **fact-checked** before
-you rely on them: a deterministic pass flags wrong times and missed cancellations right on the message, and a cheap
-fast-tier second pass runs only when the text makes claims about stored facts (setting `facts.second_pass`).
+freshness, with instructions to look them up in the same turn (see the facts section below). Brief/idea responses
+receive a deterministic check for supported timing and cancellation claims, and a fast-tier second pass can review
+stored-fact claims (setting `facts.second_pass`). These are advisory checks: text can stream before checking finishes,
+and the model-based review runs after the turn. They are not a pre-publication guarantee for every factual statement.
 Calendar bookings are read back from the calendar after creating them and texts are checked against Twilio's own
-answer. Email threads are recorded from a mail connector's raw tool results, never from a model's summary. The
+acceptance response (not a delivery read-back). Email threads are recorded from a mail connector's raw tool results,
+never from a model's summary; unread alone does not mean a reply is owed. The
 reliability suite gates every upgrade, and every captured miss becomes a test.
 
 **Layout.** Bottom tabs: Chat (the chief), Ideas, Bots, Evolution, More (Agents for one-off jobs, Memory,

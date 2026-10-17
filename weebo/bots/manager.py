@@ -310,7 +310,16 @@ class BotManager:
         return registry.specs_named(self.tool_names(bot))
 
     def tools_hash(self, bot: dict[str, Any]) -> str:
-        return hashlib.sha1(json.dumps(self.specs(bot), sort_keys=True).encode()).hexdigest()[:12]
+        # Connector grants and revocations change the native thread's tools too.
+        connectors = []
+        for cid in bot["data"].get("connectors", []):
+            row = self.app.connectors.get(cid)
+            if row:
+                data = row["data"]
+                connectors.append({"id": cid, "status": row["status"], **{k: data.get(k) for k in
+                    ("key", "tools", "rules", "command", "url", "cwd", "env_names", "app_id")}})
+        return hashlib.sha1(json.dumps({"tools": self.specs(bot), "connectors": connectors},
+                                      sort_keys=True).encode()).hexdigest()[:12]
 
     def allows_tool(self, bot: dict[str, Any], name: str) -> bool:
         return name in self.tool_names(bot)
@@ -714,6 +723,8 @@ turn; follow the latest one.
             return f"{bot['name']} has used its {self.budget_of(bot)} turns for today."
         if self.turns_today() >= int(self.app.settings.get("bots.max_turns_per_day")):
             return "The team has used its daily turns (bots.max_turns_per_day)."
+        if self.app.background_turns_today() >= int(self.app.settings.get("autonomy.max_background_turns_per_day")):
+            return "Background work has used its daily turns (autonomy.max_background_turns_per_day)."
         ceiling = float(self.app.settings.get("autonomy.usage_ceiling_percent"))
         if self.app.engine.usage_percent() >= ceiling:
             return f"Plan usage is at the {ceiling:g}% ceiling."
@@ -772,7 +783,7 @@ turn; follow the latest one.
 
     async def assign_job(self, ref: str, instructions: str, done_criteria: str = "", report_on: str = "done, fail",
                          deadline: str = "", tell_user: bool = False, actor: str = "chief",
-                         hops: int = 1) -> dict[str, Any]:
+                         hops: int = 1, *, workflow: dict[str, Any] | None = None) -> dict[str, Any]:
         bot = self.require(ref)
         if bot["status"] != "active":
             raise BotError(f"{bot['name']} is {bot['status']}; resume it before giving it work.")
@@ -787,6 +798,8 @@ turn; follow the latest one.
                "data": {"from": actor, "instructions": instructions.strip()[:6000], "done_criteria": done_criteria[:600],
                         "report_on": report_on[:200], "deadline": deadline[:80], "tell_user": bool(tell_user),
                         "details_ref": bot["conversation_id"]}}
+        if workflow:
+            job["data"]["workflow"] = workflow
         self.app.store._insert("bot_jobs", job)
         prompt = (f"[New job {job['id']} from the {'user' if actor == 'user' else 'chief'}]\n{instructions.strip()}\n"
                   + (f"Done when: {done_criteria}\n" if done_criteria else "")
@@ -798,8 +811,10 @@ turn; follow the latest one.
                                                          trigger="job", notice_kind="bot_job",
                                                          notice_data={"job_id": job["id"]}, hops=hops,
                                                          job_id=job["id"])
-        if outcome in ("started", "queued"):
+        if outcome in ("started", "queued") and (self.get_job(job["id"]) or {}).get("status") == "open":
             job = self._set_job(job["id"], "running") or job
+        else:
+            job = self.get_job(job["id"]) or job
         self._journal(f"Gave {bot['name']} a job", bot, actor, instructions[:300], job_id=job["id"])
         return {**job, "dispatch": outcome}
 
@@ -909,7 +924,8 @@ turn; follow the latest one.
                              f"{week_turns} this week ({tier}){hint}")
         if mark_delivered:
             now = time.time()
-            store.execute("UPDATE reports SET delivered_at=? WHERE bucket='brief' AND delivered_at IS NULL", (now,))
+            for report in reports[:20]:
+                store.execute("UPDATE reports SET delivered_at=? WHERE id=?", (now, report["id"]))
             store.kv_set("bots.last_digest", now)
         return "\n".join(lines)
 

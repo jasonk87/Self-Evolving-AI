@@ -70,10 +70,10 @@ def thread_records(payload: Any) -> list[dict[str, Any]]:
             if external and isinstance(node.get("subject"), str):
                 when = _when(node)
                 if when is not None:
-                    labels = [str(label).upper() for label in node.get("labelIds") or node.get("labels") or []]
                     found.append({"external_id": str(external), "subject": node["subject"][:300],
                                   "participants": _people(node), "last_message_at": when,
-                                  "needs_reply": bool(node.get("unread") or node.get("is_unread") or "UNREAD" in labels),
+                                  # Unread newsletters and receipts are not reply commitments.
+                                  "needs_reply": node.get("needs_reply") is True or node.get("needsReply") is True,
                                   "summary": str(node.get("snippet") or node.get("summary") or "")[:300]})
             for value in node.values():
                 walk(value, depth + 1)
@@ -92,7 +92,10 @@ def thread_records(payload: Any) -> list[dict[str, Any]]:
 
 def ingest(repository, source: str, result: dict[str, Any] | None, ttl_seconds: float = 900) -> int:
     """Store the thread records in a connector's raw result. Returns how many were stored or refreshed."""
+    if not isinstance(result, dict) or result.get("isError"):
+        return 0
     count = 0
+    payloads = [result["structuredContent"]] if result.get("structuredContent") is not None else []
     for content in (result or {}).get("content") or []:
         if not isinstance(content, dict) or content.get("type") != "text":
             continue
@@ -100,10 +103,12 @@ def ingest(repository, source: str, result: dict[str, Any] | None, ttl_seconds: 
             payload = json.loads(content.get("text") or "")
         except (TypeError, json.JSONDecodeError):
             continue
-        for record in thread_records(payload):
-            try:
-                repository.upsert("threads", record, source=source, ttl_seconds=ttl_seconds)
-                count += 1
-            except ValueError as exc:
-                logger.debug("Skipped a mail record: %s", exc)
+        payloads.append(payload)
+    # A structured result can also be repeated as text; store each thread once.
+    for record in thread_records(payloads):
+        try:
+            repository.upsert("threads", record, source=source, ttl_seconds=ttl_seconds)
+            count += 1
+        except ValueError as exc:
+            logger.debug("Skipped a mail record: %s", exc)
     return count

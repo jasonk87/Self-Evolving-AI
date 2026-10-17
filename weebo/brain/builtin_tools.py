@@ -150,6 +150,14 @@ async def cancel_reminder(ctx: ToolContext, reminder_id: str) -> ToolResult:
 
 
 # ---------------------------------------------------------------- parallel agents
+def _check_agent_owner(ctx: ToolContext, task_id: str) -> None:
+    owner = ctx.app.bots.get(ctx.bot_id) or ctx.app.bots.for_conversation(ctx.conversation_id)
+    if owner:
+        task = ctx.app.store.get_task(task_id)
+        if not task or task.get("conversation_id") != owner["conversation_id"]:
+            raise ToolError("A bot can control only its own agents; ask the chief about other work.")
+
+
 @registry.register(
     "start_agent",
     "Launch a background Codex agent for a long or multi-step job. Returns immediately with a task id; the agent works "
@@ -172,6 +180,8 @@ async def cancel_reminder(ctx: ToolContext, reminder_id: str) -> ToolResult:
 async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str = "", effort: str = "",
                       continue_agent: str = "") -> ToolResult:
     agents = ctx.app.agents
+    if continue_agent:
+        _check_agent_owner(ctx, continue_agent)
     if continue_agent and continue_agent in agents.runs:  # still at it: tell it rather than start a second one
         try:
             await agents.message(continue_agent, instructions)
@@ -205,6 +215,7 @@ async def agent_status(ctx: ToolContext, task_id: str = "") -> ToolResult:
     {"properties": {"task_id": {"type": "string"}, "message": {"type": "string"}}, "required": ["task_id", "message"]},
 )
 async def message_agent(ctx: ToolContext, task_id: str, message: str) -> ToolResult:
+    _check_agent_owner(ctx, task_id)
     try:
         await ctx.app.agents.message(task_id, message)
     except ValueError as exc:
@@ -221,6 +232,7 @@ async def message_agent(ctx: ToolContext, task_id: str, message: str) -> ToolRes
     {"properties": {"task_id": {"type": "string"}}, "required": ["task_id"]},
 )
 async def stop_agent(ctx: ToolContext, task_id: str) -> ToolResult:
+    _check_agent_owner(ctx, task_id)
     try:
         await ctx.app.agents.stop(task_id)
     except ValueError as exc:

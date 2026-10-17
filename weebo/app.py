@@ -99,6 +99,7 @@ class WeeboApp:
         self.conversations.recover_after_restart()
         self.scheduler.recover_after_restart()
         self.agents.recover_after_restart()
+        self.growth.recover_after_restart()
         if not os.environ.get("WEEBO_SKIP_LEGACY_IMPORT"):
             try:
                 self.memory.import_legacy()
@@ -240,6 +241,9 @@ class WeeboApp:
         if self.bots.owns(conv_id):  # a bot's turn reports to the chief, never to the user directly
             self.bots.on_turn_finished(conv_id, turn, status)
             return
+        if getattr(turn, "workflow", None):
+            self._start_job(self.growth.on_step_finished(turn.workflow,
+                            "done" if status == "completed" else "failed", turn.final_text), "workflow-step")
         if turn.trigger in ("brief", "idea") and status == "completed" and turn.final_text \
                 and not getattr(turn, "factchecked", False):
             self._start_job(self.factcheck.review_turn(conv_id, turn.final_message_id, turn.final_text), "factcheck")

@@ -41,7 +41,7 @@ class Scheduler:
         if due < time.time() - 60:
             raise TimeParseError(f"{datetime.fromtimestamp(due):%b %d %I:%M %p} is in the past.")
         rec = normalize_recurrence(recurrence)
-        if action == "prompt" and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
+        if action in ("prompt", "workflow") and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
             raise TimeParseError("Routines can repeat at most every 15 minutes.")
         reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action,
                                                meta={**(meta or {}), "timezone": timezone, "anchor_at": due})

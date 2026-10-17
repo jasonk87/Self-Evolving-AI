@@ -185,6 +185,8 @@ class ActivityRegistry:
     def _message(self, _topic: str, data: dict[str, Any]) -> None:
         conv_id = data.get("conversation_id") or ""
         message = data.get("message") or {}
+        if message.get("kind") == "needs_you":
+            self._publish(force=True)
         entry_id = f"turn:{conv_id}"
         if entry_id not in self.entries:
             return
@@ -212,8 +214,11 @@ class ActivityRegistry:
     def _asked(self, _topic: str, data: dict[str, Any]) -> None:
         ask = data.get("interaction") or {}
         who = ask.get("agent") or "Weebo"
-        what = ask.get("command") or ask.get("title") or ask.get("reason") or "something"
-        words = f"{who} is waiting for your OK: {str(what)[:80]}" if ask.get("kind") != "question" else \
+        # Raw commands (and their arguments/secrets) belong on the approval card,
+        # never in the plain-language activity slot.
+        what = {"command": "run a command", "file_change": "edit files", "permissions": "grant permissions",
+                "elicitation": "use a connector"}.get(ask.get("kind"), "take an action")
+        words = f"{who} is waiting for your OK to {what}" if ask.get("kind") != "question" else \
             f"{who} has a question for you"
         self.put(Entry(f"ask:{ask.get('id')}", ask.get("task_id") or "chief", who, WAITING, "waiting", words,
                        waiting_on_user=True, link={"type": "conversation", "id": ask.get("conversation_id"),

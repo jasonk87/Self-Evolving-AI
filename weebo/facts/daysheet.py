@@ -10,6 +10,7 @@ are rebuilt.
 from __future__ import annotations
 
 import os
+import json
 import re
 import time
 from datetime import datetime
@@ -73,14 +74,26 @@ class DaySheet:
         built = kept = 0
         missing_directions = False
         ordered = sorted(live, key=lambda e: e["start"])
+        # A newly inserted event has no dependency edge yet. Compare the current
+        # neighbours/conflicts as well as existing edges before reusing a row.
+        visible = {f"daysheet:{e['id']}" for e in events}
+        for old in self.app.store.query("SELECT id FROM facts_artifacts WHERE kind=?", (KIND,)):
+            if old["id"] not in visible:
+                self.app.store.execute("DELETE FROM facts_artifacts WHERE id=?", (old["id"],))
         for index, event in enumerate(ordered):
             artifact_id = f"daysheet:{event['id']}"
             existing = repo.artifact(artifact_id)
-            if existing and not existing["stale"] and existing["data"].get("version") == self._version(event):
+            previous = ordered[index - 1] if index else None
+            context = json.dumps({"previous": previous["id"] if previous else None,
+                                  "conflicts": sorted(c["second"] if c["first"] == event["id"] else c["first"]
+                                                      for c in clashes if event["id"] in c.values()),
+                                  "timezone": self._tz(), "directions": bool(self.directions)}, sort_keys=True)
+            if (existing and not existing["stale"] and existing["data"].get("version") == self._version(event)
+                    and existing["data"].get("context_version") == context):
                 kept += 1
                 continue
-            previous = ordered[index - 1] if index else None
             row, refs, needs_directions = await self._row(event, previous, clashes, live)
+            row["context_version"] = context
             missing_directions |= needs_directions
             repo.save_artifact(artifact_id, KIND, row, refs)
             built += 1

@@ -14,6 +14,7 @@ approvals.
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -40,6 +41,7 @@ def _ago_days(ts: float) -> int:
 class Ideas:
     def __init__(self, app: "WeeboApp"):
         self.app = app
+        self._action_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ reading
     def list(self, statuses: tuple[str, ...] = ("new", "discussed")) -> list[dict[str, Any]]:
@@ -281,9 +283,16 @@ class Ideas:
 
     async def do_it(self, idea_id: str, action_index: int = 0) -> dict[str, Any]:
         """Run one of the idea's safe actions: read its evidence again first, verify the result after."""
+        async with self._action_lock:
+            return await self._do_it(idea_id, action_index)
+
+    async def _do_it(self, idea_id: str, action_index: int) -> dict[str, Any]:
         idea = self.get(idea_id)
         if not idea or idea["status"] not in ("new", "discussed"):
             raise ValueError("That idea isn't open any more.")
+        if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
+            self._set(idea_id, "expired")
+            raise ValueError("That idea has expired; nothing was done.")
         actions = idea["data"]["actions"]
         if not 0 <= action_index < len(actions):
             raise ValueError("No such action.")
@@ -291,6 +300,21 @@ class Ideas:
         if action["kind"] not in SAFE_ACTIONS:
             raise ValueError("That would act with other people, so it goes through the chief and your approval: "
                              "use Discuss.")
+        refreshed = set()
+        for item in idea["data"]["evidence"]:
+            fact = self.app.facts.repository.get(item["entity"], item["id"])
+            if not fact:
+                raise ValueError("Its evidence is gone, so I didn't act on it.")
+            provenance = fact.get("provenance") or {}
+            source = provenance.get("source", "")
+            if source in self.app.facts.sync.sources and source not in refreshed:
+                result = await self.app.facts.sync.sync(source, force=True)
+                if not result["ok"]:
+                    raise ValueError("Its source could not be refreshed; nothing was done.")
+                refreshed.add(source)
+            elif not source.startswith("local:") and source not in refreshed:
+                if time.time() - provenance.get("fetched_at", 0) >= provenance.get("ttl_seconds", 0):
+                    raise ValueError("Its evidence is stale and the source is unavailable; nothing was done.")
         artifact = self.app.facts.repository.artifact(f"idea:{idea_id}")
         if artifact and artifact["stale"]:  # read before acting: the facts it rests on changed
             self.refresh_stale()
@@ -304,8 +328,8 @@ class Ideas:
         if action["kind"] in ("reminder", "hold_slot"):
             when = params.get("when")
             if params.get("at"):
-                when = datetime.fromtimestamp(float(params["at"]), zone(self.app.settings.get("user.timezone"))) \
-                    .strftime("%Y-%m-%d %H:%M")
+                scheduled = datetime.fromtimestamp(float(params["at"]), zone(self.app.settings.get("user.timezone")))
+                when = (scheduled if scheduled.tzinfo else scheduled.astimezone()).isoformat()
             reminder = self.app.scheduler.add(str(params.get("text") or idea["data"]["title"]), str(when or "in 1 hour"),
                                               conversation_id=self.app.conversations.main_id())
             stored = self.app.store.get_reminder(reminder["id"])  # verify after acting
@@ -321,6 +345,8 @@ class Ideas:
             outcome = await self.app.conversations.run_event(main, prompt, f"Drafting: {idea['data']['title']}",
                                                              trigger="idea")
             result.update(dispatch=outcome, verified=outcome in ("started", "queued"))
+            if not result["verified"]:
+                raise ValueError("The draft couldn't start; the idea is still open for retry.")
         self._feedback(idea["kind"], 1)
         self.app.store.journal("ideas", f"Did it: {idea['data']['title']}", action["label"], data={"result": result})
         self._set(idea_id, "done", note=f"{action['label']} done")

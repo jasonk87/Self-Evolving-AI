@@ -31,6 +31,10 @@ class Facts:
                 p["fetched_at"] = now
             fresh = local or now - p.get("fetched_at", 0) < p.get("ttl_seconds", 0)
             source_failed = any(s["source"] == p.get("source") and not s["ok"] for s in sources)
+            if p.get("source", "").startswith("app:") and p["source"] not in self.sync.sources:
+                # A raw connector read certifies these particular records for
+                # their TTL, not a complete mailbox sync. Keep complete=False.
+                source_failed = False
             if fresh and not source_failed:
                 facts.append(row)
             else:

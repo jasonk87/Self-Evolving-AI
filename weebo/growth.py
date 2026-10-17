@@ -191,6 +191,8 @@ class Growth:
         if status not in ("active", "paused", "retired", "rejected"):
             raise ValueError("status must be active, paused, retired or rejected")
         data = dict(workflow["data"])
+        if status != "active" and data.pop("current", None):
+            data["skips"] = int(data.get("skips") or 0) + 1
         for reminder_id in data.get("routine_ids", []):
             self.app.scheduler.cancel(reminder_id)
         data["routine_ids"] = []
@@ -215,11 +217,13 @@ class Growth:
         if not workflow or workflow["status"] != "active":
             raise ValueError("That workflow isn't active.")
         data = dict(workflow["data"])
+        if data.get("current"):
+            raise ValueError("That workflow already has a running occurrence.")
         run = int(data.get("runs") or 0) + 1
         data.update(runs=run, last_run=time.time(), current={"run": run, "step": 0, "results": []})
         self.app.store._update("workflows", "id", workflow["id"], {"data": data, "updated_at": time.time()})
         started = await self._start_step(self.get_workflow(workflow["id"]), 0, "")
-        if not started:
+        if not started and self.get_workflow(workflow["id"])["data"].get("current"):
             self._record(workflow["id"], ok=False, skipped=True)
         return self.get_workflow(workflow["id"])  # type: ignore[return-value]
 
@@ -234,32 +238,50 @@ class Growth:
         if step.get("bot"):
             try:
                 job = await self.app.bots.assign_job(step["bot"], instructions, report_on="done, fail",
-                                                     actor="chief", hops=1)
+                                                     actor="chief", hops=1, workflow=tag)
             except ValueError as exc:
                 logger.info("Workflow %s step %d skipped: %s", workflow["name"], index, exc)
                 return False
-            stored = self.app.bots.get_job(job["id"])
-            self.app.store._update("bot_jobs", "id", job["id"], {"data": {**stored["data"], "workflow": tag}})
-            return True
+            return job.get("dispatch") in ("started", "queued")
         main = self.app.conversations.main_id()
         outcome = await self.app.conversations.run_event(
             main, f"[Event: workflow \"{workflow['name']}\", step {index + 1}]\n{instructions}",
-            f"Workflow: {workflow['name']}", trigger="workflow")
-        if index + 1 >= len(steps):
-            self._record(workflow["id"], ok=outcome in ("started", "queued"))
+            f"Workflow: {workflow['name']}", trigger="workflow", workflow=tag)
         return outcome in ("started", "queued")
 
     async def on_job_finished(self, job: dict[str, Any], outcome: str, summary: str) -> None:
         tag = (job.get("data") or {}).get("workflow")
         if not tag:
             return
+        await self.on_step_finished(tag, outcome, summary)
+
+    async def on_step_finished(self, tag: dict[str, Any], outcome: str, summary: str) -> None:
         workflow = self.get_workflow(tag["workflow_id"])
         if not workflow or workflow["status"] != "active" or workflow["data"].get("runs") != tag.get("run"):
             return
+        data = dict(workflow["data"])
+        current = data.get("current")
+        if not current or current.get("step") != tag.get("step"):
+            return  # repeated/late completion cannot launch the next step twice
         if outcome != "done":
             self._record(workflow["id"], ok=False)
             return
-        await self._start_step(workflow, int(tag["step"]) + 1, summary)
+        index = int(tag["step"]) + 1
+        data["current"] = {**current, "step": index,
+                           "results": [*current.get("results", []), summary[:2000]]}
+        self.app.store._update("workflows", "id", workflow["id"], {"data": data, "updated_at": time.time()})
+        if not await self._start_step(self.get_workflow(workflow["id"]), index, summary):
+            if self.get_workflow(workflow["id"])["data"].get("current"):
+                self._record(workflow["id"], ok=False, skipped=True)
+
+    def recover_after_restart(self) -> None:
+        # Turns cannot be resumed across a process restart. Never replay potentially
+        # side-effecting steps automatically, but do allow the next scheduled run.
+        for workflow in self.workflows():
+            if workflow["data"].get("current"):
+                self._record(workflow["id"], ok=False)
+                self.app.store.journal("growth", f"Workflow {workflow['name']} interrupted by restart",
+                                       data={"workflow_id": workflow["id"]})
 
     def _record(self, workflow_id: str, ok: bool, skipped: bool = False) -> None:
         workflow = self.get_workflow(workflow_id)

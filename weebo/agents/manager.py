@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from .. import log, paths
 from ..brain import activity, persona
 from ..brain.conversation import item_to_message, sandbox_for, tools_hash
-from ..brain.tools import ToolContext, registry
+from ..brain.tools import ToolContext, ToolResult, registry
 from ..codex.engine import text_input
 from ..codex.rpc import EngineClosed, RpcError
 
@@ -101,6 +101,11 @@ class AgentManager:
         if developer_instructions:
             task_meta["developer_instructions"] = developer_instructions
         source = self._continuable(continue_from, kind) if continue_from else None
+        owner = self.app.bots.for_conversation(conversation_id)
+        if owner:
+            if source and source.get("conversation_id") != conversation_id:
+                raise ValueError("A bot can continue only its own agents.")
+            task_meta["bot_id"] = owner["id"]
         if source:
             # Its thread's tools, instructions and folder are fixed: they come along, whatever else was asked.
             inherited = {k: v for k, v in (source.get("meta") or {}).items() if k in INHERITED}
@@ -301,23 +306,42 @@ class AgentManager:
                           "excludeTmpdirEnvVar": False, "excludeSlashTmp": False}
             scope = meta.get("tools_scope") or "agent"
             developer = meta.get("developer_instructions") or persona.developer_instructions(self.app, "agent")
+            owner = self.app.bots.get(meta.get("bot_id")) or self.app.bots.for_conversation(task.get("conversation_id"))
+            if meta.get("bot_id") and owner is None:
+                raise ValueError("The bot that owns this agent no longer exists.")
+            specs = registry.specs(scope)
+            current_hash = tools_hash(scope)
+            extra = {}
+            if owner:
+                refusal = self.app.bots.refuse_turn(owner, "agent")
+                if refusal:
+                    raise ValueError(refusal)
+                model = self.app.bots.model_for(owner)
+                effort = self.app.bots.effort_for(owner)
+                approval, sandbox_mode, policy = self.app.bots.sandbox(owner, roots)
+                specs = [s for s in specs if self.app.bots.allows_tool(owner, s["name"])]
+                current_hash = "bot:" + self.app.bots.tools_hash(owner)
+                developer = self.app.bots.developer_instructions(owner) + "\n\n" + developer
+                extra = self.app.connectors.thread_config(owner)
             earlier = ""
             if task.get("thread_id"):  # continuing an earlier agent's work in its own thread
-                run.thread_id = await self._reopen(task, approval, sandbox_mode, developer, scope)
+                run.thread_id = await self._reopen(task, approval, sandbox_mode, developer, scope,
+                                                    expected_hash=current_hash)
                 if run.thread_id is None:
                     earlier = self._earlier_work(task)
             if run.thread_id is None:
                 result = await engine.start_thread(
                     cwd=task["cwd"], approvalPolicy=approval, sandbox=sandbox_mode, developerInstructions=developer,
-                    dynamicTools=registry.specs(scope), serviceName="weebo-agent",
-                    ephemeral=bool(meta.get("ephemeral")), model=model,
+                    dynamicTools=specs, serviceName="weebo-agent",
+                    ephemeral=bool(meta.get("ephemeral")), model=model, **extra,
                 )
                 run.thread_id, run.fresh = result["thread"]["id"], True
                 if task.get("thread_id"):  # took over from a thread that couldn't be reopened: it has today's tools
                     self.app.store.update_task(run.task_id, thread_id=run.thread_id,
-                                               meta={**meta, "tools_hash": tools_hash(scope)})
+                                               meta={**meta, "tools_hash": current_hash})
                 else:
-                    self.app.store.update_task(run.task_id, thread_id=run.thread_id)
+                    self.app.store.update_task(run.task_id, thread_id=run.thread_id,
+                                               **({"meta": {**meta, "tools_hash": current_hash}} if owner else {}))
             if run.cancelled:  # stopped while the thread was being created: never start the turn
                 run.status = "cancelled"
                 return
@@ -331,6 +355,13 @@ class AgentManager:
                                          "sandboxPolicy": policy}
             if meta.get("output_schema") and engine.features.output_schema:
                 overrides["outputSchema"] = meta["output_schema"]
+            if owner:
+                owner = self.app.bots.require(owner["id"])
+                refusal = self.app.bots.refuse_turn(owner, "agent")
+                if refusal:
+                    raise ValueError(refusal)
+                self.app.bots.count_turn(owner)
+                self.app.count_background_turn("bot-agent")
             turn = await engine.start_turn(run.thread_id, [text_input(task["prompt"])], context=context, **overrides)
             run.turn_id = run.turn_id or turn["id"]
             if run.cancelled and not run.done.is_set():
@@ -378,11 +409,11 @@ class AgentManager:
                 self._pump()
 
     async def _reopen(self, task: dict[str, Any], approval: str, sandbox_mode: str, developer: str,
-                      scope: str) -> str | None:
+                      scope: str, expected_hash: str | None = None) -> str | None:
         """The continued agent's thread, ready for another turn; None when it can't come back (its tools changed
         in an upgrade, or Codex no longer has it), so a fresh thread takes over."""
         thread_id = task["thread_id"]
-        if (task.get("meta") or {}).get("tools_hash") != tools_hash(scope):
+        if (task.get("meta") or {}).get("tools_hash") != (expected_hash or tools_hash(scope)):
             # A thread keeps the tools it started with: changed or unknown (an agent from before Weebo recorded
             # them) means a new thread with today's tools, told what the earlier agent did.
             return None
@@ -513,8 +544,13 @@ class AgentManager:
     async def _on_request(self, run: AgentRun, method: str, params: dict[str, Any]) -> Any:
         task = self.app.store.get_task(run.task_id) or {}
         if method == "item/tool/call":
+            owner = self.app.bots.for_conversation(task.get("conversation_id"))
+            name = params.get("tool", "")
+            if owner and (owner["status"] != "active" or not self.app.bots.allows_tool(owner, name)):
+                return ToolResult("That tool is outside the owning bot's current scope.", success=False).to_codex()
             ctx = ToolContext(self.app, params.get("threadId", ""), params.get("turnId", ""),
-                              conversation_id=task.get("conversation_id"), task_id=run.task_id, trigger="agent")
+                              conversation_id=task.get("conversation_id"), task_id=run.task_id, trigger="agent",
+                              bot_id=owner["id"] if owner else None)
             result = await registry.call(ctx, params.get("tool", ""), params.get("arguments") or {})
             self._event(run, "tool", f"{params.get('tool')} → {'ok' if result.success else 'failed'}")
             return result.to_codex()
