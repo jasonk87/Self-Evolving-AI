@@ -263,7 +263,7 @@ class EvolutionEngine:
             proposal_ids = [proposal_ids] if proposal_ids else []
         for proposal_id in proposal_ids:
             proposal = self.app.store.get_proposal(proposal_id)
-            if not proposal:
+            if not proposal or proposal["status"] != "merged":  # rolled back meanwhile: not live
                 continue
             meta = dict(proposal.get("meta") or {})
             meta["verified_at"] = time.time()
@@ -271,7 +271,10 @@ class EvolutionEngine:
             self.app.store.journal("evolution", "Upgrade is live", proposal["title"])
             self._publish(proposal_id)
         if report_to:
-            self._report_upgrades(report_to, reported or proposal_ids, live=True)
+            live = [i for i in (reported or proposal_ids)
+                    if (self.app.store.get_proposal(i) or {}).get("status") == "merged"]
+            if live:
+                self._report_upgrades(report_to, live, live=True)
 
     @staticmethod
     def _pending_at(path: Path) -> float | None:
@@ -919,6 +922,7 @@ class EvolutionEngine:
                 await git.git(root, "reset", "-q", before)
             raise EvolutionError("Couldn't revert cleanly: " + result.text()[-500:])
         self._set(proposal_id, "rolled_back")
+        self._drop_from_pending(proposal_id)
         self.app.diagnostics.reopen((proposal.get("meta") or {}).get("addresses") or [], proposal_id)
         self.app.store.journal("evolution", f"Rolled back: {proposal['title']}", "Reverted at the user's request.")
         if any(f.endswith(".py") for f in (proposal.get("meta") or {}).get("changed", [])):
@@ -926,6 +930,33 @@ class EvolutionEngine:
         else:
             self.app.bus.publish("ui.reload", {"reason": "rollback"})
         return self._get(proposal_id)
+
+    def _drop_from_pending(self, proposal_id: str) -> None:
+        """A rolled-back upgrade comes off the supervisor's note: it isn't waiting to be confirmed live any more, and
+        reverting its merge again (were the next boot to crash) would fail and stop the rest of the batch reverting."""
+        path = paths.data_dir() / PENDING_FILE
+        try:
+            note = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            return
+        if not note or note.get("rolled_back"):
+            return
+        ids = [i for i in (note.get("proposal_ids") or [note.get("proposal_id")]) if i]
+        commits = [c for c in (note.get("merged_commits") or [note.get("merged_commit")]) if c]
+        reported = [i for i in (note.get("reported") or ids) if i != proposal_id]
+        keep = [(i, c) for i, c in zip(ids, commits) if i != proposal_id]
+        if len(keep) == len(ids) and len(reported) == len(note.get("reported") or ids):
+            return  # not in this note
+        if not keep and not reported:
+            if self._verify_handle is not None:
+                self._verify_handle.cancel()
+                self._verify_handle = None
+            path.unlink(missing_ok=True)
+            return
+        note.update({"proposal_ids": [i for i, _ in keep], "merged_commits": [c for _, c in keep],
+                     "proposal_id": keep[-1][0] if keep else None, "merged_commit": keep[-1][1] if keep else None,
+                     "reported": reported})  # "at" stays: a timer waiting on this note still owns it
+        path.write_text(json.dumps(note), encoding="utf-8")
 
     # ------------------------------------------------------------------ helpers
     @staticmethod

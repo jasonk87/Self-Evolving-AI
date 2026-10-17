@@ -324,3 +324,14 @@ async def test_releasing_a_thread_unsubscribes_only_once_its_turn_is_over():
     engine.release_thread("thread-done")
     await drain(5)
     assert sent == [("thread/unsubscribe", "thread-done")]
+
+
+async def test_an_agent_from_before_tools_were_recorded_gets_a_fresh_thread(quiet, fake_engine):
+    app = quiet
+    first, first_turn = await run_agent(app, fake_engine, "Compare cabins", "Find the best Tahoe cabin.", "Pine Hollow.")
+    meta = {k: v for k, v in first["meta"].items() if k != "tools_hash"}  # finished before Weebo recorded them
+    app.store.update_task(first["id"], meta=meta)
+    second = await app.agents.start("Book it", "Check July 8-15.", continue_from=first["id"])
+    turn = await turn_for(fake_engine, 2)
+    assert turn["thread_id"] != first_turn["thread_id"] and "Pine Hollow" in turn["context"]
+    assert app.store.get_task(second["id"])["meta"]["tools_hash"] == tools_hash("agent")

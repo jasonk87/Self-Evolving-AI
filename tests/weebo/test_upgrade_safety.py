@@ -188,3 +188,44 @@ async def test_a_rebuilt_upgrade_comes_back_to_the_bottom_when_ready_again(app):
     app.store.update_proposal(proposal["id"], status="ready")
     app.evolution._publish(proposal["id"])
     assert app.store.list_messages(main)[-1]["id"] == card_id
+
+
+async def test_rolling_back_an_upgrade_takes_it_off_the_boot_note(evolving, repo):
+    app, state = evolving
+    app.settings.update({"evolution.mode": "build"})
+    main = app.conversations.main_id()
+    first = await ready_upgrade(app, state, "Core tweak", {"weebo/core.py": "VALUE = 2\n"})
+    second = await ready_upgrade(app, state, "Helper module", {"weebo/helper.py": "HELP = True\n"})
+    app.evolution.current = "p_building"  # the restart waits for a build, so both stay on the note meanwhile
+    try:
+        await app.evolution.merge_many([first["id"], second["id"]], report_to=main)
+    finally:
+        app.evolution.current = None
+    pending = paths.data_dir() / evo.PENDING_FILE
+    merged = json.loads(pending.read_text())
+    assert merged["proposal_ids"] == [first["id"], second["id"]]
+
+    await app.evolution.rollback(first["id"])  # before the new version was confirmed
+    note = json.loads(pending.read_text())
+    assert note["proposal_ids"] == [second["id"]] and note["merged_commits"] == merged["merged_commits"][1:]
+    assert note["reported"] == [second["id"]] and note["at"] == merged["at"]
+    # Confirmed after the restart: only what is still merged is live.
+    app.evolution._mark_verified(merged["proposal_ids"], pending, main, merged["reported"], at=note["at"])
+    report = app.store.list_messages(main)[-1]["content"]
+    assert "Helper module" in report and "Core tweak" not in report
+    assert not app.store.get_proposal(first["id"])["meta"].get("verified_at")
+
+
+async def test_rolling_back_the_only_upgrade_on_the_note_removes_it(evolving, repo):
+    app, state = evolving
+    app.settings.update({"evolution.mode": "build"})
+    proposal = await ready_upgrade(app, state, "Core tweak", {"weebo/core.py": "VALUE = 2\n"})
+    app.evolution.current = "p_building"
+    try:
+        await app.evolution.merge(proposal["id"])
+    finally:
+        app.evolution.current = None
+    pending = paths.data_dir() / evo.PENDING_FILE
+    assert pending.exists()
+    await app.evolution.rollback(proposal["id"])
+    assert not pending.exists()  # a crash on the next boot must not try to revert it a second time

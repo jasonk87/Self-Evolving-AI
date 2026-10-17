@@ -362,8 +362,10 @@ class AgentManager:
         """The continued agent's thread, ready for another turn; None when it can't come back (its tools changed
         in an upgrade, or Codex no longer has it), so a fresh thread takes over."""
         thread_id = task["thread_id"]
-        if (task.get("meta") or {}).get("tools_hash") not in (None, tools_hash(scope)):
-            return None  # a thread keeps the tools it started with: the current ones need a new thread
+        if (task.get("meta") or {}).get("tools_hash") != tools_hash(scope):
+            # A thread keeps the tools it started with: changed or unknown (an agent from before Weebo recorded
+            # them) means a new thread with today's tools, told what the earlier agent did.
+            return None
         engine = self.app.engine
         await self.app.threads.settle(thread_id)  # it may be being put away right now
         if thread_id in engine.loaded_threads:
