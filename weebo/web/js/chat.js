@@ -148,30 +148,43 @@ export class ChatView {
   // ------------------------------------------------------------------ loading
   async open(convId, { focus = true, refresh = false } = {}) {
     const generation = ++this.loadGeneration;
-    const previous = refresh && convId === this.convId ? this.messages : [];
+    // A refresh (after reconnecting) catches up the chat on screen in place: it stays as it is until the
+    // snapshot arrives (and if that fails), and keeps its nodes, so scroll position and open items survive.
+    refresh = refresh && convId === this.convId;
+    const previous = refresh ? this.messages : [];
     const scrollTop = this.scroller.scrollTop, wasAtBottom = this.stick;
     this.loadingEvents = [];
     this.snapshotSequence = 0;
-    this.convId = convId;
-    this.setReadOnly();  // right away: the composer must not keep the last chat's state while this one loads
-    this.messages = [];
-    this.byId.clear();
-    this.nodes.clear();
-    this.groups.clear();
-    this.streams.clear();
-    this.list.replaceChildren();
-    this.setBusy(false);
-    this.hasMore = false;
-    this.loadingMore = false;
-    this.root.classList.add("loading");
+    if (!refresh) {
+      this.convId = convId;
+      this.setReadOnly();  // right away: the composer must not keep the last chat's state while this one loads
+      this.messages = [];
+      this.byId.clear();
+      this.nodes.clear();
+      this.groups.clear();
+      this.streams.clear();
+      this.list.replaceChildren();
+      this.setBusy(false);
+      this.hasMore = false;
+      this.loadingMore = false;
+      this.root.classList.add("loading");
+    }
     try {
       const data = await api.get(`/api/conversations/${encodeURIComponent(convId)}`);
       if (this.loadGeneration !== generation) return;
       const messages = data.messages || [];
       const firstSeq = messages[0]?.seq ?? 0;
-      this.setMessages([...previous.filter((m) => m.seq < firstSeq), ...messages]);
-      this.hasMore = (data.messages || []).length >= 200;
+      // Older history already on screen stays, except what the snapshot has a newer copy of (a card brought
+      // to the bottom while offline would otherwise show twice).
+      const fresh = new Set(messages.map((m) => m.id));
+      const older = previous.filter((m) => m.seq < firstSeq && !fresh.has(m.id));
+      this.setMessages([...older, ...messages]);
+      this.hasMore = older.length ? this.hasMore : messages.length >= 200;
       const live = data.live || {};
+      if (refresh) {
+        for (const id of this.streams.keys()) this.nodes.delete(id);  // redrawn from the snapshot's text
+        this.streams.clear();
+      }
       for (const [id, text] of Object.entries(live.streams || {})) this.streams.set(id, text);
       this.setBusy(Boolean(live.busy), live.started_at, live.reasoning);
       if (live.busy) this.app.busyConvs.add(convId); else this.app.busyConvs.delete(convId);
@@ -179,7 +192,9 @@ export class ChatView {
       this.app.markRead(convId, data.conversation);
     } catch (err) {
       if (this.loadGeneration !== generation) return;
-      toast("Couldn't open that chat", err.message, { kind: "error" });
+      // A refresh that fails leaves the chat as it was (events that arrived meanwhile still apply below);
+      // the next reconnect tries again.
+      if (!refresh) toast("Couldn't open that chat", err.message, { kind: "error" });
     } finally {
       if (this.loadGeneration === generation) {
         const events = this.loadingEvents;
@@ -193,8 +208,13 @@ export class ChatView {
     }
     this.setReadOnly();
     this._suggestKey = null;
-    this.render(!refresh || wasAtBottom);
-    if (refresh && !wasAtBottom) this.scroller.scrollTop = scrollTop;
+    if (refresh && !wasAtBottom) {
+      this.stick = false;  // reading history: stay there
+      this.render(false);
+      this.scroller.scrollTop = scrollTop;
+    } else {
+      this.render(true);
+    }
     this.updateChips();
     this.app.renderSidebar();
     if (focus && !this.readOnly) this.input.focus({ preventScroll: true });

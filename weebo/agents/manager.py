@@ -254,7 +254,9 @@ class AgentManager:
 
     # ------------------------------------------------------------------ internals
     def _pump(self) -> None:
-        if self.closing or self.app.engine.status != "ready":
+        # Not while Weebo is stopping either: an agent started now would be cut off and reported interrupted
+        # instead of staying queued for the next start.
+        if self.closing or getattr(self.app, "_stopping", False) or self.app.engine.status != "ready":
             return
         limit = int(self.app.settings.get("agents.max_parallel") or 3)
         while self.queue and len(self.runs) < limit:

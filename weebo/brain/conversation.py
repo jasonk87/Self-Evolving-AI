@@ -39,6 +39,7 @@ class TurnState:
     occurrence_id: str | None = None
     turn_id: str | None = None
     cancelled: bool = False
+    fallback: str = ""  # what the next turn should know if this one is stopped before it starts
     started_at: float = field(default_factory=time.time)
     streams: dict[str, str] = field(default_factory=dict)
     reasoning: str = ""
@@ -314,6 +315,8 @@ class ConversationManager:
         if not conv:
             return
         session = self.sessions.pop(conv_id, None)
+        if session and session.turn:
+            session.turn.cancelled = True  # a start still in flight stops instead of running for a deleted chat
         if session and session.turn and session.turn.turn_id and conv.get("thread_id"):
             try:
                 await self.app.engine.interrupt(conv["thread_id"], session.turn.turn_id)
@@ -347,9 +350,10 @@ class ConversationManager:
             self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
             inputs = ([text_input(text)] if text else []) + [image_input(p) for p in images]
 
-            if session.turn and session.turn.trigger != "user":
-                # A turn Weebo started (an agent's report, a routine): the user's words get a turn of their own
-                # right after it, rather than mixing into one whose input the user didn't write.
+            if session.turn and (session.turn.trigger != "user" or session.turn.cancelled):
+                # A turn Weebo started (an agent's report, a routine), or one being stopped: the user's words get
+                # a turn of their own right after it, rather than mixing into one they didn't write or that is
+                # ending.
                 session.waiting.append({"message_id": message["id"], "text": text, "inputs": inputs})
                 message = self.app.store.update_message(message["id"], data={**message["data"], "queued": True})
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
@@ -415,7 +419,7 @@ class ConversationManager:
                 note = self.app.store.add_message(conv_id, "event", notice, kind=notice_kind, data=notice_data or {})
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
             return await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt,
-                                          occurrence_id=occurrence_id)
+                                          occurrence_id=occurrence_id, fallback=fallback)
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
@@ -456,17 +460,15 @@ class ConversationManager:
     # ------------------------------------------------------------------ turns
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
                           trigger: str, query: str, occurrence_id: str | None = None,
-                          user_message_id: str | list[str] | None = None) -> str:
-        state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id)
+                          user_message_id: str | list[str] | None = None, fallback: str = "") -> str:
+        state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
         try:
             thread_id = await self._ensure_thread(session, conv)
             conv = self.app.store.get_conversation(conv["id"]) or conv
             if state.cancelled:
-                if session.turn is state:
-                    self._finish_turn(conv["id"], "interrupted", None)
-                return "interrupted"
+                return self._stopped_before_start(session, state, conv["id"], thread_id)
             extra = list(session.pending_context)
             session.pending_context.clear()
             context, used = persona.turn_context(self.app, conv, query, extra)
@@ -474,9 +476,8 @@ class ConversationManager:
             overrides = self._turn_overrides(conv)
             await self.app.engine.ensure_ready()
             if state.cancelled:
-                if session.turn is state:
-                    self._finish_turn(conv["id"], "interrupted", None)
-                return "interrupted"
+                session.pending_context[:0] = extra  # not delivered: the next turn still gets it
+                return self._stopped_before_start(session, state, conv["id"], thread_id)
             requested = True
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
@@ -488,11 +489,19 @@ class ConversationManager:
                 self.app.scheduler.delivery_started(occurrence_id, turn["id"])
             if session.turn is state:
                 state.turn_id = state.turn_id or turn["id"]
-                if state.cancelled:
-                    await self.interrupt(conv["id"])
+                if state.cancelled:  # stopped while Codex was starting it: stop it now that it has an id
+                    if not await self._interrupt_started(thread_id, state.turn_id) and session.turn is state:
+                        self._finish_turn(conv["id"], "interrupted", None)
                     return "interrupted"
             return "started"
         except Exception as exc:
+            if state.cancelled:
+                # Stopped, then startup failed: it was stopped, not failed, so no error and no routine retry. A
+                # turn Codex confirmed anyway (turn/started arrived, the reply was lost) is stopped too.
+                thread = (self.app.store.get_conversation(conv["id"]) or conv).get("thread_id")
+                if state.turn_id and thread:
+                    await self._interrupt_started(thread, state.turn_id)
+                return self._stopped_before_start(session, state, conv["id"], None)
             message = str(exc) or type(exc).__name__
             logger.warning("Could not start turn in %s: %s", conv["id"], message)
             if not isinstance(exc, (EngineClosed, RpcError)):
@@ -520,6 +529,28 @@ class ConversationManager:
             if session.turn is state:
                 self._finish_turn(conv["id"], "failed", None, publish_error=False)
             return outcome
+
+    def _stopped_before_start(self, session: Session, state: TurnState, conv_id: str,
+                              thread_id: str | None) -> str:
+        """Stopped before Codex started the turn: nothing to interrupt, and what it was about is kept for the next
+        turn. A thread started for a chat deleted meanwhile is put away."""
+        if state.fallback:
+            session.pending_context.append(state.fallback)
+        if thread_id and self.app.store.get_conversation(conv_id) is None:
+            self.thread_conv.pop(thread_id, None)
+            self.app.engine.unroute(thread_id)
+            self.app.threads.put_away(thread_id)
+        if session.turn is state:
+            self._finish_turn(conv_id, "interrupted", None)
+        return "interrupted"
+
+    async def _interrupt_started(self, thread_id: str, turn_id: str) -> bool:
+        try:
+            await self.app.engine.interrupt(thread_id, turn_id)
+            return True
+        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            logger.warning("Interrupt failed: %s", exc)
+            return False
 
     async def _ensure_thread(self, session: Session, conv: dict[str, Any]) -> str:
         engine = self.app.engine
@@ -857,3 +888,13 @@ class ConversationManager:
         for row in rows:
             status = "expired" if row["kind"] in ("approval", "question") else "interrupted"
             self.app.store.update_message(row["id"], status=status)
+        # What the user said while one of Weebo's own turns ran, still waiting for its answer when Weebo stopped:
+        # say so rather than leave it looking answered-by-silence.
+        for row in self.app.store.query("SELECT id, conversation_id, data FROM messages WHERE role='user' "
+                                        "AND json_extract(data, '$.queued') = 1"):
+            data = {k: v for k, v in (row["data"] or {}).items() if k != "queued"}
+            self.app.store.update_message(row["id"], data={**data, "delivery": "dropped"})
+            note = self.app.store.add_message(row["conversation_id"], "event", "Weebo restarted before it could "
+                                              "answer your last message. Send it again if you still need it.",
+                                              kind="notice")
+            self.app.bus.publish("conv.message", {"conversation_id": row["conversation_id"], "message": note})
