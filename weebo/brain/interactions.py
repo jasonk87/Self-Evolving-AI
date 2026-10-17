@@ -123,6 +123,13 @@ class Interactions:
             logger.info("Declined a device-verified approval from %s (only Codex's own apps can verify).",
                         params.get("serverName"))
             return {"action": "decline", "content": None}
+        bot = self.app.bots.for_conversation(conversation_id) if conversation_id else None
+        if bot is not None:
+            session = self.app.conversations.sessions.get(conversation_id or "")
+            talking = bool(session and session.turn and session.turn.trigger == "user") and not task_id
+            if not talking:  # bots ask the chief's policy, never the user directly
+                return await self.app.approvals.handle(bot, method, params, task_id=task_id, agent=agent)
+            agent = agent or bot["name"]
         pending = Pending(
             id=new_id("ask"), kind=_kind_for(method), method=method, params=params,
             thread_id=params.get("threadId") or params.get("conversationId") or "",
@@ -178,6 +185,12 @@ class Interactions:
         pending.future.set_result((decision, answers or {}))
         status = "answered" if pending.kind == "question" else decision
         self._finish(pending, status, answers)
+        if decision == "acceptAlways" and pending.kind != "question":
+            bot = self.app.bots.for_conversation(pending.conversation_id)
+            if bot is not None:  # "Always allow this" in a bot's chat: ask once, remember
+                info = self.app.approvals.describe(bot, pending.method, pending.params)
+                self.app.approvals.add_rule(bot["id"], info["action"], info.get("target", ""), "user",
+                                            note=info.get("label", ""))
         return True
 
     def cancel_task(self, task_id: str) -> None:
@@ -216,9 +229,17 @@ class Interactions:
         return [p.summary() for p in self.pending.values()]
 
     @staticmethod
+    def respond(method: str, params: dict[str, Any], decision: str) -> dict[str, Any]:
+        """The answer Codex expects for a request decided without a card (a bot's standing rule, or a decline)."""
+        pending = Pending(id="", kind=_kind_for(method), method=method, params=params, thread_id="", turn_id="")
+        return Interactions._response(pending, decision, {})
+
+    @staticmethod
     def _response(pending: Pending, decision: str, answers: dict[str, list[str]]) -> dict[str, Any]:
         if pending.kind == "question":
             return {"answers": {qid: {"answers": list(values)} for qid, values in (answers or {}).items()}}
+        if decision == "acceptAlways" and pending.kind != "elicitation":
+            decision = "acceptForSession"  # Weebo remembers it as a standing rule; Codex only knows the session
         if pending.method in ("execCommandApproval", "applyPatchApproval"):
             return {"decision": LEGACY_DECISIONS.get(decision, "denied")}
         if pending.kind == "elicitation":

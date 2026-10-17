@@ -380,6 +380,7 @@ def create_app(weebo: WeeboApp) -> web.Application:
             "notifications": weebo.store.list_notifications(limit=None, unread_only=True),
             "read_notification_ids": weebo.store.read_notification_ids(),
             "reminders": weebo.store.list_reminders(),
+            "bots": [weebo.bots.public(b) for b in weebo.bots.list(("proposed", "active", "paused"))],
             "lan": lan_info(),
         })
 
@@ -664,6 +665,155 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     r.add_get("/api/facts/changes", fact_changes)
     r.add_get("/api/facts/{entity}", get_facts)
+
+    # ------------------------------------------------------------------ the team, its policy, connectors and growth
+    # Everything here is the user acting through the UI, so it carries the user's authority.
+    bots, store = weebo.bots, weebo.store
+
+    async def list_bots(request: web.Request) -> web.Response:
+        statuses = ("proposed", "active", "paused", "archived") if request.query.get("all") == "1" else \
+            ("proposed", "active", "paused")
+        return _json({"bots": [bots.public(b) for b in bots.list(statuses)],
+                      "changes": store.query("SELECT * FROM bot_changes WHERE status IN ('requested', 'proposed') "
+                                             "ORDER BY created_at DESC")})
+
+    async def get_bot(request: web.Request) -> web.Response:
+        bot = bots.require(request.match_info["id"])
+        usage = store.query("SELECT day, turns, failures FROM bot_usage WHERE bot_id=? ORDER BY day DESC LIMIT 14",
+                            (bot["id"],))
+        return _json({"bot": bots.public(bot), "jobs": bots.jobs(bot["id"], limit=30),
+                      "reports": weebo.reports.search(bot_id=bot["id"], limit=30), "usage": usage,
+                      "changes": store.query("SELECT * FROM bot_changes WHERE bot_id=? ORDER BY created_at DESC "
+                                             "LIMIT 20", (bot["id"],)),
+                      "report_rules": [r for r in weebo.reports.rules() if r["scope"] in ("*", bot["id"])],
+                      "standing_rules": weebo.approvals.rules(bot["id"])})
+
+    async def bot_action(request: web.Request) -> web.Response:
+        ref, action = request.match_info["id"], request.match_info["action"]
+        if action == "approve":
+            bot = bots.approve(ref, actor="user")
+        elif action == "reject":
+            bot = bots.reject(ref, actor="user")
+        elif action in ("pause", "resume"):
+            bot = bots.set_status(ref, "paused" if action == "pause" else "active", actor="user")
+        elif action == "keep":
+            bot = bots.keep(ref, actor="user")
+        elif action in ("archive", "delete"):
+            bot = await bots.retire(ref, delete=action == "delete", actor="user")
+        else:
+            raise ValueError("Unknown bot action.")
+        return _json({"bot": bots.public(bot) if bot else None})
+
+    async def patch_bot(request: web.Request) -> web.Response:
+        body = await _body(request)
+        outcome, bot = bots.change(request.match_info["id"], body, actor="user", user_said_yes=True)
+        return _json({"bot": bots.public(bot)})
+
+    async def bot_job(request: web.Request) -> web.Response:
+        body = await _body(request)
+        job = await bots.assign_job(request.match_info["id"], str(body.get("instructions", "")),
+                                    str(body.get("done_criteria", "")), str(body.get("report_on") or "done, fail"),
+                                    actor="user", hops=0)
+        return _json({"job": job})
+
+    async def bot_change_action(request: web.Request) -> web.Response:
+        action = request.match_info["action"]
+        if action not in ("approve", "reject"):
+            raise ValueError("Unknown change action.")
+        change = bots.review_change(request.match_info["id"], action == "approve", actor="user", user_said_yes=True)
+        return _json({"change": change})
+
+    async def list_reports(request: web.Request) -> web.Response:
+        return _json({"reports": weebo.reports.search(bot_id=request.query.get("bot") or None,
+                                                      bucket=request.query.get("bucket") or None,
+                                                      query=request.query.get("q", ""), limit=100)})
+
+    async def get_policy(_: web.Request) -> web.Response:
+        return _json({"report_rules": weebo.reports.rules(), "standing_rules": weebo.approvals.rules(),
+                      "needs_you": weebo.approvals.open_items()})
+
+    async def add_policy_rule(request: web.Request) -> web.Response:
+        body = await _body(request)
+        if request.match_info["kind"] == "report":
+            rule = weebo.reports.add_rule(str(body.get("scope") or "*"), str(body.get("match") or ""),
+                                          str(body.get("bucket") or ""), actor="user")
+        else:
+            rule = weebo.approvals.add_rule(str(body.get("scope") or "*"), str(body.get("action") or ""),
+                                            str(body.get("target") or ""), "user",
+                                            effect="deny" if body.get("effect") == "deny" else "allow",
+                                            note=str(body.get("note") or ""))
+        return _json({"rule": rule})
+
+    async def delete_policy_rule(request: web.Request) -> web.Response:
+        rule_id = request.match_info["id"]
+        if request.match_info["kind"] == "report":
+            ok = weebo.reports.remove_rule(rule_id, actor="user")
+        else:
+            ok = weebo.approvals.revoke(rule_id, actor="user")
+        return _json({"ok": ok})
+
+    async def needs_you_action(request: web.Request) -> web.Response:
+        item = await weebo.approvals.resolve(request.match_info["id"], request.match_info["action"], actor="user")
+        return _json({"item": item})
+
+    async def list_connectors(_: web.Request) -> web.Response:
+        apps = await weebo.connectors.apps()
+        if apps.get("available"):
+            store.kv_set("connectors.apps_cache", apps["apps"])
+        return _json({"connectors": weebo.connectors.list(), "apps": apps})
+
+    async def register_connector(request: web.Request) -> web.Response:
+        return _json({"connector": weebo.connectors.register(await _body(request), actor="user")})
+
+    async def connector_action(request: web.Request) -> web.Response:
+        ref, action = request.match_info["id"], request.match_info["action"]
+        if action == "test":
+            row = await weebo.connectors.test(ref)
+        elif action == "approve":
+            body = await _body(request)
+            row = weebo.connectors.approve(ref, actor="user", rules=body.get("rules") or {})
+        elif action == "disable":
+            row = weebo.connectors.disable(ref, actor="user")
+        else:
+            raise ValueError("Unknown connector action.")
+        return _json({"connector": row})
+
+    async def capabilities(_: web.Request) -> web.Response:
+        return _json(weebo.growth.capabilities())
+
+    async def gap_action(request: web.Request) -> web.Response:
+        return _json({"gap": await weebo.growth.resolve_gap(request.match_info["id"], request.match_info["action"],
+                                                             actor="user")})
+
+    async def workflow_action(request: web.Request) -> web.Response:
+        ref, action = request.match_info["id"], request.match_info["action"]
+        if action == "run":
+            workflow = await weebo.growth.run_workflow(ref, actor="user")
+        else:
+            status = {"approve": "active", "resume": "active", "pause": "paused", "retire": "retired",
+                      "reject": "rejected"}.get(action)
+            if not status:
+                raise ValueError("Unknown workflow action.")
+            workflow = weebo.growth.set_workflow_status(ref, status, actor="user")
+        return _json({"workflow": workflow})
+
+    r.add_get("/api/bots", list_bots)
+    r.add_get("/api/bots/{id}", get_bot)
+    r.add_patch("/api/bots/{id}", patch_bot)
+    r.add_post("/api/bots/{id}/jobs", bot_job)
+    r.add_post("/api/bots/{id}/{action}", bot_action)
+    r.add_post("/api/bot-changes/{id}/{action}", bot_change_action)
+    r.add_get("/api/reports", list_reports)
+    r.add_get("/api/policy", get_policy)
+    r.add_post("/api/policy/{kind}", add_policy_rule)
+    r.add_delete("/api/policy/{kind}/{id}", delete_policy_rule)
+    r.add_post("/api/needs-you/{id}/{action}", needs_you_action)
+    r.add_get("/api/connectors", list_connectors)
+    r.add_post("/api/connectors", register_connector)
+    r.add_post("/api/connectors/{id}/{action}", connector_action)
+    r.add_get("/api/capabilities", capabilities)
+    r.add_post("/api/gaps/{id}/{action}", gap_action)
+    r.add_post("/api/workflows/{id}/{action}", workflow_action)
 
     # ------------------------------------------------------------------ schedule
     async def list_reminders(request: web.Request) -> web.Response:

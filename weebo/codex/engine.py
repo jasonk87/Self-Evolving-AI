@@ -41,6 +41,8 @@ class EngineFeatures:
     dynamic_tools: bool = True
     output_schema: bool = True
     skills_extra_roots: bool = False
+    thread_config: bool = False  # ThreadStartParams.config: per-thread config overrides (a bot's MCP servers)
+    apps: bool = False  # app/list: the user's ChatGPT apps (connectors)
 
 
 @dataclass
@@ -451,6 +453,20 @@ class CodexEngine:
     async def start_review(self, thread_id: str, target: dict[str, Any]) -> dict[str, Any]:
         return await self.request("review/start", {"threadId": thread_id, "target": target, "delivery": "inline"}, timeout=90)
 
+    async def list_apps(self) -> list[dict[str, Any]]:
+        """The user's ChatGPT apps (connectors) as Codex sees them; only when the schema offers app/list."""
+        if not self.features.apps:
+            return []
+        apps: list[dict[str, Any]] = []
+        cursor = None
+        for _ in range(10):
+            result = await self.request("app/list", {"cursor": cursor} if cursor else {}, timeout=30) or {}
+            apps.extend(result.get("data") or [])
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return apps
+
     async def set_skill_roots(self, roots: list[str]) -> None:
         if not self.features.skills_extra_roots:
             return
@@ -539,7 +555,7 @@ def _thread_id_of(params: dict[str, Any]) -> str | None:
 
 def detect_features(binary: CodexBinary) -> EngineFeatures:
     """Read the engine's own protocol schema to learn which optional fields it accepts."""
-    cache_file = paths.cache_dir() / f"codex-features-{binary.version_str}.json"
+    cache_file = paths.cache_dir() / f"codex-features-v2-{binary.version_str}.json"
     if cache_file.exists():
         try:
             return EngineFeatures(**json.loads(cache_file.read_text(encoding="utf-8")))
@@ -554,13 +570,16 @@ def detect_features(binary: CodexBinary) -> EngineFeatures:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         bundle = out_dir / "codex_app_server_protocol.v2.schemas.json"
-        defs = json.loads(bundle.read_text(encoding="utf-8")).get("definitions", {})
+        text = bundle.read_text(encoding="utf-8")
+        defs = json.loads(text).get("definitions", {})
         turn_props = defs.get("TurnStartParams", {}).get("properties", {})
         thread_props = defs.get("ThreadStartParams", {}).get("properties", {})
         features.additional_context = "additionalContext" in turn_props
         features.output_schema = "outputSchema" in turn_props
         features.dynamic_tools = "dynamicTools" in thread_props
         features.skills_extra_roots = "SkillsExtraRootsSetParams" in defs
+        features.thread_config = "config" in thread_props
+        features.apps = '"app/list"' in text
         cache_file.write_text(json.dumps(features.__dict__), encoding="utf-8")
     except Exception as exc:  # feature detection is best effort
         logger.warning("Could not detect Codex features (%s); using conservative defaults", exc)

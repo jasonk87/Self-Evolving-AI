@@ -183,6 +183,8 @@ async def start_agent(ctx: ToolContext, title: str, instructions: str, cwd: str 
                                   conversation_id=ctx.conversation_id, continue_from=continue_agent or None)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
+    if asked_by_user(ctx):  # the same ask, again and again, is a workflow waiting to happen
+        ctx.app.growth.note_request(instructions)
     position = "starting now" if task["status"] == "running" else "queued (other agents are busy)"
     picks_up = f", picking up where {continue_agent} left off," if continue_agent else ""
     return ToolResult(f"Agent {task['id']} \"{task['title']}\" is {position}{picks_up} in {task['cwd']}.")
@@ -254,8 +256,10 @@ async def propose_improvement(ctx: ToolContext, title: str, description: str, ra
         source = {"routine": "routine", "brief": "brief"}.get(ctx.trigger, "self")
     else:
         source = "user" if requested_by_user else "conversation"
+    # A bot's suggestion for Weebo as a whole goes through the same pipeline, but its card lives in the main chat.
+    conversation_id = ctx.app.conversations.main_id() if ctx.bot_id else ctx.conversation_id
     proposal = await ctx.app.evolution.propose(title, description, rationale, source=source,
-                                               conversation_id=ctx.conversation_id)
+                                               conversation_id=conversation_id)
     return ToolResult(f"Proposal {proposal['id']} \"{proposal['title']}\": {_evolution_state(ctx, proposal)} "
                       f"[Open in Evolution](/#evolution/{proposal['id']}). "
                       "The originating chat's status card updates automatically. "
@@ -416,11 +420,12 @@ async def weebo_status(ctx: ToolContext) -> ToolResult:
 # else changes only because the user asked in their own message, since in Weebo's own turns an agent's report or a
 # web page could have put the idea there.
 EVERYDAY_SETTINGS = ("voice.", "ui.", "user.", "autonomy.daily_brief", "autonomy.dream", "autonomy.quiet_hours",
-                     "autonomy.proactive", "codex.chat_effort", "codex.agent_effort", "codex.fast_mode")
+                     "autonomy.proactive", "codex.chat_effort", "codex.agent_effort", "codex.fast_mode", "ideas.",
+                     "activity.")
 # Of those the user may change, the ones that loosen Weebo's own safety are written to the journal.
 SENSITIVE_SETTINGS = ("evolution.", "evals.", "facts.", "autonomy.level", "autonomy.usage_ceiling_percent",
                       "autonomy.max_background_turns_per_day", "server.", "codex.binary", "chat.delegate_work",
-                      "agents.auto_followup")
+                      "agents.auto_followup", "bots.", "connectors.", "growth.")
 
 
 def _flat_settings(changes: dict[str, Any]) -> dict[str, Any]:

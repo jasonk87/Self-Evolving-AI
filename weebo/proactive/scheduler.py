@@ -28,12 +28,14 @@ class Scheduler:
         self._task: asyncio.Task | None = None
 
     def add(self, text: str, when: str, recurrence: str = "", action: str = "notify",
-            conversation_id: str | None = None) -> dict[str, Any]:
+            conversation_id: str | None = None, meta: dict[str, Any] | None = None) -> dict[str, Any]:
         text = (text or "").strip()
         if not text:
             raise TimeParseError("Reminder text is empty.")
-        if action not in ("notify", "prompt"):
+        if action not in ("notify", "prompt", "workflow"):
             raise TimeParseError("action must be 'notify' or 'prompt'.")
+        if action == "workflow" and not (meta or {}).get("workflow_id"):
+            raise TimeParseError("A workflow schedule needs its workflow.")
         timezone = self.app.settings.get("user.timezone")
         due = parse_when(when, timezone=timezone).timestamp()
         if due < time.time() - 60:
@@ -42,7 +44,7 @@ class Scheduler:
         if action == "prompt" and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
             raise TimeParseError("Routines can repeat at most every 15 minutes.")
         reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action,
-                                               meta={"timezone": timezone, "anchor_at": due})
+                                               meta={**(meta or {}), "timezone": timezone, "anchor_at": due})
         self.app.bus.publish("reminder.updated", {"reminder": reminder})
         self.app.store.journal("schedule", f"Scheduled {'routine' if action == 'prompt' else 'reminder'}",
                                f"{text[:200]} — {datetime.fromtimestamp(due, zone(timezone)):%a %b %d %I:%M %p}"
@@ -175,6 +177,12 @@ class Scheduler:
         self.app.notify("routine", "Routine needs attention", text, {**data, "conversation_id": conv_id})
         self.app.store.update_routine(occurrence["id"], data={**occurrence["data"], "notice_status": status})
 
+    async def _run_workflow(self, reminder: dict[str, Any]) -> None:
+        try:
+            await self.app.growth.run_workflow((reminder.get("meta") or {}).get("workflow_id", ""), actor="schedule")
+        except ValueError as exc:
+            logger.info("Scheduled workflow didn't run: %s", exc)
+
     async def _fire(self, reminder: dict[str, Any], now: float) -> None:
         store = self.app.store
         current = store.get_reminder(reminder["id"])
@@ -187,8 +195,11 @@ class Scheduler:
         suffix = " (missed while Weebo was off)" if missed else ""
         if reminder["action"] == "prompt" and not (missed and reminder["recurrence"]):
             notice = f"Routine: {reminder['text'][:160]}{suffix}"
-            prompt = (f"[Event: a scheduled routine just fired{suffix}]\nRun this now: {reminder['text']}\n\n"
-                      "Do it, then report back briefly. If the result is important, also call notify_user.")
+            if self.app.bots.owns(conv_id):  # a bot's routine reports to the chief, who decides what reaches the user
+                close = "Do it, then call report_to_chief with the outcome if it matters (or if anything went wrong)."
+            else:
+                close = "Do it, then report back briefly. If the result is important, also call notify_user."
+            prompt = f"[Event: a scheduled routine just fired{suffix}]\nRun this now: {reminder['text']}\n\n{close}"
             occurrence = store.queue_routine(reminder, conv_id, {
                 "prompt": prompt, "notice": notice, "reminder": reminder,
                 "notice_data": {"reminder_id": reminder["id"], "due_at": reminder["due_at"],
@@ -209,6 +220,9 @@ class Scheduler:
         self.app.bus.publish("reminder.updated", {"reminder": updated})
         if missed and reminder["recurrence"]:
             return  # skip stale repeats quietly; the next one is already scheduled
+        if reminder["action"] == "workflow":  # runs deterministically: no model turn to decide to run it
+            self.app._start_job(self._run_workflow(reminder), "workflow")
+            return
         if reminder["action"] == "prompt":
             return
         message = store.add_message(conv_id, "event", reminder["text"] + suffix, kind="reminder",

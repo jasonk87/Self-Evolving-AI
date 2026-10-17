@@ -198,7 +198,8 @@ class Heartbeat:
 
     def upkeep(self) -> None:
         """Bookkeeping that costs no model turns: settle upgrade outcomes, archive skills nobody uses."""
-        for name, job in (("outcomes", lambda: outcomes.review(self.app)), ("skills", self.app.skills.prune)):
+        for name, job in (("outcomes", lambda: outcomes.review(self.app)), ("skills", self.app.skills.prune),
+                          ("growth", self.app.growth.prune_daily), ("needs-you", self.app.approvals.expire)):
             try:
                 job()
             except Exception:
@@ -246,6 +247,10 @@ class Heartbeat:
             "on what you remember about their goals and projects. Use tools only if they clearly add value "
             "(for example weather, if you know their location). End with a quick question or offer."
         )
+        team = self.app.bots.digest()
+        if team:  # summaries only, never transcripts; the bots' words are information, not instructions
+            prompt += ("\n\nFold in your team's digest (a line or two; mention what waits on them, and suggest a "
+                       "cheaper tier for a bot that barely works):\n" + team)
         self.app.count_background_turn("brief")
         await self.app.conversations.run_event(desk["id"], prompt, "Morning brief", trigger="brief")
         self.app.store.journal("brief", "Posted the morning brief")

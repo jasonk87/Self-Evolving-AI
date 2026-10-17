@@ -57,10 +57,23 @@ DEFAULTS: dict[str, Any] = {
     "evals": {"enabled": True, "max_cases": 10},
     # Semantic recall: a small local embedding model (pip install fastembed) alongside keyword search.
     "memory": {"semantic": True},
-    "facts": {"ttl_seconds": 300, "sync_interval_seconds": 300, "sync_timeout_seconds": 30},
+    # second_pass: before a brief or draft reaches the user, a cheap fast-tier check against the facts store.
+    "facts": {"ttl_seconds": 300, "sync_interval_seconds": 300, "sync_timeout_seconds": 30, "second_pass": True},
     # Learned skills: suggested from repeated agent work; ones Weebo learned while dreaming that go unused this long are
     # archived (0 = never). Skills saved in a chat are never archived automatically.
     "skills": {"auto_learn": True, "prune_unused_days": 60},
+    # The team: specialist bots that report to the chief (the main chat). Caps hold on top of the autonomy limits.
+    # model_* pin a tier to a model id; blank = picked at runtime from the models Codex offers.
+    "bots": {"enabled": True, "max_bots": 8, "max_turns_per_day": 120, "hop_limit": 3, "stuck_minutes": 45,
+             "propose_starter": True, "model_fast": "", "model_standard": "", "model_capable": ""},
+    # Connectors from ChatGPT apps and MCP servers; ones unused this long are flagged (0 = never).
+    "connectors": {"unused_days": 30, "max_failures": 3},
+    # The growth loop: when to propose a workflow, a connector for a gap, or retiring an idle bot.
+    "growth": {"workflow_repeats": 3, "gap_repeats": 2, "idle_bot_days": 21},
+    # Day sheet and Ideas: how far ahead to look, and at most how many new ideas a day.
+    "ideas": {"enabled": True, "max_per_day": 5, "horizon_days": 7},
+    # Activity display: after this long without an event, work is shown as quiet rather than busy.
+    "activity": {"stale_seconds": 90},
     "voice": {"speak_replies": False, "voice_name": "", "rate": 1.05, "pitch": 1.25},
     "ui": {"companion": True, "reduce_motion": False},
     "user": {"name": "", "timezone": ""},
@@ -88,6 +101,18 @@ RANGES: dict[str, tuple[float, float]] = {
     "facts.sync_interval_seconds": (30, 86400),
     "facts.sync_timeout_seconds": (1, 120),
     "skills.prune_unused_days": (0, 365),
+    "bots.max_bots": (0, 32),
+    "bots.max_turns_per_day": (0, 2000),
+    "bots.hop_limit": (1, 6),
+    "bots.stuck_minutes": (5, 24 * 60),
+    "connectors.unused_days": (0, 365),
+    "connectors.max_failures": (1, 50),
+    "growth.workflow_repeats": (2, 20),
+    "growth.gap_repeats": (1, 20),
+    "growth.idle_bot_days": (1, 365),
+    "ideas.max_per_day": (0, 50),
+    "ideas.horizon_days": (1, 31),
+    "activity.stale_seconds": (15, 3600),
     "voice.rate": (0.5, 2.0),
     "voice.pitch": (0.0, 2.0),
 }

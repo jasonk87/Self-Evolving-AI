@@ -15,14 +15,18 @@ from .brain.conversation import ConversationManager
 from .brain.interactions import Interactions
 from .brain.mind import Mind
 from .brain.threads import ThreadKeeper
+from .bots.manager import BotManager
+from .bots.policy import ApprovalPolicy, ReportDesk
 from .codex.engine import CodexEngine
 from .config import Settings
+from .connectors.registry import Connectors
 from .diagnostics import Diagnostics
 from .events import EventBus
 from .evolution import outcomes
 from .evolution.engine import EvolutionEngine
 from .evolution.evals import Evals
 from .facts.service import Facts
+from .growth import Growth
 from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
 from .proactive.heartbeat import Heartbeat
@@ -49,6 +53,11 @@ class WeeboApp:
         self.conversations = ConversationManager(self)
         self.agents = AgentManager(self)
         self.threads = ThreadKeeper(self)
+        self.bots = BotManager(self)
+        self.reports = ReportDesk(self)
+        self.approvals = ApprovalPolicy(self)
+        self.connectors = Connectors(self)
+        self.growth = Growth(self)
         self.scheduler = Scheduler(self)
         self.heartbeat = Heartbeat(self)
         self.mind = Mind(self)
@@ -71,6 +80,8 @@ class WeeboApp:
     # ------------------------------------------------------------------ lifecycle
     async def start(self, with_engine: bool = True, with_background: bool = True) -> None:
         from .brain import builtin_tools  # noqa: F401  (registers Weebo's tools)
+        from .bots import tools as bot_tools  # noqa: F401
+        from .connectors import tools as connector_tools  # noqa: F401
         from .facts import tools as facts_tools  # noqa: F401
 
         _load_dotenv()
@@ -102,6 +113,8 @@ class WeeboApp:
             self.facts.sync.start()
             self.scheduler.start()
             self.heartbeat.start()
+            self.bots.start()
+            self.bots.propose_starter()
             self.evolution.start()
             self.memory.start_indexing(self.settings.get("memory.semantic"))
             self._start_job(self.evals.detect_code_version(), "code-version")
@@ -115,7 +128,7 @@ class WeeboApp:
         for job in jobs:
             job.cancel()
         await asyncio.gather(*jobs, return_exceptions=True)
-        for component in (self.scheduler, self.heartbeat, self.evolution, self.facts.sync):
+        for component in (self.scheduler, self.heartbeat, self.evolution, self.facts.sync, self.bots):
             await component.stop()
         await self.agents.shutdown()  # before the engine and the store they use go away
         await self.threads.stop()
@@ -176,7 +189,14 @@ class WeeboApp:
             await self.skills.sync_with_codex()
 
     # ------------------------------------------------------------------ helpers used across subsystems
-    def notify(self, kind: str, title: str, body: str = "", data: dict | None = None) -> dict[str, Any]:
+    def notify(self, kind: str, title: str, body: str = "", data: dict | None = None) -> dict[str, Any] | None:
+        conv_id = (data or {}).get("conversation_id")
+        if conv_id and self.bots.owns(conv_id):
+            # Only the chief reaches the user. What a bot (or an agent it started) would have pushed stays in its
+            # chat and the journal; the bot reports to the chief, who decides.
+            self.store.journal("bots.muted", f"Held a notification from a bot's chat: {title[:120]}", body[:300],
+                               data={"conversation_id": conv_id, "kind": kind})
+            return None
         note = self.store.add_notification(kind, title, body, data)
         self.bus.publish("notify", {"notification": note})
         return note
@@ -198,7 +218,10 @@ class WeeboApp:
     def on_turn_finished(self, conv_id: str, turn: Any, status: str) -> None:
         mood = {"completed": "happy", "failed": "sad", "interrupted": "idle"}.get(status, "idle")
         self.bus.publish("weebo.mood", {"mood": mood, "conversation_id": conv_id})
-        if turn.trigger in ("brief", "routine", "agent_report", "followup") and status == "completed":
+        if self.bots.owns(conv_id):  # a bot's turn reports to the chief, never to the user directly
+            self.bots.on_turn_finished(conv_id, turn, status)
+            return
+        if turn.trigger in ("brief", "routine", "agent_report", "followup", "bot_report") and status == "completed":
             conv = self.store.get_conversation(conv_id)
             if conv and self.clients == 0 and turn.final_text:
                 self.notify("weebo", conv.get("title") or "Weebo", turn.final_text[:300], {"conversation_id": conv_id})

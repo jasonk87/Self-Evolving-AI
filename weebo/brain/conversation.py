@@ -21,7 +21,7 @@ from .. import log, paths
 from ..codex.engine import image_input, text_input
 from ..codex.rpc import EngineClosed, RpcError
 from . import activity, persona
-from .tools import ToolContext, registry
+from .tools import ToolContext, ToolResult, registry
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -37,6 +37,9 @@ MAX_DIFF = 200_000
 class TurnState:
     trigger: str = "user"
     occurrence_id: str | None = None
+    hops: int = 0  # relays (chief -> bot -> chief ...) that led to this turn; capped by bots.hop_limit
+    job_id: str | None = None  # the bot job this turn works on
+    reported: bool = False  # a bot reported to the chief during this turn
     turn_id: str | None = None
     cancelled: bool = False
     stop_requested: asyncio.Event = field(default_factory=asyncio.Event)
@@ -303,8 +306,10 @@ class ConversationManager:
         main, store = self.main_id(), self.app.store
         for table, statuses in (("reminders", ("pending",)), ("tasks", ("queued", "running"))):
             marks = ", ".join("?" for _ in statuses)
+            # A bot's chat is live, not an older chat: its routines and agents stay with it.
             store.execute(f"UPDATE {table} SET conversation_id=? WHERE conversation_id IS NOT NULL "
-                          f"AND conversation_id != ? AND status IN ({marks})", (main, main, *statuses))
+                          f"AND conversation_id != ? AND status IN ({marks}) AND conversation_id NOT IN "
+                          "(SELECT id FROM conversations WHERE kind='bot')", (main, main, *statuses))
         active = ("proposed", "vetting", "declined", "queued", "building", "checking", "ready", "conflict")
         store.execute(  # only from chats that still exist: a chat deleted on purpose takes its upgrades' cards along
             "UPDATE proposals SET meta=json_set(meta, '$.conversation_id', ?) "
@@ -387,7 +392,8 @@ class ConversationManager:
 
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
                         notice_kind: str = "notice", notice_data: dict | None = None,
-                        occurrence_id: str | None = None, fallback: str = "") -> str:
+                        occurrence_id: str | None = None, fallback: str = "", hops: int = 0,
+                        job_id: str | None = None) -> str:
         """Run a turn Weebo starts itself (routine, agent report, brief). The prompt is hidden;
         the UI shows ``notice`` instead of a user bubble. Return the dispatch outcome
         so a caught startup error cannot be mistaken for an accepted turn."""
@@ -408,8 +414,15 @@ class ConversationManager:
                 if not occurrence_id or not any(f.get("occurrence_id") == occurrence_id for f in session.followups):
                     session.followups.append({"prompt": prompt, "notice": notice, "trigger": trigger,
                                               "notice_kind": notice_kind, "notice_data": notice_data,
-                                              "occurrence_id": occurrence_id, "fallback": fallback})
+                                              "occurrence_id": occurrence_id, "fallback": fallback,
+                                              "hops": hops, "job_id": job_id})
                 return "queued"
+            bot = self.app.bots.for_conversation(conv_id)
+            if bot is not None:  # a bot's turn spends its own budget; one that can't run is reported, not dropped
+                refusal = self.app.bots.refuse_turn(bot, trigger)
+                if refusal:
+                    self.app.bots.turn_refused(bot, refusal, trigger, prompt, occurrence_id, job_id)
+                    return "refused"
             if occurrence_id and not self.app.scheduler.delivery_starting(occurrence_id):
                 return occurrence["status"]
             # A scheduler tick can start a durable queue entry before its in-memory
@@ -420,7 +433,7 @@ class ConversationManager:
                 note = self.app.store.add_message(conv_id, "event", notice, kind=notice_kind, data=notice_data or {})
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
             return await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt,
-                                          occurrence_id=occurrence_id, fallback=fallback)
+                                          occurrence_id=occurrence_id, fallback=fallback, hops=hops, job_id=job_id)
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
@@ -462,8 +475,10 @@ class ConversationManager:
     # ------------------------------------------------------------------ turns
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
                           trigger: str, query: str, occurrence_id: str | None = None,
-                          user_message_id: str | list[str] | None = None, fallback: str = "") -> str:
-        state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback)
+                          user_message_id: str | list[str] | None = None, fallback: str = "", hops: int = 0,
+                          job_id: str | None = None) -> str:
+        state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback,
+                                         hops=hops, job_id=job_id)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
         extra: list[str] = []
@@ -482,6 +497,9 @@ class ConversationManager:
                 session.pending_context[:0] = extra  # not delivered: the next turn still gets it
                 return self._stopped_before_start(session, state, conv["id"], thread_id)
             requested = True
+            bot = self.app.bots.for_conversation(conv["id"])
+            if bot is not None:
+                self.app.bots.count_turn(bot)
             turn = await self.app.engine.start_turn(thread_id, inputs, context=context, **overrides)
             if not turn.get("id"):
                 raise ValueError("The engine did not confirm a turn id.")
@@ -576,15 +594,33 @@ class ConversationManager:
             logger.warning("Interrupt failed: %s", exc)
             return False
 
+    def _profile(self, conv: dict[str, Any]) -> dict[str, Any]:
+        """What a conversation's thread is built from: the chief's, or its bot's own instructions, tools and model."""
+        bot = self.app.bots.for_conversation(conv["id"])
+        if bot is None:
+            approval, sandbox_mode, _ = chat_sandbox(self.app, [])
+            return {"hash": tools_hash("chat"), "tools": registry.specs("chat"), "approval": approval,
+                    "sandbox": sandbox_mode, "developer": persona.developer_instructions(self.app, "chat"),
+                    "model": self.app.engine.default_model(self.app.settings.get("codex.model")), "extra": {}}
+        bots = self.app.bots
+        approval, sandbox_mode, _ = bots.sandbox(bot, [])
+        return {"hash": bots.tools_hash(bot), "tools": bots.specs(bot), "approval": approval, "sandbox": sandbox_mode,
+                "developer": bots.developer_instructions(bot), "model": bots.model_for(bot),
+                "extra": self.app.connectors.thread_config(bot)}
+
     async def _ensure_thread(self, session: Session, conv: dict[str, Any]) -> str:
         engine = self.app.engine
         thread_id = conv.get("thread_id")
-        current_hash = tools_hash("chat")
+        profile = self._profile(conv)
+        current_hash = profile["hash"]
         meta = conv.get("meta") or {}
-        if thread_id and thread_id in engine.loaded_threads:
+        # A loaded thread is reused, except a bot's whose tools changed meanwhile (an approved grant): that one is
+        # replaced below with a recap, like a thread with outdated tools after a restart.
+        if thread_id and thread_id in engine.loaded_threads and (conv.get("kind") != "bot"
+                                                                 or meta.get("tools_hash") == current_hash):
             self._route(conv["id"], thread_id)
             return thread_id
-        approval, sandbox_mode, _ = chat_sandbox(self.app, [])
+        approval, sandbox_mode = profile["approval"], profile["sandbox"]
         cwd = conv.get("cwd") or str(paths.workspace_dir())
         if thread_id and meta.get("tools_hash") == current_hash:
             for attempt in (1, 2):
@@ -592,7 +628,7 @@ class ConversationManager:
                     self._route(conv["id"], thread_id)
                     await engine.resume_thread(
                         thread_id, cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode,
-                        developerInstructions=persona.developer_instructions(self.app, "chat"),
+                        developerInstructions=profile["developer"],
                     )
                     return thread_id
                 except (RpcError, asyncio.TimeoutError) as exc:
@@ -607,12 +643,18 @@ class ConversationManager:
             recap = self._recap(conv["id"])
             if recap:
                 session.pending_context.insert(0, recap)
-        result = await engine.start_thread(
-            cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode,
-            developerInstructions=persona.developer_instructions(self.app, "chat"),
-            dynamicTools=registry.specs("chat"), serviceName="weebo", ephemeral=False,
-            model=engine.default_model(self.app.settings.get("codex.model")),
-        )
+        params = dict(cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode, developerInstructions=profile["developer"],
+                      dynamicTools=profile["tools"], serviceName="weebo", ephemeral=False, model=profile["model"])
+        try:
+            result = await engine.start_thread(**params, **profile["extra"])
+        except RpcError as exc:
+            if not profile["extra"]:
+                raise
+            # The installed Codex refused the per-thread connector config: work without it (scope is still enforced
+            # by Weebo) rather than leave the bot without a thread.
+            logger.warning("Codex refused per-thread connector config (%s); continuing without it", exc)
+            self.app.connectors.config_failed = True
+            result = await engine.start_thread(**params)
         new_thread = result["thread"]["id"]
         meta["tools_hash"] = current_hash
         self.app.store.update_conversation(conv["id"], thread_id=new_thread, meta=meta)
@@ -635,10 +677,16 @@ class ConversationManager:
     def _turn_overrides(self, conv: dict[str, Any]) -> dict[str, Any]:
         settings = self.app.settings
         engine = self.app.engine
-        model = engine.default_model(settings.get("codex.model"))
-        effort = engine.clamp_effort(model, settings.get("codex.chat_effort"))
         roots = [str(paths.workspace_dir()), str(paths.uploads_dir())]
-        approval, _, policy = chat_sandbox(self.app, roots)
+        bot = self.app.bots.for_conversation(conv["id"])
+        if bot is not None:  # each bot runs on its own model and effort
+            model = self.app.bots.model_for(bot)
+            effort = self.app.bots.effort_for(bot)
+            approval, _, policy = self.app.bots.sandbox(bot, roots)
+        else:
+            model = engine.default_model(settings.get("codex.model"))
+            effort = engine.clamp_effort(model, settings.get("codex.chat_effort"))
+            approval, _, policy = chat_sandbox(self.app, roots)
         overrides: dict[str, Any] = {"model": model, "effort": effort, "approvalPolicy": approval,
                                      "sandboxPolicy": policy, "summary": "auto",
                                      "cwd": conv.get("cwd") or str(paths.workspace_dir())}
@@ -660,11 +708,20 @@ class ConversationManager:
     async def _on_request(self, conv_id: str, method: str, params: dict[str, Any]) -> Any:
         if method == "item/tool/call":
             session = self.session(conv_id)
+            name = params.get("tool", "")
             if session.turn:
-                session.turn.tools_used.append(params.get("tool", ""))
+                session.turn.tools_used.append(name)
+            bot = self.app.bots.for_conversation(conv_id)
+            tool = registry.get(name)
+            if bot is not None and not self.app.bots.allows_tool(bot, name):
+                return ToolResult(f"{name} isn't one of your tools. Ask the chief with propose_profile_change if "
+                                  "you need it.", success=False).to_codex()
+            if bot is None and tool is not None and "chat" not in tool.scopes and "bot" in tool.scopes:
+                return ToolResult(f"{name} is a bot's tool.", success=False).to_codex()
             ctx = ToolContext(self.app, params.get("threadId", ""), params.get("turnId", ""), conversation_id=conv_id,
-                              trigger=session.turn.trigger if session.turn else "event")
-            result = await registry.call(ctx, params.get("tool", ""), params.get("arguments") or {})
+                              trigger=session.turn.trigger if session.turn else "event",
+                              bot_id=bot["id"] if bot else None, hops=session.turn.hops if session.turn else 0)
+            result = await registry.call(ctx, name, params.get("arguments") or {})
             return result.to_codex()
         return await self.app.interactions.ask(method, params, conversation_id=conv_id)
 
@@ -770,6 +827,8 @@ class ConversationManager:
         if completed:
             self.app.skills.note_item(item)
         turn = session.turn
+        if item_type == "mcpToolCall":
+            self._watch_connector(conv_id, session, item, completed)
         message_id = f"{conv_id}:{item.get('id')}"
         if item_type == "agentMessage" and not completed:
             message = self.app.store.upsert_message(message_id, conv_id, "assistant", "text", "",
@@ -800,6 +859,22 @@ class ConversationManager:
         message = self.app.store.upsert_message(message_id, conv_id, role, kind, content, data,
                                                 turn.turn_id if turn else None, status)
         self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+
+    def _watch_connector(self, conv_id: str, session: Session, item: dict[str, Any], completed: bool) -> None:
+        """Connector use is monitored, and a bot reaching outside its connectors is stopped and reported."""
+        server = str(item.get("server") or "")
+        bot = self.app.bots.for_conversation(conv_id)
+        if bot is not None and not completed and not self.app.connectors.in_scope(bot, server, str(item.get("tool") or "")):
+            known = self.app.connectors._match_server(server) is not None or server == "codex_apps"
+            if known and session.turn and session.turn.turn_id:
+                self.app.reports.file(bot, "blocked", f"Tried to use {server} ({item.get('tool')}), which isn't one "
+                                      "of its connectors; the turn was stopped.", needs_attention=False,
+                                      hops=session.turn.hops, source="system")
+                self.app._start_job(self.interrupt(conv_id), "out-of-scope")
+            return
+        if completed:
+            error = (item.get("error") or {}).get("message") or ""
+            self.app.connectors.record_use(server, ok=item.get("status") != "failed" and not error, error=error)
 
     def _publish_image(self, saved_path: str) -> str | None:
         src = Path(saved_path)

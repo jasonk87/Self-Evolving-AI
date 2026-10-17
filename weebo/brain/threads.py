@@ -51,11 +51,14 @@ class ThreadKeeper:
         self.app.store.kv_set(PENDING_KEY, self._pending)
 
     def in_use(self, thread_id: str) -> bool:
-        """The main chat's thread, or one an agent is working (or about to work) in."""
+        """The main chat's thread, a live bot's thread, or one an agent is working (or about to work) in."""
         store = self.app.store
         main = store.find_conversation_by_kind("desk")
         if main and main.get("thread_id") == thread_id:
             return True
+        if store.query_one("SELECT 1 AS live FROM conversations c JOIN bots b ON b.conversation_id = c.id "
+                           "WHERE c.thread_id=? AND b.status IN ('active', 'paused')", (thread_id,)):
+            return True  # a bot's one long-lived thread
         for conv_id, session in self.app.conversations.sessions.items():
             if session.turn:
                 conv = store.get_conversation(conv_id)
@@ -154,7 +157,7 @@ class ThreadKeeper:
                                "AND status NOT IN ('queued', 'running') ORDER BY created_at"):
             found[row["thread_id"]] = None
         for row in store.query("SELECT thread_id FROM conversations WHERE thread_id IS NOT NULL AND thread_id != '' "
-                               "AND kind != 'desk'"):
+                               "AND kind NOT IN ('desk', 'bot')"):
             found[row["thread_id"]] = None  # older chats are kept to read in Weebo, which has their messages
         cursor, listed = store.kv_get(SWEEP_CURSOR_KEY), True
         try:  # threads Weebo named but no longer tracks, such as main-chat threads it replaced
