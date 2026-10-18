@@ -323,6 +323,7 @@ class AgentManager:
                 current_hash = "bot:" + self.app.bots.tools_hash(owner)
                 developer = self.app.bots.developer_instructions(owner) + "\n\n" + developer
                 extra = await self.app.connectors.prepare_thread(owner, task["cwd"])
+                current_hash = self.app.connectors.policy_hash(current_hash, extra)
             earlier = ""
             if task.get("thread_id"):  # continuing an earlier agent's work in its own thread
                 run.thread_id = await self._reopen(task, approval, sandbox_mode, developer, scope,

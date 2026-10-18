@@ -677,6 +677,7 @@ class ConversationManager:
         bot = self.app.bots.for_conversation(conv["id"])
         if bot:
             profile["extra"] = await self.app.connectors.prepare_thread(bot, cwd)
+            current_hash = self.app.connectors.policy_hash(current_hash, profile["extra"])
         # A loaded thread is reused, except a bot's whose tools changed meanwhile (an approved grant): that one is
         # replaced below with a recap, like a thread with outdated tools after a restart.
         if thread_id and thread_id in engine.loaded_threads and (conv.get("kind") != "bot"

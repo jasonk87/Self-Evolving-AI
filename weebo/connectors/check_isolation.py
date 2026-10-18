@@ -34,15 +34,14 @@ async def probe(binary, root: Path) -> dict:
     env = connector_environment()
     env["CODEX_HOME"] = str(root / "codex-home")
     (root / "codex-home").mkdir()
-    # These two synthetic servers are the only configuration in this disposable
-    # home. No credentials or real ~/.codex config are copied into it.
-    config = {"features.apps": False}
+    # Use a real config layer, not -c overrides: empty thread tables can remove
+    # command-line entries yet still merge inherited config.toml entries.
+    lines = ["[features]", "apps = false"]
     for key in ("allowed", "blocked"):
-        config[f"mcp_servers.{key}.command"] = sys.executable
-        config[f"mcp_servers.{key}.args"] = ["-I", server, key]
+        lines += [f"[mcp_servers.{key}]", f"command = {json.dumps(sys.executable)}",
+                  f"args = {json.dumps(['-I', server, key])}"]
+    (root / "codex-home" / "config.toml").write_text("\n".join(lines), encoding="utf-8")
     command = [*binary.command()]
-    for key, value in config.items():
-        command += ["-c", f"{key}={json.dumps(value)}"]
     rpc = JsonRpcProcess([*command, "app-server"], env=env, cwd=str(root))
 
     async def decline(method, params):
@@ -92,9 +91,10 @@ async def probe(binary, root: Path) -> dict:
             blocked_call = bool(result.get("isError") or result.get("error"))
         except RpcError:
             blocked_call = True
+        outward_hidden = all("outward_action" not in (r.get("tools") or {}) for r in rows)
         return {"allowed_tools_visible": bool(allowed), "allowed_call_succeeded": allowed_call, "blocked_tools_hidden": hidden,
-                "blocked_call_rejected": blocked_call,
-                "synthetic_isolation": "PASS" if allowed and allowed_call and hidden and blocked_call else "FAIL",
+                "blocked_call_rejected": blocked_call, "outward_tools_hidden": outward_hidden,
+                "synthetic_isolation": "PASS" if allowed and allowed_call and hidden and blocked_call and outward_hidden else "FAIL",
                 "real_apps_and_pre_execution_approval": "NOT_TESTED"}
     except Exception as exc:
         # This child has only disposable config and synthetic tools, no secrets.

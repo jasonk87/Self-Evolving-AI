@@ -9,6 +9,7 @@ rules), assign to bots (a gated profile change), and monitor (failures and use f
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shlex
@@ -262,6 +263,11 @@ class Connectors:
         inventory = await self.app.engine.connector_inventory(cwd)
         return self.thread_config(bot, inventory)
 
+    @staticmethod
+    def policy_hash(tools_hash: str, extra: dict[str, Any]) -> str:
+        """A newly inherited connector must also invalidate already-loaded threads."""
+        return hashlib.sha256(json.dumps([tools_hash, extra], sort_keys=True).encode()).hexdigest()[:16]
+
     def thread_config(self, bot: dict[str, Any], inventory: dict[str, Any] | None = None) -> dict[str, Any]:
         """Native read-only connector allowlist. Outward tools stay disabled pending live approval acceptance."""
         features = getattr(self.app.engine, "features", None)
@@ -269,20 +275,37 @@ class Connectors:
             raise ConnectorError("Native bot connector controls failed. Resolve the isolation check and restart Weebo.")
         if not getattr(features, "thread_config", False):
             return {}
-        # Replace entire tables. Per-key dotted overrides preserve inherited
-        # grants and cannot safely address connector IDs containing dots.
-        config: dict[str, Any] = {"mcp_servers": {}, "apps": {"_default": {
-            "default_tools_approval_mode": "prompt", "enabled": False, "approvals_reviewer": "user"}}}
+        # Native config layers merge tables. Empty tables did NOT remove real
+        # user/project grants, although our old command-line-only probe passed.
+        # Explicitly deny inherited entries, including plugin-provided tools.
+        inventory = inventory or {}
+        config: dict[str, Any] = {
+            "mcp_servers": {key: {"enabled": False} for key in inventory.get("mcp", [])},
+            "plugins": {key: {"enabled": False} for key in inventory.get("plugins", [])},
+            "apps": {key: {"enabled": False} for key in inventory.get("apps", {})}}
+        config["apps"]["_default"] = {
+            "default_tools_approval_mode": "prompt", "enabled": False, "approvals_reviewer": "user"}
+        config["features.apps"] = False
+        # Plugin sidecars have no transport in the user's mcp_servers table.
+        # Codex validates a transport even for a disabled override. A never-run
+        # local exit command supplies that required shape without copying any
+        # plugin credentials, commands, or URLs into the bot's configuration.
+        for key in inventory.get("runtime_only_mcp", []):
+            config["mcp_servers"][key] = {"enabled": False, "command": sys.executable,
+                "args": ["-I", "-c", "raise SystemExit('Disabled by Weebo connector scope')"]}
         for connector_id in bot["data"].get("connectors") or []:
             row = self.get(connector_id)
             if not row or row["status"] != "approved":
                 continue
             if row["kind"] == "app":
+                config["features.apps"] = True
+                inherited = (inventory.get("apps") or {}).get(row["data"]["app_id"], [])
                 config["apps"][row["data"]["app_id"]] = {
                     "enabled": True, "default_tools_enabled": False, "destructive_enabled": False,
                     "open_world_enabled": False, "default_tools_approval_mode": "prompt", "approvals_reviewer": "user",
-                    "tools": {t["name"]: {"enabled": t["risk"] == "read", "approval_mode": "prompt"}
-                              for t in row["data"].get("tools", [])}}
+                    "tools": {**{name: {"enabled": False} for name in inherited},
+                              **{t["name"]: {"enabled": t["risk"] == "read", "approval_mode": "prompt"}
+                                 for t in row["data"].get("tools", [])}}}
                 continue
             key, data = row["data"]["key"], row["data"]
             read_tools = [t["name"] for t in data.get("tools", []) if t["risk"] == "read"]

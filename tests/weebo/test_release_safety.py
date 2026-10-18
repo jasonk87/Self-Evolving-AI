@@ -150,13 +150,15 @@ async def test_native_inventory_is_read_only_allowlist_and_covers_resume(app, fa
     bot = new_bot(app, connectors=[row["id"]])
 
     async def inventory(cwd):
-        return {"mcp": ["unrelated"], "apps": {"other_app": ["send_mail"]}}
+        return {"mcp": ["unrelated"], "apps": {"other_app": ["send_mail"]}, "plugins": ["mail@tools"]}
 
     fake_engine.connector_inventory = inventory
     await app.bots.message(bot["id"], "read", actor="user", hops=0)
     config = fake_engine.threads[-1]["config"]
-    assert set(config["mcp_servers"]) == {"helpline"}  # replaces, not merges, inherited servers
-    assert set(config["apps"]) == {"_default"}
+    assert config["mcp_servers"]["unrelated"]["enabled"] is False
+    assert config["apps"]["other_app"]["enabled"] is False
+    assert config["plugins"]["mail@tools"]["enabled"] is False
+    assert config["features.apps"] is False
     assert config["mcp_servers"]["helpline"]["enabled_tools"] == ["lookup"]
     assert config["apps"]["_default"]["enabled"] is False
     turn = fake_engine.turns[-1]

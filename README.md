@@ -45,13 +45,16 @@ is registered from a manifest, **tested with your authorization** (Weebo starts 
 checks them against the manifest and makes declared read-only test calls), **approved** by you with a risk label per tool (tools that spend money or
 contact people need a rule in your words), **assigned** to bots as a gated change, and **monitored** (one that keeps
 failing is flagged to the chief). Onboarding is not an OS sandbox; only test trusted programs. Weebo scopes its own
-dynamic tools and reads effective Codex config before bot/owned-agent startup: unassigned native servers/apps are
-disabled, and assigned connectors expose **declared read tools only**. Native outward tools remain unavailable until
+dynamic tools and reads effective Codex config, installed plugins, and native tool inventory before bot/owned-agent
+startup: inherited servers, plugin sidecars and unassigned apps are explicitly disabled, and assigned connectors
+expose **declared read tools only**. Empty config tables are not treated as removing inherited grants. Native outward tools remain unavailable until
 real-app pre-execution approval is accepted in live testing. If required controls are unavailable or rejected, bot
 startup fails visibly instead of retrying without protection. Normal chief chat is unchanged.
 Stdio testing and runtime pass only basic OS launch variables plus the manifest's exact `env_names`; no blanket
 inheritance of Weebo's secrets. This is not a filesystem sandbox. See the
-[release fixes and live acceptance checklist](weebo/RELEASE_SAFETY_TESTING.md), including the local isolation probe.
+[release fixes and live acceptance checklist](weebo/RELEASE_SAFETY_TESTING.md), including the synthetic probe and
+`python -m weebo.connectors.check_live_isolation` for your actual configuration. Add `--resume-turns` to spend two
+harmless Codex turns verifying persisted resume and a diagnostic app-server restart; its test threads are archived.
 
 **Day sheet and Ideas.** For the next days, each event is enriched by code from the facts store and real sources:
 weather at its time and place (OpenWeather forecast, your own key), travel time **only from a directions source**

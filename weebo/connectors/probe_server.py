@@ -16,7 +16,10 @@ def main():
         elif method == "tools/list":
             result = {"tools": [{"name": label + "_marker", "description": "Return a harmless diagnostic marker.",
                                  "inputSchema": {"type": "object", "properties": {}},
-                                 "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}}]}
+                                 "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}},
+                                {"name": "outward_action", "description": "Synthetic outward tool; never contacts anyone.",
+                                 "inputSchema": {"type": "object", "properties": {}},
+                                 "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": True}}]}
         elif method == "tools/call":
             result = {"content": [{"type": "text", "text": label}]}
         elif method in ("resources/list", "resources/templates/list"):

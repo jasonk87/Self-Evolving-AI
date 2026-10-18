@@ -357,9 +357,47 @@ class CodexEngine:
         config = result.get("config")
         if not isinstance(config, dict):
             raise ValueError("Codex did not return effective connector configuration; bot startup was blocked.")
-        return {"mcp": list((config.get("mcp_servers") or {}).keys()),
-                "apps": {key: list((value.get("tools") or {}).keys()) for key, value in
-                         (config.get("apps") or {}).items() if key != "_default" and isinstance(value, dict)}}
+        # Remote-installed plugins may not occur in config.toml at all, and
+        # their runtime IDs can differ from old local marketplace IDs.
+        catalog = await self.request("plugin/list", {"cwds": [cwd], "forceRefetch": False}, timeout=30)
+        if not isinstance(catalog, dict) or not isinstance(catalog.get("marketplaces"), list) or catalog.get("marketplaceLoadErrors"):
+            raise ValueError("Codex plugin inventory is incomplete; bot startup was blocked.")
+        plugins = set((config.get("plugins") or {}).keys())
+        for marketplace in catalog["marketplaces"]:
+            for plugin in marketplace.get("plugins", []):
+                if plugin.get("installed") and plugin.get("id"):
+                    plugins.add(plugin["id"])
+        servers = set((config.get("mcp_servers") or {}).keys())
+        apps = {key: set((value.get("tools") or {}).keys()) for key, value in
+                (config.get("apps") or {}).items() if key != "_default" and isinstance(value, dict)}
+        read_tools: dict[str, set[str]] = {}
+        cursor = None
+        for _ in range(30):
+            page = await self.request("mcpServerStatus/list", {"cursor": cursor, "limit": 100,
+                "detail": "toolsAndAuthOnly"}, timeout=60)
+            if not isinstance(page, dict) or not isinstance(page.get("data"), list):
+                raise ValueError("Codex native tool inventory is incomplete; bot startup was blocked.")
+            for server in page["data"]:
+                name = server.get("name")
+                if name and name != "codex_apps":
+                    servers.add(name)
+                if name == "codex_apps":
+                    for tool_name, tool in (server.get("tools") or {}).items():
+                        app_id = (tool.get("_meta") or {}).get("connector_id")
+                        if app_id:
+                            apps.setdefault(app_id, set()).add(tool_name)
+                            annotations = tool.get("annotations") or {}
+                            if annotations.get("readOnlyHint") is True and not annotations.get("destructiveHint") and not annotations.get("openWorldHint"):
+                                read_tools.setdefault(app_id, set()).add(tool_name)
+            cursor = page.get("nextCursor")
+            if not cursor:
+                break
+        else:
+            raise ValueError("Codex native tool pagination is incomplete; bot startup was blocked.")
+        return {"mcp": sorted(servers), "plugins": sorted(plugins),
+                "runtime_only_mcp": sorted(servers - set((config.get("mcp_servers") or {}).keys())),
+                "apps": {key: sorted(names) for key, names in apps.items()},
+                "read_tools": {key: sorted(names) for key, names in read_tools.items()}}
 
     async def resume_thread(self, thread_id: str, **params: Any) -> dict[str, Any]:
         await self.ensure_ready()
@@ -569,7 +607,7 @@ def _thread_id_of(params: dict[str, Any]) -> str | None:
 
 def detect_features(binary: CodexBinary) -> EngineFeatures:
     """Read the engine's own protocol schema to learn which optional fields it accepts."""
-    cache_file = paths.cache_dir() / f"codex-features-v3-{binary.version_str}.json"
+    cache_file = paths.cache_dir() / f"codex-features-v4-{binary.version_str}.json"
     if cache_file.exists():
         try:
             return EngineFeatures(**json.loads(cache_file.read_text(encoding="utf-8")))
@@ -596,7 +634,10 @@ def detect_features(binary: CodexBinary) -> EngineFeatures:
         features.connector_controls = (features.thread_config and "config" in
             defs.get("ThreadResumeParams", {}).get("properties", {}) and "ConfigReadParams" in defs and
             {"enabled", "default_tools_approval_mode"} <= set(defs.get("AppsDefaultConfig", {}).get("properties", {}))
-            and "enabled" in defs.get("AppToolConfig", {}).get("properties", {}))
+            and "enabled" in defs.get("AppToolConfig", {}).get("properties", {})
+            and "cwds" in defs.get("PluginListParams", {}).get("properties", {})
+            and "detail" in defs.get("ListMcpServerStatusParams", {}).get("properties", {})
+            and {"id", "installed"} <= set(defs.get("PluginSummary", {}).get("properties", {})))
         features.apps = '"app/list"' in text
         cache_file.write_text(json.dumps(features.__dict__), encoding="utf-8")
     except Exception as exc:  # feature detection is best effort

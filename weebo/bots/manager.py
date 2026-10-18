@@ -318,7 +318,7 @@ class BotManager:
                 data = row["data"]
                 connectors.append({"id": cid, "status": row["status"], **{k: data.get(k) for k in
                     ("key", "tools", "rules", "command", "url", "cwd", "env_names", "app_id")}})
-        return hashlib.sha1(json.dumps({"policy_version": 2, "tools": self.specs(bot), "connectors": connectors},
+        return hashlib.sha1(json.dumps({"policy_version": 3, "tools": self.specs(bot), "connectors": connectors},
                                       sort_keys=True).encode()).hexdigest()[:12]
 
     def allows_tool(self, bot: dict[str, Any], name: str) -> bool:

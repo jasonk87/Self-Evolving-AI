@@ -77,6 +77,57 @@ allowed tools visible, blocked tools hidden, blocked call rejected. This is NOT 
 
 ## Live acceptance still required before permitting native outward tools
 
+### PC follow-up, 2026-10-17
+
+The earlier synthetic PASS did **not** cover real configuration inheritance. Live checks found two actual defects:
+empty `mcp_servers` / `plugins` tables merge with user/project layers rather than removing their grants, and
+remote-installed plugins / plugin MCP sidecars can be absent from `config/read`. Bot profiles now explicitly deny
+the inherited servers and plugins discovered through configuration **and** installed/runtime inventories, clear
+inherited per-tool app grants, and disable the apps feature when no app is assigned. Existing bot and owned-agent
+threads get a new policy hash so old-policy threads are replaced through the existing housekeeping path.
+The hash also covers the effective native controls: a newly inherited server/plugin invalidates an already-loaded
+bot thread or a continued owned-agent thread, not just threads resumed after a restart.
+
+The synthetic probe now uses a real temporary `config.toml` layer and advertises a real synthetic outward tool
+(which must remain hidden). The new live check uses this PC's installed Codex and existing sign-in without copying
+credentials or changing global settings:
+
+```powershell
+python -m weebo.connectors.check_live_isolation
+# Optional: two harmless model turns, persisted resume, and a diagnostic-only app-server restart:
+python -m weebo.connectors.check_live_isolation --resume-turns
+```
+
+**Observed on Codex 0.163.0: PASS**, including both resume turns and the app-server restart. The effective inventory
+contained 8 native server names and 37 local/remote plugin identifiers. Two synthetic bot scopes each exposed only
+their assigned read tool, rejected the other bot's marker, and hid outward tools. Revocation produced an empty
+scope. Two actual apps each reported only the assigned app as callable, with no plugin MCP sidecars escaping scope.
+The diagnostic uses `app/installed` for effective app permissions: the raw `mcpServerStatus/list` discovery catalog
+alone is **not** proof that an app is callable. A separate authorized read-only Calendar check succeeded while
+assigned and was rejected after revocation; no calendar changes were made.
+
+No real texts, emails, calls or bookings were sent. Twilio's account SID, auth token and sender number are absent
+from Weebo's environment and its `.env` loading path. A live SMS test requires setup plus the user's chosen test
+recipient and explicit send consent. No keys were moved or changed. Native outward tools remain disabled: these
+read/isolation checks do not certify native per-action approvals, command/network escape resistance, every
+connector, or real-source briefing accuracy. Those remaining checks below are intentionally still open.
+
+Regression coverage: `tests/weebo/test_live_connector_controls.py` covers inherited configuration and remote plugin
+discovery, runtime-only sidecars, credential-free inventories, stale per-tool grants, incomplete inventories, and
+complete pagination, plus thread replacement for both loaded bots and continued owned agents after native scope
+changes. The existing resume test now checks explicit deny entries instead of incorrectly assuming
+an empty table replaces an inherited table.
+
+Final checks for this follow-up: **804 Weebo tests passed** (1 existing platform skip), **1,565 repository unit
+tests passed** (2 existing platform skips, 7 integration/smoke tests deselected, 13 subtests passed), selftest OK,
+all 13 JavaScript modules parse, and both native diagnostics passed. Only the existing ChromaDB deprecation warning
+remains. The final production code and tests were unchanged during these runs; this result record was added after.
+A temporary copy of this PC's schema-3 database migrated to schema 5 with integrity OK and existing conversation,
+message, memory, task and reminder counts preserved. A verified local backup was kept before launching the app.
+This follow-up's CI status is not implied by the local results.
+
+### Remaining acceptance checklist
+
 - [ ] With the user's real connector configuration, verify two bots see only their assigned read tools, including
   after restart, connector revocation and continued owned-agent work. Include apps with existing per-tool overrides.
 - [ ] Using a dedicated test connector/recipient, prove that an outward call pauses **before** its side effect;
