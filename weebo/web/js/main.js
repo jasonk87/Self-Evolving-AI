@@ -214,6 +214,8 @@ class App {
 
   markRead(id, conv) {
     if (conv) this.upsertConversation({ ...conv, unread: 0 });
+    const bot = this.botFor(id);
+    if (bot) { bot.unread = 0; this.renderBadges(); }
   }
 
   async renameConversation(id) {
@@ -288,8 +290,9 @@ class App {
     set("more", this.runningTasks);
     set("evolution", this.readyProposals);
     const waiting = (this.state.activity?.entries || []).filter((e) => e.id === "needs-you").length;
-    set("bots", this.state.bots.filter((b) => b.status === "proposed").length + waiting);
-    set("ideas", this.state.ideasOpen);
+    set("manage_bots", this.state.bots.filter((b) => b.status === "proposed").length + waiting);
+    set("bots", this.state.bots.filter(b => b.unread && b.conversation_id !== this.currentConvId).length);
+    set("feed", this.state.ideasOpen + waiting);
     set("activity", this.state.unread);
     const inboxLabel = this.state.unread ? `Notification inbox (${this.state.unread} unread)` : "Notification inbox";
     $("#inbox-btn").setAttribute("aria-label", inboxLabel);
@@ -396,8 +399,10 @@ class App {
       this.refreshTaskCount();
       this.reconcileEvolution();
       this.notifications.reconcile();
+      if (["feed", "bots", "manage_bots"].includes(this.panels.current)) this.panels.refresh({ live: true });
     });
     on("conv.message", (data) => {
+      this.panels.notify("conv.message");
       const { conversation_id, message } = data;
       if (conversation_id === this.currentConvId) {
         this.chat.receiveEvent("message", data);
@@ -409,6 +414,10 @@ class App {
         if (conversation_id !== this.currentConvId && message.role !== "user") conv.unread = 1;
         this.renderSidebar();
       }
+      const bot = this.botFor(conversation_id);
+      if (bot && message.role !== "user" && conversation_id !== this.currentConvId) {
+        bot.unread = 1; this.renderBadges();
+      }
       if (message.kind === "reminder") { director.flash("alert", 3500); this.chat.stage.say(message.content.slice(0, 80), 6000); }
     });
     on("conv.delta", (d) => this.chat.receiveEvent("delta", d));
@@ -416,15 +425,17 @@ class App {
     on("conv.reasoning", (d) => this.chat.receiveEvent("reasoning", d));
     on("conv.status", (d) => this.chat.receiveEvent("status", d));
     on("conv.turn.started", (data) => {
+      this.panels.notify("conv.turn.started");
       const { conversation_id } = data;
       this.busyConvs.add(conversation_id);
       this.chat.receiveEvent("started", data);
       this.renderSidebar();
     });
     on("conv.turn.completed", (d) => {
+      this.panels.notify("conv.turn.completed");
       this.busyConvs.delete(d.conversation_id);
       if (d.conversation_id === this.currentConvId) this.chat.receiveEvent("completed", d);
-      else if (d.final_text && d.status === "completed") {
+      else if (d.final_text && d.status === "completed" && !this.botFor(d.conversation_id)) {
         const conv = this.conversation(d.conversation_id);
         toast(conv?.title || "Weebo", d.final_text.slice(0, 160), { action: { label: "Open", run: () => this.openConversation(d.conversation_id) } });
       }
@@ -433,7 +444,7 @@ class App {
     on("activity.updated", ({ activity }) => this.setActivity(activity));
     on("bot.updated", ({ bot }) => { this.upsertBot(bot); this.panels.notify("bot.updated"); });
     on("bot.deleted", ({ bot_id }) => { this.setBots(this.state.bots.filter((b) => b.id !== bot_id)); this.panels.notify("bot.deleted"); });
-    for (const t of ["bot.report", "bot.job", "bot.change", "policy.updated", "connector.updated", "capabilities.updated", "daysheet.updated"]) {
+    for (const t of ["goals.updated", "bot.report", "bot.job", "bot.change", "policy.updated", "connector.updated", "capabilities.updated", "daysheet.updated"]) {
       on(t, () => this.panels.notify(t));
     }
     on("ideas.updated", async () => {
@@ -482,7 +493,7 @@ class App {
 
     on("notify", ({ notification }) => this.onNotification(notification));
     on("notifications.read", ({ ids }) => this.notifications.read(ids));
-    on("interaction.pending", ({ interaction }) => this.announceInteraction(interaction));
+    on("interaction.pending", ({ interaction }) => { this.announceInteraction(interaction); this.panels.notify("interaction.pending"); });
     on("engine.status", (snapshot) => this.setEngine(snapshot));
     on("engine.usage", ({ rateLimits }) => { this.state.engine = { ...this.state.engine, rateLimits }; this.renderEngine(); });
     on("settings.updated", ({ settings }) => { this.applySettings(settings); this.panels.notify("settings.updated"); });

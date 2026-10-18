@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from . import paths
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 V3_SCHEMA = """
 CREATE TABLE IF NOT EXISTS eval_cases (
@@ -298,6 +298,9 @@ class Store:
             if version < 5:
                 from .bots.schema import TEAM_SCHEMA
                 self._conn.executescript(TEAM_SCHEMA)
+            if version < 6:
+                from .feed import FEED_SCHEMA
+                self._conn.executescript(FEED_SCHEMA)
             if version < SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 

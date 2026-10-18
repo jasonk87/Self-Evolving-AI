@@ -55,6 +55,7 @@ export class ChatView {
     this.groups = new Map();       // first item id -> group record
     this.streams = new Map();      // message id -> text
     this.pendingImages = [];
+    this.drafts = new Map();
     this.busy = false;
     this.turnStartedAt = 0;
     this.reasoning = "";
@@ -80,7 +81,7 @@ export class ChatView {
     this.botName = el("strong", { text: "" });
     this.botBar = el("div", { class: "bot-chat-bar", hidden: true },
       el("span", {}, "Talking to ", this.botName, " directly. It reports to Weebo."),
-      btn("Profile", { kind: "soft", size: "sm", icon: "users", onClick: () => this.app.openPanel("bots", { bot: this.botId }) }),
+      btn("Profile", { kind: "soft", size: "sm", icon: "users", onClick: () => this.app.openPanel("manage_bots", { bot: this.botId }) }),
       btn("Back to Weebo", { kind: "primary", size: "sm", onClick: () => this.app.openMain() }));
     this.root.append(this.botBar, this.scroller, this.oldChat, this.composer);
 
@@ -170,6 +171,10 @@ export class ChatView {
     this.loadingEvents = [];
     this.snapshotSequence = 0;
     if (!refresh) {
+      if (convId !== this.convId) {
+        if (this.convId) this.draftFor(this.convId);
+        this.restoreDraft(convId);
+      }
       this.convId = convId;
       this.setReadOnly();  // right away: the composer must not keep the last chat's state while this one loads
       this.messages = [];
@@ -562,7 +567,7 @@ export class ChatView {
     return {
       readOnly: this.readOnly,
       botChat: Boolean(this.botBar && !this.botBar.hidden),
-      openBot: (id) => this.app.openPanel("bots", { bot: id }),
+      openBot: (id) => this.app.openPanel("manage_bots", { bot: id }),
       openConversation: (id) => { this.app.panels.close(); this.app.openConversation(id); },
       act: async (path, body, button, confirmText) => {
         if (confirmText && !window.confirm(confirmText)) return;
@@ -606,23 +611,29 @@ export class ChatView {
 
   async addFiles(files) {
     if (this.readOnly) return;
+    const conversation = this.convId;
     for (const file of files.filter((f) => f.type.startsWith("image/")).slice(0, 6)) {
       const chip = el("div", { class: "attachment uploading" }, el("img", { src: URL.createObjectURL(file), alt: file.name }));
-      this.attachments.append(chip);
-      this.attachments.hidden = false;
+      if (conversation === this.convId) { this.attachments.append(chip); this.attachments.hidden = false; }
+      else this.draftFor(conversation).nodes.push(chip);
       try {
         const res = await api.upload(file);
         chip.classList.remove("uploading");
         const record = { name: res.name, chip };
-        this.pendingImages.push(record);
+        this.draftFor(conversation).images.push(record);
         chip.append(btn("", { icon: "x", title: "Remove", size: "sm", onClick: () => {
-          this.pendingImages = this.pendingImages.filter((r) => r !== record);
+          const draft = this.draftFor(conversation);
+          draft.images = draft.images.filter((r) => r !== record);
+          draft.nodes = draft.nodes.filter(n => n !== chip);
+          if (conversation === this.convId) this.pendingImages = draft.images;
           chip.remove();
           this.attachments.hidden = !this.pendingImages.length;
           this.updateSendButton();
         } }));
       } catch (err) {
         chip.remove();
+        const draft = this.draftFor(conversation);
+        draft.nodes = draft.nodes.filter(n => n !== chip);
         toast("Upload failed", err.message, { kind: "error" });
       }
     }
@@ -631,16 +642,21 @@ export class ChatView {
   }
 
   toggleMic() {
+    const conversation = this.convId;
     const base = this.input.value;
     let heard = false; // only a successful final transcript may auto-send
     const ok = startListening({
-      onPartial: (text) => { this.input.value = (base ? base + " " : "") + text; autoGrow(this.input); },
-      onFinal: (text) => { heard = true; this.input.value = (base ? base + " " : "") + text; autoGrow(this.input); this.updateSendButton(); },
+      onPartial: (text) => { if (this.convId === conversation) { this.input.value = (base ? base + " " : "") + text; autoGrow(this.input); } },
+      onFinal: (text) => {
+        heard = true;
+        const draft = this.draftFor(conversation); draft.text = (base ? base + " " : "") + text;
+        if (this.convId === conversation) this.restoreDraft(conversation);
+      },
       onState: (on, error) => {
         this.micBtn.classList.toggle("live", on);
         if (!on && !this.busy) director.setBase(this.app.restingMood());
         if (error && error !== "no-speech" && error !== "aborted") toast("Microphone", `Speech recognition error: ${error}`, { kind: "warn" });
-        if (!on && !error && heard && this.input.value.trim() && this.app.state.settings?.voice?.speak_replies) this.submit();
+        if (this.convId === conversation && !on && !error && heard && this.input.value.trim() && this.app.state.settings?.voice?.speak_replies) this.submit();
       },
     });
     if (!ok) toast("Voice input isn't supported in this browser", "Try Chrome or Edge.", { kind: "warn" });
@@ -656,6 +672,7 @@ export class ChatView {
       return;
     }
     if (!this.convId) return;
+    const conversation = this.convId;
     this.input.value = "";
     autoGrow(this.input);
     this.pendingImages = [];
@@ -666,15 +683,14 @@ export class ChatView {
     director.setBase("thinking");
     this.stage.say("On it!", 2500);
     try {
-      await api.post(`/api/conversations/${encodeURIComponent(this.convId)}/messages`, { text, images });
+      await api.post(`/api/conversations/${encodeURIComponent(conversation)}/messages`, { text, images });
     } catch (err) {
       toast("Message not sent", err.message, { kind: "error" });
-      this.input.value = [text, this.input.value].filter(Boolean).join("\n\n");
-      this.pendingImages.unshift(...submittedImages);
-      this.attachments.prepend(...submittedImages.map((r) => r.chip));
-      this.attachments.hidden = !this.attachments.childElementCount;
-      autoGrow(this.input);
-      this.updateSendButton();
+      const draft = this.draftFor(conversation);
+      draft.text = [text, draft.text].filter(Boolean).join("\n\n");
+      draft.images.unshift(...submittedImages);
+      draft.nodes.unshift(...submittedImages.map(r => r.chip));
+      if (conversation === this.convId) this.restoreDraft(conversation);
       director.flash("sad", 2000);
     }
   }
@@ -687,5 +703,23 @@ export class ChatView {
     } catch (err) {
       toast("Couldn't stop", err.message, { kind: "error" });
     }
+  }
+
+  draftFor(id) {
+    let draft = this.drafts.get(id);
+    if (id === this.convId) draft = { text: this.input.value, images: this.pendingImages, nodes: [...this.attachments.childNodes] };
+    draft ||= { text: "", images: [], nodes: [] };
+    this.drafts.set(id, draft);
+    return draft;
+  }
+
+  restoreDraft(id) {
+    const draft = this.drafts.get(id) || { text: "", images: [], nodes: [] };
+    this.input.value = draft.text;
+    this.pendingImages = draft.images;
+    this.attachments.replaceChildren(...draft.nodes);
+    this.attachments.hidden = !draft.nodes.length;
+    autoGrow(this.input);
+    this.updateSendButton();
   }
 }

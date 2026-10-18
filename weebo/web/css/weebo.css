@@ -1110,3 +1110,50 @@ button.chip { cursor: pointer; font: inherit; font-size: 12px; }
 .cap-row { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
 .cap-row .row { flex-wrap: wrap; }
 .report-summary { white-space: pre-line; }
+
+/* Feed and bot conversations: a compact, mobile-first reading surface. */
+.feed-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.feed-heading > div { min-width: 0; }
+.feed-heading h3 { margin: 0 0 6px; font-size: 19px; line-height: 1.35; }
+.feed-heading p { margin: 0; }
+.feed-heading > .btn { flex-shrink: 0; }
+.feed-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.feed-filters .chip { min-height: 44px; padding: 8px 16px; }
+.feed-filters .selected { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.feed-section { margin: 0 0 28px; }
+.feed-section > h4 { margin: 0 0 8px; font-size: 17px; }
+.feed-item, .feed-item.idea-card { display: block; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0; background: transparent; }
+.feed-item > summary { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; cursor: pointer; list-style: none; }
+.feed-item > summary::-webkit-details-marker { display: none; }
+.feed-icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
+.feed-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 5px; }
+.feed-copy strong { font-size: 16px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; word-break: normal; }
+.feed .feed-preview, .bot-preview, .bot-specialty { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.6; word-break: normal; overflow-wrap: anywhere; white-space: pre-line; }
+.feed-chevron { flex: none; margin-top: 8px; color: var(--text-2); }
+.feed-item[open] > summary .feed-chevron { transform: rotate(180deg); }
+.feed-item.idea-card[open] .feed-preview { display: none; }
+.feed-detail { padding: 0 0 18px 44px; display: flex; flex-direction: column; gap: 12px; }
+.feed-detail p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; word-break: normal; }
+.feed-detail .feed-statement { font-size: 15px; white-space: pre-wrap; }
+.feed-actions .btn, .feed-detail button.chip { min-height: 44px; }
+.feed-detail .chip { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.feed-detail .chip .ic { flex: none; }
+.feed-attention { display: flex; gap: 12px; align-items: center; width: 100%; min-height: 56px; margin: 8px 0; padding: 12px; border: 1px solid var(--warm); border-radius: 12px; background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.feed-attention > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.feed-attention > span:last-child { color: var(--accent); font-size: 12px; flex: none; }
+.feed-extra { margin: 18px 0; border-top: 1px solid var(--border); padding-top: 10px; }
+.feed-extra > summary { cursor: pointer; padding: 12px 0; min-height: 44px; font-weight: 600; }
+.goal-job { padding: 12px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); }
+.source-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.bot-conversation-list { display: flex; flex-direction: column; }
+.bot-conversation { display: flex; width: 100%; gap: 12px; align-items: flex-start; padding: 18px 0; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); font: inherit; cursor: pointer; }
+.bot-conversation .bot-face { width: 42px; height: 42px; font-size: 18px; }
+.bot-conversation .bot-preview { -webkit-line-clamp: 2; font-size: 13px; }
+.bot-conversation .bot-specialty { -webkit-line-clamp: 1; font-size: 12px; color: var(--text-3); }
+.bot-row-meta { display: flex; flex-direction: column; align-items: flex-end; flex: none; gap: 8px; color: var(--text-2); font-size: 11px; }
+.bot-conversation.unread .feed-copy strong { color: var(--accent); }
+.feed button:focus-visible, .bot-conversation:focus-visible, .feed summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 420px) {
+  .feed-heading { flex-wrap: wrap; }
+  .feed-detail { padding-left: 0; }
+}

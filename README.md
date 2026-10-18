@@ -24,8 +24,12 @@ stuck, keeps failing or goes over budget is reported, never silent.
 - The chief may change a bot freely (wording, routines, pausing, a cheaper tier, rules you stated). New tools or
   connectors, more autonomy, a bigger tier, effort or budget, creating and deleting all wait for your yes.
   Retiring archives by default (the chat stays readable, its thread is put away); deleting needs your explicit word.
-- Talk to a bot directly from the Bots tab. When you tell it how to work, it saves a standing rule and tells the
-  chief. A bot can ask for a profile change; the chief reviews it under the same tiers.
+- The bottom **Bots** tab is a vertical conversation list: tap a specialist to open its existing continuous chat.
+  It shows the latest message, actual working/paused status, and unread messages. **Manage bots** in the sidebar or
+  More holds profiles, tools, budgets and reporting rules; Profile in a bot chat opens the same controls.
+  Unsent text and attachments stay with their original chat when switching, including delayed send failures.
+  When you tell a bot how to work, it saves a standing rule and tells the chief. A bot can ask for a profile change;
+  the chief reviews it under the same tiers.
 - The morning brief folds in a team digest: reports, what was decided for you, what waits on you, and per-bot usage
   with a hint when a bot barely uses its tier. (The digest is built by code; it costs no extra model turns.)
 
@@ -56,11 +60,32 @@ inheritance of Weebo's secrets. This is not a filesystem sandbox. See the
 `python -m weebo.connectors.check_live_isolation` for your actual configuration. Add `--resume-turns` to spend two
 harmless Codex turns verifying persisted resume and a diagnostic app-server restart; its test threads are archived.
 
-**Day sheet and Ideas.** For the next days, each event is enriched by code from the facts store and real sources:
+**Feed: goals, tracking, and ideas.** A compact, expandable list brings together **Needs you**, **Goals**,
+**Tracking**, and **Ideas for you**, with All/Goals/Ideas/Tracking filters. Needs you links to the existing approval
+cards, never a bypass. Tracking is derived from real jobs, reminders, routines and open commitments; a reminder
+is labeled as a reminder, not pretend monitoring. The Day sheet and completed/archived goals are expandable below.
+
+Ideas can cite connected facts, saved memories, exact user messages, or chosen goals. Remembered goals and projects
+produce local starter suggestions even with no calendar/email connected; richer suggestions from the chief use
+the same source checks, dedupe, daily cap and feedback. A source chip opens the underlying record and its provenance.
+Remembered statements are explicitly **not independent verification**. Edited/deleted local evidence invalidates
+dependent ideas, just as changed connector facts do. **Tomorrow** snoozes for 24 hours; **Not useful** stays dismissed.
+
+**Start a goal** records your chosen outcome, source idea/memory, next step, deadline and blocker in a forward-only
+schema-6 migration. It launches nothing. Edit, pause, complete, archive or reopen it; history stays readable.
+**Delegate** explicitly starts one existing bot job under its normal budget and approval rules, linking its result
+back to the goal. Double taps cannot create duplicate goals or overlapping jobs. A completed job does not mark the
+goal achieved: you review the result. **Link existing work** attaches an existing job, reminder or commitment without
+copying or rescheduling it. Pausing/archiving a goal does not cancel linked work; those systems keep their own controls.
+The chief reads goals with `goals_list`, exact local sources with `feed_source`, and records explicit user choices
+with `goal_save`/`goal_link`. Background turns cannot choose personal goals on your behalf. No new execution engine,
+model settings, connector grants, or autonomous spending are introduced.
+
+**Day sheet.** For the next days, each event is enriched by code from the facts store and real sources:
 weather at its time and place (OpenWeather forecast, your own key), travel time **only from a directions source**
 (otherwise "unknown", never guessed, and a "maps/directions connector would help" gap appears on the Capabilities
 page), time zones, conflicts and back-to-backs, related email threads and the people involved. A moved or cancelled
-event rebuilds exactly the rows that depended on it. The **Ideas** tab shows specific suggestions with evidence chips
+event rebuilds exactly the rows that depended on it. **Ideas for you** in the Feed shows suggestions with evidence chips
 ("Dentist starts 10 min after you leave the Office; I can't check the drive, so plan a buffer"), capped per day,
 never repeated, ranked by your feedback, and dropped when their facts change. **Discuss** opens the chat with the idea
 and its evidence; **Do it** runs only safe actions (a reminder, a held slot as a reminder, a draft) after re-reading
@@ -102,8 +127,8 @@ Email threads are recorded from a mail connector's raw tool results,
 never from a model's summary; unread alone does not mean a reply is owed. The
 reliability suite gates every upgrade, and every captured miss becomes a test.
 
-**Layout.** Bottom tabs: Chat (the chief), Ideas, Bots, Evolution, More (Agents for one-off jobs, Memory,
-Capabilities, Schedule, Activity, Settings, older chats).
+**Layout.** Bottom tabs: Chat (the chief), Feed, Bots (conversations), Evolution, More (Manage bots,
+Agents for one-off jobs, Memory, Capabilities, Schedule, Activity, Settings, older chats).
 
 New settings: `bots.*`, `connectors.*` and `growth.*` (sensitive: only you can change them, journaled), `ideas.*` and
 `activity.*` (everyday), `facts.second_pass`. Existing model settings and keys are unchanged.

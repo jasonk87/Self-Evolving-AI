@@ -59,6 +59,15 @@ schema before use. Unsupported features fail closed or report unavailable.
 
 ## Reliability boundaries
 
+### Feed / bot navigation follow-up
+
+The Ideas tab is now Feed: source-backed offers, explicitly chosen personal goals, actual scheduled/running work,
+and links to existing approvals. Schema 6 adds durable goals only; jobs, routines, commitments and approval rules
+stay owned by their existing subsystems. Local memories/user messages/goals can be evidence without masquerading
+as connector facts. Bottom Bots opens continuous chats directly; sidebar/More Manage bots retains administration.
+Regression and browser coverage live in `test_feed.py`, `test_feed_ui.py`, and the existing Weebo 3 UI suite.
+No API keys, model preferences, Weebo 1.x code, or outward-action enablement are changed.
+
 - Chat history and model summaries are not authoritative connector data.
 - Failed sync never refreshes provenance or turns unavailable into empty.
 - No travel-time estimate without a directions source.

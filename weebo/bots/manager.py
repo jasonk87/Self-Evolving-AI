@@ -142,7 +142,11 @@ class BotManager:
         """A bot as the UI and API show it: its profile plus today's usage."""
         data = bot["data"]
         conv = self.app.store.get_conversation(bot["conversation_id"]) if bot.get("conversation_id") else None
+        latest = self.app.store.query_one("SELECT content,role,updated_at FROM messages WHERE conversation_id=? "
+                                          "AND kind='text' AND role IN ('user','assistant') AND content!='' "
+                                          "ORDER BY seq DESC LIMIT 1", (bot.get("conversation_id"),))
         return {**bot, "usage_today": self.turns_today(bot["id"]), "budget": self.budget_of(bot),
+                "latest_message": {**latest, "content": latest["content"][:200]} if latest else None,
                 "model": data.get("model_id") or self.resolve_model(data.get("tier", "standard")),
                 "unread": int((conv or {}).get("unread") or 0),
                 "open_jobs": len(self.jobs(bot["id"], ("open", "running")))}
@@ -809,7 +813,8 @@ turn; follow the latest one.
 
     async def assign_job(self, ref: str, instructions: str, done_criteria: str = "", report_on: str = "done, fail",
                          deadline: str = "", tell_user: bool = False, actor: str = "chief",
-                         hops: int = 1, *, workflow: dict[str, Any] | None = None) -> dict[str, Any]:
+                         hops: int = 1, *, workflow: dict[str, Any] | None = None,
+                         goal_id: str | None = None) -> dict[str, Any]:
         bot = self.require(ref)
         if bot["status"] != "active":
             raise BotError(f"{bot['name']} is {bot['status']}; resume it before giving it work.")
@@ -826,6 +831,8 @@ turn; follow the latest one.
                         "details_ref": bot["conversation_id"]}}
         if workflow:
             job["data"]["workflow"] = workflow
+        if goal_id:
+            job["data"]["goal_id"] = goal_id
         self.app.store._insert("bot_jobs", job)
         prompt = (f"[New job {job['id']} from the {'user' if actor == 'user' else 'chief'}]\n{instructions.strip()}\n"
                   + (f"Done when: {done_criteria}\n" if done_criteria else "")

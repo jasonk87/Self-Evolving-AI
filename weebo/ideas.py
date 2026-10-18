@@ -53,14 +53,50 @@ class Ideas:
             if row.get("expires_at") and row["expires_at"] < now:
                 self._set(row["id"], "expired")
                 continue
+            if row["data"].get("snoozed_until", 0) > now:
+                continue
             artifact = self.app.facts.repository.artifact(f"idea:{row['id']}")
-            out.append({**row, "stale": bool(artifact and artifact["stale"])})
+            out.append({**row, "stale": bool(artifact and artifact["stale"]) or self.local_evidence_changed(row)})
         weights = self.weights()
         return sorted(out, key=lambda r: (-(r["data"].get("confidence", 0.5) * weights.get(r["kind"], 1.0)),
                                           -r["created_at"]))
 
     def get(self, idea_id: str) -> dict[str, Any] | None:
         return self.app.store.query_one("SELECT * FROM ideas WHERE id=?", (idea_id,))
+
+    def local_evidence_changed(self, idea: dict) -> bool:
+        for ref in idea["data"].get("evidence", []):
+            if ref["entity"] not in ("memories", "goals", "messages"):
+                continue
+            current = self.app.feed.evidence(ref["entity"], ref["id"])
+            if not current or current["updated_at"] != ref.get("version"):
+                return True
+        return False
+
+    def require_current(self, idea: dict) -> None:
+        if idea["status"] not in ("new", "discussed"):
+            raise ValueError("That idea isn't open any more.")
+        if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
+            self._set(idea["id"], "expired")
+            raise ValueError("That idea has expired.")
+        artifact = self.app.facts.repository.artifact(f"idea:{idea['id']}")
+        if (artifact and artifact["stale"]) or self.local_evidence_changed(idea):
+            self.refresh_stale()
+            raise ValueError("That idea has expired because its evidence changed.")
+
+    def snooze(self, idea_id: str, hours: int = 24) -> dict:
+        idea = self.get(idea_id)
+        if not idea:
+            raise ValueError("No such idea.")
+        self.require_current(idea)
+        if isinstance(hours, bool) or not isinstance(hours, int) or not 1 <= hours <= 720:
+            raise ValueError("Snooze must be between 1 and 720 hours.")
+        if idea["data"].get("pending_draft"):
+            raise ValueError("The draft is already in progress.")
+        self.app.store._update("ideas", "id", idea_id,
+                               {"data": {**idea["data"], "snoozed_until": time.time() + hours * 3600}})
+        self.app.bus.publish("ideas.updated", {"id": idea_id})
+        return self.get(idea_id)
 
     # ------------------------------------------------------------------ feedback and ranking
     def weights(self) -> dict[str, float]:
@@ -95,14 +131,15 @@ class Ideas:
         refs, cited = [], []
         for item in evidence or []:
             entity, fact_id = item.get("entity"), item.get("id")
-            fact = repo.get(entity, fact_id) if entity in ("events", "threads", "commitments", "people") else None
+            fact = self.app.feed.evidence(entity, fact_id)
             if not fact:
                 raise ValueError(f"Evidence {entity}:{fact_id} isn't in the facts store; ideas must cite real facts.")
             p = fact.get("provenance") or {}
             refs.append((entity, fact_id))
             cited.append({"entity": entity, "id": fact_id,
                           "label": item.get("label") or fact.get("title") or fact.get("subject") or fact.get("text")
-                          or fact.get("name") or fact_id, "source": p.get("source"), "fetched_at": p.get("fetched_at")})
+                          or fact.get("name") or fact_id, "source": p.get("source"), "fetched_at": p.get("fetched_at"),
+                          **({"version": fact["updated_at"]} if entity in ("memories", "goals", "messages") else {})})
         if not refs:
             raise ValueError("An idea needs evidence from the facts store.")
         clean_actions = []
@@ -123,15 +160,17 @@ class Ideas:
                          "actions": clean_actions, "confidence": max(0.0, min(1.0, float(confidence))),
                          "source": source}}
         self.app.store._insert("ideas", idea)
-        repo.save_artifact(f"idea:{idea['id']}", "idea", {"idea_id": idea["id"], "kind": kind}, refs)
+        repo.save_artifact(f"idea:{idea['id']}", "idea", {"idea_id": idea["id"], "kind": kind},
+                           [(e, i) for e, i in refs if e in ("events", "threads", "commitments", "people")])
         self.app.bus.publish("ideas.updated", {"id": idea["id"]})
         return self.get(idea["id"])
 
     # ------------------------------------------------------------------ generators (code, not the model)
-    async def generate(self) -> list[dict[str, Any]]:
+    async def generate(self, *, refresh_daysheet: bool = True) -> list[dict[str, Any]]:
         if not self.app.settings.get("ideas.enabled"):
             return []
-        await self.app.daysheet.build()
+        if refresh_daysheet:
+            await self.app.daysheet.build()
         self.refresh_stale()
         made: list[dict[str, Any]] = []
         for candidate in self.candidates():
@@ -231,14 +270,29 @@ class Ideas:
                         "actions": [{"kind": "reminder", "label": "Remind me in 2 hours",
                                      "params": {"when": "in 2 hours", "text": commitment["text"]}}],
                         "confidence": 0.8, "expires_at": commitment["due"] + 86400})
+        # Remembered interests and projects are useful even without external connectors.
+        # These are offers, not claims that work is already being monitored or done.
+        for kind in ("goal", "project"):
+            for memory in self.app.store.list_memories(kind=kind, limit=30):
+                if self.app.store.query_one("SELECT id FROM goals WHERE memory_id=?", (memory["id"],)):
+                    continue
+                text = memory["text"].strip()
+                out.append({"kind": f"remembered_{kind}",
+                            "title": ("Make a plan: " if kind == "goal" else "Find the next step: ") + text[:95],
+                            "statement": f"You saved this {kind}: “{text[:340]}”. If it is still relevant, I can help "
+                                         "choose one concrete next step and turn it into a goal you can follow.",
+                            "evidence": [{"entity": "memories", "id": memory["id"]}], "actions": [],
+                            "confidence": 0.55 if kind == "goal" else 0.5})
         weights = self.weights()
         return sorted(out, key=lambda c: -(c["confidence"] * weights.get(c["kind"], 1.0)))
 
     def refresh_stale(self) -> int:
         """Ideas whose evidence changed: dropped, so the generators can make a fresh one if it still applies."""
         dropped = 0
-        for row in self.app.store.query("SELECT i.* FROM ideas i JOIN facts_artifacts a ON a.id = 'idea:' || i.id "
-                                        "WHERE a.stale=1 AND i.status IN ('new', 'discussed')"):
+        for row in self.app.store.query("SELECT i.*, a.stale AS fact_stale FROM ideas i LEFT JOIN facts_artifacts a "
+                                        "ON a.id = 'idea:' || i.id WHERE i.status IN ('new', 'discussed')"):
+            if not row.get("fact_stale") and not self.local_evidence_changed(row):
+                continue
             self._set(row["id"], "expired", note="Its evidence changed.")
             self.app.store.execute("UPDATE ideas SET key=? WHERE id=?", (f"{row['key']}:changed:{row['id']}", row["id"]))
             dropped += 1
@@ -277,6 +331,7 @@ class Ideas:
         idea = self.get(idea_id)
         if not idea or idea["status"] not in ("new", "discussed"):
             raise ValueError("That idea isn't open any more.")
+        self.require_current(idea)
         if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
             self._set(idea_id, "expired")
             raise ValueError("That idea has expired.")
@@ -289,7 +344,9 @@ class Ideas:
         evidence = "; ".join(f"{e['entity']}:{e['id']} ({e['label']})" for e in idea["data"]["evidence"])
         self.app.conversations.add_context(main, (
             f"The user tapped Discuss on idea {idea['id']}: {idea['data']['statement']} Evidence: {evidence}. Look the "
-            "evidence up with the facts tools first, then open with two or three concrete options and offer them as "
+            "evidence up first: facts_query for connector facts, feed_source for exact local memory/message/goal ids. "
+            "Memories are remembered statements, not independently verified facts. Then open with "
+            "two or three concrete options and offer them as "
             "reply chips with offer_replies."))
         await self.app.conversations.send(main, f"Let's talk about this: {idea['data']['title']}")
         return self._set(idea_id, "discussed")  # type: ignore[return-value]
@@ -303,6 +360,7 @@ class Ideas:
         idea = self.get(idea_id)
         if not idea or idea["status"] not in ("new", "discussed"):
             raise ValueError("That idea isn't open any more.")
+        self.require_current(idea)
         if idea["data"].get("pending_draft"):
             raise ValueError("That draft is already waiting or running.")
         if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
@@ -317,7 +375,7 @@ class Ideas:
                              "use Discuss.")
         refreshed = set()
         for item in idea["data"]["evidence"]:
-            fact = self.app.facts.repository.get(item["entity"], item["id"])
+            fact = self.app.feed.evidence(item["entity"], item["id"])
             if not fact:
                 raise ValueError("Its evidence is gone, so I didn't act on it.")
             provenance = fact.get("provenance") or {}
@@ -331,12 +389,12 @@ class Ideas:
                 if time.time() - provenance.get("fetched_at", 0) >= provenance.get("ttl_seconds", 0):
                     raise ValueError("Its evidence is stale and the source is unavailable; nothing was done.")
         artifact = self.app.facts.repository.artifact(f"idea:{idea_id}")
-        if artifact and artifact["stale"]:  # read before acting: the facts it rests on changed
+        if (artifact and artifact["stale"]) or self.local_evidence_changed(idea):  # sources may change during refresh
             self.refresh_stale()
             raise ValueError("Something it was based on just changed, so I dropped it; a fresh idea follows if it "
                              "still applies.")
         for item in idea["data"]["evidence"]:
-            if not self.app.facts.repository.get(item["entity"], item["id"]):
+            if not self.app.feed.evidence(item["entity"], item["id"]):
                 raise ValueError("Its evidence is gone, so I didn't act on it.")
         params = action.get("params") or {}
         result: dict[str, Any] = {"action": action["kind"]}
@@ -355,8 +413,9 @@ class Ideas:
             main = self.app.conversations.main_id()
             evidence = "; ".join(f"{e['entity']}:{e['id']}" for e in idea["data"]["evidence"])
             prompt = (f"[Event: the user tapped Do it on idea {idea_id}: {idea['data']['statement']}]\n"
-                      f"Write the draft ({action['label']}). Look up the evidence first ({evidence}) with the facts "
-                      "tools. Show the draft in the chat only; do not send anything or contact anyone.")
+                      f"Write the draft ({action['label']}). Look up the evidence first ({evidence}): facts tools "
+                      "for facts, feed_source for local memory/message/goal ids. "
+                      "Show the draft in the chat only; do not send anything or contact anyone.")
             receipt = {"kind": "idea", "id": idea_id, "token": new_id("draft")}
             self.app.store._update("ideas", "id", idea_id, {"data": {**idea["data"], "pending_draft": receipt["token"]}})
             self._set(idea_id, "discussed", note="Draft requested; waiting for completion.")

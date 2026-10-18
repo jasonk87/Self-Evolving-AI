@@ -134,6 +134,14 @@ def developer_instructions(app: "WeeboApp", scope: str = "chat") -> str:
     )
     if scope == "chat" and app.settings.get("bots.enabled"):
         text += TEAM_GUIDANCE.format(user=_user(app))
+    if scope == "chat":
+        text += ("\n## Feed and personal goals\n"
+                 "Ideas are optional offers; goals are outcomes the user chose; Tracking shows actual jobs and schedules. "
+                 "Read goals_list for current goals. Use goal_save only for an explicit user request. Never silently turn "
+                 "an idea or remembered aspiration into a chosen goal, claim it is being monitored, or mark it achieved "
+                 "just because one job finished. Use suggest_idea for specific next steps grounded in current "
+                 "conversations, saved goals/projects/interests, or connected facts. Cite their real source ids. "
+                 "Avoid generic filler, repeating dismissed ideas, or inventing source facts. No suggestion grants permissions.\n")
     return text + FACTS_RULES
 
 
@@ -174,6 +182,10 @@ def turn_context(app: "WeeboApp", conversation: dict[str, Any], user_text: str,
 
     bots = getattr(app, "bots", None)
     bot = bots.for_conversation(conversation["id"]) if bots is not None else None
+    if getattr(app, "feed", None) is not None:
+        goals = app.feed.context(bot["id"] if bot else None)
+        if goals:
+            lines.append(goals)
     if bot is not None:  # a bot sees its own profile and work, not the chief's whole picture
         lines.append(bots.profile_context(bot))
         mine = [r for r in app.store.list_reminders(limit=50) if r.get("conversation_id") == conversation["id"]][:6]

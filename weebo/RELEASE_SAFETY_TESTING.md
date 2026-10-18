@@ -148,6 +148,38 @@ This follow-up's CI status is not implied by the local results.
 
 ### Remaining acceptance checklist
 
+### Feed and chat-first Bots acceptance (2026-10-18)
+
+This UI/data release does not change the native connector isolation/outward-action boundary below. No additional
+Codex protocol fields, models, credentials, automatic jobs, or connector permissions are required.
+
+- Automated: v5 → v6 migration preserves existing memories; goal records persist across reopening the database.
+- Automated: local project/goal memories populate Ideas without connectors. Source changes/removal invalidate the
+  idea; dismissed items stay dismissed, snoozes expire, and the shared daily cap still applies.
+- Automated: user-only goal tools, exact local evidence lookup, safe API validation, authenticated routes, idempotent
+  Start, concurrent Delegate protection, budgets, paused goals, interrupted dispatch links, and no automatic goal
+  completion on a finished job. Linking existing work never reschedules or duplicates it.
+- Browser: mobile Feed → source → Start a goal → Edit → Delegate → completed-job review; direct bot-chat navigation,
+  separate profile controls, vertical list at phone widths, chat-specific drafts, failed-send restoration, and live
+  refresh preserving expansion/scroll/content on failure. Existing draft retry/approval/activity assertions remain.
+- Visual: inspect Feed and Bots at 390×844 with isolated sample data; no user messages or real connectors are needed.
+- After restarting the installed app: open Feed and confirm remembered project suggestions have Memory sources;
+  review them before choosing a goal. Tap Bots to chat, and use Manage bots for administration. Nothing is delegated
+  merely by opening Feed or selecting Start a goal.
+- Device follow-up: check iOS Safari/Chrome with the keyboard open and after a Wi-Fi/Tailscale reconnect. Desktop
+  Chromium mobile emulation covers layout/behavior but is not a claim that every physical phone has been tested.
+
+Final local verification: **874 Weebo tests passed** (one existing Windows symlink skip); **1,635 repository tests
+and 13 subtests passed** (the existing symlink/notify-send platform skips). Both full lanes ran with two pytest
+workers to bound local resource use. Self-test passed and all **14 JavaScript modules** parsed. No assertions were
+removed: three existing browser tests only adapt navigation/expansion for the requested layout. The 34 new cases
+include goal delegation preserving notes, blockers and deadlines, one-time acceptance feedback, and opening Feed
+without waiting for external enrichment. The final implementation stayed unchanged during these runs. A copy of
+the live v5 database migrated to v6 with all existing table counts preserved and integrity OK; a separate verified
+pre-Feed backup is retained under local `weebo_data/backups/`. CI and physical-phone checks are separate results.
+
+### Native connector / SMS acceptance (unchanged)
+
 - [ ] With the user's real connector configuration, verify two bots see only their assigned read tools, including
   after restart, connector revocation and continued owned-agent work. Include apps with existing per-tool overrides.
 - [ ] Using a dedicated test connector/recipient, prove that an outward call pauses **before** its side effect;

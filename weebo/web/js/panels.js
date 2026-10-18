@@ -5,6 +5,7 @@ import { renderMarkdown } from "./markdown.js";
 import { el, btn, toast, timeAgo, dateTime, duration, renderDiff, modal, confirmDialog, debounce, escapeHtml, copyText } from "./ui.js";
 import { listVoices, speak, voiceSupport } from "./voice.js";
 import { renderPendingApproval, TIER_LABEL } from "./items.js";
+import { renderFeed } from "./feed.js";
 
 const GRANTABLE = ["remember", "recall", "search_history", "set_reminder", "list_reminders", "cancel_reminder",
   "use_integration", "start_agent", "agent_status", "message_agent", "stop_agent", "save_skill", "propose_improvement",
@@ -14,8 +15,10 @@ const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
 const BUCKETS = [["interrupt", "Tell me now"], ["brief", "In the brief"], ["log", "Just log it"]];
 
 const PANELS = {
-  ideas: { title: "Ideas", icon: "sparkles" },
+  ideas: { title: "Feed", icon: "sparkles" },
+  feed: { title: "Feed", icon: "sparkles" },
   bots: { title: "Bots", icon: "users" },
+  manage_bots: { title: "Manage bots", icon: "users" },
   capabilities: { title: "Capabilities", icon: "plug" },
   agents: { title: "Agents", icon: "bot" },
   evolution: { title: "Evolution", icon: "dna" },
@@ -167,7 +170,8 @@ export class Panels {
     const interest = {
       agents: ["task.", "interaction."], evolution: ["evolution.", "skills.", "evals."], memory: ["memory."], schedule: ["reminder."],
       activity: ["weebo.activity", "notify"], settings: ["engine.", "settings."],
-      bots: ["bot.", "policy.", "conv.created"], ideas: ["ideas.", "daysheet."],
+      bots: ["bot.", "conv."], manage_bots: ["bot.", "policy.", "conv.created"], ideas: ["ideas.", "daysheet."],
+      feed: ["goals.", "ideas.", "daysheet.", "bot.", "policy.", "interaction.", "memory.", "reminder.", "task.", "evolution."],
       capabilities: ["connector.", "capabilities.", "bot.", "skills."],
     }[this.current] || [];
     if (interest.some((p) => type.startsWith(p))) {
@@ -184,15 +188,19 @@ export class Panels {
     if (!name) return;
     if (live && this.editing()) { this.pending = true; return; }
     const opts = this.opts;
-    const scrollTop = this.body.scrollTop;
+    const generation = this.refreshGeneration = (this.refreshGeneration || 0) + 1;
     try {
       const content = await this[`render_${name}`](opts);
-      if (this.current !== name || this.opts !== opts) return;
+      if (this.current !== name || this.opts !== opts || this.refreshGeneration !== generation) return;
       if (live && this.editing()) { this.pending = true; return; }
+      const scrollTop = this.body.scrollTop;
+      const opened = new Set([...this.body.querySelectorAll('details[data-feed-key][open]')].map(n => n.dataset.feedKey));
       this.body.replaceChildren(content);
+      for (const node of this.body.querySelectorAll('details[data-feed-key]')) node.open = opened.has(node.dataset.feedKey);
       this.body.scrollTop = scrollTop;
     } catch (err) {
-      if (this.current !== name || this.opts !== opts) return;
+      if (this.current !== name || this.opts !== opts || this.refreshGeneration !== generation) return;
+      if (live && this.body.childElementCount) { toast("Couldn't refresh", err.message, { kind: "error" }); return; }
       this.body.replaceChildren(empty(`Couldn't load: ${err.message}`, "alert"));
     }
   }
@@ -572,6 +580,7 @@ export class Panels {
       el("span", { class: "grow" }, el("div", { text: label }), el("div", { class: "muted small", text: hint })),
       el("span", { html: icon("send", 14) }));
     wrap.append(el("div", { class: "stack" },
+      go("manage_bots", "Manage bots", "users", "Profiles, permissions, budgets and reporting rules"),
       go("agents", `Agents${this.app.runningTasks ? ` (${this.app.runningTasks} running)` : ""}`, "bot", "One-off background jobs"),
       go("memory", "Memory", "brain", "What Weebo remembers, and the source-backed facts"),
       go("capabilities", "Capabilities", "plug", "Connectors, apps, skills, workflows and what's missing"),
@@ -584,6 +593,36 @@ export class Panels {
 
   // ================================================================== BOTS (the team)
   async render_bots(opts) {
+    // Legacy deep links to profiles still work, but the bottom tab is chat-first.
+    if (opts.bot) return this.renderBot(opts.bot);
+    const { bots } = await api.get("/api/bots?all=1");
+    const live = bots.filter(b => ["active", "paused"].includes(b.status) && b.conversation_id);
+    this.app.setBots(bots.filter(b => ["active", "paused", "proposed"].includes(b.status)));
+    const wrap = el("div", { class: "panel bot-conversations" },
+      el("div", { class: "feed-heading" }, el("div", {}, el("h3", { text: "Talk to your team" }),
+        el("p", { class: "muted small", text: "One continuous conversation with each specialist." })),
+      btn("Manage bots", { kind: "soft", icon: "gear", onClick: () => this.open("manage_bots") })));
+    const botRow = b => {
+      const busy = this.app.busyConvs.has(b.conversation_id);
+      const latest = b.latest_message;
+      return el("button", { class: `bot-conversation${b.unread ? " unread" : ""}`, type: "button", dataset: { bot: b.id },
+        onclick: () => { this.close(); this.app.openConversation(b.conversation_id); } },
+      el("span", { class: "bot-face", text: b.name.slice(0, 1) }),
+      el("span", { class: "feed-copy" }, el("strong", { text: b.name }),
+        el("span", { class: "bot-specialty", text: b.data.job }),
+        el("span", { class: "bot-preview", text: latest ? `${latest.role === "user" ? "You: " : ""}${latest.content}` : "Open your conversation" })),
+      el("span", { class: "bot-row-meta" }, el("span", { text: b.status === "archived" ? "Read only" : b.status === "paused" ? "Paused" : busy ? "Working" : "Ready" }),
+        latest ? el("span", { text: timeAgo(latest.updated_at) }) : null,
+        b.unread ? el("b", { class: "badge", "aria-label": "Unread messages", text: "New" }) : null));
+    };
+    live.sort((a, b) => (b.latest_message?.updated_at || b.updated_at) - (a.latest_message?.updated_at || a.updated_at));
+    wrap.append(live.length ? el("div", { class: "bot-conversation-list" }, live.map(botRow)) : empty("No approved bots yet. Review proposals in Manage bots.", "users"));
+    const retired = bots.filter(b => b.status === "archived" && b.conversation_id);
+    if (retired.length) wrap.append(el("details", { class: "feed-extra" }, el("summary", { text: "Retired bot chats" }), retired.map(botRow)));
+    return wrap;
+  }
+
+  async render_manage_bots(opts) {
     if (opts.bot) return this.renderBot(opts.bot);
     const [{ bots: all, changes }, policy] = await Promise.all([api.get("/api/bots?all=1"), api.get("/api/policy")]);
     const bots = all.filter((b) => b.status !== "archived");
@@ -757,45 +796,8 @@ export class Panels {
   }
 
   // ================================================================== IDEAS (and the day sheet)
-  async render_ideas() {
-    const [{ ideas }, sheet] = await Promise.all([api.get("/api/ideas"), api.get("/api/daysheet")]);
-    this.app.setIdeasCount(ideas.length);
-    const wrap = el("div", { class: "panel" });
-    wrap.append(el("p", { class: "panel-intro", text: "Specific suggestions from your calendar, email and commitments, each with the facts behind it. Do it only runs safe things (reminders, drafts); anything involving other people goes through Weebo and your OK." }));
-    wrap.append(ideas.length ? el("div", { class: "stack" }, ideas.map((idea) => this.ideaCard(idea))) : empty("No ideas right now. They appear as your calendar and email fill in.", "sparkles"));
-    const rows = sheet.rows || [];
-    const days = {};
-    for (const row of rows) (days[row.day] = days[row.day] || []).push(row);
-    wrap.append(section("Day sheet", !sheet.travel_source ? el("p", { class: "muted small", text: "Travel times show as unknown: no maps/directions connector is set up (see Capabilities)." }) : null,
-      rows.length ? el("div", { class: "stack" }, Object.entries(days).map(([day, list]) => el("div", { class: "stack" },
-        el("h4", { text: day }), ...list.map((row) => this.dayRow(row))))) : empty("Nothing coming up, or no calendar is connected.", "calendar")));
-    return wrap;
-  }
-
-  ideaCard(idea) {
-    const d = idea.data;
-    const card = el("div", { class: `idea-card${idea.stale ? " stale" : ""}`, dataset: { idea: idea.id } },
-      el("h4", { text: d.title }), el("p", { text: d.statement }),
-      el("div", { class: "chip-row" }, d.evidence.map((e) => el("button", { class: "chip", type: "button", title: `Source: ${e.source || "?"}`,
-        onclick: () => toast(e.label, `${e.entity} from ${e.source || "unknown source"}${e.fetched_at ? `, checked ${timeAgo(e.fetched_at)}` : ""}`) },
-      el("span", { html: icon(e.entity === "events" ? "calendar" : e.entity === "threads" ? "mail" : "list", 12) }), el("span", { text: e.label })))));
-    if (idea.stale) card.append(el("p", { class: "muted small", text: "Something it was based on changed; refreshing." }));
-    if (d.note) card.append(el("p", { class: "muted small", text: d.note }));
-    const safe = d.actions.findIndex((a) => a.safe);
-    card.append(el("div", { class: "row wrap" },
-      btn("Discuss", { kind: "soft", size: "sm", icon: "chat", onClick: async () => {
-        try { await api.post(`/api/ideas/${idea.id}/discuss`, {}); this.close(); await this.app.openMain(); }
-        catch (err) { toast("Couldn't open it", err.message, { kind: "error" }); }
-      } }),
-      safe >= 0 && !idea.stale && !d.pending_draft ? btn(`Do it: ${d.actions[safe].label}`, { kind: "primary", size: "sm", onClick: async () => {
-        try { const result = await api.post(`/api/ideas/${idea.id}/do`, { action: safe });
-          toast(result.result?.verified ? "Done" : "Draft requested", d.actions[safe].label,
-            { kind: result.result?.verified ? "success" : "info" }); this.refresh(); }
-        catch (err) { toast("Didn't do it", err.message, { kind: "error" }); this.refresh(); }
-      } }) : null,
-      btn("Not useful", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/ideas/${idea.id}/dismiss`) })));
-    return card;
-  }
+  async render_feed(opts) { return renderFeed(this, opts); }
+  async render_ideas(opts) { return renderFeed(this, opts); }
 
   dayRow(row) {
     const flags = [];

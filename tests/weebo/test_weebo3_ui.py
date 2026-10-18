@@ -83,7 +83,7 @@ async def test_bots_cards_chats_and_needs_you(app, fake_engine):
         browser, page = await open_page(pw, server, errors)
         async with browser:
             tabbar = page.locator("#tabbar")
-            for name in ("Chat", "Ideas", "Bots", "Evolution", "More"):
+            for name in ("Chat", "Feed", "Bots", "Evolution", "More"):
                 assert await tabbar.get_by_role("button", name=name).first.is_visible()
 
             # The proposal's card in the chat: one tap is the user's yes.
@@ -93,9 +93,10 @@ async def test_bots_cards_chats_and_needs_you(app, fake_engine):
             assert await until(lambda: app.bots.get(proposed["id"])["status"] == "active", page)
             await card.get_by_text("Approved: it's on the team").wait_for()
 
-            # The Bots tab: its strip, its profile, and its own chat you can talk in.
+            # The Bots tab goes straight into its own chat; Profile keeps the admin controls.
             await tabbar.get_by_role("button", name="Bots").click()
-            await page.locator("#drawer .bot-chip").filter(has_text="Mail").click()
+            await page.locator("#drawer .bot-conversation").filter(has_text="Mail").click()
+            await page.locator(".bot-chat-bar").get_by_role("button", name="Profile").click()
             await page.locator("#drawer .task-title").get_by_text("Mail").wait_for()
             assert await page.locator("#drawer form textarea").first.input_value() == "Keeps an eye on email."
             await page.locator("#drawer").get_by_role("button", name="Open its chat").click()
@@ -143,10 +144,12 @@ async def test_ideas_tab_discuss_opens_the_chat(app, fake_engine):
     async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
         browser, page = await open_page(pw, server, errors)
         async with browser:
-            await page.locator("#tabbar").get_by_role("button", name="Ideas").click()
+            await page.locator("#tabbar").get_by_role("button", name="Feed").click()
             idea = page.locator("#drawer .idea-card").filter(has_text="Getting to Dentist")
             await idea.wait_for()
+            await idea.locator("summary").click()
             assert await idea.locator(".chip").filter(has_text="Dentist").count()  # evidence chips
+            await page.locator("#drawer summary").get_by_text("Day sheet", exact=True).click()
             await page.locator("#drawer").get_by_text("travel: unknown, 0 min gap").first.wait_for()  # never guessed
             await idea.get_by_role("button", name="Discuss").click()
             main = app.conversations.main_id()
@@ -240,8 +243,9 @@ async def test_idea_draft_waits_for_completion_and_offers_retry_after_failure(ap
     async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
         browser, page = await open_page(pw, server, errors)
         async with browser:
-            await page.locator("#tabbar").get_by_role("button", name="Ideas").click()
+            await page.locator("#tabbar").get_by_role("button", name="Feed").click()
             card = page.locator(f'[data-idea="{row["id"]}"]')
+            await card.locator("summary").click()
             await card.get_by_role("button", name="Do it:").click()
             await card.get_by_text("Draft requested; waiting for completion.").wait_for()
             assert await card.get_by_role("button", name="Do it:").count() == 0

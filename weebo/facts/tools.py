@@ -105,13 +105,15 @@ async def day_sheet(ctx: ToolContext, day: str = "") -> dict:
     return {"rows": rows, "travel_source": bool(ctx.app.daysheet.directions)}
 
 
-@registry.register("suggest_idea", "Add an idea to the user's Ideas tab: specific and actionable, citing facts from the "
-                   "store (evidence ids from facts_query). Actions: reminder, hold_slot or draft_email run with Do it; "
+@registry.register("suggest_idea", "Add an optional suggestion to the user's Feed: specific and actionable, citing "
+                   "facts_query, recall, search_history (user messages only), or goals_list evidence ids. "
+                   "Remembered statements are not verified facts. An idea never implies user consent or ongoing work. "
+                   "Actions: reminder, hold_slot or draft_email run with Do it; "
                    "propose_time, reply, accept, decline or reschedule always go through you and the user's approval.",
                    {"properties": {"kind": {"type": "string"}, "title": {"type": "string"},
                                    "statement": {"type": "string", "description": "One or two specific sentences."},
                                    "evidence": {"type": "array", "items": {"type": "object", "properties": {
-                                       "entity": {"type": "string", "enum": ["events", "threads", "commitments", "people"]},
+                                       "entity": {"type": "string", "enum": ["events", "threads", "commitments", "people", "memories", "goals", "messages"]},
                                        "id": {"type": "string"}}}},
                                    "actions": {"type": "array", "items": {"type": "object", "properties": {
                                        "kind": {"type": "string"}, "label": {"type": "string"},

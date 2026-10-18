@@ -813,6 +813,11 @@ def create_app(weebo: WeeboApp) -> web.Application:
 
     async def idea_action(request: web.Request) -> web.Response:
         idea_id, action = request.match_info["id"], request.match_info["action"]
+        if action == "start":
+            return _json({"goal": weebo.feed.start_idea(idea_id)})
+        if action == "snooze":
+            body = await _body(request)
+            return _json({"idea": weebo.ideas.snooze(idea_id, body.get("hours", 24))})
         if action == "discuss":
             return _json({"idea": await weebo.ideas.discuss(idea_id)})
         if action == "do":
@@ -822,10 +827,48 @@ def create_app(weebo: WeeboApp) -> web.Application:
             return _json({"idea": weebo.ideas.not_useful(idea_id)})
         raise ValueError("Unknown idea action.")
 
+    async def get_feed(_: web.Request) -> web.Response:
+        # Deterministic, local candidates also work without any external connectors.
+        # Sync/heartbeat own enrichment. Opening a list must not wait on weather/network calls.
+        await weebo.ideas.generate(refresh_daysheet=False)
+        return _json(weebo.feed.snapshot())
+
+    async def create_goal(request: web.Request) -> web.Response:
+        body = await _body(request)
+        if set(body) - {"title", "details", "next_step", "blocker", "due", "status", "owner"}:
+            raise ValueError("Unknown goal field.")
+        return _json({"goal": weebo.feed.create(body.pop("title", ""), **body)})
+
+    async def update_goal(request: web.Request) -> web.Response:
+        return _json({"goal": weebo.feed.update(request.match_info["id"], await _body(request))})
+
+    async def goal_action(request: web.Request) -> web.Response:
+        ref, action = request.match_info["id"], request.match_info["action"]
+        if action == "discuss":
+            return _json({"goal": await weebo.feed.discuss(ref)})
+        if action == "delegate":
+            body = await _body(request)
+            return _json(await weebo.feed.delegate(ref, body.get("bot_id", ""), body.get("instructions", "")))
+        if action == "link":
+            body = await _body(request)
+            return _json({"goal": weebo.feed.link(ref, body.get("entity", ""), body.get("id", ""))})
+        raise ValueError("Unknown goal action.")
+
+    async def feed_evidence(request: web.Request) -> web.Response:
+        evidence = weebo.feed.evidence(request.match_info["entity"], request.match_info["id"])
+        if not evidence:
+            raise ValueError("That source is no longer available.")
+        return _json({"evidence": evidence})
+
     async def get_activity(_: web.Request) -> web.Response:
         return _json(weebo.activity.snapshot())
 
     r.add_get("/api/activity", get_activity)
+    r.add_get("/api/feed", get_feed)
+    r.add_get("/api/feed/evidence/{entity}/{id}", feed_evidence)
+    r.add_post("/api/goals", create_goal)
+    r.add_patch("/api/goals/{id}", update_goal)
+    r.add_post("/api/goals/{id}/{action}", goal_action)
     r.add_get("/api/daysheet", get_daysheet)
     r.add_get("/api/ideas", list_ideas)
     r.add_post("/api/ideas/{id}/{action}", idea_action)

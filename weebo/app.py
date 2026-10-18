@@ -30,6 +30,7 @@ from .facts.daysheet import DaySheet
 from .facts.factcheck import FactCheck
 from .facts.service import Facts
 from .growth import Growth
+from .feed import Feed
 from .ideas import Ideas
 from .integrations import Integrations, gcalendar
 from .memory.memory import Memory
@@ -64,6 +65,7 @@ class WeeboApp:
         self.growth = Growth(self)
         self.daysheet = DaySheet(self)
         self.ideas = Ideas(self)
+        self.feed = Feed(self)
         self.factcheck = FactCheck(self)
         self.activity = ActivityRegistry(self)
         self.scheduler = Scheduler(self)
@@ -91,6 +93,7 @@ class WeeboApp:
         from .bots import tools as bot_tools  # noqa: F401
         from .connectors import tools as connector_tools  # noqa: F401
         from .facts import tools as facts_tools  # noqa: F401
+        from .brain import feed_tools  # noqa: F401
 
         _load_dotenv()
         self.bus.bind_loop(asyncio.get_running_loop())
