@@ -543,10 +543,12 @@ class AgentManager:
     # ------------------------------------------------------------------ codex → agent
     async def _on_request(self, run: AgentRun, method: str, params: dict[str, Any]) -> Any:
         task = self.app.store.get_task(run.task_id) or {}
+        owner_id = (task.get("meta") or {}).get("bot_id")
+        owner = self.app.bots.get(owner_id) if owner_id else self.app.bots.for_conversation(task.get("conversation_id"))
+        inactive_owner = (owner_id and owner is None) or (owner and owner["status"] != "active")
         if method == "item/tool/call":
-            owner = self.app.bots.for_conversation(task.get("conversation_id"))
             name = params.get("tool", "")
-            if owner and (owner["status"] != "active" or not self.app.bots.allows_tool(owner, name)):
+            if inactive_owner or (owner and not self.app.bots.allows_tool(owner, name)):
                 return ToolResult("That tool is outside the owning bot's current scope.", success=False).to_codex()
             ctx = ToolContext(self.app, params.get("threadId", ""), params.get("turnId", ""),
                               conversation_id=task.get("conversation_id"), task_id=run.task_id, trigger="agent",
@@ -557,6 +559,8 @@ class AgentManager:
         if method == "item/tool/requestUserInput":
             # Agents run unattended: answer with no input so they proceed on assumptions.
             return {"answers": {}}
+        if inactive_owner:
+            return self.app.interactions.respond(method, params, "decline")
         # The request shows up as a card in the chat that launched the agent, so it's answered where the user is.
         conv_id = task.get("conversation_id")
         if conv_id and not self.app.store.get_conversation(conv_id):

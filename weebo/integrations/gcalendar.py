@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .. import log, paths
+from ..facts.compute import instant
+from ..timeparse import zone as user_zone
 from .base import IntegrationError, Outcome
 
 if TYPE_CHECKING:
@@ -135,9 +137,9 @@ def _format(events: list[dict[str, Any]], heading: str, empty: str) -> str:
     return "\n".join(lines)
 
 
-def _day(date_str: str) -> dt.date:
+def _day(date_str: str, tz: dt.tzinfo | None = None) -> dt.date:
     value = (date_str or "").strip().lower()
-    today = dt.datetime.now().date()
+    today = dt.datetime.now(tz).date()
     if value in ("", "today"):
         return today
     if value == "tomorrow":
@@ -149,9 +151,12 @@ def _day(date_str: str) -> dt.date:
 
 
 async def check_calendar(app: "WeeboApp", date_str: str = "today") -> Outcome:
-    day = _day(date_str)
-    start = dt.datetime.combine(day, dt.time.min).astimezone()
-    end = dt.datetime.combine(day, dt.time.max).astimezone()
+    tz = user_zone(app.settings.get("user.timezone"))
+    day = _day(date_str, tz)
+    start = dt.datetime.combine(day, dt.time.min, tzinfo=tz).astimezone(tz)
+    # Calendar's upper bound is exclusive. Use the next local midnight, not
+    # 23:59:59 (which can drop the final second), and retain DST offsets.
+    end = dt.datetime.combine(day + dt.timedelta(days=1), dt.time.min, tzinfo=tz).astimezone(tz)
     result = await _call(lambda s: s.events().list(calendarId="primary", timeMin=start.isoformat(),
                                                    timeMax=end.isoformat(), singleEvents=True,
                                                    orderBy="startTime").execute())
@@ -172,30 +177,42 @@ async def schedule_event(app: "WeeboApp", summary: str, datetime_str: str, durat
         start = dt.datetime.fromisoformat(datetime_str)
     except (TypeError, ValueError):
         raise IntegrationError("datetime_str must be ISO format, e.g. 2026-10-04T15:30:00.") from None
-    end = start + dt.timedelta(minutes=max(1, int(duration_mins or 60)))
+    duration = max(1, int(duration_mins or 60)) * 60
 
     def insert(service: Any) -> Any:
         zone = service.calendars().get(calendarId="primary").execute().get("timeZone", "UTC")
+        tz = ZoneInfo(zone or "UTC")
+        try:
+            start_at = instant(start, zone or "UTC")
+        except ValueError as exc:
+            raise IntegrationError(f"Cannot book that local time: {exc}. Use an explicit UTC offset.") from exc
+        begins = dt.datetime.fromtimestamp(start_at, tz)
+        ends = dt.datetime.fromtimestamp(start_at + duration, tz)
         body = {"summary": summary, "description": description,
-                "start": {"dateTime": start.isoformat(), "timeZone": zone},
-                "end": {"dateTime": end.isoformat(), "timeZone": zone}}
+                "start": {"dateTime": begins.isoformat(), "timeZone": zone},
+                "end": {"dateTime": ends.isoformat(), "timeZone": zone}}
         # Read before acting: what's already in that slot.
-        tz = ZoneInfo(zone) if zone else dt.timezone.utc
-        window = {"timeMin": (start if start.tzinfo else start.replace(tzinfo=tz)).isoformat(),
-                  "timeMax": (end if end.tzinfo else end.replace(tzinfo=tz)).isoformat()}
+        window = {"timeMin": begins.isoformat(), "timeMax": ends.isoformat()}
         clashes = service.events().list(calendarId="primary", singleEvents=True, **window).execute().get("items", [])
         created = service.events().insert(calendarId="primary", body=body).execute()
         # Verify after acting: read the event back from the calendar itself.
         stored = service.events().get(calendarId="primary", eventId=created.get("id")).execute() \
             if created.get("id") else {}
-        return created, stored, clashes
+        return created, stored, clashes, begins, ends
 
-    event, stored, clashes = await _call(insert)
-    if not stored or stored.get("summary") != summary or stored.get("status") == "cancelled":
+    event, stored, clashes, begins, ends = await _call(insert)
+    try:
+        times_match = all(instant(stored[key]["dateTime"], stored[key].get("timeZone") or str(begins.tzinfo))
+                          == expected.timestamp() for key, expected in (("start", begins), ("end", ends)))
+    except (KeyError, TypeError, ValueError):
+        times_match = False
+    if (not stored or stored.get("id") != event.get("id") or stored.get("summary") != summary
+            or stored.get("status") == "cancelled" or (stored.get("description") or "") != description
+            or not times_match):
         raise IntegrationError("The calendar accepted the request but reading it back didn't show the event, so it "
                                "isn't confirmed. Check the calendar before telling the user it's booked.")
     note = ""
     if clashes:
         note = " Heads up, it overlaps: " + ", ".join(c.get("summary") or "(busy)" for c in clashes[:3]) + "."
-    return Outcome(f"Created \"{summary}\" at {start:%a %b %d %I:%M %p} (verified on the calendar): "
+    return Outcome(f"Created \"{summary}\" at {begins:%a %b %d %I:%M %p %Z} (verified on the calendar): "
                    f"{event.get('htmlLink', '')}{note}")

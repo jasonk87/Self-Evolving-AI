@@ -84,15 +84,20 @@ class DaySheet:
             artifact_id = f"daysheet:{event['id']}"
             existing = repo.artifact(artifact_id)
             previous = ordered[index - 1] if index else None
+            related = self._related(event)
             context = json.dumps({"previous": previous["id"] if previous else None,
                                   "conflicts": sorted(c["second"] if c["first"] == event["id"] else c["first"]
                                                       for c in clashes if event["id"] in c.values()),
+                                  "related": [[r["id"] for r in group] for group in related],
+                                  "weather": bool(self.weather),
                                   "timezone": self._tz(), "directions": bool(self.directions)}, sort_keys=True)
+            enrichment_expired = bool(existing and (self.directions or (self.weather and event.get("location")))
+                                      and time.time() - existing["updated_at"] >= self.app.settings.get("facts.ttl_seconds"))
             if (existing and not existing["stale"] and existing["data"].get("version") == self._version(event)
-                    and existing["data"].get("context_version") == context):
+                    and existing["data"].get("context_version") == context and not enrichment_expired):
                 kept += 1
                 continue
-            row, refs, needs_directions = await self._row(event, previous, clashes, live)
+            row, refs, needs_directions = await self._row(event, previous, clashes, live, related)
             row["context_version"] = context
             missing_directions |= needs_directions
             repo.save_artifact(artifact_id, KIND, row, refs)
@@ -124,7 +129,8 @@ class DaySheet:
                 "source": p.get("source"), "fetched_at": p.get("fetched_at")}
 
     async def _row(self, event: dict[str, Any], previous: dict[str, Any] | None, clashes: list[dict[str, str]],
-                   events: list[dict[str, Any]]) -> tuple[dict[str, Any], list[tuple[str, str]], bool]:
+                   events: list[dict[str, Any]], related: tuple[list[dict], list[dict]]) \
+            -> tuple[dict[str, Any], list[tuple[str, str]], bool]:
         repo = self.app.facts.repository
         tz = self._tz() or "UTC"
         row = self._base(event)
@@ -171,8 +177,10 @@ class DaySheet:
                 travel.update(status="unknown", reason="No directions source is connected; travel time isn't "
                                                        "guessed." if not self.directions else
                               "The directions source didn't answer.")
-            else:
+            elif event.get("location") and previous.get("location"):
                 travel.update(status="same_place")
+            else:
+                travel.update(status="unknown", reason="One or both event locations are missing.")
             row["travel"] = travel
         # weather at its time and place (only from a source)
         if event.get("location") and self.weather:
@@ -182,7 +190,19 @@ class DaySheet:
                 logger.info("Weather source failed: %s", exc)
                 forecast = None
             row["weather"] = forecast or {"summary": "unknown", "source": None}
-        # related email threads and people
+        threads, people = related
+        if threads:
+            row["threads"] = [{"id": t["id"], "subject": t["subject"], "needs_reply": bool(t["needs_reply"])}
+                              for t in threads[:5]]
+            refs += [("threads", t["id"]) for t in threads]
+        if people:
+            row["people"] = [{"id": p["id"], "name": p["name"], "tz": p.get("tz") or "",
+                              "notes_ref": p.get("notes_ref") or ""} for p in people]
+            refs += [("people", p["id"]) for p in people]
+        return row, list(dict.fromkeys(refs)), needs_directions
+
+    def _related(self, event: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+        repo = self.app.facts.repository
         emails = {str(a.get("email") if isinstance(a, dict) else a).lower() for a in event.get("attendees") or []}
         title_words = {w for w in re.findall(r"[a-z0-9]+", event["title"].lower()) if len(w) > 3}
         threads = []
@@ -190,19 +210,12 @@ class DaySheet:
             participants = {str(p.get("email") if isinstance(p, dict) else p).lower() for p in thread["participants"]}
             subject_words = set(re.findall(r"[a-z0-9]+", thread["subject"].lower()))
             if (emails & participants) or (title_words and len(title_words & subject_words) >= min(2, len(title_words))):
-                threads.append({"id": thread["id"], "subject": thread["subject"], "needs_reply": bool(thread["needs_reply"])})
-                refs.append(("threads", thread["id"]))
-        if threads:
-            row["threads"] = threads[:5]
+                threads.append(thread)
         people = []
         for person in repo.query("people", limit=500):
             if emails & {e.lower() for e in person["emails"]}:
-                people.append({"id": person["id"], "name": person["name"], "tz": person.get("tz") or "",
-                               "notes_ref": person.get("notes_ref") or ""})
-                refs.append(("people", person["id"]))
-        if people:
-            row["people"] = people
-        return row, list(dict.fromkeys(refs)), needs_directions
+                people.append(person)
+        return threads, people
 
     def rows(self, include_stale: bool = True) -> list[dict[str, Any]]:
         rows = self.app.store.query("SELECT * FROM facts_artifacts WHERE kind=?", (KIND,))

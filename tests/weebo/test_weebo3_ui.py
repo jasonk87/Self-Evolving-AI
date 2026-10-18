@@ -188,3 +188,29 @@ async def test_idle_activity_updates_when_a_bot_needs_approval(app):
             await page.locator('[data-id="needs-you"]').get_by_role("button", name="Deny").click()
             await slot.get_by_text("Resting · nothing running").wait_for()
             assert not app.approvals.open_items() and errors == []
+
+
+async def test_idea_draft_waits_for_completion_and_offers_retry_after_failure(app, fake_engine):
+    from playwright import async_api as playwright
+    from .test_weebo3_bugfixes import idea
+    row = idea(app, "draft_email")
+    errors = []
+    async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
+        browser, page = await open_page(pw, server, errors)
+        async with browser:
+            await page.locator("#tabbar").get_by_role("button", name="Ideas").click()
+            card = page.locator(f'[data-idea="{row["id"]}"]')
+            await card.get_by_role("button", name="Do it:").click()
+            await card.get_by_text("Draft requested; waiting for completion.").wait_for()
+            assert await card.get_by_role("button", name="Do it:").count() == 0
+            turn = fake_engine.turns[-1]
+            await fake_engine.finish_turn(turn["thread_id"], turn["turn_id"], status="failed")
+            await card.get_by_text("Draft did not complete. You can retry it.").wait_for()
+            await card.get_by_role("button", name="Do it:").click()
+            await card.get_by_text("Draft requested; waiting for completion.").wait_for()
+            turn = fake_engine.turns[-1]
+            await fake_engine.finish_turn(turn["thread_id"], turn["turn_id"], "Here is the example draft.")
+            await card.wait_for(state="detached")
+            await page.locator("#tabbar").get_by_role("button", name="Chat", exact=True).click()
+            await page.get_by_text("Here is the example draft.", exact=True).wait_for()
+            assert app.ideas.get(row["id"])["status"] == "done" and not errors

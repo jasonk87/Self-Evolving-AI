@@ -57,6 +57,10 @@ event rebuilds exactly the rows that depended on it. The **Ideas** tab shows spe
 never repeated, ranked by your feedback, and dropped when their facts change. **Discuss** opens the chat with the idea
 and its evidence; **Do it** runs only safe actions (a reminder, a held slot as a reminder, a draft) after re-reading
 the evidence and verifying the result; **Not useful** teaches Weebo (and is remembered as a preference).
+Draft ideas stay pending until the chief finishes an answer; failed, stopped or restart-interrupted drafts stay
+retryable. Brief reports are acknowledged only after a completed, nonempty chief answer. Day-sheet rows refresh
+when related email/people are added and when enrichment reaches the configured facts TTL; missing locations are
+reported as unknown, never "same place".
 
 **Growth.** Connectors are what Weebo can do, skills are procedures, workflows are repeatable multi-step jobs across
 bots. Weebo proposes workflows when you ask for substantially the same thing a few times, runs approved ones step by
@@ -77,7 +81,8 @@ freshness, with instructions to look them up in the same turn (see the facts sec
 receive a deterministic check for supported timing and cancellation claims, and a fast-tier second pass can review
 stored-fact claims (setting `facts.second_pass`). These are advisory checks: text can stream before checking finishes,
 and the model-based review runs after the turn. They are not a pre-publication guarantee for every factual statement.
-Calendar bookings are read back from the calendar after creating them and texts are checked against Twilio's own
+Calendar bookings are read back and checked for matching identity, title, description and start/end instants;
+ambiguous or nonexistent local booking times require an explicit offset. Texts are checked against Twilio's own
 acceptance response (not a delivery read-back). Email threads are recorded from a mail connector's raw tool results,
 never from a model's summary; unread alone does not mean a reply is owed. The
 reliability suite gates every upgrade, and every captured miss becomes a test.

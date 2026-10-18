@@ -125,6 +125,8 @@ class Interactions:
             return {"action": "decline", "content": None}
         bot = self.app.bots.for_conversation(conversation_id) if conversation_id else None
         if bot is not None:
+            if bot["status"] != "active":
+                return self.respond(method, params, "decline")
             session = self.app.conversations.sessions.get(conversation_id or "")
             talking = bool(session and session.turn and session.turn.trigger == "user") and not task_id
             if not talking:  # bots ask the chief's policy, never the user directly

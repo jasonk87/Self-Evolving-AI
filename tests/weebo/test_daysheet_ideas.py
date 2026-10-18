@@ -297,7 +297,9 @@ async def test_calendar_events_are_read_back_after_creating(app, monkeypatch):
         def events(self):
             return self.ev
 
-    for stored, expect_ok in (({}, False), ({"summary": "Dentist", "status": "confirmed"}, True)):
+    for stored, expect_ok in (({}, False), ({"id": "e1", "summary": "Dentist", "status": "confirmed",
+                                            "start": {"dateTime": "2026-11-02T15:00:00-06:00"},
+                                            "end": {"dateTime": "2026-11-02T16:00:00-06:00"}}, True)):
         async def fake_call(fn, stored=stored):
             return fn(Service(stored))
 

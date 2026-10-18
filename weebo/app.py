@@ -100,6 +100,8 @@ class WeeboApp:
         self.scheduler.recover_after_restart()
         self.agents.recover_after_restart()
         self.growth.recover_after_restart()
+        self.ideas.recover_after_restart()
+        self.heartbeat.recover_brief()
         if not os.environ.get("WEEBO_SKIP_LEGACY_IMPORT"):
             try:
                 self.memory.import_legacy()
@@ -236,6 +238,8 @@ class WeeboApp:
         return int(counts.get(datetime.now(zone(self.settings.get("user.timezone"))).strftime("%Y-%m-%d"), 0))
 
     def on_turn_finished(self, conv_id: str, turn: Any, status: str) -> None:
+        if getattr(turn, "delivery", None):
+            self.finish_delivery(turn.delivery, status, turn.final_text)
         mood = {"completed": "happy", "failed": "sad", "interrupted": "idle"}.get(status, "idle")
         self.bus.publish("weebo.mood", {"mood": mood, "conversation_id": conv_id})
         if self.bots.owns(conv_id):  # a bot's turn reports to the chief, never to the user directly
@@ -253,6 +257,13 @@ class WeeboApp:
                 self.notify("weebo", conv.get("title") or "Weebo", turn.final_text[:300], {"conversation_id": conv_id})
 
     # ------------------------------------------------------------------ status
+    def finish_delivery(self, receipt: dict[str, Any], status: str, text: str) -> None:
+        success = status == "completed" and bool(text.strip())
+        if receipt.get("kind") == "idea":
+            self.ideas.finish_draft(receipt, success)
+        elif receipt.get("kind") == "brief":
+            self.heartbeat.finish_brief(receipt, success)
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "version": __version__,

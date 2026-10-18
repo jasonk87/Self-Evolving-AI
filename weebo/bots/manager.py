@@ -499,11 +499,24 @@ turn; follow the latest one.
         """Archive (the default: the chat stays readable, the thread is put away, routines stop) or, only when the
         user explicitly says so, delete the bot and its chat."""
         bot = self.require(ref)
+        # Revoke execution authority before awaiting interruption of owned work.
+        bot = self._save(bot["id"], status="archived")
+        self.app.approvals.retire_bot(bot["id"])
         for reminder_id in bot["data"].get("routine_ids", []):
             self.app.scheduler.cancel(reminder_id)
-        for job in self.jobs(bot["id"], ("open", "running")):
-            self._set_job(job["id"], "cancelled", "The bot was retired.")
+        for job in self.app.store.query("SELECT * FROM bot_jobs WHERE bot_id=? AND status IN ('open','running')",
+                                         (bot["id"],)):
+            cancelled = self._set_job(job["id"], "cancelled", "The bot was retired.")
+            if cancelled:
+                await self.app.growth.on_job_finished(cancelled, "cancelled", "The bot was retired.")
         conv_id = bot.get("conversation_id")
+        for task_id in list(self.app.agents.queue) + list(self.app.agents.runs):
+            task = self.app.store.get_task(task_id) or {}
+            if (task.get("meta") or {}).get("bot_id") == bot["id"] or (conv_id and task.get("conversation_id") == conv_id):
+                try:
+                    await self.app.agents.stop(task_id)
+                except ValueError:
+                    pass  # it completed between the snapshot and the stop
         if delete:
             if conv_id:
                 await self.app.conversations.delete(conv_id)
@@ -521,13 +534,18 @@ turn; follow the latest one.
             return None
         data = {k: v for k, v in bot["data"].items() if k != "retire"}
         bot = self._save(bot["id"], status="archived", data={**data, "retired_by": actor, "retired_at": time.time()})
+        session = self.app.conversations.sessions.get(conv_id)
+        if session and session.turn:
+            await self.app.conversations.interrupt(conv_id)
         conv = self.app.store.get_conversation(conv_id) if conv_id else None
         if conv and conv.get("thread_id"):
-            session = self.app.conversations.sessions.get(conv_id)
             if session and session.turn:
-                await self.app.conversations.interrupt(conv_id)
-            self.app.engine.unroute(conv["thread_id"])
-            self.app.threads.put_away(conv["thread_id"], f"Weebo · {bot['name']}")
+                # Interrupt acknowledgement is not a terminal event. Keep the
+                # listener until completion, with tools/approvals now revoked.
+                self.app.threads.later(conv["thread_id"], f"Weebo · {bot['name']}")
+            else:
+                self.app.engine.unroute(conv["thread_id"])
+                self.app.threads.put_away(conv["thread_id"], f"Weebo · {bot['name']}")
         self._journal(f"Archived the {bot['name']} bot", bot, actor)
         return bot
 
@@ -886,7 +904,7 @@ turn; follow the latest one.
         return escalated
 
     # ------------------------------------------------------------------ the brief's team digest
-    def digest(self, mark_delivered: bool = True) -> str:
+    def digest(self, mark_delivered: bool = True, receipt: dict[str, Any] | None = None) -> str:
         """Summaries for the daily brief: brief-bucket reports since the last brief, what the chief decided under
         standing rules, what waits on the user, and per-bot usage with downgrade hints. No transcripts."""
         store = self.app.store
@@ -898,8 +916,14 @@ turn; follow the latest one.
                 bot = self.get(report["bot_id"])
                 lines.append(f"- {bot['name'] if bot else report['bot_id']} ({report['data'].get('outcome')}): "
                              f"{report['data'].get('summary', '')[:240]}")
-        decided = store.query("SELECT * FROM journal WHERE kind='policy' AND created_at>? ORDER BY created_at",
-                              (float(store.kv_get("bots.last_digest", 0) or 0),))
+        cursor = store.kv_get("bots.last_digest_seq")
+        if cursor is None:
+            # Carry the old timestamp checkpoint forward once, even if there
+            # are no new decisions in this brief. Never reset it to zero.
+            previous = store.query_one("SELECT MAX(seq) AS seq FROM journal WHERE kind='policy' AND created_at<=?",
+                                       (float(store.kv_get("bots.last_digest", 0) or 0),))
+            cursor = int((previous or {}).get("seq") or 0)
+        decided = store.query("SELECT * FROM journal WHERE kind='policy' AND seq>? ORDER BY seq LIMIT 10", (cursor,))
         if decided:
             lines.append("Decided for the user under their standing rules:")
             lines += [f"- {row['title']}" for row in decided[:10]]
@@ -922,12 +946,23 @@ turn; follow the latest one.
                     hint = " — barely used; suggest a cheaper tier or retiring it"
                 lines.append(f"- {bot['name']}: {self.turns_today(bot['id'])}/{self.budget_of(bot)} today, "
                              f"{week_turns} this week ({tier}){hint}")
+        delivery = {"report_ids": [r["id"] for r in reports[:20]],
+                    "policy_seq": decided[-1]["seq"] if decided else int(cursor or 0)}
+        if receipt is not None:
+            receipt.update(delivery)
         if mark_delivered:
-            now = time.time()
-            for report in reports[:20]:
-                store.execute("UPDATE reports SET delivered_at=? WHERE id=?", (now, report["id"]))
-            store.kv_set("bots.last_digest", now)
+            self.ack_digest(delivery)
         return "\n".join(lines)
+
+    def ack_digest(self, receipt: dict[str, Any]) -> None:
+        now = time.time()
+        with self.app.store.transaction():
+            for report_id in receipt.get("report_ids", []):
+                self.app.store.execute("UPDATE reports SET delivered_at=? WHERE id=? AND delivered_at IS NULL",
+                                       (now, report_id))
+            self.app.store.kv_set("bots.last_digest_seq", max(int(self.app.store.kv_get("bots.last_digest_seq", 0)),
+                                                             int(receipt.get("policy_seq", 0))))
+            self.app.store.kv_set("bots.last_digest", now)
 
     # ------------------------------------------------------------------ the starter roster
     def propose_starter(self) -> list[dict[str, Any]]:

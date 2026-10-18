@@ -780,14 +780,17 @@ export class Panels {
         onclick: () => toast(e.label, `${e.entity} from ${e.source || "unknown source"}${e.fetched_at ? `, checked ${timeAgo(e.fetched_at)}` : ""}`) },
       el("span", { html: icon(e.entity === "events" ? "calendar" : e.entity === "threads" ? "mail" : "list", 12) }), el("span", { text: e.label })))));
     if (idea.stale) card.append(el("p", { class: "muted small", text: "Something it was based on changed; refreshing." }));
+    if (d.note) card.append(el("p", { class: "muted small", text: d.note }));
     const safe = d.actions.findIndex((a) => a.safe);
     card.append(el("div", { class: "row wrap" },
       btn("Discuss", { kind: "soft", size: "sm", icon: "chat", onClick: async () => {
         try { await api.post(`/api/ideas/${idea.id}/discuss`, {}); this.close(); await this.app.openMain(); }
         catch (err) { toast("Couldn't open it", err.message, { kind: "error" }); }
       } }),
-      safe >= 0 && !idea.stale ? btn(`Do it: ${d.actions[safe].label}`, { kind: "primary", size: "sm", onClick: async () => {
-        try { await api.post(`/api/ideas/${idea.id}/do`, { action: safe }); toast("Done", d.actions[safe].label, { kind: "success" }); this.refresh(); }
+      safe >= 0 && !idea.stale && !d.pending_draft ? btn(`Do it: ${d.actions[safe].label}`, { kind: "primary", size: "sm", onClick: async () => {
+        try { const result = await api.post(`/api/ideas/${idea.id}/do`, { action: safe });
+          toast(result.result?.verified ? "Done" : "Draft requested", d.actions[safe].label,
+            { kind: result.result?.verified ? "success" : "info" }); this.refresh(); }
         catch (err) { toast("Didn't do it", err.message, { kind: "error" }); this.refresh(); }
       } }) : null,
       btn("Not useful", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/ideas/${idea.id}/dismiss`) })));

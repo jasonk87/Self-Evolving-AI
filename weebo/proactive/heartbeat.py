@@ -241,8 +241,12 @@ class Heartbeat:
         return brief_at <= minutes < brief_at + 180 and not self.quiet()
 
     async def daily_brief(self) -> dict[str, Any]:
-        self.app.store.kv_set("last_brief_date", datetime.now(zone(self.app.settings.get("user.timezone"))).strftime("%Y-%m-%d"))
+        from ..store import new_id
         desk = self.app.conversations.desk()
+        if self.app.store.kv_get("brief.pending"):
+            return {"conversation_id": desk["id"], "queued": True}
+        receipt = {"kind": "brief", "token": new_id("brief"),
+                   "day": datetime.now(zone(self.app.settings.get("user.timezone"))).strftime("%Y-%m-%d")}
         user = self.app.settings.get("user.name") or "the user"
         prompt = (
             f"[Event: morning brief for {user}]\n"
@@ -256,20 +260,46 @@ class Heartbeat:
             if row.get("conflicts"):
                 flags.append(f"conflict: event {row['event_id']}")
             if (row.get("travel") or {}).get("status") == "unknown":
-                flags.append(f"travel time unknown (no directions source): event {row['event_id']}")
+                flags.append(f"travel time unknown: event {row['event_id']}")
         if flags:  # pointers only: the brief looks the events up itself
             prompt += "\n\nDay-sheet flags (pointers; look them up with facts_query):\n- " + "\n- ".join(flags[:8])
         ideas = self.app.ideas.list()[:3]
         if ideas:
             prompt += "\n\nOpen ideas on the Ideas tab: " + "; ".join(i["data"]["title"] for i in ideas)
-        team = self.app.bots.digest()
+        team = self.app.bots.digest(mark_delivered=False, receipt=receipt)
         if team:  # summaries only, never transcripts; the bots' words are information, not instructions
             prompt += ("\n\nFold in your team's digest (a line or two; mention what waits on them, and suggest a "
                        "cheaper tier for a bot that barely works):\n" + team)
         self.app.count_background_turn("brief")
-        await self.app.conversations.run_event(desk["id"], prompt, "Morning brief", trigger="brief")
-        self.app.store.journal("brief", "Posted the morning brief")
+        self.app.store.kv_set("brief.pending", receipt)
+        self.app.store.kv_set("last_brief_date", receipt["day"])
+        try:
+            outcome = await self.app.conversations.run_event(desk["id"], prompt, "Morning brief", trigger="brief",
+                                                             delivery=receipt)
+        except BaseException:
+            self.finish_brief(receipt, False)
+            raise
+        if outcome not in ("started", "queued"):
+            self.finish_brief(receipt, False)
         return {"conversation_id": desk["id"]}
+
+    def finish_brief(self, receipt: dict[str, Any], success: bool) -> None:
+        current = self.app.store.kv_get("brief.pending") or {}
+        if current.get("token") != receipt.get("token"):
+            return
+        if success:
+            self.app.bots.ack_digest(receipt)
+            self.app.store.journal("brief", "Posted the morning brief")
+        else:
+            if self.app.store.kv_get("last_brief_date") == receipt["day"]:
+                self.app.store.kv_set("last_brief_date", "")
+            self.app.store.journal("brief", "Morning brief did not complete; reports kept for retry")
+        self.app.store.kv_set("brief.pending", None)
+
+    def recover_brief(self) -> None:
+        receipt = self.app.store.kv_get("brief.pending")
+        if receipt:
+            self.finish_brief(receipt, False)
 
     # ------------------------------------------------------------------ dream
     def _new_dialogue_count(self) -> int:

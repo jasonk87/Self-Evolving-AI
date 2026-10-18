@@ -54,7 +54,7 @@ class Scheduler:
 
     def cancel(self, reminder_id: str) -> bool:
         reminder = self.app.store.get_reminder(reminder_id)
-        if reminder is None or reminder["status"] != "pending":
+        if reminder is None or reminder["status"] not in ("pending", "paused"):
             return False
         reminder = self.app.store.update_reminder(reminder_id, status="cancelled")
         self.app.bus.publish("reminder.updated", {"reminder": reminder})

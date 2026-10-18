@@ -173,10 +173,11 @@ class Ideas:
                             "confidence": 0.9, "expires_at": row["start"]})
             travel = row.get("travel") or {}
             if travel.get("status") == "unknown" and travel.get("gap_minutes", 999) <= 30:
+                where = f" at {row['location']}" if row.get("location") else ""
                 out.append({"kind": "travel", "title": f"Getting to {row['title']}",
-                            "statement": f"{row['title']} at {row['location']} starts {travel['gap_minutes']} min after "
-                                         f"you leave {travel.get('from') or 'the previous event'}. I can't check the "
-                                         "drive (no directions source), so plan a buffer.",
+                            "statement": f"{row['title']}{where} starts {travel['gap_minutes']} min after "
+                                         f"you leave {travel.get('from') or 'the previous event'}. "
+                                         f"{travel.get('reason') or 'Travel time is unknown.'} Plan a buffer.",
                             "evidence": [ev, {"entity": "events", "id": travel["from_event"]}],
                             "actions": [{"kind": "hold_slot", "label": "Remind me to leave early",
                                          "params": {"at": row["start"] - max(15, travel["gap_minutes"] + 15) * 60,
@@ -224,7 +225,8 @@ class Ideas:
         for commitment in repo.query("commitments", status="open", end=now + 86400, limit=20):
             when = at(commitment["due"])
             out.append({"kind": "commitment", "title": "Coming due",
-                        "statement": f"You said you'd {commitment['text'].rstrip('.')} by {when}.",
+                        "statement": f"{'You' if commitment['owner'] == 'user' else 'Weebo'} committed to "
+                                     f"{commitment['text'].rstrip('.')} by {when}.",
                         "evidence": [{"entity": "commitments", "id": commitment["id"]}],
                         "actions": [{"kind": "reminder", "label": "Remind me in 2 hours",
                                      "params": {"when": "in 2 hours", "text": commitment["text"]}}],
@@ -256,6 +258,10 @@ class Ideas:
         idea = self.get(idea_id)
         if not idea:
             raise ValueError("No such idea.")
+        if idea["status"] == "dismissed":
+            return idea  # a retried HTTP request is not a second negative vote
+        if idea["status"] not in ("new", "discussed"):
+            raise ValueError("That idea isn't open any more.")
         score = self._feedback(idea["kind"], -1)
         if score <= -2 and not self.app.store.kv_get(f"ideas.lesson.{idea['kind']}"):
             self.app.store.kv_set(f"ideas.lesson.{idea['kind']}", True)
@@ -269,8 +275,15 @@ class Ideas:
     async def discuss(self, idea_id: str) -> dict[str, Any]:
         """Open the main chat with the idea and its evidence, and have the chief open with options."""
         idea = self.get(idea_id)
-        if not idea:
-            raise ValueError("No such idea.")
+        if not idea or idea["status"] not in ("new", "discussed"):
+            raise ValueError("That idea isn't open any more.")
+        if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
+            self._set(idea_id, "expired")
+            raise ValueError("That idea has expired.")
+        artifact = self.app.facts.repository.artifact(f"idea:{idea_id}")
+        if artifact and artifact["stale"]:
+            self.refresh_stale()
+            raise ValueError("That idea has expired because its evidence changed.")
         self._feedback(idea["kind"], 0.5)
         main = self.app.conversations.main_id()
         evidence = "; ".join(f"{e['entity']}:{e['id']} ({e['label']})" for e in idea["data"]["evidence"])
@@ -290,6 +303,8 @@ class Ideas:
         idea = self.get(idea_id)
         if not idea or idea["status"] not in ("new", "discussed"):
             raise ValueError("That idea isn't open any more.")
+        if idea["data"].get("pending_draft"):
+            raise ValueError("That draft is already waiting or running.")
         if idea.get("expires_at") is not None and idea["expires_at"] <= time.time():
             self._set(idea_id, "expired")
             raise ValueError("That idea has expired; nothing was done.")
@@ -336,18 +351,47 @@ class Ideas:
             if not stored or stored["status"] != "pending":
                 raise ValueError("The reminder didn't save; nothing was done.")
             result.update(reminder_id=stored["id"], due_at=stored["due_at"], verified=True)
-        else:  # a draft, never a send: the chief writes it in the chat, fact-checked before it's shown
+        else:  # completion is acknowledged by the chief's turn, never by dispatch alone
             main = self.app.conversations.main_id()
             evidence = "; ".join(f"{e['entity']}:{e['id']}" for e in idea["data"]["evidence"])
             prompt = (f"[Event: the user tapped Do it on idea {idea_id}: {idea['data']['statement']}]\n"
                       f"Write the draft ({action['label']}). Look up the evidence first ({evidence}) with the facts "
                       "tools. Show the draft in the chat only; do not send anything or contact anyone.")
-            outcome = await self.app.conversations.run_event(main, prompt, f"Drafting: {idea['data']['title']}",
-                                                             trigger="idea")
-            result.update(dispatch=outcome, verified=outcome in ("started", "queued"))
-            if not result["verified"]:
+            receipt = {"kind": "idea", "id": idea_id, "token": new_id("draft")}
+            self.app.store._update("ideas", "id", idea_id, {"data": {**idea["data"], "pending_draft": receipt["token"]}})
+            self._set(idea_id, "discussed", note="Draft requested; waiting for completion.")
+            try:
+                outcome = await self.app.conversations.run_event(main, prompt, f"Drafting: {idea['data']['title']}",
+                                                                 trigger="idea", delivery=receipt)
+            except BaseException:
+                self.finish_draft(receipt, False)
+                raise
+            result.update(dispatch=outcome, verified=False)
+            if outcome not in ("started", "queued"):
+                self.finish_draft(receipt, False)
                 raise ValueError("The draft couldn't start; the idea is still open for retry.")
+            result["verified"] = self.get(idea_id)["status"] == "done"
+            return {"idea": self.get(idea_id), "result": result}
         self._feedback(idea["kind"], 1)
         self.app.store.journal("ideas", f"Did it: {idea['data']['title']}", action["label"], data={"result": result})
         self._set(idea_id, "done", note=f"{action['label']} done")
         return {"idea": self.get(idea_id), "result": result}
+
+    def finish_draft(self, receipt: dict[str, Any], success: bool) -> None:
+        idea = self.get(receipt["id"])
+        if not idea or idea["data"].get("pending_draft") != receipt["token"]:
+            return
+        data = {k: v for k, v in idea["data"].items() if k != "pending_draft"}
+        self.app.store._update("ideas", "id", idea["id"], {"data": data})
+        if idea["status"] not in ("new", "discussed"):
+            return  # a dismissed/expired idea is not resurrected by a late completion
+        if success:
+            self._feedback(idea["kind"], 1)
+        self._set(idea["id"], "done" if success else "new",
+                  note="Draft completed in chat." if success else "Draft did not complete. You can retry it.")
+        self.app.store.journal("ideas", "Draft completed" if success else "Draft interrupted",
+                               idea["data"]["title"], data={"idea_id": idea["id"]})
+
+    def recover_after_restart(self) -> None:
+        for idea in self.app.store.query("SELECT * FROM ideas WHERE json_extract(data,'$.pending_draft') IS NOT NULL"):
+            self.finish_draft({"id": idea["id"], "token": idea["data"]["pending_draft"]}, False)

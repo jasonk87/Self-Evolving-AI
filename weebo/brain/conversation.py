@@ -41,6 +41,7 @@ class TurnState:
     hops: int = 0  # relays (chief -> bot -> chief ...) that led to this turn; capped by bots.hop_limit
     job_id: str | None = None  # the bot job this turn works on
     workflow: dict[str, Any] | None = None  # chief workflow step; completes with the turn, not dispatch
+    delivery: dict[str, Any] | None = None  # receipt for a requested draft or daily brief
     reported: bool = False  # a bot reported to the chief during this turn
     factchecked: bool = False  # the deterministic fact check already flagged this turn's answer
     turn_id: str | None = None
@@ -324,8 +325,16 @@ class ConversationManager:
         if not conv:
             return
         session = self.sessions.pop(conv_id, None)
+        if session:
+            deliveries = [f.get("delivery") for f in session.followups]
+            if session.turn:
+                deliveries.append(session.turn.delivery)
+            for receipt in deliveries:
+                if receipt:
+                    self.app.finish_delivery(receipt, "interrupted", "")
         if session and session.turn:
             session.turn.cancelled = True  # a start still in flight stops instead of running for a deleted chat
+            session.turn.stop_requested.set()
         if session and session.turn and session.turn.turn_id and conv.get("thread_id"):
             try:
                 await self.app.engine.interrupt(conv["thread_id"], session.turn.turn_id)
@@ -399,12 +408,15 @@ class ConversationManager:
     async def run_event(self, conv_id: str, prompt: str, notice: str, trigger: str = "event",
                         notice_kind: str = "notice", notice_data: dict | None = None,
                         occurrence_id: str | None = None, fallback: str = "", hops: int = 0,
-                        job_id: str | None = None, workflow: dict[str, Any] | None = None) -> str:
+                        job_id: str | None = None, workflow: dict[str, Any] | None = None,
+                        delivery: dict[str, Any] | None = None) -> str:
         """Run a turn Weebo starts itself (routine, agent report, brief). The prompt is hidden;
         the UI shows ``notice`` instead of a user bubble. Return the dispatch outcome
         so a caught startup error cannot be mistaken for an accepted turn."""
         conv = self.app.store.get_conversation(conv_id)
         if conv is None:
+            if delivery:
+                self.app.finish_delivery(delivery, "interrupted", "")
             if occurrence_id:
                 self.app.scheduler.delivery_interrupted(occurrence_id, "The routine's conversation was deleted.")
             return "failed"
@@ -421,7 +433,7 @@ class ConversationManager:
                     session.followups.append({"prompt": prompt, "notice": notice, "trigger": trigger,
                                               "notice_kind": notice_kind, "notice_data": notice_data,
                                               "occurrence_id": occurrence_id, "fallback": fallback,
-                                              "hops": hops, "job_id": job_id, "workflow": workflow})
+                                              "hops": hops, "job_id": job_id, "workflow": workflow, "delivery": delivery})
                 return "queued"
             bot = self.app.bots.for_conversation(conv_id)
             if bot is not None:  # a bot's turn spends its own budget; one that can't run is reported, not dropped
@@ -440,7 +452,7 @@ class ConversationManager:
                 self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": note})
             return await self._start_turn(session, conv, [text_input(prompt)], trigger=trigger, query=prompt,
                                           occurrence_id=occurrence_id, fallback=fallback, hops=hops, job_id=job_id,
-                                          workflow=workflow)
+                                          workflow=workflow, delivery=delivery)
 
     def add_context(self, conv_id: str, text: str) -> None:
         self.session(conv_id).pending_context.append(text)
@@ -464,6 +476,8 @@ class ConversationManager:
         # Stop drops what was waiting to be said, but not what it was about: the next turn still knows.
         session.pending_context.extend(f["fallback"] for f in session.followups if f.get("fallback"))
         for followup in session.followups:
+            if followup.get("delivery"):
+                self.app.finish_delivery(followup["delivery"], "interrupted", "")
             if followup.get("workflow"):
                 self.app._start_job(self.app.growth.on_step_finished(followup["workflow"], "failed", "Stopped"),
                                     "workflow-stopped")
@@ -492,9 +506,10 @@ class ConversationManager:
     async def _start_turn(self, session: Session, conv: dict[str, Any], inputs: list[dict[str, Any]],
                           trigger: str, query: str, occurrence_id: str | None = None,
                           user_message_id: str | list[str] | None = None, fallback: str = "", hops: int = 0,
-                          job_id: str | None = None, workflow: dict[str, Any] | None = None) -> str:
+                          job_id: str | None = None, workflow: dict[str, Any] | None = None,
+                          delivery: dict[str, Any] | None = None) -> str:
         state = session.turn = TurnState(trigger=trigger, occurrence_id=occurrence_id, fallback=fallback,
-                                         hops=hops, job_id=job_id, workflow=workflow)
+                                         hops=hops, job_id=job_id, workflow=workflow, delivery=delivery)
         self.app.bus.publish("conv.turn.started", {"conversation_id": conv["id"], "trigger": trigger})
         requested = False
         extra: list[str] = []
@@ -747,7 +762,7 @@ class ConversationManager:
                 session.turn.tools_used.append(name)
             bot = self.app.bots.for_conversation(conv_id)
             tool = registry.get(name)
-            if bot is not None and not self.app.bots.allows_tool(bot, name):
+            if bot is not None and (bot["status"] not in ("active", "paused") or not self.app.bots.allows_tool(bot, name)):
                 return ToolResult(f"{name} isn't one of your tools. Ask the chief with propose_profile_change if "
                                   "you need it.", success=False).to_codex()
             if bot is None and tool is not None and "chat" not in tool.scopes and "bot" in tool.scopes:
@@ -986,6 +1001,22 @@ class ConversationManager:
             self._name_thread_once(conv)
         if turn:
             self.app.on_turn_finished(conv_id, turn, status)
+        bot = self.app.bots.for_conversation(conv_id)
+        if bot and bot["status"] not in ("active", "paused"):
+            # Retirement can race the engine's asynchronous interrupt. Only
+            # detach after this terminal event; never start its queued replies.
+            for waiting in session.waiting:
+                message = store.get_message(waiting["message_id"])
+                if message:
+                    message = store.update_message(message["id"], status="interrupted",
+                                                    data={k: v for k, v in message["data"].items() if k != "queued"})
+                    self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+            session.waiting.clear()
+            if conv and conv.get("thread_id"):
+                self.thread_conv.pop(conv["thread_id"], None)
+                self.app.engine.unroute(conv["thread_id"])
+                self.app.threads.put_away(conv["thread_id"], f"Weebo · {bot['name']}")
+            return
         if session.waiting:  # what the user said meanwhile comes first
             waiting, session.waiting = session.waiting, []
             self.app._start_job(self._answer_waiting(conv_id, waiting), "queued-reply")

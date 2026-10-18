@@ -285,6 +285,10 @@ class ApprovalPolicy:
 
     def decide(self, bot: dict[str, Any], info: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
         """("allow" | "deny" | "ask", the rule that decided)."""
+        current = self.app.bots.get(bot["id"])
+        if not current or current["status"] != "active":
+            return "deny", None
+        bot = current
         action, target = info["action"], info.get("target", "")
         server = info.get("server")
         if server and not self.app.connectors.in_scope(bot, server, info.get("tool", "")):
@@ -407,6 +411,13 @@ class ApprovalPolicy:
         if rows:
             self.sync_card()
         return len(rows)
+
+    def retire_bot(self, bot_id: str) -> None:
+        for item in self.open_items():
+            if item["data"].get("bot_id") == bot_id:
+                self.app.store._update("needs_you", "id", item["id"],
+                                       {"status": "expired", "updated_at": time.time()})
+        self.sync_card()
 
     def sync_card(self, bring_forward: bool = False) -> None:
         """One card in the main chat bundles everything waiting on the user from the team."""
