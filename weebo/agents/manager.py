@@ -322,11 +322,11 @@ class AgentManager:
                 specs = [s for s in specs if self.app.bots.allows_tool(owner, s["name"])]
                 current_hash = "bot:" + self.app.bots.tools_hash(owner)
                 developer = self.app.bots.developer_instructions(owner) + "\n\n" + developer
-                extra = self.app.connectors.thread_config(owner)
+                extra = await self.app.connectors.prepare_thread(owner, task["cwd"])
             earlier = ""
             if task.get("thread_id"):  # continuing an earlier agent's work in its own thread
                 run.thread_id = await self._reopen(task, approval, sandbox_mode, developer, scope,
-                                                    expected_hash=current_hash)
+                                                      expected_hash=current_hash, extra=extra)
                 if run.thread_id is None:
                     earlier = self._earlier_work(task)
             if run.thread_id is None:
@@ -409,7 +409,7 @@ class AgentManager:
                 self._pump()
 
     async def _reopen(self, task: dict[str, Any], approval: str, sandbox_mode: str, developer: str,
-                      scope: str, expected_hash: str | None = None) -> str | None:
+                      scope: str, expected_hash: str | None = None, extra: dict[str, Any] | None = None) -> str | None:
         """The continued agent's thread, ready for another turn; None when it can't come back (its tools changed
         in an upgrade, or Codex no longer has it), so a fresh thread takes over."""
         thread_id = task["thread_id"]
@@ -424,7 +424,7 @@ class AgentManager:
         await self.app.threads.take_back(thread_id)
         try:
             await engine.resume_thread(thread_id, cwd=task["cwd"], approvalPolicy=approval, sandbox=sandbox_mode,
-                                       developerInstructions=developer)
+                                       developerInstructions=developer, **(extra or {}))
         except (RpcError, asyncio.TimeoutError) as exc:
             logger.info("Could not reopen thread %s for %s (%s); starting a fresh one", thread_id, task["id"], exc)
             return None

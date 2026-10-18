@@ -18,9 +18,10 @@ def _timeout(seconds: float) -> aiohttp.ClientTimeout:
     return aiohttp.ClientTimeout(total=seconds)
 
 
-async def get_json(url: str, params: dict[str, Any] | None = None, timeout: float = 15.0) -> Any:
+async def get_json(url: str, params: dict[str, Any] | None = None, timeout: float = 15.0,
+                   auth: tuple[str, str] | None = None) -> Any:
     async with aiohttp.ClientSession(timeout=_timeout(timeout), headers={"User-Agent": USER_AGENT}) as session:
-        async with session.get(url, params=params) as resp:
+        async with session.get(url, params=params, auth=aiohttp.BasicAuth(*auth) if auth else None) as resp:
             if resp.status >= 400:
                 raise HttpError(f"{url.split('?')[0]} answered HTTP {resp.status}: {(await resp.text())[:300]}")
             return await resp.json(content_type=None)

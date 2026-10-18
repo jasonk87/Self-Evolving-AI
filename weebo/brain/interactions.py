@@ -166,9 +166,12 @@ class Interactions:
         return self._response(pending, decision, answers)
 
     async def confirm(self, title: str, detail: str, conversation_id: str | None = None,
-                      task_id: str | None = None, thread_id: str = "", turn_id: str = "") -> bool:
+                      task_id: str | None = None, thread_id: str = "", turn_id: str = "",
+                      action_key: str = "") -> bool:
         """Ask the user to approve an action Weebo itself is about to take (not a Codex request)."""
         params = {"threadId": thread_id, "turnId": turn_id, "reason": detail, "title": title}
+        if action_key:
+            params["action_key"] = action_key
         response = await self.ask("weebo/confirm", params, conversation_id=conversation_id, task_id=task_id)
         return response.get("decision") in ("accept", "acceptForSession")
 
@@ -178,6 +181,10 @@ class Interactions:
             return False
         if pending.kind != "question" and decision not in DECISIONS:
             raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
+        bot = self.app.bots.for_conversation(pending.conversation_id)
+        if bot and decision in ("acceptForSession", "acceptAlways") \
+                and self.app.approvals.describe(bot, pending.method, pending.params).get("per_action"):
+            raise ValueError("This outward bot action needs approval each time. Choose Allow once.")
         if answers is not None and (not isinstance(answers, dict) or any(
             not isinstance(key, str) or not isinstance(values, list)
             or any(not isinstance(value, str) for value in values)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -121,9 +122,11 @@ class Integrations:
             return (f"{name} isn't set up on this machine (needs {', '.join(missing)}). Use another approach, such as "
                     "your own web search, and tell the user how to enable it."), False, {}
         if item.risk == "confirm":
-            pretty = json.dumps(arguments, ensure_ascii=False, indent=1)[:1500]
+            serialized = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+            pretty = json.dumps(arguments, sort_keys=True, ensure_ascii=False, indent=1)[:4000]
             approved = await self.app.interactions.confirm(f"Use integration: {name}", f"{name}({pretty})",
-                                                           conversation_id=conversation_id, task_id=task_id)
+                                                           conversation_id=conversation_id, task_id=task_id,
+                                                           action_key=hashlib.sha256(serialized.encode()).hexdigest())
             if not approved:
                 return "The user declined this action.", False, {}
         try:

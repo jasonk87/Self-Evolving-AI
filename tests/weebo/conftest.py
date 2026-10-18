@@ -37,7 +37,8 @@ class FakeEngine:
         from weebo.codex.engine import EngineFeatures
 
         self.status = "ready"
-        self.features = EngineFeatures(additional_context=True, dynamic_tools=True, output_schema=True)
+        self.features = EngineFeatures(additional_context=True, dynamic_tools=True, output_schema=True,
+                                       thread_config=True, connector_controls=True)
         self.models = [{"id": "gpt-test", "displayName": "GPT Test", "isDefault": True,
                         "supportedReasoningEfforts": [{"reasoningEffort": e} for e in ("low", "medium", "high")],
                         "defaultReasoningEffort": "medium", "serviceTiers": []}]
@@ -65,6 +66,7 @@ class FakeEngine:
     async def restart(self) -> None: ...
     async def wait_ready(self, timeout: float = 0) -> bool: return True
     async def ensure_ready(self, timeout: float = 0) -> None: ...
+    async def connector_inventory(self, cwd): return {"mcp": [], "apps": {}}
     async def set_skill_roots(self, roots) -> None: ...
     async def set_thread_name(self, thread_id, name) -> bool: return True
     async def thread_idle(self, thread_id) -> bool: return True

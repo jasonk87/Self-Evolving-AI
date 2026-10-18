@@ -44,6 +44,9 @@ class TurnState:
     delivery: dict[str, Any] | None = None  # receipt for a requested draft or daily brief
     reported: bool = False  # a bot reported to the chief during this turn
     factchecked: bool = False  # the deterministic fact check already flagged this turn's answer
+    held_items: dict[str, dict[str, Any]] = field(default_factory=dict)
+    publication_released: bool = False
+    reviewing: bool = False
     turn_id: str | None = None
     cancelled: bool = False
     stop_requested: asyncio.Event = field(default_factory=asyncio.Event)
@@ -58,6 +61,10 @@ class TurnState:
     suggestions: list[str] = field(default_factory=list)  # reply chips offered with the final answer
     used_memories: list[str] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
+
+    @property
+    def hold_output(self) -> bool:
+        return self.trigger in ("brief", "idea") and not self.publication_released
 
 
 @dataclass
@@ -489,6 +496,9 @@ class ConversationManager:
         session.followups.clear()
         session.turn.cancelled = True
         session.turn.stop_requested.set()
+        if session.turn.reviewing:  # Codex has finished; only the publication check remains.
+            self._finish_turn(conv_id, "interrupted", None)
+            return True
         if not session.turn.turn_id:
             # Startup is in flight. Keep its state until we can either avoid
             # starting the turn or interrupt the id confirmed by Codex.
@@ -655,7 +665,7 @@ class ConversationManager:
         approval, sandbox_mode, _ = bots.sandbox(bot, [])
         return {"hash": bots.tools_hash(bot), "tools": bots.specs(bot), "approval": approval, "sandbox": sandbox_mode,
                 "developer": bots.developer_instructions(bot), "model": bots.model_for(bot),
-                "extra": self.app.connectors.thread_config(bot)}
+                "extra": {}}
 
     async def _ensure_thread(self, session: Session, conv: dict[str, Any]) -> str:
         engine = self.app.engine
@@ -663,6 +673,10 @@ class ConversationManager:
         profile = self._profile(conv)
         current_hash = profile["hash"]
         meta = conv.get("meta") or {}
+        cwd = conv.get("cwd") or str(paths.workspace_dir())
+        bot = self.app.bots.for_conversation(conv["id"])
+        if bot:
+            profile["extra"] = await self.app.connectors.prepare_thread(bot, cwd)
         # A loaded thread is reused, except a bot's whose tools changed meanwhile (an approved grant): that one is
         # replaced below with a recap, like a thread with outdated tools after a restart.
         if thread_id and thread_id in engine.loaded_threads and (conv.get("kind") != "bot"
@@ -678,6 +692,7 @@ class ConversationManager:
                     await engine.resume_thread(
                         thread_id, cwd=cwd, approvalPolicy=approval, sandbox=sandbox_mode,
                         developerInstructions=profile["developer"],
+                        **profile["extra"],
                     )
                     return thread_id
                 except (RpcError, asyncio.TimeoutError) as exc:
@@ -699,11 +714,11 @@ class ConversationManager:
         except RpcError as exc:
             if not profile["extra"]:
                 raise
-            # The installed Codex refused the per-thread connector config: work without it (scope is still enforced
-            # by Weebo) rather than leave the bot without a thread.
-            logger.warning("Codex refused per-thread connector config (%s); continuing without it", exc)
+            # Retrying without this config would drop consent and environment controls.
+            logger.warning("Codex refused per-thread connector controls (%s)", exc)
             self.app.connectors.config_failed = True
-            result = await engine.start_thread(**params)
+            raise ValueError("Codex refused this bot's connector safety controls. Run the connector isolation "
+                             "check before enabling native connector work; no unprotected retry was started.") from exc
         new_thread = result["thread"]["id"]
         meta["tools_hash"] = current_hash
         self.app.store.update_conversation(conv["id"], thread_id=new_thread, meta=meta)
@@ -809,10 +824,14 @@ class ConversationManager:
                 return
             item_id = params.get("itemId", "")
             turn.streams[item_id] = turn.streams.get(item_id, "") + params.get("delta", "")
+            if turn.hold_output:
+                return
             bus.publish("conv.delta", {"conversation_id": conv_id, "message_id": f"{conv_id}:{item_id}",
                                        "delta": params.get("delta", "")})
             return
         if method == "item/reasoning/summaryTextDelta":
+            if turn and turn.hold_output:
+                return
             if turn is not None:
                 turn.reasoning = (turn.reasoning + params.get("delta", ""))[-2000:]
             bus.publish("conv.reasoning", {"conversation_id": conv_id, "delta": params.get("delta", "")})
@@ -866,6 +885,10 @@ class ConversationManager:
             return
         if method == "turn/completed":
             turn_info = params.get("turn") or {}
+            if turn and turn.hold_output and turn_info.get("status", "completed") == "completed":
+                if not turn.reviewing:
+                    self._check_publication(conv_id, turn)
+                return
             self._finish_turn(conv_id, turn_info.get("status") or "completed", turn_info.get("error"))
             return
 
@@ -876,6 +899,13 @@ class ConversationManager:
         if completed:
             self.app.skills.note_item(item)
         turn = session.turn
+        if turn and turn.hold_output and item_type in ("agentMessage", "reasoning"):
+            if completed and item_type == "agentMessage":
+                turn.held_items[str(item.get("id"))] = dict(item)
+                if item.get("phase") != "commentary":
+                    turn.final_text = item.get("text") or turn.streams.get(str(item.get("id")), "")
+                    turn.final_message_id = f"{conv_id}:{item.get('id')}"
+            return
         if item_type == "mcpToolCall":
             self._watch_connector(conv_id, session, item, completed)
         message_id = f"{conv_id}:{item.get('id')}"
@@ -903,7 +933,7 @@ class ConversationManager:
             turn.streams.pop(str(item.get("id")), None)
             if data.get("phase") != "commentary":
                 turn.final_text, turn.final_message_id = content, message_id
-                if turn.trigger in ("brief", "idea"):  # what Weebo wrote for the user, checked against the source
+                if turn.trigger in ("brief", "idea") and not turn.publication_released:
                     issues = self.app.factcheck.check(content)
                     if issues:
                         data["factcheck"] = issues
@@ -914,6 +944,72 @@ class ConversationManager:
         message = self.app.store.upsert_message(message_id, conv_id, role, kind, content, data,
                                                 turn.turn_id if turn else None, status)
         self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+
+    def _check_publication(self, conv_id: str, turn: TurnState) -> None:
+        """No text, reconnect history or completion notification escapes before this gate."""
+        turn.reviewing = True
+        self.app.bus.publish("conv.status", {"conversation_id": conv_id, "text": "Checking the facts…"})
+        issues = self.app.factcheck.check(turn.final_text)
+        evidence = self.app.factcheck.referenced(turn.final_text)
+        warning = ""
+        if not evidence:
+            warning = "No matching stored facts were found; factual claims are unverified."
+        elif not self.app.settings.get("facts.second_pass"):
+            warning = "The second-pass fact check is disabled; only calendar times were checked."
+        elif not self.app.heartbeat.budget()[0]:
+            warning = "The second-pass fact check is unavailable within the current budget."
+        if issues or warning or not turn.final_text:
+            self._publish_checked(conv_id, turn, issues, warning)
+        else:
+            # Do not block Codex's notification worker: the checker uses that
+            # same worker for its own one-shot turn's events.
+            self.app._start_job(self._review_publication(conv_id, turn), "publication-factcheck")
+
+    async def _review_publication(self, conv_id: str, turn: TurnState) -> None:
+        issues, warning = [], ""
+        try:
+            async def review():
+                async with asyncio.timeout(150):
+                    # Refresh available sources, then check the current facts,
+                    # not the snapshot from when the brief began.
+                    sources = await self.app.facts.sync.refresh("events")
+                    found = await self.app.factcheck.second_pass(turn.final_text, strict=True)
+                    return found, sources
+            issues, sources = await self._until_stopped(turn, review())
+            issues = self.app.factcheck.check(turn.final_text) + issues
+            if any(not s["ok"] for s in sources):
+                warning = "Some fact sources could not be refreshed; this check used cached facts."
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            warning = "The fact check could not finish; factual claims are unverified."
+        if self.sessions.get(conv_id) and self.sessions[conv_id].turn is turn and not turn.cancelled:
+            self._publish_checked(conv_id, turn, issues, warning)
+
+    def _publish_checked(self, conv_id: str, turn: TurnState, issues: list[dict], warning: str) -> None:
+        session = self.session(conv_id)
+        if session.turn is not turn or turn.cancelled:
+            return
+        turn.publication_released = True
+        turn.factchecked = True
+        # Commentary may contain the same incorrect claims; don't release it
+        # separately from the reviewed final answer.
+        item = next((i for i in reversed(list(turn.held_items.values())) if i.get("phase") != "commentary"), None)
+        if item:
+            note = " ".join(part for part in (self.app.factcheck.note(issues) if issues else "", warning) if part)
+            content = turn.final_text
+            if note:
+                content = f"> ⚠️ {note}\n\n{content}"
+            item = {**item, "text": content}
+            self._on_item(conv_id, session, item, completed=True)
+            final = self.app.store.get_message(turn.final_message_id)
+            if final:
+                message = self.app.store.update_message(final["id"], data={**final["data"], "factcheck": issues,
+                    "publication_check": "flagged" if issues else "unverified" if warning else "checked"})
+                self.app.bus.publish("conv.message", {"conversation_id": conv_id, "message": message})
+        turn.held_items.clear()
+        turn.streams.clear()
+        self._finish_turn(conv_id, "completed", None)
 
     def _watch_connector(self, conv_id: str, session: Session, item: dict[str, Any], completed: bool) -> None:
         """Connector use is monitored, and a bot reaching outside its connectors is stopped and reported."""
@@ -952,6 +1048,10 @@ class ConversationManager:
     def _finish_turn(self, conv_id: str, status: str, error: dict | None, publish_error: bool = True) -> None:
         session = self.session(conv_id)
         turn = session.turn
+        if turn and turn.hold_output:
+            turn.final_text = ""  # failed/stopped unchecked output is never delivered
+            turn.held_items.clear()
+            turn.streams.clear()
         session.turn = None
         store = self.app.store
         if turn and turn.occurrence_id:

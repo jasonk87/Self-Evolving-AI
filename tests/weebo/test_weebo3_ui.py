@@ -1,6 +1,7 @@
 """Browser tests for Weebo 3: the final tabs, bots and their chats, the "needs you" card, Ideas, and the honest
 activity display (priority, fall-back, "+N more", waiting on you, idle, reduced motion)."""
 
+import asyncio
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -15,6 +16,45 @@ from .browser_support import launch_chromium
 
 pytestmark = pytest.mark.asyncio
 TZ = "America/Chicago"
+
+
+async def test_publication_gate_and_per_action_card_in_browser(app, fake_engine, monkeypatch):
+    from .test_release_safety import add_fact, confirm
+    from .test_connectors_growth import new_bot
+    playwright = pytest.importorskip("playwright.async_api")
+    app.settings.update({"autonomy.quiet_hours_start": "00:00", "autonomy.quiet_hours_end": "00:00"})
+    add_fact(app)
+    gate, entered = asyncio.Event(), asyncio.Event()
+
+    async def review(text, **kwargs):
+        entered.set()
+        await gate.wait()
+        return [{"claim": "Room A", "fact": "Room B"}]
+
+    monkeypatch.setattr(app.factcheck, "second_pass", review)
+    errors = []
+    async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
+        browser, page = await open_page(pw, server, errors)
+        async with browser:
+            main = app.conversations.main_id()
+            await app.conversations.run_event(main, "brief", "", trigger="brief")
+            turn = fake_engine.turns[-1]
+            await fake_engine.finish_turn(turn["thread_id"], turn["turn_id"], "Design review is in Room A.")
+            await asyncio.wait_for(entered.wait(), 2)
+            assert "Room A" not in await page.locator("body").inner_text()
+            await page.reload()
+            await page.wait_for_function("() => window.weebo?.chat?.convId")
+            assert "Room A" not in await page.locator("body").inner_text()
+            gate.set()
+            await page.get_by_text("Fact-check: Room A, but Room B.", exact=False).first.wait_for()
+            bot = new_bot(app, name="Messenger")
+            await app.approvals.handle(bot, "weebo/confirm", confirm())
+            card = page.locator(".needs-you-card")
+            await card.get_by_role("button", name="Allow once", exact=True).wait_for()
+            assert await card.get_by_role("button", name="Always allow", exact=True).count() == 0
+            await card.get_by_text("Action details", exact=True).click()
+            assert "+15551234567" in await card.inner_text()
+            assert not errors
 
 
 async def until(predicate, page, tries=100):

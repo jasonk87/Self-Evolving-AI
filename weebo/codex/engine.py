@@ -43,6 +43,7 @@ class EngineFeatures:
     skills_extra_roots: bool = False
     thread_config: bool = False  # ThreadStartParams.config: per-thread config overrides (a bot's MCP servers)
     apps: bool = False  # app/list: the user's ChatGPT apps (connectors)
+    connector_controls: bool = False  # config/read + config on start/resume + app allow-list fields
 
 
 @dataclass
@@ -347,6 +348,19 @@ class CodexEngine:
         self.loaded_threads.add(thread_id)
         return result
 
+    async def connector_inventory(self, cwd: str) -> dict[str, Any]:
+        """Names only from effective config; never expose its credential values."""
+        if not self.features.connector_controls:
+            raise ValueError("This Codex version cannot verify bot connector controls. Update Codex and run the isolation check.")
+        await self.ensure_ready()
+        result = await self.request("config/read", {"cwd": cwd, "includeLayers": False}, timeout=30)
+        config = result.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("Codex did not return effective connector configuration; bot startup was blocked.")
+        return {"mcp": list((config.get("mcp_servers") or {}).keys()),
+                "apps": {key: list((value.get("tools") or {}).keys()) for key, value in
+                         (config.get("apps") or {}).items() if key != "_default" and isinstance(value, dict)}}
+
     async def resume_thread(self, thread_id: str, **params: Any) -> dict[str, Any]:
         await self.ensure_ready()
         clean = {k: v for k, v in params.items() if v is not None}
@@ -555,7 +569,7 @@ def _thread_id_of(params: dict[str, Any]) -> str | None:
 
 def detect_features(binary: CodexBinary) -> EngineFeatures:
     """Read the engine's own protocol schema to learn which optional fields it accepts."""
-    cache_file = paths.cache_dir() / f"codex-features-v2-{binary.version_str}.json"
+    cache_file = paths.cache_dir() / f"codex-features-v3-{binary.version_str}.json"
     if cache_file.exists():
         try:
             return EngineFeatures(**json.loads(cache_file.read_text(encoding="utf-8")))
@@ -579,6 +593,10 @@ def detect_features(binary: CodexBinary) -> EngineFeatures:
         features.dynamic_tools = "dynamicTools" in thread_props
         features.skills_extra_roots = "SkillsExtraRootsSetParams" in defs
         features.thread_config = "config" in thread_props
+        features.connector_controls = (features.thread_config and "config" in
+            defs.get("ThreadResumeParams", {}).get("properties", {}) and "ConfigReadParams" in defs and
+            {"enabled", "default_tools_approval_mode"} <= set(defs.get("AppsDefaultConfig", {}).get("properties", {}))
+            and "enabled" in defs.get("AppToolConfig", {}).get("properties", {}))
         features.apps = '"app/list"' in text
         cache_file.write_text(json.dumps(features.__dict__), encoding="utf-8")
     except Exception as exc:  # feature detection is best effort

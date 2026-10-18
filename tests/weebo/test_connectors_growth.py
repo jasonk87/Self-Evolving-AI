@@ -126,8 +126,11 @@ async def test_bot_threads_get_their_connectors_when_codex_supports_it(app, fake
     fake_engine.features.thread_config = True
     await app.conversations.send(bot["conversation_id"], "hi")
     config = fake_engine.threads[-1]["config"]
-    assert config["mcp_servers.helpline.command"] == sys.executable
-    assert config["mcp_servers.helpline.args"] == [SERVER]
+    assert config["mcp_servers"]["helpline"]["command"] == sys.executable
+    args = config["mcp_servers"]["helpline"]["args"]
+    assert args[:1] == ["-I"] and Path(args[1]).name == "launch.py"
+    assert args[-3:] == ["--", sys.executable, SERVER]
+    assert config["mcp_servers"]["helpline"]["env_vars"] == []
 
 
 async def test_refused_thread_config_degrades_gracefully(app, fake_engine):
@@ -145,7 +148,8 @@ async def test_refused_thread_config_degrades_gracefully(app, fake_engine):
 
     fake_engine.start_thread = picky
     await app.conversations.send(bot["conversation_id"], "hi")
-    assert "config" not in fake_engine.threads[-1] and app.connectors.config_failed
+    assert fake_engine.threads == [] and app.connectors.config_failed
+    assert any("no unprotected retry" in m["content"] for m in app.store.list_messages(bot["conversation_id"]))
 
 
 async def test_a_connector_that_keeps_failing_is_flagged_to_the_chief(app):

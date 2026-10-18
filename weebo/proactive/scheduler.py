@@ -106,6 +106,8 @@ class Scheduler:
                 occurrence["conversation_id"], data["prompt"], data["notice"], trigger="routine",
                 notice_kind="reminder", notice_data=data["notice_data"], occurrence_id=occurrence["id"],
             )
+        from ..integrations.sms import check_deliveries
+        await check_deliveries(self.app, now)
 
     def recover_after_restart(self) -> None:
         # Queued and confirmed failed starts remain retryable. Anything that may

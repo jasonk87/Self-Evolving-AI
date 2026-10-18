@@ -318,7 +318,7 @@ class BotManager:
                 data = row["data"]
                 connectors.append({"id": cid, "status": row["status"], **{k: data.get(k) for k in
                     ("key", "tools", "rules", "command", "url", "cwd", "env_names", "app_id")}})
-        return hashlib.sha1(json.dumps({"tools": self.specs(bot), "connectors": connectors},
+        return hashlib.sha1(json.dumps({"policy_version": 2, "tools": self.specs(bot), "connectors": connectors},
                                       sort_keys=True).encode()).hexdigest()[:12]
 
     def allows_tool(self, bot: dict[str, Any], name: str) -> bool:
@@ -331,7 +331,12 @@ class BotManager:
         if "act" not in bot["data"].get("autonomy", []):
             return approval if approval != "never" else "on-request", "read-only", {"type": "readOnly",
                                                                                    "networkAccess": False}
-        return approval, mode, policy
+        # Bots cannot inherit unrestricted network access from the chief's
+        # global Full mode. Outward command escapes need a per-action decision.
+        if mode == "danger-full-access":
+            approval, mode, policy = sandbox_for("balanced", extra_roots)
+        policy = {**policy, "networkAccess": False}
+        return "on-request" if approval == "never" else approval, mode, policy
 
     # ------------------------------------------------------------------ instructions and context
     def developer_instructions(self, bot: dict[str, Any]) -> str:
@@ -355,6 +360,9 @@ turn; follow the latest one.
 - Without asking you may: {autonomy}. Anything beyond that (sending, paying, deleting, contacting people, new tools,
   connectors, a bigger model or budget) needs a yes: say in a report what you'd do, or ask with
   `propose_profile_change`. Never try to grant yourself anything.
+- Sending, spending and contacting people require a fresh, specific user approval for each action, even if an old
+  standing rule allowed them. Native connectors currently expose declared read tools only. Do not bypass this via
+  a command, another connector or an agent; report the block to the chief. Use Weebo's gated integrations when available.
 - When {user} tells you in this chat how to do your job differently, save it with `save_standing_rule`.
 - When you can't do something at all (no tool or connector for it), call `report_capability_gap`.
 - You don't talk to other bots. If another bot should help, say so in your report and the chief relays it.

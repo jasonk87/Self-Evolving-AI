@@ -103,7 +103,7 @@ class FactCheck:
     def note(issues: list[dict[str, Any]]) -> str:
         return "Fact-check: " + "; ".join(f"{i['claim']}, but {i['fact']}" for i in issues[:5]) + "."
 
-    async def second_pass(self, text: str) -> list[dict[str, Any]]:
+    async def second_pass(self, text: str, *, strict: bool = False) -> list[dict[str, Any]]:
         """A cheap model pass on the fast tier, only when the text makes claims about stored facts."""
         if not self.app.settings.get("facts.second_pass"):
             return []
@@ -130,14 +130,24 @@ class FactCheck:
                               developer_instructions="You are a strict, literal fact checker. Output JSON only.")
             self.app.count_background_turn("factcheck")
             from ..brain.mind import extract_json
-            return [i for i in (extract_json(reply) or {}).get("issues", []) if i.get("claim") and i.get("fact")][:5]
+            parsed = extract_json(reply)
+            if not isinstance(parsed, dict) or not isinstance(parsed.get("issues"), list) or any(
+                not isinstance(i, dict) or not isinstance(i.get("claim"), str) or not isinstance(i.get("fact"), str)
+                or not i["claim"].strip() or not i["fact"].strip() for i in parsed["issues"]
+            ):
+                raise ValueError("Fact checker returned an invalid result")
+            return parsed["issues"][:5]
         except (OneShotError, ValueError, Exception) as exc:  # a failed check is reported, never fatal
             logger.info("Second-pass fact check skipped: %s", exc)
+            if strict:
+                raise ValueError("The second-pass fact check could not be completed.") from exc
             return []
 
     async def review_turn(self, conv_id: str, message_id: str, text: str) -> None:
-        """After a brief or draft is written: run the second pass and flag what it finds under the text."""
-        issues = await self.second_pass(text)
+        """Normal chat stays live; its advisory check follows the published answer."""
+        issues = self.check(text)
+        if not issues:
+            issues = await self.second_pass(text)
         if not issues:
             return
         store = self.app.store

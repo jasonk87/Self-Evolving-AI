@@ -10,8 +10,9 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
-import os
 from typing import Any
+
+from .launch import connector_environment
 
 PROTOCOL = "2025-06-18"
 CLIENT = {"name": "weebo-onboarding", "version": "1"}
@@ -29,7 +30,7 @@ class _Stdio:
         self._stderr_tail = b""
 
     async def open(self) -> None:
-        env = {**os.environ, **(self.env or {})}
+        env = {**connector_environment(), **(self.env or {})}
         try:
             self.proc = await asyncio.create_subprocess_exec(
                 *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

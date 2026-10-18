@@ -12,6 +12,8 @@ Trouble always escapes the log: a stuck or failing bot is never silent.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
+import json
 import re
 import shlex
 import time
@@ -27,6 +29,7 @@ if TYPE_CHECKING:
 logger = log.get("policy")
 
 HARD = ("send", "spend", "contact_people", "delete", "permissions")
+PER_ACTION = ("send", "spend", "contact_people", "permissions")
 TROUBLE = ("failed", "blocked")
 NEEDS_YOU_CARD = "needs-you"
 _DELETE = re.compile(r"(?:^|[\s;&|])(?:rm|rmdir|del|erase|remove-item|rd|shred|unlink)\b|git\s+(?:clean|branch\s+-D)",
@@ -210,7 +213,7 @@ class ApprovalPolicy:
         return self.app.store.query("SELECT * FROM standing_rules ORDER BY created_at")
 
     def add_rule(self, scope: str, action: str, target: str, actor: str, effect: str = "allow", once: bool = False,
-                 note: str = "") -> dict[str, Any]:
+                 note: str = "", request_key: str = "") -> dict[str, Any]:
         if action not in AUTONOMY + ("command", "file_change", "permissions") and not action.startswith("connector:"):
             raise ValueError(f"Unknown action kind {action!r}.")
         if scope != "*" and not self.app.bots.get(scope):
@@ -218,7 +221,8 @@ class ApprovalPolicy:
         scope = "*" if scope == "*" else self.app.bots.get(scope)["id"]  # type: ignore[index]
         rule = {"id": new_id("sr"), "scope": scope, "action": action, "target": (target or "").strip()[:300],
                 "effect": effect, "created_at": time.time(),
-                "data": {"added_by": actor, "once": bool(once), "note": note[:300], "uses": 0}}
+                "data": {"added_by": actor, "once": bool(once), "note": note[:300], "uses": 0,
+                         "request_key": request_key}}
         self.app.store._insert("standing_rules", rule)
         self.app.store.journal("policy.rules", f"{'Allowed' if effect == 'allow' else 'Denied'} {action} "
                                f"{rule['target'] or '(anything)'} for {self._scope_name(scope)}"
@@ -257,6 +261,9 @@ class ApprovalPolicy:
                 parts = command.split()
             info["target"] = " ".join(parts[:2])[:120]
             info["action"] = "delete" if _DELETE.search(command) else "send" if _SEND.search(command) else "command"
+            if params.get("networkApprovalContext") or params.get("additionalPermissions") \
+                    or params.get("proposedNetworkPolicyAmendments"):
+                info["action"] = "permissions"  # an opaque script/network escape cannot inherit act autonomy
         elif kind == "file_change":
             changes = params.get("fileChanges") or params.get("changes") or {}
             files = list(changes.keys()) if isinstance(changes, dict) else []
@@ -281,6 +288,15 @@ class ApprovalPolicy:
         else:
             info.update(action="act", label=str(params.get("title") or params.get("reason") or "go ahead"))
         info["hard"] = info["action"] in HARD
+        info["details"] = str(params.get("command") or params.get("reason") or params.get("message") or "")[:2000]
+        info["per_action"] = info["action"] in PER_ACTION or (kind == "elicitation" and info["action"] != "read")
+        if info["per_action"]:
+            info["hard"] = True
+            # Bind the yes to the actual recipient/body/command/arguments, not
+            # merely "send_text_message" or "git push". Routing IDs vary on retry.
+            detail = {k: v for k, v in params.items() if k not in
+                      ("threadId", "turnId", "itemId", "callId", "requestId", "elicitationId", "approvalId", "startedAtMs")}
+            info["request_key"] = hashlib.sha256(json.dumps(detail, sort_keys=True, default=str).encode()).hexdigest()
         return info
 
     def decide(self, bot: dict[str, Any], info: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
@@ -300,6 +316,9 @@ class ApprovalPolicy:
         for rule in rules:
             if info["hard"] and rule["data"].get("added_by") != "user":
                 continue  # only the user's own yes opens a hard gate
+            if info.get("per_action") and (not rule["data"].get("once") or not info.get("request_key")
+                                           or rule["data"].get("request_key") != info["request_key"]):
+                continue  # outward actions require a new, exact yes every time
             return "allow", rule
         autonomy = set(bot["data"].get("autonomy") or [])
         if not info["hard"] and (action in autonomy or (action in ("command", "file_change") and "act" in autonomy)):
@@ -350,12 +369,15 @@ class ApprovalPolicy:
         for item in existing:  # the same ask again (a retry) doesn't pile up
             if item["data"].get("bot_id") == bot["id"] and item["data"].get("action") == info["action"] \
                     and item["data"].get("target") == info.get("target"):
-                return item
+                if item["data"].get("request_key", "") == info.get("request_key", ""):
+                    return item
         now = time.time()
         item = {"id": new_id("ny"), "status": "open", "created_at": now, "updated_at": now,
                 "data": {"bot_id": bot["id"], "bot_name": bot["name"], "action": info["action"],
                          "target": info.get("target", ""), "summary": f"{bot['name']} wants to {info['label']}"[:300],
                          "hard": info["hard"], "kind": info["kind"], "task_id": task_id, "agent": agent,
+                         "per_action": info.get("per_action", False), "request_key": info.get("request_key", ""),
+                         "details": info.get("details", ""),
                          "job_id": job["id"] if job else None, "urgent": urgent}}
         store._insert("needs_you", item)
         store.journal("policy", f"{bot['name']} needs the user's OK: {info['label'][:120]}",
@@ -382,6 +404,10 @@ class ApprovalPolicy:
         if not item or item["status"] != "open":
             raise ValueError("That request was already decided.")
         data = item["data"]
+        if actor != "user" and decision != "deny":
+            raise ValueError("Only the user can approve a needs-you request.")
+        if decision == "always" and (data.get("per_action") or data["action"] in PER_ACTION):
+            raise ValueError("This outward action needs Allow once for each request; Always allow is unavailable.")
         bot = self.app.bots.get(data.get("bot_id"))
         status = "denied" if decision == "deny" else "approved"
         store._update("needs_you", "id", item_id, {"status": status, "updated_at": time.time(),
@@ -394,7 +420,7 @@ class ApprovalPolicy:
                                                "Don't retry it.")
         else:
             self.add_rule(bot["id"], data["action"], data.get("target", ""), actor, once=decision == "approve",
-                          note=data["summary"])
+                          note=data["summary"], request_key=data.get("request_key", ""))
             if bot["status"] == "active":
                 try:
                     await self.app.bots.message(bot["id"], f"The user approved: {data['summary']}. Go ahead and do "

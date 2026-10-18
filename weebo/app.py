@@ -248,7 +248,7 @@ class WeeboApp:
         if getattr(turn, "workflow", None):
             self._start_job(self.growth.on_step_finished(turn.workflow,
                             "done" if status == "completed" else "failed", turn.final_text), "workflow-step")
-        if turn.trigger in ("brief", "idea") and status == "completed" and turn.final_text \
+        if turn.trigger in ("user", "brief", "idea") and status == "completed" and turn.final_text \
                 and not getattr(turn, "factchecked", False):
             self._start_job(self.factcheck.review_turn(conv_id, turn.final_message_id, turn.final_text), "factcheck")
         if turn.trigger in ("brief", "routine", "agent_report", "followup", "bot_report") and status == "completed":

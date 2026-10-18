@@ -530,10 +530,12 @@ function renderNeedsYou(msg, ctx) {
     const row = el("div", { class: `ny-item${d.hard ? " hard" : ""}` },
       el("div", { class: "ny-text" }, el("span", { text: d.summary }),
         d.hard ? el("span", { class: "pill st-failed", text: d.action === "contact_people" ? "contacts people" : d.action }) : null));
+    if (d.details) row.append(el("details", {}, el("summary", { text: "Action details" }), el("pre", { class: "cmd-line", text: d.details })));
     if (!ctx.readOnly) {
       row.append(el("div", { class: "card-actions" },
         act(ctx, "Allow once", `/api/needs-you/${item.id}/approve`, { kind: "primary" }),
-        act(ctx, "Always allow", `/api/needs-you/${item.id}/always`),
+        d.per_action || ["send", "spend", "contact_people"].includes(d.action) ? null
+          : act(ctx, "Always allow", `/api/needs-you/${item.id}/always`),
         act(ctx, "Deny", `/api/needs-you/${item.id}/deny`, { kind: "ghost" })));
     }
     card.append(row);

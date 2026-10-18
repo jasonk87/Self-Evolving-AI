@@ -72,7 +72,8 @@ async def test_hard_gates_open_only_with_the_users_own_rule(app):
     assert await ask(app, bot, "git push origin fix") == {"decision": "decline"}  # act doesn't cover sending
     app.approvals.add_rule(bot["id"], "send", "git push", "chief")  # the chief can't open a hard gate
     assert await ask(app, bot, "git push origin fix") == {"decision": "decline"}
-    app.approvals.add_rule(bot["id"], "send", "git push", "user")
+    info = app.approvals.describe(bot, COMMAND, {"command": "git push origin fix", "cwd": "/tmp"})
+    app.approvals.add_rule(bot["id"], "send", "git push", "user", once=True, request_key=info["request_key"])
     assert await ask(app, bot, "git push origin fix") == {"decision": "accept"}
     assert await ask(app, bot, "rm -rf build") == {"decision": "decline"}  # deleting is its own gate
 

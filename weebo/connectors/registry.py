@@ -9,14 +9,18 @@ rules), assign to bots (a gated profile change), and monitor (failures and use f
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import shlex
+import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .. import log
 from ..store import new_id
 from .mcp_client import MCPClient, MCPError
+from .launch import connector_environment, validate_names
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -96,7 +100,7 @@ class Connectors:
             if transport == "http" and not url.startswith(("http://", "https://")):
                 raise ConnectorError("An HTTP connector needs an http(s) url.")
             data.update(transport=transport, command=command, url=url, cwd=manifest.get("cwd") or None,
-                        env_names=[str(n) for n in manifest.get("env_names") or []])
+                        env_names=validate_names(manifest.get("env_names", [])))
         else:
             data["app_id"] = str(manifest.get("app_id") or "").strip()
             data["install_url"] = str(manifest.get("install_url") or "")
@@ -140,7 +144,7 @@ class Connectors:
                 result.update(ok=True, found=[match.get("name") or data["app_id"]])
             else:
                 async with MCPClient(data["transport"], command=data.get("command"), url=data.get("url", ""),
-                                     cwd=data.get("cwd")) as client:
+                                     cwd=data.get("cwd"), env=connector_environment(data.get("env_names"))) as client:
                     tools = await client.list_tools()
                     found = [t.get("name") for t in tools]
                     declared = [t["name"] for t in data["tools"]]
@@ -250,23 +254,50 @@ class Connectors:
         row = self._match_server(server)
         return bool(row and row in approved and (not tool or any(t["name"] == tool for t in row["data"].get("tools", []))))
 
-    def thread_config(self, bot: dict[str, Any]) -> dict[str, Any]:
-        """Extra thread/start params giving a bot its approved MCP connectors, when the installed Codex accepts
-        per-thread config (checked against its schema). Otherwise empty: scope is enforced in Weebo instead."""
+    async def prepare_thread(self, bot: dict[str, Any], cwd: str) -> dict[str, Any]:
+        await self.app.engine.ensure_ready()
+        if not getattr(self.app.engine.features, "connector_controls", False) or not self.app.engine.features.thread_config:
+            raise ConnectorError("Bot native connector isolation is unavailable in this Codex version. "
+                                 "Update Codex and run python -m weebo.connectors.check_isolation --probe.")
+        inventory = await self.app.engine.connector_inventory(cwd)
+        return self.thread_config(bot, inventory)
+
+    def thread_config(self, bot: dict[str, Any], inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Native read-only connector allowlist. Outward tools stay disabled pending live approval acceptance."""
         features = getattr(self.app.engine, "features", None)
-        if self.config_failed or not getattr(features, "thread_config", False):
+        if self.config_failed:
+            raise ConnectorError("Native bot connector controls failed. Resolve the isolation check and restart Weebo.")
+        if not getattr(features, "thread_config", False):
             return {}
-        config: dict[str, Any] = {}
+        # Replace entire tables. Per-key dotted overrides preserve inherited
+        # grants and cannot safely address connector IDs containing dots.
+        config: dict[str, Any] = {"mcp_servers": {}, "apps": {"_default": {
+            "default_tools_approval_mode": "prompt", "enabled": False, "approvals_reviewer": "user"}}}
         for connector_id in bot["data"].get("connectors") or []:
             row = self.get(connector_id)
-            if not row or row["status"] != "approved" or row["kind"] != "mcp":
+            if not row or row["status"] != "approved":
+                continue
+            if row["kind"] == "app":
+                config["apps"][row["data"]["app_id"]] = {
+                    "enabled": True, "default_tools_enabled": False, "destructive_enabled": False,
+                    "open_world_enabled": False, "default_tools_approval_mode": "prompt", "approvals_reviewer": "user",
+                    "tools": {t["name"]: {"enabled": t["risk"] == "read", "approval_mode": "prompt"}
+                              for t in row["data"].get("tools", [])}}
                 continue
             key, data = row["data"]["key"], row["data"]
+            read_tools = [t["name"] for t in data.get("tools", []) if t["risk"] == "read"]
+            server = config["mcp_servers"][key] = {"enabled": bool(read_tools), "enabled_tools": read_tools,
+                                                  "default_tools_approval_mode": "prompt"}
             if data["transport"] == "stdio":
-                config[f"mcp_servers.{key}.command"] = data["command"][0]
-                config[f"mcp_servers.{key}.args"] = data["command"][1:]
+                server["command"] = sys.executable
+                args = ["-I", str(Path(__file__).with_name("launch.py")), "--env-names",
+                        json.dumps(data.get("env_names") or [])]
+                if data.get("cwd"):
+                    args += ["--cwd", data["cwd"]]
+                server["args"] = [*args, "--", *data["command"]]
+                server["env_vars"] = data.get("env_names") or []
             else:
-                config[f"mcp_servers.{key}.url"] = data["url"]
+                server["url"] = data["url"]
         return {"config": config} if config else {}
 
     def record_use(self, server: str, ok: bool, error: str = "") -> None:

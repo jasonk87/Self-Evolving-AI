@@ -33,7 +33,9 @@ stuck, keeps failing or goes over budget is reported, never silent.
 matches a standing rule you set ("decided for you", listed in the brief); you decide the hard gates (sending,
 paying, deleting, contacting people, new tools, bigger caps). A bot never waits on you: what needs you goes onto one
 bundled **needs you** card in the chat ("Allow once", "Always allow", "Deny"), and only urgent items reach your phone.
-"Always allow" is saved as a standing rule you can revoke. Reports go to **interrupt**, **brief** or **log** by rules
+For sending, spending, contacting people and non-read connector requests, **Allow once** is required for the exact
+action each time (recipient, body and arguments included); legacy "always" rules cannot approve these. The card
+shows action details and hides **Always allow** for them. Other "Always allow" rules remain revocable. Reports go to **interrupt**, **brief** or **log** by rules
 learned from what you say ("I don't care about nightly PR fixes" → log); log-only stays searchable, and trouble always
 reaches at least the brief.
 
@@ -43,10 +45,13 @@ is registered from a manifest, **tested with your authorization** (Weebo starts 
 checks them against the manifest and makes declared read-only test calls), **approved** by you with a risk label per tool (tools that spend money or
 contact people need a rule in your words), **assigned** to bots as a gated change, and **monitored** (one that keeps
 failing is flagged to the chief). Onboarding is not an OS sandbox; only test trusted programs. Weebo scopes its own
-dynamic tools and supplies per-thread MCP configuration when supported. Native Codex connector calls still have
-an isolation gap: inherited global servers are not comprehensively disabled, and notification-based interruption
-can happen after a call starts. Do not treat this fallback as a security boundary; see the
-[bug audit and remaining issues](weebo/AUDIT_2026_10_17.md).
+dynamic tools and reads effective Codex config before bot/owned-agent startup: unassigned native servers/apps are
+disabled, and assigned connectors expose **declared read tools only**. Native outward tools remain unavailable until
+real-app pre-execution approval is accepted in live testing. If required controls are unavailable or rejected, bot
+startup fails visibly instead of retrying without protection. Normal chief chat is unchanged.
+Stdio testing and runtime pass only basic OS launch variables plus the manifest's exact `env_names`; no blanket
+inheritance of Weebo's secrets. This is not a filesystem sandbox. See the
+[release fixes and live acceptance checklist](weebo/RELEASE_SAFETY_TESTING.md), including the local isolation probe.
 
 **Day sheet and Ideas.** For the next days, each event is enriched by code from the facts store and real sources:
 weather at its time and place (OpenWeather forecast, your own key), travel time **only from a directions source**
@@ -79,11 +84,15 @@ and hand-off props. Reduced motion (the setting or your system preference) keeps
 **Reliability.** Facts about events, email, people and commitments come from the facts store with provenance and
 freshness, with instructions to look them up in the same turn (see the facts section below). Brief/idea responses
 receive a deterministic check for supported timing and cancellation claims, and a fast-tier second pass can review
-stored-fact claims (setting `facts.second_pass`). These are advisory checks: text can stream before checking finishes,
-and the model-based review runs after the turn. They are not a pre-publication guarantee for every factual statement.
+stored-fact claims (setting `facts.second_pass`). Briefs and Ideas/drafts are held out of the websocket and chat history
+until checking finishes. Mismatches or incomplete checks are flagged **above** the answer before publication. Stop
+discards the withheld answer. Normal chat still streams and receives advisory checks afterwards. This does not prove
+every factual statement: unsupported claims and failed/disabled checks are not certified as correct.
 Calendar bookings are read back and checked for matching identity, title, description and start/end instants;
 ambiguous or nonexistent local booking times require an explicit offset. Texts are checked against Twilio's own
-acceptance response (not a delivery read-back). Email threads are recorded from a mail connector's raw tool results,
+acceptance response, then the original message ID is polled after about a minute (up to five checks). Delivered,
+failed and unverified outcomes appear in the chief's chat; pending checks survive restarts and never resend the text.
+Email threads are recorded from a mail connector's raw tool results,
 never from a model's summary; unread alone does not mean a reply is owed. The
 reliability suite gates every upgrade, and every captured miss becomes a test.
 
@@ -95,8 +104,8 @@ New settings: `bots.*`, `connectors.*` and `growth.*` (sensitive: only you can c
 
 **Not available yet, said plainly:** no directions source ships with Weebo (travel time stays unknown until you
 connect one); ChatGPT apps and per-thread connector config work only when your installed Codex offers them (Weebo
-reads its schema and says so otherwise); free-form chat answers are grounded by the facts rules and receipts, but
-only the brief and drafts get the fact-check pass.
+reads its schema and says so otherwise); native outward connector tools remain disabled pending live acceptance.
+Your own messages to bots retain the existing budget exemption; autonomous bot work still obeys its caps.
 
 ### Facts foundation (Phase 1)
 
