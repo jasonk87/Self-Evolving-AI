@@ -178,6 +178,22 @@ without waiting for external enrichment. The final implementation stayed unchang
 the live v5 database migrated to v6 with all existing table counts preserved and integrity OK; a separate verified
 pre-Feed backup is retained under local `weebo_data/backups/`. CI and physical-phone checks are separate results.
 
+### Phone offline-screen recovery (2026-10-18)
+
+- Regression reproduced with the real service worker: a temporary 503 leaves the old offline page stranded after
+  the server returns. The page now probes the current origin with no cache or expired API token, then reloads only
+  for a real Weebo page or its access-key page. Error pages do not count as recovery.
+- Retry is bounded by a five-second request timeout and backs off to fifteen seconds. Hidden pages stop polling;
+  network-return and visibility events check again. The current hostname is visible for diagnosing old shortcuts.
+- Four browser cases cover phone network loss, upstream 502/503/504 restart failures, manual retry, the access-key
+  gate, returning to the foreground, and keeping private pages out of the service-worker cache.
+- Physical-phone follow-up: open the current Tailscale URL once to load the updated worker. An old offline screen
+  cannot download a fix while disconnected, and a shortcut to a retired hostname must be reopened at the current
+  address. This change does not enable a second Tailscale node, alter networking, or bypass authentication.
+- Verified: **878 Weebo tests** and **1,639 repository tests plus 13 subtests** passed, with the existing platform
+  skips only. Self-test passed; all 14 UI modules and the service worker parse. The live HTTPS/Tailscale app also
+  recovered automatically after taking only the test browser offline; this is not a physical-phone test.
+
 ### Native connector / SMS acceptance (unchanged)
 
 - [ ] With the user's real connector configuration, verify two bots see only their assigned read tools, including
