@@ -5,6 +5,7 @@ working when an upgrade breaks everything else (and the change policy treats it
 as governance code that only a human may approve changes to).
 
 * Exit code 75 from the server means "restart me" (after a self-upgrade).
+* Exit code 76 means another process owns the data directory or listener; leave it alone.
 * If the server dies within the first minute after an upgrade was merged, the
   supervisor reverts the merge commit and starts the previous version again.
 * Repeated crash loops back off and eventually stop instead of spinning forever.
@@ -20,6 +21,7 @@ import time
 from pathlib import Path
 
 RESTART_CODE = 75
+STARTUP_CONFLICT_CODE = 76
 EARLY_CRASH_SECONDS = 60
 MAX_FAST_CRASHES = 5
 
@@ -101,6 +103,9 @@ def supervise(child_args: list[str]) -> int:
             return 0
         uptime = time.time() - started
         restarted = True
+        if code == STARTUP_CONFLICT_CODE:
+            _say("The data directory or listener is already in use; stopping this launch.")
+            return code  # Neither roll back code nor stop another instance's helper.
         if code == 0:
             _stop_helpers()
             return 0
