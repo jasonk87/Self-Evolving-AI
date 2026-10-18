@@ -81,9 +81,10 @@ export class NotificationInbox {
   action(note) {
     const data = note.data || {};
     let action;
-    if (data.proposal_id) action = { label: "Review", run: () => this.app.panels.open("evolution", { proposal: data.proposal_id }) };
+    // Results live in the chat now: go to the card there, and only fall back to a panel when there isn't one.
+    if (data.proposal_id) action = { label: "Show me", run: () => this.app.showInChat(`evolution:${data.proposal_id}`, () => this.app.panels.open("evolution", { proposal: data.proposal_id })) };
+    else if (data.task_id) action = { label: "Show me", run: () => this.app.showInChat(`agent:${data.task_id}`, () => this.app.panels.open("agents", { task: data.task_id })) };
     else if (data.conversation_id) action = { label: "Open", run: () => this.app.openConversation(data.conversation_id) };
-    else if (data.task_id) action = { label: "Open", run: () => this.app.panels.open("agents", { task: data.task_id }) };
     else return { label: "Open", run: () => this.open(note) };
     return { label: action.label, run: () => { action.run(); this.markRead(note.id); } };
   }

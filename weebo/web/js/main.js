@@ -1,7 +1,7 @@
 // Weebo 2.0 — app controller: state, sidebar, live events, moods.
-import { api, connect, on, onConnection } from "./api.js";
+import { api, connect, on, onConnection, serverHasNewSession } from "./api.js";
 import { director, WeeboAvatar } from "./avatar.js";
-import { ChatView } from "./chat.js";
+import { ChatView, ACTIVITY_MOODS } from "./chat.js";
 import { icon } from "./icons.js";
 import { Panels } from "./panels.js";
 import { el, btn, toast, modal, timeAgo, confirmDialog, $ } from "./ui.js";
@@ -15,7 +15,8 @@ const THEME_KEY = "weebo.theme";
 
 class App {
   constructor() {
-    this.state = { settings: {}, engine: {}, conversations: [], deskId: null, tasks: [], proposals: [], unread: 0, lan: {} };
+    this.state = { settings: {}, engine: {}, conversations: [], deskId: null, tasks: [], proposals: [], unread: 0, lan: {},
+      bots: [], activity: null, ideasOpen: 0 };
     this.currentConvId = null;
     this.busyConvs = new Set();
     this.taskProgress = new Map();
@@ -23,6 +24,8 @@ class App {
     this.readyProposals = 0;
     this.heartbeatBusy = null;
     this.lastInput = Date.now();
+    this.engineRevision = 0;
+    this.activityRevision = 0;
   }
 
   async start() {
@@ -46,17 +49,24 @@ class App {
   }
 
   async bootstrap() {
+    const engineRevision = this.engineRevision;
+    const activityRevision = this.activityRevision;
     const data = await api.get("/api/bootstrap");
     this.state.settings = data.settings;
-    this.state.engine = data.snapshot.engine;
+    // An engine/hello event may have arrived while the HTTP snapshot was in flight.
+    if (this.engineRevision === engineRevision) this.setEngine(data.snapshot.engine);
+    if (data.snapshot.restart_reason) this.showRestarting(data.snapshot.restart_reason);
     this.state.conversations = data.conversations;
     this.state.deskId = data.desk_id;
     this.state.lan = data.lan;
+    this.state.bots = data.bots || [];
+    this.state.ideasOpen = data.ideas_open || 0;
     setWorkspaceRoot(data.snapshot.workspace);
     this.notifications.read(data.read_notification_ids || []);
     for (const note of data.notifications) this.notifications.receive(note);
     await this.notifications.reconcile();
     this.runningTasks = data.tasks.filter((t) => t.status === "running" || t.status === "queued").length;
+    for (const [id, live] of Object.entries(data.task_live || {})) this.taskProgress.set(id, live.progress || "Working…");
     this.state.proposals = data.proposals;
     this.readyProposals = data.proposals.filter((p) => p.status === "ready").length;
     this.evolving = data.proposals.some((p) => ["building", "checking", "merging"].includes(p.status));
@@ -67,10 +77,9 @@ class App {
     this.renderSidebar();
     this.renderBadges();
     for (const p of data.snapshot.pending_interactions || []) this.announceInteraction(p);
-    const saved = localStorage.getItem(ACTIVE_KEY);
-    const target = this.state.conversations.find((c) => c.id === saved) ? saved : null;
-    if (target) await this.openConversation(target);
-    else await this.newChat();
+    this.mainId = data.desk_id;  // the one chat; older chats are read from the archive
+    await this.openMain();
+    if (data.activity && this.activityRevision === activityRevision) this.setActivity(data.activity);
     this.routeProposal();
     director.setBase(this.restingMood());
   }
@@ -80,7 +89,11 @@ class App {
     window.addEventListener("hashchange", () => this.routeProposal());
     window.addEventListener("popstate", () => this.routeProposal());
     document.querySelectorAll("[data-icon]").forEach((n) => n.insertAdjacentHTML("afterbegin", icon(n.dataset.icon, Number(n.dataset.iconSize || 18))));
-    $("#new-chat").addEventListener("click", () => this.newChat());
+    document.querySelectorAll("[data-tab='chat']").forEach((b) => b.addEventListener("click", () => {
+      this.panels.close();
+      document.body.classList.remove("sidebar-open");
+      if (this.currentConvId !== this.mainId) this.openMain();
+    }));
     $("#menu-btn").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
     $("#scrim").addEventListener("click", () => { document.body.classList.remove("sidebar-open"); this.panels.close(); });
     $("#theme-btn").addEventListener("click", () => {
@@ -97,7 +110,7 @@ class App {
     $("#conv-title").addEventListener("click", () => this.renameConversation(this.currentConvId));
     this.sidebarWeebo = new WeeboAvatar($("#brand-weebo"), { size: 34, track: false });
     document.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); this.newChat(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); this.openMain().then(() => this.chat.input.focus()); }
       else if (e.key === "Escape" && this.panels.current && !document.querySelector(".modal-backdrop")) this.panels.close();
       else if (e.key === "/" && document.activeElement === document.body) { e.preventDefault(); this.chat.input.focus(); }
     });
@@ -118,6 +131,7 @@ class App {
 
   setConnection(state) {
     document.body.classList.toggle("offline", state !== "online");
+    $(".offline-banner").setAttribute("aria-hidden", String(state === "online"));
     if (state !== "online") director.setBase("offline");
     else director.setBase(this.restingMood());
   }
@@ -130,19 +144,52 @@ class App {
     this.chat?.updateChips();
   }
 
+  // ------------------------------------------------------------------ the team, ideas, activity
+  botFor(convId) { return this.state.bots.find((b) => b.conversation_id === convId) || null; }
+
+  setBots(bots) {
+    this.state.bots = bots;
+    this.renderBadges();
+    if (this.conversation(this.currentConvId)?.kind === "bot") { this.renderHeader(); this.chat.setReadOnly(); }
+  }
+
+  upsertBot(bot) {
+    const bots = this.state.bots.filter((b) => b.id !== bot.id);
+    if (["proposed", "active", "paused"].includes(bot.status)) bots.push(bot);
+    this.setBots(bots);
+  }
+
+  setIdeasCount(n) { this.state.ideasOpen = n; this.renderBadges(); }
+
+  /** The activity registry's snapshot drives the "now showing" slot and, when the open chat is quiet, the mood. */
+  setActivity(snapshot) {
+    this.activityRevision++;
+    this.state.activity = snapshot;
+    this.chat.stage.setActivity(snapshot, (entry) => this.openActivity(entry));
+    this.renderBadges();
+    if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
+  }
+
+  openActivity(entry) {
+    const link = entry.link || {};
+    if (link.type === "task") this.panels.open("agents", { task: link.id });
+    else if (link.type === "card") this.showInChat(link.id);
+    else if (link.type === "conversation" && link.id) {
+      this.panels.close();
+      if (link.message) this.openConversation(link.id).then(() => this.showInChat(link.message, null, link.id));
+      else this.openConversation(link.id);
+    }
+  }
+
   // ------------------------------------------------------------------ conversations
   conversation(id) { return this.state.conversations.find((c) => c.id === id); }
 
-  async newChat() {
-    const empty = this.state.conversations.find((c) => c.kind === "chat" && c.title === "New chat" && !this.busyConvs.has(c.id));
-    if (empty) return this.openConversation(empty.id);
-    try {
-      const { conversation } = await api.post("/api/conversations", {});
-      this.upsertConversation(conversation);
-      await this.openConversation(conversation.id);
-    } catch (err) {
-      toast("Couldn't start a chat", err.message, { kind: "error" });
-    }
+  // There is one chat now; "new chat" just means "back to it".
+  async newChat() { return this.openMain(); }
+
+  async openMain() {
+    if (!this.mainId) this.mainId = this.state.conversations.find((c) => c.kind === "desk")?.id;
+    if (this.mainId) await this.openConversation(this.mainId);
   }
 
   async openConversation(id) {
@@ -153,6 +200,7 @@ class App {
     this.renderSidebar();
     this.renderHeader();
     await this.chat.open(id);
+    this.readNotificationsShownInChat();
   }
 
   upsertConversation(conv) {
@@ -166,6 +214,8 @@ class App {
 
   markRead(id, conv) {
     if (conv) this.upsertConversation({ ...conv, unread: 0 });
+    const bot = this.botFor(id);
+    if (bot) { bot.unread = 0; this.renderBadges(); }
   }
 
   async renameConversation(id) {
@@ -210,6 +260,7 @@ class App {
 
   renderSidebar() {
     const list = $("#conv-list");
+    if (!list) return;  // one chat: no conversation list
     const items = this.state.conversations.filter((c) => !c.archived).map((c) => {
       const busy = this.busyConvs.has(c.id);
       const row = el("div", { class: `conv${c.id === this.currentConvId ? " active" : ""}${c.unread && c.id !== this.currentConvId ? " unread" : ""}${c.kind === "desk" ? " desk" : ""}`, role: "button", tabindex: 0,
@@ -230,13 +281,18 @@ class App {
   renderHeader() {
     const conv = this.conversation(this.currentConvId);
     $("#conv-title").textContent = conv ? conv.title : "Weebo";
-    $("#conv-title").title = conv?.kind === "desk" ? "Weebo's own conversation for briefs, routines and check-ins" : "Click to rename";
+    $("#conv-title").title = conv?.kind === "desk" ? "Your chat with Weebo" : conv?.kind === "bot" ? `Talking to ${conv.title} directly` : "An older chat";
   }
 
   renderBadges() {
     const set = (panel, n) => { document.querySelectorAll(`[data-panel="${panel}"] .badge`).forEach((b) => { b.textContent = n > 9 ? "9+" : String(n); b.hidden = !n; }); };
     set("agents", this.runningTasks);
+    set("more", this.runningTasks);
     set("evolution", this.readyProposals);
+    const waiting = (this.state.activity?.entries || []).filter((e) => e.id === "needs-you").length;
+    set("manage_bots", this.state.bots.filter((b) => b.status === "proposed").length + waiting);
+    set("bots", this.state.bots.filter(b => b.unread && b.conversation_id !== this.currentConvId).length);
+    set("feed", this.state.ideasOpen + waiting);
     set("activity", this.state.unread);
     const inboxLabel = this.state.unread ? `Notification inbox (${this.state.unread} unread)` : "Notification inbox";
     $("#inbox-btn").setAttribute("aria-label", inboxLabel);
@@ -245,6 +301,14 @@ class App {
   }
 
   setUnread(n) { this.state.unread = n; this.renderBadges(); }
+
+  setEngine(snapshot) {
+    this.engineRevision++;
+    this.state.engine = snapshot;
+    this.renderEngine();
+    this.chat.updateChips();
+    this.panels.notify("engine.status");
+  }
 
   renderEngine() {
     const e = this.state.engine || {};
@@ -261,6 +325,7 @@ class App {
     ring.classList.toggle("hot", used >= 80);
     ring.querySelector("span").textContent = e.rateLimits ? `${used}%` : "–";
     if (e.status !== "ready" && e.status) director.setBase(e.status === "login_required" || e.status === "error" ? "offline" : "thinking");
+    else if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     this.chat?.stage.setResting(this.restingCaption());
   }
 
@@ -268,6 +333,13 @@ class App {
   restingMood() {
     const e = this.state.engine || {};
     if (e.status && e.status !== "ready") return "offline";
+    const top = this.state.activity?.now;
+    if (top?.waiting_on_user) return "waiting";
+    if (top) {
+      const quiet = Date.now() / 1000 - top.last_event_at;
+      if (!(top.stale_after && quiet > top.stale_after * 6)) return ACTIVITY_MOODS[top.kind] || "thinking";
+    }
+    if (this.state.activity?.state === "sleeping") return "sleepy";
     if (this.heartbeatBusy === "dream") return "dreaming";
     if (this.heartbeatBusy === "audit") return "inspecting";
     if (this.evolving) return "evolving";
@@ -279,6 +351,8 @@ class App {
   restingCaption() {
     const e = this.state.engine || {};
     if (e.status === "login_required") return "Sign in to Codex in Settings so I can think.";
+    if (e.status === "error") return "Codex is unavailable. Check Settings for details.";
+    if (e.status === "stopped") return "Codex is stopped.";
     if (e.status && !["ready"].includes(e.status)) return "Connecting to my Codex brain…";
     if (this.heartbeatBusy === "dream") return "Dreaming… tidying my memories.";
     if (this.heartbeatBusy === "audit") return "Reviewing my own code.";
@@ -315,11 +389,24 @@ class App {
 
   // ------------------------------------------------------------------ live events
   bindEvents() {
-    on("hello", () => { this.reconcileEvolution(); this.notifications.reconcile(); });
-    on("conv.message", ({ conversation_id, message }) => {
+    on("hello", ({ engine, activity, restart_reason }) => {
+      // Events emitted while the socket was disconnected aren't replayed. Reconcile now.
+      if (engine) this.setEngine(engine);
+      if (activity) this.setActivity(activity);
+      if (restart_reason) this.showRestarting(restart_reason);
+      if (this.connectedOnce && this.chat.convId) this.chat.open(this.chat.convId, { focus: false, refresh: true });
+      this.connectedOnce = true;
+      this.refreshTaskCount();
+      this.reconcileEvolution();
+      this.notifications.reconcile();
+      if (["feed", "bots", "manage_bots"].includes(this.panels.current)) this.panels.refresh({ live: true });
+    });
+    on("conv.message", (data) => {
+      this.panels.notify("conv.message");
+      const { conversation_id, message } = data;
       if (conversation_id === this.currentConvId) {
-        const existing = this.chat.byId.get(message.id);
-        if (message.kind !== "evolution_status" || !existing || message.updated_at >= existing.updated_at) this.chat.upsert(message);
+        this.chat.receiveEvent("message", data);
+        if (message.kind === "agent_card" || message.kind === "evolution_status") this.readNotificationsShownInChat();
       }
       const conv = this.conversation(conversation_id);
       if (conv) {
@@ -327,25 +414,42 @@ class App {
         if (conversation_id !== this.currentConvId && message.role !== "user") conv.unread = 1;
         this.renderSidebar();
       }
+      const bot = this.botFor(conversation_id);
+      if (bot && message.role !== "user" && conversation_id !== this.currentConvId) {
+        bot.unread = 1; this.renderBadges();
+      }
       if (message.kind === "reminder") { director.flash("alert", 3500); this.chat.stage.say(message.content.slice(0, 80), 6000); }
     });
-    on("conv.delta", (d) => this.chat.delta(d));
-    on("conv.output", (d) => this.chat.output(d));
-    on("conv.reasoning", (d) => this.chat.reasoningDelta(d));
-    on("conv.status", (d) => { if (d.conversation_id === this.currentConvId) this.chat.stage.say(d.text, 4000); });
-    on("conv.turn.started", ({ conversation_id }) => {
+    on("conv.delta", (d) => this.chat.receiveEvent("delta", d));
+    on("conv.output", (d) => this.chat.receiveEvent("output", d));
+    on("conv.reasoning", (d) => this.chat.receiveEvent("reasoning", d));
+    on("conv.status", (d) => this.chat.receiveEvent("status", d));
+    on("conv.turn.started", (data) => {
+      this.panels.notify("conv.turn.started");
+      const { conversation_id } = data;
       this.busyConvs.add(conversation_id);
-      if (conversation_id === this.currentConvId) this.chat.turnStarted();
+      this.chat.receiveEvent("started", data);
       this.renderSidebar();
     });
     on("conv.turn.completed", (d) => {
+      this.panels.notify("conv.turn.completed");
       this.busyConvs.delete(d.conversation_id);
-      if (d.conversation_id === this.currentConvId) this.chat.turnCompleted(d);
-      else if (d.final_text && d.status === "completed") {
+      if (d.conversation_id === this.currentConvId) this.chat.receiveEvent("completed", d);
+      else if (d.final_text && d.status === "completed" && !this.botFor(d.conversation_id)) {
         const conv = this.conversation(d.conversation_id);
         toast(conv?.title || "Weebo", d.final_text.slice(0, 160), { action: { label: "Open", run: () => this.openConversation(d.conversation_id) } });
       }
       this.renderSidebar();
+    });
+    on("activity.updated", ({ activity }) => this.setActivity(activity));
+    on("bot.updated", ({ bot }) => { this.upsertBot(bot); this.panels.notify("bot.updated"); });
+    on("bot.deleted", ({ bot_id }) => { this.setBots(this.state.bots.filter((b) => b.id !== bot_id)); this.panels.notify("bot.deleted"); });
+    for (const t of ["goals.updated", "bot.report", "bot.job", "bot.change", "policy.updated", "connector.updated", "capabilities.updated", "daysheet.updated"]) {
+      on(t, () => this.panels.notify(t));
+    }
+    on("ideas.updated", async () => {
+      this.panels.notify("ideas.updated");
+      try { this.setIdeasCount((await api.get("/api/ideas")).ideas.length); } catch { /* offline */ }
     });
     on("conv.created", ({ conversation }) => this.upsertConversation(conversation));
     on("conv.updated", ({ conversation }) => this.upsertConversation(conversation));
@@ -369,6 +473,7 @@ class App {
       this.panels.notify("task.updated");
     });
     on("task.progress", ({ task_id, progress }) => {
+      this.taskProgressVersion = (this.taskProgressVersion || 0) + 1;
       if (progress) this.taskProgress.set(task_id, progress);
       this.panels.notify("task.progress");
     });
@@ -382,14 +487,14 @@ class App {
       this.panels.notify("evolution.updated");
       if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     });
-    for (const t of ["memory.added", "memory.updated", "memory.deleted", "reminder.updated", "skills.updated", "legacy.status"]) {
+    for (const t of ["memory.added", "memory.updated", "memory.deleted", "reminder.updated", "skills.updated", "evals.updated"]) {
       on(t, () => this.panels.notify(t));
     }
 
     on("notify", ({ notification }) => this.onNotification(notification));
     on("notifications.read", ({ ids }) => this.notifications.read(ids));
-    on("interaction.pending", ({ interaction }) => this.announceInteraction(interaction));
-    on("engine.status", (snapshot) => { this.state.engine = snapshot; this.renderEngine(); this.chat.updateChips(); this.panels.notify("engine.status"); });
+    on("interaction.pending", ({ interaction }) => { this.announceInteraction(interaction); this.panels.notify("interaction.pending"); });
+    on("engine.status", (snapshot) => this.setEngine(snapshot));
     on("engine.usage", ({ rateLimits }) => { this.state.engine = { ...this.state.engine, rateLimits }; this.renderEngine(); });
     on("settings.updated", ({ settings }) => { this.applySettings(settings); this.panels.notify("settings.updated"); });
     on("weebo.mood", ({ mood, background, conversation_id }) => {
@@ -414,12 +519,34 @@ class App {
   }
 
   async refreshTaskCount() {
+    const generation = this.taskRefreshGeneration = (this.taskRefreshGeneration || 0) + 1;
+    const progressVersion = this.taskProgressVersion || 0;
     try {
-      const { tasks } = await api.get("/api/tasks");
+      const { tasks, live } = await api.get("/api/tasks");
+      if (generation !== this.taskRefreshGeneration) return;
       this.runningTasks = tasks.filter((t) => t.status === "running" || t.status === "queued").length;
+      if (progressVersion === (this.taskProgressVersion || 0)) {
+        this.taskProgress.clear();
+        for (const task of tasks.filter((t) => ["running", "queued"].includes(t.status))) {
+          this.taskProgress.set(task.id, live?.[task.id]?.progress || "Working…");
+        }
+      }
+      this.panels.notify("task.updated");
       this.renderBadges();
       if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     } catch { /* offline */ }
+  }
+
+  // The chat card a notification is about (an agent's result, an upgrade), if the open chat shows it.
+  cardFor(note) {
+    const d = note?.data || {};
+    const id = d.task_id ? `agent:${d.task_id}` : d.proposal_id ? `evolution:${d.proposal_id}` : null;
+    return id && this.currentConvId === this.mainId && this.chat.byId.has(id) ? id : null;
+  }
+
+  // A notification about something the chat already shows has done its job: nothing to go and check.
+  readNotificationsShownInChat() {
+    for (const note of this.notifications.records()) if (this.cardFor(note)) this.notifications.markRead(note.id);
   }
 
   onNotification(n) {
@@ -427,7 +554,9 @@ class App {
     const kind = { reminder: "warn", approval: "warn", evolution: "success", agent: "info" }[n.kind] || "info";
     const data = n.data || {};
     const action = this.notifications.action(n);
-    if (n.kind !== "approval") toast(n.title, n.body || "", { kind, timeout: n.kind === "reminder" ? 0 : 7000, action });
+    const inChat = this.cardFor(n);
+    if (inChat) this.notifications.markRead(n.id);
+    if (n.kind !== "approval" && !inChat) toast(n.title, n.body || "", { kind, timeout: n.kind === "reminder" ? 0 : 7000, action });
     if (n.kind === "reminder" || n.kind === "approval") director.flash("alert", 3000);
     if (n.kind === "evolution" && /upgraded/i.test(n.title)) director.flash("celebrate", 3500);
     if (data.speak) speak(`${n.title}. ${n.body}`);
@@ -441,20 +570,24 @@ class App {
   }
 
   showRestarting(reason) {
-    const overlay = el("div", { class: "restart-overlay" });
+    if (this.restartOverlay) return; // A batch of upgrades must have only one screen and poller.
+    const overlay = this.restartOverlay = el("div", { class: "restart-overlay", role: "status", "aria-live": "polite" });
     const host = el("div", { class: "restart-weebo" });
-    overlay.append(host, el("h2", { text: "Weebo is restarting" }), el("p", { class: "muted", text: reason || "Back in a few seconds…" }));
+    const progress = el("p", { class: "muted", text: "Waiting for the new process…" });
+    overlay.append(host, el("h2", { text: "Weebo is restarting" }), el("p", { class: "muted", text: reason || "Applying the restart." }), progress);
     document.body.append(overlay);
-    new WeeboAvatar(host, { size: 140, track: false });
-    director.setBase("evolving");
-    // Wait for the old process to go away (or 10s), then for the new one to answer.
-    let sawDown = false;
+    // Connection losses, chat completions and background moods must not replace this pose.
+    const avatar = new WeeboAvatar(host, { size: 140, track: false, follow: false });
+    avatar.setMood("syncing");
     const started = Date.now();
     const poll = async () => {
-      let up = false;
-      try { up = (await fetch("/", { cache: "no-store" })).ok; } catch { up = false; }
-      if (!up) sawDown = true;
-      if (up && (sawDown || Date.now() - started > 10000)) { location.reload(); return; }
+      // A healthy old process (or a brief network outage) isn't a completed restart.
+      // Only a fresh per-launch session proves that the replacement is serving the page.
+      if (await serverHasNewSession()) { location.reload(); return; }
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      progress.textContent = seconds >= 30
+        ? `Still waiting for Weebo to restart · ${seconds}s. This page will reconnect automatically.`
+        : `Waiting for the new process · ${seconds}s`;
       setTimeout(poll, 1000);
     };
     setTimeout(poll, 1000);
@@ -497,6 +630,18 @@ class App {
   }
 
   openPanel(name, opts) { this.panels.open(name, opts); }
+
+  /** Open the main chat at a card (an upgrade, an agent), or run ``fallback`` when the chat has no such card. */
+  async showInChat(messageId, fallback, convId = null) {
+    this.panels.close();
+    if (convId && this.currentConvId !== convId) await this.openConversation(convId);
+    else if (!convId && this.currentConvId !== this.mainId) await this.openMain();
+    const node = document.querySelector(`#chat [data-id="${CSS.escape(messageId)}"]`);
+    if (!node) { fallback?.(); return; }
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.add("flash");
+    setTimeout(() => node.classList.remove("flash"), 1600);
+  }
 
   // ------------------------------------------------------------------ installable app
   watchInstall() {

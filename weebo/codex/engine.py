@@ -41,6 +41,9 @@ class EngineFeatures:
     dynamic_tools: bool = True
     output_schema: bool = True
     skills_extra_roots: bool = False
+    thread_config: bool = False  # ThreadStartParams.config: per-thread config overrides (a bot's MCP servers)
+    apps: bool = False  # app/list: the user's ChatGPT apps (connectors)
+    connector_controls: bool = False  # config/read + config on start/resume + app allow-list fields
 
 
 @dataclass
@@ -69,6 +72,7 @@ class CodexEngine:
         self._ready = asyncio.Event()
         self._stopping = False
         self._supervisor: asyncio.Task | None = None
+        self._jobs: set[asyncio.Task] = set()
         self._restart_attempts = 0
         self._login_waiters: list[asyncio.Future] = []
 
@@ -87,11 +91,27 @@ class CodexEngine:
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._supervisor:
-            self._supervisor.cancel()
+        self._ready.clear()
+        tasks = [*self._jobs, *([self._supervisor] if self._supervisor else [])]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self.rpc:
             await self.rpc.stop()
         self._set_status("stopped")
+
+    def _start_job(self, coro: Any) -> None:
+        if self._stopping:
+            coro.close()
+            return
+        task = asyncio.create_task(coro)
+        self._jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    def _job_done(self, task: asyncio.Task) -> None:
+        self._jobs.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Engine background callback failed: %r", task.exception())
 
     async def restart(self) -> None:
         """Restart the app-server (for example after changing the binary)."""
@@ -182,7 +202,7 @@ class CodexEngine:
                 try:
                     result = listener("engine/closed", {"threadId": thread_id, "message": self.last_error})
                     if asyncio.iscoroutine(result):
-                        asyncio.create_task(result)
+                        self._start_job(result)
                 except Exception:
                     logger.exception("Thread listener failed during engine shutdown")
 
@@ -328,6 +348,57 @@ class CodexEngine:
         self.loaded_threads.add(thread_id)
         return result
 
+    async def connector_inventory(self, cwd: str) -> dict[str, Any]:
+        """Names only from effective config; never expose its credential values."""
+        if not self.features.connector_controls:
+            raise ValueError("This Codex version cannot verify bot connector controls. Update Codex and run the isolation check.")
+        await self.ensure_ready()
+        result = await self.request("config/read", {"cwd": cwd, "includeLayers": False}, timeout=30)
+        config = result.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("Codex did not return effective connector configuration; bot startup was blocked.")
+        # Remote-installed plugins may not occur in config.toml at all, and
+        # their runtime IDs can differ from old local marketplace IDs.
+        catalog = await self.request("plugin/list", {"cwds": [cwd], "forceRefetch": False}, timeout=30)
+        if not isinstance(catalog, dict) or not isinstance(catalog.get("marketplaces"), list) or catalog.get("marketplaceLoadErrors"):
+            raise ValueError("Codex plugin inventory is incomplete; bot startup was blocked.")
+        plugins = set((config.get("plugins") or {}).keys())
+        for marketplace in catalog["marketplaces"]:
+            for plugin in marketplace.get("plugins", []):
+                if plugin.get("installed") and plugin.get("id"):
+                    plugins.add(plugin["id"])
+        servers = set((config.get("mcp_servers") or {}).keys())
+        apps = {key: set((value.get("tools") or {}).keys()) for key, value in
+                (config.get("apps") or {}).items() if key != "_default" and isinstance(value, dict)}
+        read_tools: dict[str, set[str]] = {}
+        cursor = None
+        for _ in range(30):
+            page = await self.request("mcpServerStatus/list", {"cursor": cursor, "limit": 100,
+                "detail": "toolsAndAuthOnly"}, timeout=60)
+            if not isinstance(page, dict) or not isinstance(page.get("data"), list):
+                raise ValueError("Codex native tool inventory is incomplete; bot startup was blocked.")
+            for server in page["data"]:
+                name = server.get("name")
+                if name and name != "codex_apps":
+                    servers.add(name)
+                if name == "codex_apps":
+                    for tool_name, tool in (server.get("tools") or {}).items():
+                        app_id = (tool.get("_meta") or {}).get("connector_id")
+                        if app_id:
+                            apps.setdefault(app_id, set()).add(tool_name)
+                            annotations = tool.get("annotations") or {}
+                            if annotations.get("readOnlyHint") is True and not annotations.get("destructiveHint") and not annotations.get("openWorldHint"):
+                                read_tools.setdefault(app_id, set()).add(tool_name)
+            cursor = page.get("nextCursor")
+            if not cursor:
+                break
+        else:
+            raise ValueError("Codex native tool pagination is incomplete; bot startup was blocked.")
+        return {"mcp": sorted(servers), "plugins": sorted(plugins),
+                "runtime_only_mcp": sorted(servers - set((config.get("mcp_servers") or {}).keys())),
+                "apps": {key: sorted(names) for key, names in apps.items()},
+                "read_tools": {key: sorted(names) for key, names in read_tools.items()}}
+
     async def resume_thread(self, thread_id: str, **params: Any) -> dict[str, Any]:
         await self.ensure_ready()
         clean = {k: v for k, v in params.items() if v is not None}
@@ -356,21 +427,97 @@ class CodexEngine:
     async def interrupt(self, thread_id: str, turn_id: str) -> None:
         await self.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=30)
 
-    async def set_thread_name(self, thread_id: str, name: str) -> None:
+    async def set_thread_name(self, thread_id: str, name: str) -> bool:
         try:
             await self.request("thread/name/set", {"threadId": thread_id, "name": name[:80]}, timeout=15)
+            return True
         except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/name/set failed: %s", exc)
+            return False
 
-    async def archive_thread(self, thread_id: str) -> None:
+    async def archive_thread(self, thread_id: str) -> bool | None:
+        """Move a thread to Codex's archive: out of the Codex app's thread list, restorable. It is unloaded too.
+        True when archived, False when Codex refused (gone, already archived), None when Codex couldn't be reached
+        (worth trying again later)."""
         try:
             await self.request("thread/archive", {"threadId": thread_id}, timeout=15)
-        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            return True
+        except RpcError as exc:
+            logger.debug("thread/archive refused: %s", exc)
+            return False
+        except (EngineClosed, asyncio.TimeoutError) as exc:
             logger.debug("thread/archive failed: %s", exc)
+            return None
+        finally:
+            self.loaded_threads.discard(thread_id)
+
+    async def thread_idle(self, thread_id: str) -> bool:
+        """Check runtime metadata without loading history; unknown state must never authorize archiving."""
+        try:
+            result = await self.request("thread/read", {"threadId": thread_id, "includeTurns": False}, timeout=15)
+            status = (result.get("thread") or {}).get("status") or {}
+            return isinstance(status, dict) and status.get("type") in ("idle", "notLoaded", "systemError")
+        except (RpcError, EngineClosed, asyncio.TimeoutError):
+            return False
+
+    async def unarchive_thread(self, thread_id: str) -> bool:
+        """Bring an archived thread back so it can be resumed (resuming an archived thread is refused)."""
+        try:
+            await self.request("thread/unarchive", {"threadId": thread_id}, timeout=15)
+            return True
+        except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+            logger.debug("thread/unarchive failed: %s", exc)
+            return False
+
+    async def list_threads(self, timeout: float = 120, **params: Any) -> dict[str, Any]:
+        # A search scans the session files on disk, which can be slow when there are many.
+        return await self.request("thread/list", {k: v for k, v in params.items() if v is not None}, timeout=timeout)
+
+    def release_thread(self, thread_id: str, finished: bool = True) -> None:
+        """Done with a thread for good: stop following it, so the app-server can unload it (ephemeral threads stay
+        in its memory while anyone is subscribed). Only once its turn has finished: a turn still running (one that
+        timed out) would ask questions nobody receives and never end; staying subscribed, Weebo declines them."""
+        self.unroute(thread_id)
         self.loaded_threads.discard(thread_id)
+        if self.status != "ready":
+            return
+        if not finished:
+            # A stop that could not be confirmed still needs a terminal-event listener, otherwise the eventual
+            # completion is dropped and the server retains this thread until restart. Unowned requests use
+            # the engine's default deny handler, never the caller's expired tools/approvals.
+            def completed(method: str, params: dict[str, Any]) -> None:
+                if method == "turn/completed":
+                    self.release_thread(thread_id)
+                elif method == "engine/closed":
+                    self.unroute(thread_id)
+
+            self.route(thread_id, listener=completed)
+            return
+
+        async def unsubscribe() -> None:
+            try:
+                await self.request("thread/unsubscribe", {"threadId": thread_id}, timeout=15)
+            except (RpcError, EngineClosed, asyncio.TimeoutError) as exc:
+                logger.debug("thread/unsubscribe failed: %s", exc)
+
+        self._start_job(unsubscribe())
 
     async def start_review(self, thread_id: str, target: dict[str, Any]) -> dict[str, Any]:
         return await self.request("review/start", {"threadId": thread_id, "target": target, "delivery": "inline"}, timeout=90)
+
+    async def list_apps(self) -> list[dict[str, Any]]:
+        """The user's ChatGPT apps (connectors) as Codex sees them; only when the schema offers app/list."""
+        if not self.features.apps:
+            return []
+        apps: list[dict[str, Any]] = []
+        cursor = None
+        for _ in range(10):
+            result = await self.request("app/list", {"cursor": cursor} if cursor else {}, timeout=30) or {}
+            apps.extend(result.get("data") or [])
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return apps
 
     async def set_skill_roots(self, roots: list[str]) -> None:
         if not self.features.skills_extra_roots:
@@ -387,7 +534,7 @@ class CodexEngine:
             self.bus.publish("engine.usage", {"rateLimits": self.rate_limits})
             return
         if method in ("account/updated", "account/login/completed"):
-            asyncio.create_task(self._account_changed())
+            self._start_job(self._account_changed())
             return
         thread_id = _thread_id_of(params)
         if thread_id is None:
@@ -460,7 +607,7 @@ def _thread_id_of(params: dict[str, Any]) -> str | None:
 
 def detect_features(binary: CodexBinary) -> EngineFeatures:
     """Read the engine's own protocol schema to learn which optional fields it accepts."""
-    cache_file = paths.cache_dir() / f"codex-features-{binary.version_str}.json"
+    cache_file = paths.cache_dir() / f"codex-features-v4-{binary.version_str}.json"
     if cache_file.exists():
         try:
             return EngineFeatures(**json.loads(cache_file.read_text(encoding="utf-8")))
@@ -475,13 +622,23 @@ def detect_features(binary: CodexBinary) -> EngineFeatures:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         bundle = out_dir / "codex_app_server_protocol.v2.schemas.json"
-        defs = json.loads(bundle.read_text(encoding="utf-8")).get("definitions", {})
+        text = bundle.read_text(encoding="utf-8")
+        defs = json.loads(text).get("definitions", {})
         turn_props = defs.get("TurnStartParams", {}).get("properties", {})
         thread_props = defs.get("ThreadStartParams", {}).get("properties", {})
         features.additional_context = "additionalContext" in turn_props
         features.output_schema = "outputSchema" in turn_props
         features.dynamic_tools = "dynamicTools" in thread_props
         features.skills_extra_roots = "SkillsExtraRootsSetParams" in defs
+        features.thread_config = "config" in thread_props
+        features.connector_controls = (features.thread_config and "config" in
+            defs.get("ThreadResumeParams", {}).get("properties", {}) and "ConfigReadParams" in defs and
+            {"enabled", "default_tools_approval_mode"} <= set(defs.get("AppsDefaultConfig", {}).get("properties", {}))
+            and "enabled" in defs.get("AppToolConfig", {}).get("properties", {})
+            and "cwds" in defs.get("PluginListParams", {}).get("properties", {})
+            and "detail" in defs.get("ListMcpServerStatusParams", {}).get("properties", {})
+            and {"id", "installed"} <= set(defs.get("PluginSummary", {}).get("properties", {})))
+        features.apps = '"app/list"' in text
         cache_file.write_text(json.dumps(features.__dict__), encoding="utf-8")
     except Exception as exc:  # feature detection is best effort
         logger.warning("Could not detect Codex features (%s); using conservative defaults", exc)

@@ -7,6 +7,7 @@ let uid = 0;
 const MOODS = [
   "idle", "listening", "thinking", "talking", "working", "happy", "sad", "alert", "asking", "sleepy",
   "dreaming", "celebrate", "evolving", "inspecting", "delegating", "looking", "proud", "offline",
+  "coding", "reviewing", "researching", "writing", "calling", "syncing", "waiting",
 ];
 
 function svgMarkup(id) {
@@ -106,12 +107,71 @@ function svgMarkup(id) {
       <path d="M38 160 l2 4.5 4.5 2 -4.5 2 -2 4.5 -2 -4.5 -4.5 -2 4.5 -2z"/>
       <path d="M166 150 l2.6 6 6 2.6 -6 2.6 -2.6 6 -2.6 -6 -6 -2.6 6 -2.6z"/>
     </g>
+    <g class="wb-code">
+      <path class="wb-code-tail" d="M142 46 L133 59 L153 48 Z"/>
+      <rect class="wb-code-box" x="132" y="11" width="56" height="40" rx="10"/>
+      <path class="wb-code-glyph wb-code-lt" d="M151 23 L142 31 L151 39"/>
+      <path class="wb-code-glyph wb-code-sl" d="M164.5 20 L155.5 42"/>
+      <path class="wb-code-glyph wb-code-gt" d="M169 23 L178 31 L169 39"/>
+    </g>
+    <g class="wb-review">
+      <path class="wb-page" d="M139 8 h27 l10 10 v36 a4 4 0 0 1 -4 4 h-33 a4 4 0 0 1 -4 -4 v-42 a4 4 0 0 1 4 -4z"/>
+      <path class="wb-page-fold" d="M166 8 v10 h10"/>
+      <g class="wb-page-lines"><path d="M142 22 h22"/><path d="M142 31 h28"/><path d="M142 40 h26"/><path d="M142 49 h16"/></g>
+      <g class="wb-lens"><path class="wb-lens-handle" d="M152.5 28.5 l8 8"/><circle class="wb-lens-glass" cx="146" cy="22" r="8.5"/></g>
+    </g>
+    <g class="wb-research">
+      <g transform="rotate(-16 158 34)"><path class="wb-orbit-ring" d="M134 34 A24 8 0 0 1 182 34"/></g>
+      <circle class="wb-globe" cx="158" cy="34" r="15"/>
+      <g class="wb-globe-grid">
+        <path d="M143 34 h30 M145.3 26 h25.4 M145.3 42 h25.4"/>
+        <path class="wb-meridian wb-meridian-a" d="M158 19 A15 15 0 0 1 158 49"/>
+        <path class="wb-meridian wb-meridian-b" d="M158 19 A15 15 0 0 1 158 49"/>
+      </g>
+      <g transform="rotate(-16 158 34)">
+        <path class="wb-orbit-ring" d="M134 34 A24 8 0 0 0 182 34"/>
+        <g class="wb-orbit-x"><g class="wb-orbit-y"><circle class="wb-orbit-dot" cx="158" cy="34" r="4.2"/></g></g>
+      </g>
+    </g>
+    <g class="wb-laptop">
+      <path class="wb-lid" d="M68 167 L74 139 h52 L132 167 Z"/>
+      <circle class="wb-lid-logo" cx="100" cy="153" r="3.4"/>
+      <rect class="wb-base" x="56" y="166" width="88" height="8" rx="3.5"/>
+      <g class="wb-keys"><rect x="78" y="160" width="8" height="3" rx="1.5"/><rect x="92" y="160" width="8" height="3" rx="1.5"/><rect x="106" y="160" width="8" height="3" rx="1.5"/></g>
+    </g>
+    <g class="wb-phone">
+      <rect class="wb-handset" x="152" y="84" width="16" height="30" rx="5"/>
+      <path class="wb-wave wb-wave-a" d="M174 92 q6 7 0 14"/>
+      <path class="wb-wave wb-wave-b" d="M180 87 q10 12 0 24"/>
+    </g>
+    <g class="wb-note">
+      <rect class="wb-note-card" x="134" y="10" width="50" height="40" rx="7"/>
+      <path class="wb-note-line" d="M143 23 h32 M143 32 h26"/>
+      <circle class="wb-note-dot" cx="176" cy="42" r="3.2"/>
+    </g>
+    <g class="wb-sync">
+      <path class="wb-sync-arc" d="M148 36 a12 12 0 0 1 22 -6 M172 44 a12 12 0 0 1 -22 6"/>
+      <path class="wb-sync-head" d="M170 24 v7 h-7 M150 56 v-7 h7"/>
+    </g>
+    <g class="wb-handoff">
+      <rect class="wb-card" x="135" y="55" width="12" height="9" rx="2.2"/>
+      <rect class="wb-card" x="135" y="55" width="12" height="9" rx="2.2"/>
+      <rect class="wb-card" x="135" y="55" width="12" height="9" rx="2.2"/>
+      <g class="wb-helper">
+        <path d="M175 19 L177 11" fill="none" stroke="#c9d2e2" stroke-width="2.6" stroke-linecap="round"/>
+        <circle class="wb-helper-bulb" cx="177.5" cy="9.5" r="3.4"/>
+        <circle class="wb-helper-body" cx="174" cy="31" r="13"/>
+        <rect class="wb-helper-visor" x="164" y="26" width="20" height="11" rx="5.5"/>
+        <circle class="wb-helper-eye" cx="170" cy="31.5" r="2"/>
+        <circle class="wb-helper-eye" cx="178" cy="31.5" r="2"/>
+      </g>
+    </g>
   </g>
 </svg>`;
 }
 
 export class WeeboAvatar {
-  constructor(host, { size = null, track = true, label = "Weebo" } = {}) {
+  constructor(host, { size = null, track = true, label = "Weebo", follow = true } = {}) {
     this.id = ++uid;
     this.host = host;
     this.root = document.createElement("div");
@@ -124,7 +184,7 @@ export class WeeboAvatar {
     this.track = track;
     this._blinkTimer = null;
     this._scheduleBlink();
-    director.register(this);
+    if (follow) director.register(this);
   }
 
   setMood(mood) {

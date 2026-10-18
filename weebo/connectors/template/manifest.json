@@ -1,0 +1,12 @@
+{
+  "name": "My program",
+  "kind": "mcp",
+  "transport": "stdio",
+  "command": ["python", "REPLACE_WITH_ABSOLUTE_PATH_TO/server.py"],
+  "description": "Look up information and start jobs in your program.",
+  "env_names": ["PROGRAM_CMD", "PROGRAM_URL"],
+  "tools": [
+    {"name": "lookup", "risk": "read", "test_call": {"arguments": {"query": "example"}}},
+    {"name": "start_job", "risk": "act"}
+  ]
+}

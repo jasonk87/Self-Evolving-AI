@@ -5,6 +5,7 @@ working when an upgrade breaks everything else (and the change policy treats it
 as governance code that only a human may approve changes to).
 
 * Exit code 75 from the server means "restart me" (after a self-upgrade).
+* Exit code 76 means another process owns the data directory or listener; leave it alone.
 * If the server dies within the first minute after an upgrade was merged, the
   supervisor reverts the merge commit and starts the previous version again.
 * Repeated crash loops back off and eventually stop instead of spinning forever.
@@ -20,6 +21,7 @@ import time
 from pathlib import Path
 
 RESTART_CODE = 75
+STARTUP_CONFLICT_CODE = 76
 EARLY_CRASH_SECONDS = 60
 MAX_FAST_CRASHES = 5
 
@@ -42,18 +44,26 @@ def _rollback(pending_path: Path) -> bool:
         return False
     if pending.get("rolled_back"):
         return False
-    merged = pending.get("merged_commit")
-    if not merged:
+    # A batch ("merge them all") reverts every merge in it, newest first: any of them may be the one that broke.
+    commits = [c for c in (pending.get("merged_commits") or [pending.get("merged_commit")]) if c]
+    if not commits:
         return False
-    _say(f"The upgrade {merged[:8]} failed to boot. Reverting it…")
-    result = subprocess.run(
-        ["git", "-c", "user.name=Weebo", "-c", "user.email=weebo@localhost", "revert", "--no-edit", "-m", "1", merged],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        subprocess.run(["git", "revert", "--abort"], cwd=ROOT, capture_output=True)
-        _say("Automatic revert failed:\n" + (result.stdout + result.stderr)[-1500:])
-        return False
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True)
+    before = head.stdout.strip() if head.returncode == 0 else ""
+    for merged in reversed(commits):
+        _say(f"The upgrade {merged[:8]} failed to boot. Reverting it…")
+        result = subprocess.run(
+            ["git", "-c", "user.name=Weebo", "-c", "user.email=weebo@localhost", "revert", "--no-edit", "-m", "1",
+             merged], cwd=ROOT, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            subprocess.run(["git", "revert", "--abort"], cwd=ROOT, capture_output=True)
+            if before:
+                # All or nothing: undo the reverts already made, so the code is never half a batch. --keep (not
+                # --hard) leaves any uncommitted work as it was.
+                subprocess.run(["git", "reset", "-q", "--keep", before], cwd=ROOT, capture_output=True)
+            _say("Automatic revert failed:\n" + (result.stdout + result.stderr)[-1500:])
+            return False
     pending["rolled_back"] = True
     pending["rolled_back_at"] = time.time()
     pending_path.write_text(json.dumps(pending), encoding="utf-8")
@@ -93,6 +103,9 @@ def supervise(child_args: list[str]) -> int:
             return 0
         uptime = time.time() - started
         restarted = True
+        if code == STARTUP_CONFLICT_CODE:
+            _say("The data directory or listener is already in use; stopping this launch.")
+            return code  # Neither roll back code nor stop another instance's helper.
         if code == 0:
             _stop_helpers()
             return 0

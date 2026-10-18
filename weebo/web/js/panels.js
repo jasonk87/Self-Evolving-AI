@@ -4,15 +4,31 @@ import { icon } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
 import { el, btn, toast, timeAgo, dateTime, duration, renderDiff, modal, confirmDialog, debounce, escapeHtml, copyText } from "./ui.js";
 import { listVoices, speak, voiceSupport } from "./voice.js";
-import { renderPendingApproval } from "./items.js";
+import { renderPendingApproval, TIER_LABEL } from "./items.js";
+import { renderFeed } from "./feed.js";
+
+const GRANTABLE = ["remember", "recall", "search_history", "set_reminder", "list_reminders", "cancel_reminder",
+  "use_integration", "start_agent", "agent_status", "message_agent", "stop_agent", "save_skill", "propose_improvement",
+  "offer_replies", "day_sheet"];
+const AUTONOMY = ["read", "draft", "organize", "act", "send", "spend", "contact_people", "delete"];
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
+const BUCKETS = [["interrupt", "Tell me now"], ["brief", "In the brief"], ["log", "Just log it"]];
 
 const PANELS = {
+  ideas: { title: "Feed", icon: "sparkles" },
+  feed: { title: "Feed", icon: "sparkles" },
+  bots: { title: "Bots", icon: "users" },
+  manage_bots: { title: "Manage bots", icon: "users" },
+  capabilities: { title: "Capabilities", icon: "plug" },
   agents: { title: "Agents", icon: "bot" },
   evolution: { title: "Evolution", icon: "dna" },
   memory: { title: "Memory", icon: "brain" },
+  facts: { title: "Source-backed facts", icon: "brain" },
   schedule: { title: "Schedule", icon: "clock" },
   activity: { title: "Activity", icon: "pulse" },
   settings: { title: "Settings", icon: "gear" },
+  more: { title: "More", icon: "menu" },
+  archive: { title: "Older chats", icon: "inbox" },
 };
 
 const STATUS_LABEL = {
@@ -29,7 +45,7 @@ function proposalStep(p) {
   if (p.status === "vetting") return "The Council is deciding whether it's worth building…";
   if (p.status === "declined") return `Council declined: ${council.reason || "no reason given"}`;
   if (["building", "checking"].includes(p.status)) {
-    const stage = { building: "Building", testing: "Testing", reviewing: "Code review" }[meta.stage] || (p.status === "building" ? "Building" : "Verifying");
+    const stage = { building: "Building", testing: "Testing", reviewing: "Code review", evaluating: "Rehearsing real conversations" }[meta.stage] || (p.status === "building" ? "Building" : "Verifying");
     return `${stage} · round ${meta.round || 1} of 3`;
   }
   if (p.status === "proposed" && council.approved === true) return `Council approved: ${council.reason || ""}`;
@@ -37,22 +53,42 @@ function proposalStep(p) {
   return "";
 }
 
-const BUILD_STEPS = [["council", "Council"], ["building", "Build"], ["testing", "Test"], ["reviewing", "Review"], ["ready", "Ready"]];
+const BUILD_STEPS = [["council", "Council"], ["building", "Build"], ["testing", "Test"], ["reviewing", "Review"], ["evaluating", "Rehearse"], ["ready", "Ready"]];
 
 function stepper(p) {
   const meta = p.meta || {};
   const skipCouncil = !(meta.council && "reason" in meta.council); // only ideas the (new, up-front) Council vetted
+  // Only changes to Weebo's brain or memory are rehearsed against real conversations.
+  const rehearsed = meta.stage === "evaluating" || (p.gate_report || "").includes("Behavior evals");
   const current = p.status === "vetting" || p.status === "declined" ? "council"
     : ["building", "checking"].includes(p.status) ? (meta.stage || "building")
     : ["ready", "merging", "merged"].includes(p.status) ? "ready" : "";
   if (!current) return null;
   const at = BUILD_STEPS.findIndex(([key]) => key === current);
-  const steps = BUILD_STEPS.filter(([key]) => !(key === "council" && skipCouncil));
+  const steps = BUILD_STEPS.filter(([key]) => !(key === "council" && skipCouncil) && !(key === "evaluating" && !rehearsed));
   return el("ol", { class: "stepper", "aria-label": "Build progress" }, steps.map(([key, label]) => {
     const i = BUILD_STEPS.findIndex(([k]) => k === key);
     const state = p.status === "declined" && key === "council" ? "fail" : i < at ? "done" : i === at ? (current === "ready" ? "done" : "now") : "todo";
     return el("li", { class: `step ${state}` }, el("span", { class: "step-dot", html: state === "done" ? icon("check", 12) : state === "fail" ? icon("x", 12) : "" }), el("span", { text: label }));
   }));
+}
+
+/** After a merge: did the recorded failures this upgrade claimed to fix stay fixed? */
+function proposalOutcome(p) {
+  const meta = p.meta || {};
+  const addresses = meta.addresses || [];
+  const outcome = meta.outcome || {};
+  if (!addresses.length) return p.status === "merged" ? el("p", { class: "muted small", text: "Not measured: this upgrade didn't name a recorded failure it fixes." }) : null;
+  const n = `${addresses.length} recorded failure${addresses.length > 1 ? "s" : ""}`;
+  if (outcome.result === "held") return el("div", { class: "check pass" }, el("span", { html: icon("check", 14) }), el("span", { text: `The fix held: none of the ${n} it targeted came back.` }));
+  if (outcome.result === "regressed") {
+    return el("details", { class: "check fail", open: true },
+      el("summary", { html: `${icon("x", 14)}<span>The failure came back after merging. Weebo's next self-audit will look at it again.</span>` }),
+      el("pre", { class: "cmd-out", text: (outcome.issues || []).join("\n") }));
+  }
+  if (p.status === "merged" && meta.awaiting_live) return el("p", { class: "muted small", text: `Goes live when Weebo restarts; then it watches ${n} for a few days to see whether the fix holds.` });
+  if (p.status === "merged") return el("p", { class: "muted small", text: `Watching ${n} for a few days to see whether the fix holds.` });
+  return el("p", { class: "muted small", text: `Targets ${n}; Weebo checks whether it stays fixed after merging.` });
 }
 
 function pill(status) {
@@ -90,7 +126,8 @@ export class Panels {
     this.current = null;
     this.opts = {};
     document.getElementById("drawer-close").addEventListener("click", () => this.close());
-    this._refresh = debounce(() => this.refresh(), 250);
+    // Live updates are debounced; editing is checked again when they fire, not only when they're scheduled.
+    this._refresh = debounce(() => this.refresh({ live: true }), 250);
     this.pending = false;
     // Live updates wait while you're typing in a panel, so drafts and focus survive; they catch up after.
     this.body.addEventListener("focusout", () => setTimeout(() => {
@@ -131,8 +168,11 @@ export class Panels {
   notify(type) {
     if (!this.current) return;
     const interest = {
-      agents: ["task.", "interaction."], evolution: ["evolution.", "skills."], memory: ["memory."], schedule: ["reminder."],
-      activity: ["weebo.activity", "notify", "legacy."], settings: ["engine.", "settings.", "legacy."],
+      agents: ["task.", "interaction."], evolution: ["evolution.", "skills.", "evals."], memory: ["memory."], schedule: ["reminder."],
+      activity: ["weebo.activity", "notify"], settings: ["engine.", "settings."],
+      bots: ["bot.", "conv."], manage_bots: ["bot.", "policy.", "conv.created"], ideas: ["ideas.", "daysheet."],
+      feed: ["goals.", "ideas.", "daysheet.", "bot.", "policy.", "interaction.", "memory.", "reminder.", "task.", "evolution."],
+      capabilities: ["connector.", "capabilities.", "bot.", "skills."],
     }[this.current] || [];
     if (interest.some((p) => type.startsWith(p))) {
       if (this.current === "agents" && type === "task.progress" && !this.opts.task) return this.patchProgress();
@@ -141,18 +181,26 @@ export class Panels {
     }
   }
 
-  async refresh() {
+  /** Re-render the open panel. A live update (`live`) never replaces a form you're using: it waits until you
+   *  leave it, even if you started typing while the update was loading. Refreshes you trigger always run. */
+  async refresh({ live = false } = {}) {
     const name = this.current;
     if (!name) return;
+    if (live && this.editing()) { this.pending = true; return; }
     const opts = this.opts;
-    const scrollTop = this.body.scrollTop;
+    const generation = this.refreshGeneration = (this.refreshGeneration || 0) + 1;
     try {
       const content = await this[`render_${name}`](opts);
-      if (this.current !== name || this.opts !== opts) return;
+      if (this.current !== name || this.opts !== opts || this.refreshGeneration !== generation) return;
+      if (live && this.editing()) { this.pending = true; return; }
+      const scrollTop = this.body.scrollTop;
+      const opened = new Set([...this.body.querySelectorAll('details[data-feed-key][open]')].map(n => n.dataset.feedKey));
       this.body.replaceChildren(content);
+      for (const node of this.body.querySelectorAll('details[data-feed-key]')) node.open = opened.has(node.dataset.feedKey);
       this.body.scrollTop = scrollTop;
     } catch (err) {
-      if (this.current !== name || this.opts !== opts) return;
+      if (this.current !== name || this.opts !== opts || this.refreshGeneration !== generation) return;
+      if (live && this.body.childElementCount) { toast("Couldn't refresh", err.message, { kind: "error" }); return; }
       this.body.replaceChildren(empty(`Couldn't load: ${err.message}`, "alert"));
     }
   }
@@ -160,7 +208,7 @@ export class Panels {
   // ================================================================== AGENTS
   async render_agents(opts) {
     if (opts.task) return this.renderTask(opts.task);
-    const { tasks } = await api.get("/api/tasks");
+    const { tasks, live } = await api.get("/api/tasks");
     const wrap = el("div", { class: "panel" });
     wrap.append(el("p", { class: "panel-intro", text: "Background Codex agents work in parallel while you keep chatting. Weebo launches them for big jobs, or you can start one here." }));
     const form = el("form", { class: "stack form-card", hidden: true });
@@ -173,7 +221,7 @@ export class Panels {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.currentConvId });
+        const { task } = await api.post("/api/tasks", { title: title.value, instructions: instructions.value, cwd: cwd.value, effort: effort.value, conversation_id: this.app.mainId || this.app.currentConvId });
         toast("Agent launched", task.title, { kind: "success" });
         this.opts = { task: task.id };
         this.refresh();
@@ -189,7 +237,7 @@ export class Panels {
       return el("button", { class: `task-card st-${t.status}`, type: "button", dataset: { task: t.id }, onclick: () => { this.opts = { task: t.id }; this.refresh(); } },
         el("div", { class: "task-top" }, el("span", { html: icon(t.kind === "evolution" ? "dna" : t.kind === "audit" ? "search" : "bot", 16) }),
           el("strong", { text: t.title }), pill(t.status)),
-        el("div", { class: "task-progress", text: t.status === "running" ? (this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
+        el("div", { class: "task-progress", text: t.status === "running" ? (live?.[t.id]?.progress || this.app.taskProgress.get(t.id) || "Working…") : taskPreview(t) }),
         el("div", { class: "task-meta", text: `${kinds[t.kind] || t.kind} · ${t.status === "queued" ? "waiting" : duration(elapsed)} · ${timeAgo(t.created_at)}` }));
     };
     wrap.append(section(`Running (${active.length})`, active.length ? el("div", { class: "stack" }, active.map(card)) : empty("No agents running right now.", "bot")));
@@ -253,7 +301,7 @@ export class Panels {
   // ================================================================== EVOLUTION
   async render_evolution(opts) {
     if (opts.proposal) return this.renderProposal(opts.proposal);
-    const [{ proposals, mode, current }, { skills }] = await Promise.all([api.get("/api/proposals"), api.get("/api/skills")]);
+    const [{ proposals, mode, current }, { skills }, evals] = await Promise.all([api.get("/api/proposals"), api.get("/api/skills"), api.get("/api/evals")]);
     const wrap = el("div", { class: "panel" });
     const modeText = {
       off: "Self-evolution is off. Ideas are saved but nothing is built.",
@@ -280,25 +328,72 @@ export class Panels {
     const history = proposals.filter((p) => !needs.includes(p) && !progress.includes(p));
     const card = (p) => {
       const step = proposalStep(p);
+      const result = ((p.meta || {}).outcome || {}).result;
+      const outcome = result === "held" ? " · fix held" : result === "regressed" ? " · failure came back" : "";
       return el("button", { class: `proposal-card st-${p.status}`, type: "button", onclick: () => this.open("evolution", { proposal: p.id }) },
         el("div", { class: "task-top" }, el("span", { html: icon(p.id === current ? "gear" : "dna", 16, p.id === current ? "spinning" : "") }), el("strong", { text: p.title }), pill(p.status)),
         step ? el("div", { class: "task-progress", text: step }) : null,
-        el("div", { class: "task-meta", text: `${p.source === "user" ? "you asked" : p.source} · ${timeAgo(p.created_at)}${p.diff_stat ? " · " + p.diff_stat.split("\n").pop().trim() : ""}` }));
+        el("div", { class: "task-meta", text: `${p.source === "user" ? "you asked" : p.source} · ${timeAgo(p.created_at)}${p.diff_stat ? " · " + p.diff_stat.split("\n").pop().trim() : ""}${outcome}` }));
     };
     wrap.append(section("Needs you", needs.length ? el("div", { class: "stack" }, needs.map(card)) : empty("Nothing waiting for review.", "check")));
     if (progress.length) wrap.append(section("In progress", el("div", { class: "stack" }, progress.map(card))));
     if (history.length) wrap.append(section("History", el("div", { class: "stack" }, history.slice(0, 30).map(card))));
 
+    wrap.append(this.renderEvals(evals));
+
+    const used = (s) => (s.uses ? `Used ${s.uses} time${s.uses > 1 ? "s" : ""}, last ${timeAgo(s.last_used_at)}` : "Not used yet");
     const skillList = skills.length ? el("div", { class: "stack" }, skills.map((s) => el("div", { class: "skill-row" },
-      el("div", {}, el("strong", { text: s.name }), el("p", { class: "muted small", text: s.description })),
+      el("div", {}, el("strong", { text: s.name }), el("p", { class: "muted small", text: s.description }), el("p", { class: "muted small", text: used(s) })),
       el("div", { class: "row" },
         btn("", { icon: "eye", title: "View", size: "sm", onClick: () => modal(s.name, el("div", { class: "md", html: renderMarkdown(s.preview) }), { wide: true }) }),
         btn("", { icon: "trash", title: "Forget skill", size: "sm", onClick: async () => {
           if (await confirmDialog("Forget skill?", `Weebo will no longer know "${s.name}".`, "Forget")) { await api.del(`/api/skills/${s.name}`); this.refresh(); }
         } })))))
       : empty("No learned skills yet. Weebo saves reusable procedures here as it figures them out.", "sparkles");
-    wrap.append(section("Learned skills", skillList));
+    wrap.append(section("Learned skills", el("p", { class: "muted small", text: "Skills Weebo learned on its own while dreaming are archived after a stretch of not being used (Settings → Memory & skills). Skills saved in a chat stay." }), skillList));
     return wrap;
+  }
+
+  /** Behavior checks: real moments Weebo got wrong, replayed so upgrades to its brain can't make it worse. */
+  renderEvals({ cases, stats, enabled }) {
+    const active = cases.filter((c) => c.status === "active");
+    const retired = cases.filter((c) => c.status !== "active");
+    const last = stats.last_run ? `last run ${timeAgo(stats.last_run)}` : "not run yet";
+    const intro = enabled
+      ? `${active.length} check${active.length === 1 ? "" : "s"} · ${stats.passing}/${stats.checked} passing on the running Weebo · ${last}. They come from your corrections and from dreams; any upgrade to Weebo's brain or memory must pass at least as many.`
+      : "Behavior checks are off (Settings → Self-evolution).";
+    const run = btn("Run checks now", { kind: "soft", size: "sm", icon: "play", onClick: async () => {
+      try { await api.post("/api/autonomy/eval"); toast("Running behavior checks", "Results land here when they finish.", { kind: "success" }); }
+      catch (err) { toast("Couldn't start", err.message, { kind: "error" }); }
+    } });
+    const form = el("form", { class: "stack form-card", hidden: true });
+    const prompt = el("textarea", { class: "input", rows: 2, placeholder: "What you'd say to Weebo, e.g. \"Book my usual table for Friday\"", required: true });
+    const rubric = el("textarea", { class: "input", rows: 2, placeholder: "What a good reply must do, e.g. \"Uses the restaurant I always pick and asks only for the time\"", required: true });
+    form.append(prompt, rubric, el("div", { class: "row end" }, btn("Cancel", { onClick: () => { form.hidden = true; } }), btn("Add check", { kind: "primary", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try { await api.post("/api/evals", { prompt: prompt.value, rubric: rubric.value }); toast("Check added", "", { kind: "success" }); this.refresh(); }
+      catch (err) { toast("Couldn't add", err.message, { kind: "error" }); }
+    });
+    const add = btn("Add a check", { kind: "ghost", size: "sm", icon: "plus", onClick: () => { form.hidden = false; prompt.focus(); } });
+    const row = (c) => {
+      const result = (c.meta || {}).last;
+      const mark = !result ? icon("dot", 14) : result.passed ? icon("check", 14, "ok") : icon("x", 14, "bad");
+      const status = !result ? "Not checked yet" : `${result.passed ? "Passes" : "Fails"}: ${result.reason || ""}`;
+      const act = async (action) => {
+        try { await api.post(`/api/evals/${c.id}/${action}`); this.refresh(); } catch (err) { toast("Couldn't update", err.message, { kind: "error" }); }
+      };
+      return el("div", { class: `eval-row${c.status === "active" ? "" : " retired"}` },
+        el("span", { html: mark, title: status }),
+        el("div", {}, el("strong", { text: c.title }), el("p", { class: "muted small", text: c.rubric }),
+          el("p", { class: "muted small", text: `${c.source === "correction" ? "from your correction" : c.source === "dream" ? "noticed while dreaming" : "added by you"} · ${status}` })),
+        c.status === "active"
+          ? btn("", { icon: "x", title: "Retire this check", size: "sm", onClick: () => act("retire") })
+          : btn("", { icon: "undo", title: "Use this check again", size: "sm", onClick: () => act("restore") }));
+    };
+    const list = active.length ? el("div", {}, active.map(row)) : empty("No behavior checks yet. When you correct Weebo, that moment becomes one.", "shield");
+    const old = retired.length ? el("details", { class: "fold" }, el("summary", { text: `Retired (${retired.length})` }), el("div", {}, retired.map(row))) : null;
+    return section("Behavior checks", el("p", { class: "muted small", text: intro }), el("div", { class: "row" }, run, add), form, list, old);
   }
 
   async renderProposal(id) {
@@ -341,8 +436,11 @@ export class Panels {
     try { gates = JSON.parse(p.gate_report || "{}"); } catch { gates = {}; }
     const checks = el("div", { class: "checks" });
     for (const r of gates.results || []) {
-      const row = el("details", { class: `check ${r.skipped ? "skip" : r.ok ? "pass" : "fail"}` },
-        el("summary", { html: `${icon(r.skipped ? "dot" : r.ok ? "check" : "x", 14)}<span>${escapeHtml(r.name)}</span><span class="muted small">${r.skipped ? "skipped" : r.seconds.toFixed(1) + "s"}</span>` }),
+      // Advisory checks (the original versions of rewritten tests) inform your review; they don't fail the build.
+      const state = r.skipped ? "skip" : r.ok ? "pass" : r.advisory ? "warn" : "fail";
+      const note = r.skipped ? "skipped" : `${r.advisory ? (r.ok ? "for review · " : "needs your eyes · ") : ""}${r.seconds.toFixed(1)}s`;
+      const row = el("details", { class: `check ${state}`, open: r.advisory && !r.ok },
+        el("summary", { html: `${icon(r.skipped ? "dot" : r.ok ? "check" : r.advisory ? "alert" : "x", 14)}<span>${escapeHtml(r.name)}</span><span class="muted small">${note}</span>` }),
         el("pre", { class: "cmd-out", text: r.output || "" }));
       checks.append(row);
     }
@@ -365,9 +463,12 @@ export class Panels {
 
     if (meta.governance && meta.governance.files) {
       const gov = meta.governance;
-      wrap.append(section("Governance", el("p", { class: "muted small", text: gov.autonomous ? "Low-risk zones only: eligible for automatic merge." : "Touches protected zones: needs your approval to merge." }),
-        el("table", { class: "gov" }, gov.files.map((f) => el("tr", {}, el("td", { class: "mono", text: f.path }), el("td", { text: f.zone.replace("_", " ") }), el("td", {}, el("span", { class: `pill tier-${f.tier}`, text: f.tier.replace("_", " ") })))))));
+      const summary = gov.autonomous ? "Low-risk zones only: eligible for automatic merge." : (gov.why || "Touches protected zones: needs your approval to merge.");
+      wrap.append(section("Governance", el("p", { class: "muted small", text: summary }),
+        el("table", { class: "gov" }, gov.files.map((f) => el("tr", { title: f.reason || "" }, el("td", { class: "mono", text: f.path }), el("td", { text: f.zone.replace("_", " ") }), el("td", {}, el("span", { class: `pill tier-${f.tier}`, text: f.tier.replace("_", " ") })))))));
     }
+    const outcome = proposalOutcome(p);
+    if (outcome) wrap.append(section("Did it help?", outcome));
     if (meta.diff) {
       wrap.append(section(`Changes ${p.diff_stat ? "· " + p.diff_stat.split("\n").pop().trim() : ""}`,
         btn("View full diff", { kind: "soft", icon: "diff", onClick: () => modal(p.title, renderDiff(meta.diff), { wide: true }) })));
@@ -379,11 +480,41 @@ export class Panels {
   }
 
   // ================================================================== MEMORY
+  async render_facts(opts) {
+    const entity = opts.entity || "events";
+    const offset = opts.offset || 0;
+    const result = await api.get(`/api/facts/${encodeURIComponent(entity)}?offset=${offset}`);
+    const wrap = el("div", { class: "panel facts-panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Facts are looked up from their sources, not remembered from chat. Disconnected sources are shown as unverified." }));
+    wrap.append(el("div", { class: "chips" }, ["events", "threads", "commitments", "people"].map(key => btn(key, {
+      kind: key === entity ? "primary" : "soft", onClick: () => { this.opts = { entity: key }; this.refresh(); }
+    }))));
+    for (const source of result.sources || []) {
+      wrap.append(el("p", { class: "muted small", text: source.ok
+        ? `${source.source} · checked ${dateTime(source.fetched_at)}`
+        : `${source.source || entity}: ${source.error}` }));
+    }
+    if (result.unverified?.length) wrap.append(el("p", { role: "status", text: `${result.unverified.length} stored facts are unverified. Reconnect the source to check them.` }));
+    if (!result.facts.length) wrap.append(empty(result.complete ? "No matching facts in this slice." : "Current facts could not be verified.", "brain"));
+    for (const fact of result.facts) {
+      const p = fact.provenance || {};
+      const details = [fact.status, fact.start != null ? `${new Date(fact.start * 1000).toLocaleString(undefined, { timeZone: fact.tz })} · ${fact.tz}` : "",
+        fact.due != null ? `Due ${dateTime(fact.due)}` : ""].filter(Boolean).join(" · ");
+      wrap.append(section(fact.title || fact.subject || fact.text || fact.name,
+        el("p", { text: details }),
+        el("p", { class: "muted small", text: `Source: ${p.source} · checked ${dateTime(p.fetched_at)} · ${fact.id}` })));
+    }
+    if (offset > 0) wrap.append(btn("Previous facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: Math.max(0, offset - 50) }; this.refresh(); } }));
+    if (result.next_offset != null) wrap.append(btn("More facts", { kind: "soft", onClick: () => { this.opts = { entity, offset: result.next_offset }; this.refresh(); } }));
+    return wrap;
+  }
+
   async render_memory(opts) {
     const q = opts.q || "";
     const kind = opts.kind || "";
     const { memories, stats } = await api.get(`/api/memories?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`);
     const wrap = el("div", { class: "panel" });
+    wrap.append(btn("Source-backed facts", { kind: "soft", icon: "brain", onClick: () => this.open("facts") }));
     wrap.append(el("p", { class: "panel-intro", text: `Everything Weebo remembers about you and your world: ${stats.total} memories. Weebo adds to this as you talk and tidies it up while it dreams.` }));
     const search = el("input", { class: "input", type: "search", placeholder: "Search memories…", value: q });
     search.addEventListener("input", debounce(() => { this.opts = { ...this.opts, q: search.value }; this.refresh(); }, 300));
@@ -441,6 +572,313 @@ export class Panels {
     return wrap;
   }
 
+  // ================================================================== MORE (the tab bar's overflow)
+  async render_more() {
+    const wrap = el("div", { class: "panel" });
+    const go = (name, label, ic, hint) => el("button", { class: "more-row", type: "button", onclick: () => this.open(name) },
+      el("span", { class: "more-ic", html: icon(ic, 18) }),
+      el("span", { class: "grow" }, el("div", { text: label }), el("div", { class: "muted small", text: hint })),
+      el("span", { html: icon("send", 14) }));
+    wrap.append(el("div", { class: "stack" },
+      go("manage_bots", "Manage bots", "users", "Profiles, permissions, budgets and reporting rules"),
+      go("agents", `Agents${this.app.runningTasks ? ` (${this.app.runningTasks} running)` : ""}`, "bot", "One-off background jobs"),
+      go("memory", "Memory", "brain", "What Weebo remembers, and the source-backed facts"),
+      go("capabilities", "Capabilities", "plug", "Connectors, apps, skills, workflows and what's missing"),
+      go("schedule", "Schedule", "clock", "Reminders and routines"),
+      go("activity", "Activity", "pulse", "What Weebo did on its own, and its notifications"),
+      go("settings", "Settings", "gear", "Or just tell Weebo what to change"),
+      go("archive", "Older chats", "inbox", "Conversations from before there was one chat")));
+    return wrap;
+  }
+
+  // ================================================================== BOTS (the team)
+  async render_bots(opts) {
+    // Legacy deep links to profiles still work, but the bottom tab is chat-first.
+    if (opts.bot) return this.renderBot(opts.bot);
+    const { bots } = await api.get("/api/bots?all=1");
+    const live = bots.filter(b => ["active", "paused"].includes(b.status) && b.conversation_id);
+    this.app.setBots(bots.filter(b => ["active", "paused", "proposed"].includes(b.status)));
+    const wrap = el("div", { class: "panel bot-conversations" },
+      el("div", { class: "feed-heading" }, el("div", {}, el("h3", { text: "Talk to your team" }),
+        el("p", { class: "muted small", text: "One continuous conversation with each specialist." })),
+      btn("Manage bots", { kind: "soft", icon: "gear", onClick: () => this.open("manage_bots") })));
+    const botRow = b => {
+      const busy = this.app.busyConvs.has(b.conversation_id);
+      const latest = b.latest_message;
+      return el("button", { class: `bot-conversation${b.unread ? " unread" : ""}`, type: "button", dataset: { bot: b.id },
+        onclick: () => { this.close(); this.app.openConversation(b.conversation_id); } },
+      el("span", { class: "bot-face", text: b.name.slice(0, 1) }),
+      el("span", { class: "feed-copy" }, el("strong", { text: b.name }),
+        el("span", { class: "bot-specialty", text: b.data.job }),
+        el("span", { class: "bot-preview", text: latest ? `${latest.role === "user" ? "You: " : ""}${latest.content}` : "Open your conversation" })),
+      el("span", { class: "bot-row-meta" }, el("span", { text: b.status === "archived" ? "Read only" : b.status === "paused" ? "Paused" : busy ? "Working" : "Ready" }),
+        latest ? el("span", { text: timeAgo(latest.updated_at) }) : null,
+        b.unread ? el("b", { class: "badge", "aria-label": "Unread messages", text: "New" }) : null));
+    };
+    live.sort((a, b) => (b.latest_message?.updated_at || b.updated_at) - (a.latest_message?.updated_at || a.updated_at));
+    wrap.append(live.length ? el("div", { class: "bot-conversation-list" }, live.map(botRow)) : empty("No approved bots yet. Review proposals in Manage bots.", "users"));
+    const retired = bots.filter(b => b.status === "archived" && b.conversation_id);
+    if (retired.length) wrap.append(el("details", { class: "feed-extra" }, el("summary", { text: "Retired bot chats" }), retired.map(botRow)));
+    return wrap;
+  }
+
+  async render_manage_bots(opts) {
+    if (opts.bot) return this.renderBot(opts.bot);
+    const [{ bots: all, changes }, policy] = await Promise.all([api.get("/api/bots?all=1"), api.get("/api/policy")]);
+    const bots = all.filter((b) => b.status !== "archived");
+    this.app.setBots(bots);
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Your team: specialist bots that work for Weebo, each in its own chat with its own model, tools and budget. Weebo proposes new ones; nothing joins the team without your yes." }));
+    const live = bots.filter((b) => b.status !== "proposed");
+    wrap.append(live.length ? el("div", { class: "bot-strip", role: "list" }, live.map((b) => this.botChip(b)))
+      : empty("No bots yet. Ask Weebo for one, or approve its proposals.", "users"));
+    const proposed = bots.filter((b) => b.status === "proposed");
+    if (proposed.length) {
+      wrap.append(section(`Proposed (${proposed.length})`, el("div", { class: "stack" }, proposed.map((b) => el("div", { class: "cap-row" },
+        el("div", { class: "row" }, el("span", { class: "bot-face", text: b.name.slice(0, 1) }), el("strong", { text: b.name }),
+          el("span", { class: "muted small", text: TIER_LABEL[b.data.tier] || b.data.tier })),
+        el("p", { class: "small", text: b.data.job }),
+        el("div", { class: "row" },
+          btn("Approve", { kind: "primary", size: "sm", icon: "check", onClick: () => this.botAction(b.id, "approve") }),
+          btn("Details", { kind: "soft", size: "sm", onClick: () => { this.opts = { bot: b.id }; this.refresh(); } }),
+          btn("Not now", { kind: "ghost", size: "sm", onClick: () => this.botAction(b.id, "reject") })))))));
+    }
+    if (policy.needs_you.length) {
+      wrap.append(section(`Waiting on you (${policy.needs_you.length})`, el("div", { class: "stack" }, policy.needs_you.map((item) => el("div", { class: "cap-row" },
+        el("span", { text: item.data.summary }),
+        el("div", { class: "row" },
+          btn("Allow once", { kind: "primary", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/approve`) }),
+          btn("Always allow", { kind: "soft", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/always`) }),
+          btn("Deny", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/needs-you/${item.id}/deny`) })))))));
+    }
+    const asks = changes.filter((c) => c.status === "proposed");
+    if (asks.length) wrap.append(section("Changes waiting for your yes", el("div", { class: "stack" }, asks.map((c) => el("div", { class: "cap-row" },
+      el("span", { text: `${(bots.find((b) => b.id === c.bot_id) || {}).name || "A bot"}: ${(c.data.reasons || []).join("; ")}` }),
+      el("div", { class: "row" },
+        btn("Approve", { kind: "primary", size: "sm", onClick: () => this.post(`/api/bot-changes/${c.id}/approve`) }),
+        btn("Reject", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/bot-changes/${c.id}/reject`) })))))));
+    wrap.append(this.reportRules(policy.report_rules, bots));
+    wrap.append(section("Standing permissions", policy.standing_rules.length ? el("div", { class: "stack" }, policy.standing_rules.map((r) =>
+      el("div", { class: "row" }, el("span", { class: "grow small", text: `${r.effect === "deny" ? "Never" : "Always"} ${r.action} ${r.target || "(anything)"} · ${r.scope === "*" ? "every bot" : (bots.find((b) => b.id === r.scope) || {}).name || r.scope}${r.data.once ? " · once" : ""}` }),
+        btn("Revoke", { kind: "ghost", size: "sm", icon: "x", onClick: () => this.del(`/api/policy/standing/${r.id}`) }))))
+      : el("p", { class: "muted small", text: "None yet. “Always allow” on a request saves one here." })));
+    const retired = all.filter((b) => b.status === "archived");
+    if (retired.length) wrap.append(section("Retired", el("div", { class: "stack" }, retired.map((b) => el("button", { class: "more-row", type: "button",
+      onclick: () => { this.close(); this.app.openConversation(b.conversation_id); } },
+    el("span", { class: "bot-face", text: b.name.slice(0, 1) }),
+    el("span", { class: "grow" }, el("div", { text: b.name }), el("div", { class: "muted small", text: "Its chat, kept to read" })))))));
+    return wrap;
+  }
+
+  botChip(b) {
+    const busy = this.app.busyConvs.has(b.conversation_id);
+    const chip = el("button", { class: `bot-chip st-${b.status}${busy ? " busy" : ""}`, type: "button", role: "listitem",
+      onclick: () => { this.opts = { bot: b.id }; this.refresh(); } },
+    el("span", { class: "bot-face", text: b.name.slice(0, 1) }), el("span", { text: b.name }),
+    el("span", { class: "muted small", text: b.status === "paused" ? "paused" : busy ? "working" : `${b.usage_today}/${b.budget}` }));
+    if (b.unread) chip.append(el("b", { class: "badge", text: "•" }));
+    return chip;
+  }
+
+  reportRules(rules, bots) {
+    const name = (scope) => scope === "*" ? "Every bot" : (bots.find((b) => b.id === scope) || {}).name || scope;
+    const scope = el("select", { class: "input narrow" }, [el("option", { value: "*", text: "Every bot" }), ...bots.filter((b) => b.status !== "proposed").map((b) => el("option", { value: b.id, text: b.name }))]);
+    const match = el("input", { class: "input", placeholder: "About… e.g. nightly PR fixes" });
+    const bucket = el("select", { class: "input narrow" }, BUCKETS.map(([v, l]) => el("option", { value: v, text: l })));
+    const form = el("form", { class: "row wrap" }, scope, match, bucket, btn("Add", { kind: "soft", size: "sm", onClick: () => form.requestSubmit() }));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!match.value.trim()) return;
+      await this.post("/api/policy/report", { scope: scope.value, match: match.value, bucket: bucket.value });
+      match.value = "";
+    });
+    return section("What reaches you", el("p", { class: "muted small", text: "Reports go to you now, into the morning brief, or only into the log. Trouble always reaches at least the brief." }),
+      rules.length ? el("div", { class: "stack" }, rules.map((r) => el("div", { class: "row" },
+        el("span", { class: "grow small", text: `${name(r.scope)} · “${r.match}” → ${(BUCKETS.find(([v]) => v === r.bucket) || [, r.bucket])[1]}` }),
+        btn("Remove", { kind: "ghost", size: "sm", icon: "x", onClick: () => this.del(`/api/policy/report/${r.id}`) })))) : null,
+      form);
+  }
+
+  async renderBot(botId) {
+    const { bot, jobs, reports, usage, report_rules: rules } = await api.get(`/api/bots/${encodeURIComponent(botId)}`);
+    const p = bot.data;
+    const wrap = el("div", { class: "panel" });
+    wrap.append(btn("All bots", { kind: "link", icon: "chevronLeft", onClick: () => { this.opts = {}; this.refresh(); } }));
+    wrap.append(el("div", { class: "task-title" }, el("span", { class: "bot-face", text: bot.name.slice(0, 1) }), el("h3", { text: bot.name }), pill(bot.status)));
+    const actions = el("div", { class: "row wrap" });
+    if (bot.conversation_id) actions.append(btn("Open its chat", { kind: "primary", size: "sm", icon: "chat", onClick: () => { this.close(); this.app.openConversation(bot.conversation_id); } }));
+    if (bot.status === "proposed") actions.append(btn("Approve", { kind: "primary", size: "sm", icon: "check", onClick: () => this.botAction(bot.id, "approve") }));
+    if (bot.status === "active") actions.append(btn("Pause", { kind: "soft", size: "sm", onClick: () => this.botAction(bot.id, "pause") }));
+    if (bot.status === "paused") actions.append(btn("Resume", { kind: "soft", size: "sm", onClick: () => this.botAction(bot.id, "resume") }));
+    if (["active", "paused"].includes(bot.status)) {
+      actions.append(btn("Retire", { kind: "ghost", size: "sm", onClick: async () => {
+        if (await confirmDialog(`Retire ${bot.name}?`, "Its chat stays readable; its routines stop and its Codex thread is put away.", "Retire")) this.botAction(bot.id, "archive");
+      } }),
+      btn("Delete", { kind: "danger-soft", size: "sm", onClick: async () => {
+        if (await confirmDialog(`Delete ${bot.name}?`, "This removes the bot, its chat and its history for good.", "Delete")) this.botAction(bot.id, "delete");
+      } }));
+    }
+    wrap.append(actions);
+    wrap.append(el("div", { class: "task-meta", text: `${TIER_LABEL[p.tier] || p.tier} · ${bot.model || "model picked at runtime"} · ${bot.usage_today}/${bot.budget} turns today` }));
+
+    // Profile: your edits apply directly (you are the one who can say yes).
+    const save = async (changes) => {
+      try { await api.patch(`/api/bots/${bot.id}`, changes); toast("Saved", "", { kind: "success", timeout: 1200 }); this.refresh(); }
+      catch (err) { toast("Couldn't save", err.message, { kind: "error" }); }
+    };
+    const job = el("textarea", { class: "input", rows: 3, text: p.job || "" });  // a textarea's value is its text
+    const goals = el("textarea", { class: "input", rows: 3, text: (p.goals || []).join("\n"), placeholder: "One goal per line" });
+    const tier = el("select", { class: "input narrow" }, Object.entries(TIER_LABEL).map(([v, l]) => el("option", { value: v, text: l, selected: v === p.tier })));
+    const effort = el("select", { class: "input narrow" }, EFFORTS.map((v) => el("option", { value: v, text: v, selected: v === p.effort })));
+    const turns = el("input", { class: "input narrow", type: "number", min: 1, max: 500, value: p.turns_per_day });
+    const report = el("select", { class: "input narrow" }, BUCKETS.map(([v, l]) => el("option", { value: v, text: l, selected: v === p.report_default })));
+    const checks = (all, chosen) => el("div", { class: "chip-row" }, all.map((name) => el("label", { class: "chip" },
+      el("input", { type: "checkbox", value: name, checked: (chosen || []).includes(name) }), el("span", { text: name }))));
+    const tools = checks(GRANTABLE, p.tools);
+    const autonomy = checks(AUTONOMY, p.autonomy);
+    const picked = (box) => [...box.querySelectorAll("input:checked")].map((i) => i.value);
+    const form = el("form", { class: "stack form-card" },
+      el("label", { class: "field" }, el("span", { class: "field-label", text: "Job" }), job),
+      el("label", { class: "field" }, el("span", { class: "field-label", text: "Goals" }), goals),
+      el("div", { class: "row wrap" },
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Model tier" }), tier),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Effort" }), effort),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Turns a day" }), turns),
+        el("label", { class: "field" }, el("span", { class: "field-label", text: "Reports" }), report)),
+      el("div", { class: "field" }, el("span", { class: "field-label", text: "Tools" }), tools),
+      el("div", { class: "field" }, el("span", { class: "field-label", text: "May do without asking" }), autonomy),
+      el("div", { class: "row end" }, btn("Save profile", { kind: "primary", size: "sm", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      save({ job: job.value, goals: goals.value.split("\n").map((g) => g.trim()).filter(Boolean), tier: tier.value,
+        effort: effort.value, turns_per_day: Number(turns.value), report_default: report.value,
+        tools: picked(tools), autonomy: picked(autonomy) });
+    });
+    wrap.append(section("Profile", form));
+
+    const ruleInput = el("input", { class: "input", placeholder: "Add a standing rule, e.g. never archive newsletters" });
+    wrap.append(section("Standing rules", el("div", { class: "stack" }, (p.rules || []).map((r) => el("div", { class: "row" },
+      el("span", { class: "grow small", text: `${r.text}${r.added_by === "user" ? "" : ` (from ${r.added_by})`}` }),
+      btn("Remove", { kind: "ghost", size: "sm", icon: "x", onClick: () => save({ rules_remove: r.text }) })))),
+    el("div", { class: "row" }, ruleInput, btn("Add", { kind: "soft", size: "sm", onClick: () => { if (ruleInput.value.trim()) save({ rules_add: ruleInput.value.trim() }); } }))));
+    if ((p.routines || []).length) wrap.append(section("Routines", el("ul", { class: "bullets" }, p.routines.map((r) => el("li", { text: `${r.text} · ${r.recurrence} from ${r.when}` })))));
+
+    const jobInput = el("textarea", { class: "input", rows: 2, placeholder: `Give ${bot.name} a job…` });
+    wrap.append(section("Jobs", bot.status === "active" ? el("div", { class: "row" }, jobInput, btn("Assign", { kind: "soft", size: "sm", icon: "send", onClick: async () => {
+      if (!jobInput.value.trim()) return;
+      try { await api.post(`/api/bots/${bot.id}/jobs`, { instructions: jobInput.value }); jobInput.value = ""; toast("Assigned", "", { kind: "success" }); this.refresh(); }
+      catch (err) { toast("Couldn't assign", err.message, { kind: "error" }); }
+    } })) : null,
+    jobs.length ? el("div", { class: "stack" }, jobs.slice(0, 12).map((j) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, pill(j.status), el("span", { class: "small grow", text: j.data.instructions.slice(0, 140) }), el("span", { class: "muted small", text: timeAgo(j.created_at) })),
+      j.data.result_summary ? el("p", { class: "small muted report-summary", text: j.data.result_summary }) : null))) : el("p", { class: "muted small", text: "No jobs yet." })));
+    wrap.append(section("Reports", reports.length ? el("div", { class: "stack" }, reports.slice(0, 15).map((r) => el("div", { class: "row" },
+      el("span", { class: "pill", text: r.bucket }), el("span", { class: "small grow report-summary", text: r.data.summary }), el("span", { class: "muted small", text: timeAgo(r.created_at) }))))
+      : el("p", { class: "muted small", text: "No reports yet." })));
+    wrap.append(section("Usage (last 14 days)", el("p", { class: "small", text: usage.map((u) => `${u.day.slice(5)}: ${u.turns}${u.failures ? ` (${u.failures} failed)` : ""}`).join(" · ") || "No turns yet." })));
+    if (rules.length) wrap.append(section("Report rules for this bot", el("ul", { class: "bullets" }, rules.map((r) => el("li", { text: `“${r.match}” → ${r.bucket}` })))));
+    return wrap;
+  }
+
+  async botAction(id, action) {
+    try { await api.post(`/api/bots/${encodeURIComponent(id)}/${action}`, {}); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  async post(path, body) {
+    try { await api.post(path, body || {}); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  async del(path) {
+    try { await api.del(path); this.refresh(); }
+    catch (err) { toast("That didn't work", err.message, { kind: "error" }); }
+  }
+
+  // ================================================================== IDEAS (and the day sheet)
+  async render_feed(opts) { return renderFeed(this, opts); }
+  async render_ideas(opts) { return renderFeed(this, opts); }
+
+  dayRow(row) {
+    const flags = [];
+    if (row.cancelled) flags.push("cancelled");
+    for (const c of row.conflicts || []) flags.push(`overlaps ${c.title}`);
+    const t = row.travel;
+    if (t) flags.push(t.status === "known" ? `${t.minutes} min travel (${t.source})${t.shortfall_minutes ? `, ${t.shortfall_minutes} min short` : ""}` : t.status === "unknown" ? `travel: unknown, ${t.gap_minutes} min gap` : "same place");
+    if (row.timezone) flags.push(`${row.timezone.there} in ${row.timezone.event_tz}`);
+    if (row.weather) flags.push(row.weather.source ? row.weather.summary : "weather unknown");
+    for (const th of row.threads || []) flags.push(`email: ${th.subject}`);
+    for (const p of row.people || []) flags.push(p.name);
+    return el("div", { class: "day-row" }, el("div", { class: "row" }, el("strong", { text: row.local_time }), el("span", { text: row.title })),
+      row.location ? el("span", { class: "muted small", text: row.location }) : null,
+      flags.length ? el("div", { class: "flags" }, flags.map((f) => el("span", { class: "chip", text: f }))) : null,
+      el("span", { class: "muted small", text: `Source: ${row.source || "?"}${row.stale ? " · refreshing" : ""}` }));
+  }
+
+  // ================================================================== CAPABILITIES (the growth layer)
+  async render_capabilities() {
+    const [caps, { apps }] = await Promise.all([api.get("/api/capabilities"), api.get("/api/connectors")]);
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Everything Weebo can do, who uses it and what it costs, plus what's missing. New connectors are registered, tested in isolation and approved by you before any bot can use them." }));
+    wrap.append(section("Connectors", caps.connectors.length ? el("div", { class: "stack" }, caps.connectors.map((c) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: c.name }), pill(c.status), el("span", { class: `risk r-${c.risk}`, text: c.risk })),
+      el("span", { class: "muted small", text: `${c.kind === "app" ? "ChatGPT app" : "MCP"} · used by ${c.used_by.join(", ") || "nobody yet"} · ${c.data.uses || 0} uses${c.data.last_used ? `, last ${timeAgo(c.data.last_used)}` : ""}${c.data.failures ? ` · ${c.data.failures} failures in a row` : ""}` }),
+      el("div", { class: "row" },
+        ["registered", "failed", "tested", "disabled"].includes(c.status) ? btn("Test", { kind: "soft", size: "sm", onClick: () => this.post(`/api/connectors/${c.id}/test`) }) : null,
+        c.status === "approved" ? btn("Disable", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/connectors/${c.id}/disable`) }) : null))))
+      : el("p", { class: "muted small", text: "No connectors yet." }), this.registerForm()));
+    wrap.append(section("ChatGPT apps", apps.available
+      ? el("div", { class: "chip-row" }, apps.apps.map((a) => el("span", { class: "chip", text: `${a.name || a.id}${a.isAccessible === false ? " (not connected)" : ""}` })))
+      : el("p", { class: "muted small", text: apps.reason || "Unavailable." })));
+    if (caps.gaps.length) wrap.append(section("Missing", el("div", { class: "stack" }, caps.gaps.map((g) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: g.data.need }), el("span", { class: "muted small", text: `${g.count}×` }), pill(g.status)),
+      g.status === "open" ? el("div", { class: "row" }, btn("Build a connector", { kind: "soft", size: "sm", onClick: () => this.post(`/api/gaps/${g.id}/build`) }),
+        btn("Not needed", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/gaps/${g.id}/dismiss`) })) : null)))));
+    wrap.append(section("Workflows", caps.workflows.length ? el("div", { class: "stack" }, caps.workflows.map((w) => el("div", { class: "cap-row" },
+      el("div", { class: "row" }, el("strong", { text: w.name }), pill(w.status)),
+      el("span", { class: "muted small", text: `${w.data.steps.length} step(s) · ${w.data.runs || 0} runs · ${w.data.failures || 0} failures · ${w.data.skips || 0} skipped` }),
+      el("div", { class: "row" },
+        w.status === "proposed" ? btn("Approve", { kind: "primary", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/approve`) }) : null,
+        w.status === "active" ? btn("Run now", { kind: "soft", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/run`) }) : null,
+        w.status === "active" ? btn("Pause", { kind: "ghost", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/pause`) }) : null,
+        w.status === "paused" ? btn("Resume", { kind: "soft", size: "sm", onClick: () => this.post(`/api/workflows/${w.id}/resume`) }) : null))))
+      : el("p", { class: "muted small", text: "None yet. Ask for the same multi-step thing a few times and Weebo will offer one." })));
+    wrap.append(section("Skills", caps.skills.length ? el("div", { class: "chip-row" }, caps.skills.map((sk) => el("span", { class: "chip", title: sk.description, text: `${sk.name} · ${sk.uses} uses` })))
+      : el("p", { class: "muted small", text: "No skills yet." })));
+    wrap.append(section("Bots", caps.bots.length ? el("div", { class: "chip-row" }, caps.bots.map((b) => el("button", { class: "chip", type: "button", text: `${b.name} · ${b.status} · ${b.usage_today}/${b.budget} turns`, onclick: () => this.open("bots", { bot: b.id }) })))
+      : el("p", { class: "muted small", text: "No bots yet." })));
+    return wrap;
+  }
+
+  registerForm() {
+    const manifest = el("textarea", { class: "input", rows: 6, placeholder: '{"name": "My tool", "transport": "stdio", "command": ["python", "server.py"], "tools": [{"name": "lookup", "risk": "read"}]}' });
+    const form = el("form", { class: "stack form-card", hidden: true }, el("p", { class: "muted small", text: "Paste a connector manifest (see weebo/connectors/template). Registering grants nothing: it's tested in isolation, then you approve it." }), manifest,
+      el("div", { class: "row end" }, btn("Cancel", { kind: "ghost", size: "sm", onClick: () => { form.hidden = true; } }), btn("Register and test", { kind: "primary", size: "sm", onClick: () => form.requestSubmit() })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const { connector } = await api.post("/api/connectors", JSON.parse(manifest.value));
+        await api.post(`/api/connectors/${connector.id}/test`, {});
+        manifest.value = "";
+        this.refresh();
+      } catch (err) { toast("Couldn't register it", err.message, { kind: "error" }); }
+    });
+    return el("div", { class: "stack" }, btn("Add a connector", { kind: "soft", size: "sm", icon: "plus", onClick: () => { form.hidden = false; manifest.focus(); } }), form);
+  }
+
+  // ================================================================== ARCHIVE (older chats, read-only)
+  async render_archive() {
+    const wrap = el("div", { class: "panel" });
+    wrap.append(el("p", { class: "panel-intro", text: "Everything happens in one chat now. Your older chats are kept here to read; Weebo can also search them when you ask about something from back then." }));
+    const old = this.app.state.conversations.filter((c) => c.kind === "chat");
+    wrap.append(old.length ? el("div", { class: "stack" }, old.map((c) => el("button", { class: "more-row", type: "button",
+      onclick: () => { this.close(); this.app.openConversation(c.id); } },
+      el("span", { class: "more-ic", html: icon("dot", 10) }),
+      el("span", { class: "grow" }, el("div", { text: c.title }), el("div", { class: "muted small", text: timeAgo(c.updated_at) })))))
+      : empty("No older chats.", "inbox"));
+    return wrap;
+  }
+
   // ================================================================== SCHEDULE
   async render_schedule(opts) {
     const { reminders } = await api.get(`/api/reminders${opts.all ? "?all=1" : ""}`);
@@ -493,9 +931,9 @@ export class Panels {
       try { await api.post(`/api/autonomy/${name}`); toast(`${label} started`, "Watch Weebo's desk and this feed.", { kind: "success" }); this.refresh(); }
       catch (err) { toast("Couldn't start", err.message, { kind: "error" }); }
     } });
-    wrap.append(el("div", { class: "row wrap" }, trigger("dream", "Dream now", "moon"), trigger("brief", "Brief me now", "bell"), trigger("audit", "Self-audit now", "search")));
+    wrap.append(el("div", { class: "row wrap" }, trigger("dream", "Dream now", "moon"), trigger("brief", "Brief me now", "bell"), trigger("audit", "Self-audit now", "search"), trigger("eval", "Run behavior checks", "shield")));
 
-    const kindIcon = { dream: "moon", brief: "bell", audit: "search", evolution: "dna", skill: "sparkles", memory: "brain", schedule: "clock", routine: "zap", system: "gear" };
+    const kindIcon = { dream: "moon", brief: "bell", audit: "search", evolution: "dna", skill: "sparkles", memory: "brain", schedule: "clock", routine: "zap", system: "gear", evals: "shield" };
     wrap.append(section("What Weebo has been up to", journal.length ? el("ol", { class: "timeline" }, journal.map((j) => el("li", {},
       el("span", { class: "tl-ic", html: icon(kindIcon[j.kind] || "dot", 14) }),
       el("div", { class: "tl-body" }, el("strong", { text: j.title }), j.detail ? el("p", { class: "muted small", text: j.detail }) : null, el("span", { class: "tl-time", text: timeAgo(j.created_at) })))))
@@ -604,6 +1042,23 @@ export class Panels {
       number("autonomy.dream_idle_minutes", "Dream after idle minutes", 1, 1440),
       toggle("autonomy.self_audit", "Self-audits", "Reviews its own code daily for bugs and upgrades.")));
 
+    wrap.append(section("Team (bots)",
+      toggle("bots.enabled", "Bots", "Specialist bots work for Weebo in their own chats. Off: none of them take turns on their own."),
+      number("bots.max_bots", "Most bots on the team", 0, 32),
+      number("bots.max_turns_per_day", "Turns a day across all bots", 0, 2000),
+      number("bots.hop_limit", "Relay limit (chief ↔ bot hops)", 1, 6),
+      number("bots.stuck_minutes", "Escalate a job silent this long (minutes)", 5, 1440),
+      text("bots.model_fast", "Fast tier model (optional)", "Picked at runtime"),
+      text("bots.model_standard", "Standard tier model (optional)", "Picked at runtime"),
+      text("bots.model_capable", "Most capable tier model (optional)", "Picked at runtime")));
+
+    wrap.append(section("Ideas and the day sheet",
+      toggle("ideas.enabled", "Ideas", "Specific suggestions from your calendar, email and commitments."),
+      number("ideas.max_per_day", "New ideas a day", 0, 50),
+      number("ideas.horizon_days", "Days ahead on the day sheet", 1, 31),
+      toggle("facts.second_pass", "Fact-check what I write", "A cheap second pass checks briefs and drafts against your calendar and email before you rely on them."),
+      number("activity.stale_seconds", "Say \u201cstill working\u201d after (seconds of silence)", 15, 3600)));
+
     wrap.append(section("Agents",
       number("agents.max_parallel", "Agents in parallel", 1, 12),
       number("agents.max_minutes", "Time limit per agent (minutes)", 1, 1440),
@@ -616,7 +1071,18 @@ export class Panels {
         ["build", "Build", "Builds and verifies upgrades; you approve merges.", "branch"],
         ["auto_merge", "Auto-merge", "Merges low-risk upgrades itself; core changes wait for you.", "dna"],
       ]),
-      text("evolution.test_command", "Custom test command (optional)", "Default: selftest + pytest tests/weebo")));
+      text("evolution.test_command", "Custom test command (optional)", "Default: selftest + pytest tests/weebo"),
+      field("Protected paths", el("textarea", { class: "input", rows: 3,
+        onchange: (e) => save("evolution.protect_paths", e.target.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)) },
+        (get("evolution.protect_paths") || []).join("\n")),
+        "One per line: files, folders or globs (weebo/web/*.js). Upgrades touching these always wait for you, even in auto-merge."),
+      toggle("evals.enabled", "Behavior checks", "Replays moments Weebo got wrong; upgrades to its brain or memory must pass at least as many."),
+      number("evals.max_cases", "Checks per run", 1, 50, 1, "Each check costs about two quick model turns.")));
+
+    wrap.append(section("Memory & skills",
+      toggle("memory.semantic", "Semantic recall", `Finds memories by meaning, not just words, with a small model on this computer. Now: ${(status.memory || {}).recall || "keyword"}.`),
+      toggle("skills.auto_learn", "Learn skills from repeated work", "While dreaming, Weebo turns procedures its agents keep repeating into skills."),
+      number("skills.prune_unused_days", "Archive unused dream-learned skills after (days, 0 = never)", 0, 365)));
 
     // --- Voice
     const voices = listVoices();
@@ -630,10 +1096,12 @@ export class Panels {
       toggle("ui.companion", "Show Weebo's stage", "Weebo at the top of the chat with live reactions."),
       toggle("ui.reduce_motion", "Reduce motion")));
 
-    // --- Weebo 1.x
-    const legacy = status.legacy || {};
-    wrap.append(section("Weebo 1.x abilities", el("p", { class: "muted small", text: `Bridge: ${legacy.status}${legacy.error ? " — " + legacy.error : ""}. These old tools now think with Codex too.` }),
-      el("div", { class: "chips" }, (legacy.tools || []).map((t) => el("span", { class: `chip static${t.risk === "confirm" ? " warn" : ""}`, title: t.about, text: t.name })))));
+    // --- Integrations
+    const integrations = (status.integrations || {}).tools || [];
+    wrap.append(section("Integrations", el("p", { class: "muted small", text: "Abilities that use your own keys from .env (Google, OpenWeather, Twilio) or your Google Calendar sign-in. Dimmed ones aren't set up yet; hover for what they need." }),
+      el("div", { class: "chips" }, integrations.map((t) => el("span", {
+        class: `chip static${t.risk === "confirm" ? " warn" : ""}${t.missing.length ? " off" : ""}`,
+        title: t.missing.length ? `${t.about}\nNeeds: ${t.missing.join(", ")}` : t.about, text: t.name })))));
 
     const { tailnet, lan } = await api.get("/api/remote");
     const phone = section("Phone app (Tailscale)");

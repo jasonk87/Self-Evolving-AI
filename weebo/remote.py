@@ -8,7 +8,7 @@ connecting (after stripping any client-supplied copy), so the owner's phone open
 Weebo with no password. HTTPS is also what lets phones install Weebo as an app.
 
 The helper runs as its own process and survives Weebo restarts (self-upgrades),
-so the address never blips. Weebo reuses it when it's already running.
+so the address never blips. Weebo reuses it when its configuration still matches.
 """
 
 from __future__ import annotations
@@ -81,11 +81,25 @@ async def tailscale_owner() -> str | None:
         proc = await asyncio.create_subprocess_exec(
             cli, "status", "--json", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        out, _ = await asyncio.wait_for(proc.communicate(), 15)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 15)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.communicate()
+            raise
         data = json.loads(out or b"{}")
+        if not isinstance(data, dict):
+            return None
         self_node = data.get("Self") or {}
-        user = (data.get("User") or {}).get(str(self_node.get("UserID"))) or {}
-        return user.get("LoginName")
+        users = data.get("User") or {}
+        if not isinstance(self_node, dict) or not isinstance(users, dict):
+            return None
+        user = users.get(str(self_node.get("UserID"))) or {}
+        login = user.get("LoginName") if isinstance(user, dict) else None
+        return login if isinstance(login, str) else None
     except (OSError, asyncio.TimeoutError, json.JSONDecodeError):
         return None
 
@@ -107,13 +121,27 @@ class TailnetEndpoint:
 
     def _read_status(self) -> dict[str, Any]:
         try:
-            return json.loads(self.status_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            data = json.loads(self.status_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return {}
+            for field in ("state", "origin", "owner", "authUrl", "error", "target", "hostname"):
+                if field in data and not isinstance(data[field], str):
+                    data.pop(field)
+            return data
+        except (OSError, ValueError):
             return {}
 
     def running_pid(self) -> int | None:
         status = self._read_status()
-        pid = int(status.get("pid") or 0)
+        raw_pid = status.get("pid")
+        if isinstance(raw_pid, bool) or not isinstance(raw_pid, (int, str)):
+            return None
+        try:
+            pid = int(raw_pid)
+        except ValueError:
+            return None
+        if not 0 < pid <= 0xFFFFFFFF:
+            return None
         image = process_image(pid)
         helper = self.helper_path()
         if image and helper and Path(image).resolve() == helper.resolve():
@@ -153,12 +181,17 @@ class TailnetEndpoint:
         if helper is None:
             logger.warning("Tailscale address is on, but %s is missing (build weebo/tailnet_helper).", HELPER_NAME)
             return self.status()
+        hostname = self.app.settings.get("server.tailnet_hostname")
+        target = f"http://127.0.0.1:{self.app.bind_port}"
         if self.running_pid():
-            return self.status()  # survives Weebo restarts; reuse it
+            current = self._read_status()
+            if current.get("target") == target and current.get("hostname") == hostname:
+                return self.status()  # survives Weebo restarts; reuse matching configuration
+            await self.stop()
+            if self.running_pid():
+                raise RuntimeError("Tailscale helper did not stop before reconfiguration")
         (self.state_dir / "stop").unlink(missing_ok=True)
-        port = self.app.bind_port
-        args = [str(helper), f"--state={self.state_dir}", f"--hostname={self.app.settings.get('server.tailnet_hostname')}",
-                f"--target=http://127.0.0.1:{port}"]
+        args = [str(helper), f"--state={self.state_dir}", f"--hostname={hostname}", f"--target={target}"]
         flags = 0
         if os.name == "nt":
             flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)

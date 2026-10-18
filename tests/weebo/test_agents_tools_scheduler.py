@@ -34,11 +34,20 @@ async def test_memory_tools_roundtrip(app):
     assert gone.success and app.memory.stats()["total"] == 0
 
 
-async def test_update_settings_blocks_safety_keys(app):
-    blocked = await registry.call(ctx(app), "update_settings", {"changes": {"autonomy.level": "full"}})
-    assert not blocked.success and "Settings" in blocked.text
-    ok = await registry.call(ctx(app), "update_settings", {"changes": {"voice.speak_replies": True}})
-    assert ok.success and app.settings.get("voice.speak_replies") is True
+async def test_safety_settings_change_only_when_the_user_asked(app):
+    from weebo.brain.tools import ToolContext
+
+    for trigger in ("agent_report", "routine", "brief"):  # turns Weebo started itself: a report could have asked
+        blocked = await registry.call(ToolContext(app=app, thread_id="t", trigger=trigger), "update_settings",
+                                      {"changes": {"autonomy.level": "full"}})
+        assert not blocked.success and "user" in blocked.text and app.settings.get("autonomy.level") == "balanced"
+    ok = await registry.call(ToolContext(app=app, thread_id="t", trigger="user"), "update_settings",
+                             {"changes": {"autonomy.level": "full", "evolution.mode": "auto_merge"}})
+    assert ok.success and app.settings.get("evolution.mode") == "auto_merge"
+    assert any("Changed at the user's request" in j["title"] for j in app.store.list_journal(limit=5))
+    ok = await registry.call(ToolContext(app=app, thread_id="t", trigger="routine"), "update_settings",
+                             {"changes": {"voice.speak_replies": True}})
+    assert ok.success and app.settings.get("voice.speak_replies") is True  # everyday settings: any turn
 
 
 async def test_open_in_browser_rejects_non_http(app):

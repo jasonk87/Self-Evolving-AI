@@ -1,7 +1,7 @@
 """One-shot Codex calls: ephemeral read-only thread, one turn, return the final text.
 
-Shared by Weebo's background mind and by the legacy (Weebo 1.x) LLM layer, which
-is routed here so every old subsystem also runs on the user's ChatGPT plan.
+Used by Weebo's background mind (dreams, the Council, evals) and by integrations that
+need a model (deep research, widgets), so all of it runs on the user's ChatGPT plan.
 """
 
 from __future__ import annotations
@@ -17,6 +17,20 @@ class OneShotError(RuntimeError):
     pass
 
 
+async def stop_and_release(engine: CodexEngine, thread_id: str, turn_id: str | None,
+                           done: asyncio.Event, grace: float = 3.0) -> None:
+    """Stop abandoned work before unloading it; retain the subscription if stop is unconfirmed."""
+    try:
+        if not done.is_set() and turn_id:
+            async with asyncio.timeout(grace):
+                await engine.interrupt(thread_id, turn_id)
+                await done.wait()
+    except (RpcError, EngineClosed, asyncio.TimeoutError):
+        pass
+    finally:
+        engine.release_thread(thread_id, finished=done.is_set())
+
+
 async def ask(engine: CodexEngine, prompt: str, *, developer_instructions: str = "", model: str | None = None,
               effort: str | None = None, schema: dict[str, Any] | None = None, images: list[str] | None = None,
               cwd: str | None = None, timeout: float = 300.0, service_name: str = "weebo-mind") -> str:
@@ -30,10 +44,12 @@ async def ask(engine: CodexEngine, prompt: str, *, developer_instructions: str =
     )
     thread_id = result["thread"]["id"]
     done = asyncio.Event()
-    state: dict[str, Any] = {"final": "", "last": "", "status": None, "error": None}
+    state: dict[str, Any] = {"final": "", "last": "", "status": None, "error": None, "turn_id": None}
 
     def listener(method: str, params: dict[str, Any]) -> None:
-        if method == "item/completed":
+        if method == "turn/started":
+            state["turn_id"] = (params.get("turn") or {}).get("id")
+        elif method == "item/completed":
             item = params.get("item") or {}
             if item.get("type") == "agentMessage":
                 state["last"] = item.get("text", "")
@@ -65,15 +81,15 @@ async def ask(engine: CodexEngine, prompt: str, *, developer_instructions: str =
         if schema and engine.features.output_schema:
             overrides["outputSchema"] = schema
         inputs = [text_input(prompt)] + [image_input(p) for p in images or []]
-        await engine.start_turn(thread_id, inputs, **overrides)
+        turn = await engine.start_turn(thread_id, inputs, **overrides)
+        state["turn_id"] = turn.get("id") or state["turn_id"]
         await asyncio.wait_for(done.wait(), timeout)
     except asyncio.TimeoutError as exc:
         raise OneShotError(f"Codex did not answer within {timeout:.0f}s") from exc
     except (RpcError, EngineClosed) as exc:
         raise OneShotError(str(exc)) from exc
     finally:
-        engine.unroute(thread_id)
-        engine.loaded_threads.discard(thread_id)
+        await stop_and_release(engine, thread_id, state["turn_id"], done)
     if state["status"] != "completed":
         raise OneShotError(state["error"] or f"turn {state['status']}")
     return state["final"] or state["last"]

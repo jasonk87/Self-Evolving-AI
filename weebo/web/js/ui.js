@@ -89,10 +89,18 @@ export function toast(title, body = "", { kind = "info", timeout = 5000, action 
 }
 
 // ---------------------------------------------------------------- modal
-export function modal(title, content, { wide = false, actions = [] } = {}) {
+export function modal(title, content, { wide = false, actions = [], onClose } = {}) {
   const backdrop = el("div", { class: "modal-backdrop" });
   const box = el("div", { class: `modal${wide ? " modal-wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title });
-  const close = () => { backdrop.classList.remove("in"); setTimeout(() => backdrop.remove(), 200); document.removeEventListener("keydown", onKey); };
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    backdrop.classList.remove("in");
+    setTimeout(() => backdrop.remove(), 200);
+    document.removeEventListener("keydown", onKey);
+    onClose?.();
+  };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   const footer = actions.length ? el("div", { class: "modal-actions" }, actions.map((a) => btn(a.label, { kind: a.kind || "soft", icon: a.icon, onClick: () => a.run(close) }))) : null;
   box.append(
@@ -111,6 +119,7 @@ export function modal(title, content, { wide = false, actions = [] } = {}) {
 export function confirmDialog(title, text, okLabel = "Confirm", kind = "danger") {
   return new Promise((resolve) => {
     modal(title, el("p", { class: "muted", text }), {
+      onClose: () => resolve(false),
       actions: [
         { label: "Cancel", run: (close) => { resolve(false); close(); } },
         { label: okLabel, kind, run: (close) => { resolve(true); close(); } },
@@ -119,9 +128,30 @@ export function confirmDialog(title, text, okLabel = "Confirm", kind = "danger")
   });
 }
 
-export function copyText(text) {
-  navigator.clipboard?.writeText(text).then(() => toast("Copied", "", { kind: "success", timeout: 1500 }),
-    () => toast("Couldn't copy", "Your browser blocked clipboard access.", { kind: "error" }));
+export async function copyText(text) {
+  let copied = false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    }
+  } catch { /* HTTP LAN pages and denied clipboard permissions need the selection fallback. */ }
+  if (!copied) {
+    const focused = document.activeElement;
+    const field = el("textarea", { readonly: true });
+    field.value = text;
+    field.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.append(field);
+    try {
+      field.focus({ preventScroll: true });
+      field.select();
+      copied = document.execCommand("copy");
+    } catch { /* Report failure below, never leave an unhandled rejection. */ }
+    finally { field.remove(); focused?.focus?.({ preventScroll: true }); }
+  }
+  if (copied) toast("Copied", "", { kind: "success", timeout: 1500 });
+  else toast("Couldn't copy", "Your browser blocked clipboard access.", { kind: "error" });
+  return copied;
 }
 
 export function debounce(fn, ms) {

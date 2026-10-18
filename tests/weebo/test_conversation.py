@@ -24,9 +24,13 @@ async def test_send_starts_thread_with_tools_and_context(app, fake_engine):
     assert "You are Weebo" in thread["developerInstructions"]
     turn = fake_engine.turns[0]
     assert "teal" in turn["context"] and "Now:" in turn["context"]
-    assert turn["approvalPolicy"] == "on-request" and turn["sandboxPolicy"]["type"] == "workspaceWrite"
+    # The chat delegates real work to agents, so its own turns can look but not change anything.
+    assert turn["approvalPolicy"] == "on-request" and turn["sandboxPolicy"]["type"] == "readOnly"
+    assert thread["sandbox"] == "read-only"
     conv = app.store.get_conversation(conv["id"])
     assert conv["title"] == "What's my favorite color?" and conv["thread_id"] == thread["id"]
+    app.settings.update({"chat.delegate_work": False})  # the chat may work itself again
+    assert app.conversations._turn_overrides(conv)["sandboxPolicy"]["type"] == "workspaceWrite"
 
 
 async def test_streaming_turn_is_persisted_and_finished(app, fake_engine):

@@ -7,7 +7,7 @@ from tests.weebo.conftest import drain
 from weebo.app import WeeboApp
 from weebo.codex.rpc import EngineClosed, RpcError
 from weebo.proactive.scheduler import MISSED_GRACE, ROUTINE_MAX_ATTEMPTS
-from weebo.store import Store
+from weebo.store import SCHEMA_VERSION, Store
 
 pytestmark = pytest.mark.asyncio
 
@@ -23,6 +23,33 @@ def occurrences(app):
 
 def routine_journal(app):
     return [r["title"] for r in app.store.query("SELECT * FROM journal WHERE kind='routine' ORDER BY seq")]
+
+
+async def test_stop_during_routine_start_records_a_terminal_outcome(app, fake_engine, monkeypatch):
+    conv_id = app.conversations.main_id()
+    due_routine(app, conv_id)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = fake_engine.start_thread
+
+    async def delayed(**params):
+        entered.set()
+        await release.wait()
+        return await original(**params)
+
+    monkeypatch.setattr(fake_engine, "start_thread", delayed)
+    tick = asyncio.create_task(app.scheduler.tick())
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        assert await app.conversations.interrupt(conv_id)
+        release.set()
+        await asyncio.wait_for(tick, 2)
+        saved = occurrences(app)[0]
+        assert saved["status"] == "interrupted" and saved["finished_at"]
+        await app.scheduler.tick()
+        assert fake_engine.turns == []
+    finally:
+        release.set()
+        await asyncio.gather(tick, return_exceptions=True)
 
 
 async def test_confirmed_start_failure_is_durable_and_retries_with_backoff(app, fake_engine, monkeypatch):
@@ -251,7 +278,24 @@ async def test_existing_database_gets_occurrence_table(tmp_path):
     try:
         assert migrated.get_reminder(reminder["id"]) == reminder
         assert migrated.query("SELECT * FROM routine_occurrences") == []
-        assert migrated.query_one("PRAGMA user_version")["user_version"] == 2
+        assert migrated.query_one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION
+    finally:
+        migrated.close()
+
+
+async def test_version_2_database_gets_eval_and_vector_tables(tmp_path):
+    path = tmp_path / "v2.db"
+    old = Store(path)
+    memory = old.add_memory("User likes tea", "preference")
+    old.execute("DROP TABLE eval_cases")
+    old.execute("DROP TABLE memory_vectors")
+    old.execute("PRAGMA user_version=2")
+    old.close()
+    migrated = Store(path)
+    try:
+        assert migrated.get_memory(memory["id"])["text"] == "User likes tea"
+        assert migrated.list_eval_cases() == [] and migrated.memory_vectors("m") == []
+        assert migrated.query_one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION
     finally:
         migrated.close()
 

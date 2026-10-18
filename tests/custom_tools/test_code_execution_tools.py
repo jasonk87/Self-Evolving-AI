@@ -3,6 +3,7 @@ from unittest.mock import patch, mock_open
 import subprocess # Required for subprocess.CompletedProcess and subprocess.TimeoutExpired
 import os
 import sys
+import tempfile
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -16,11 +17,23 @@ from ai_assistant.custom_tools.code_execution_tools import (
 
 class TestExecuteSandboxedPythonScript(unittest.TestCase):
 
+    def setUp(self):
+        # The script is written before the mocked subprocess runs, so use a real
+        # isolated directory instead of a POSIX-only /tmp path.
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+
+    def assert_subprocess_call(self, mock_subprocess_run, timeout=10, python_executable='python'):
+        mock_subprocess_run.assert_called_once_with(
+            [python_executable, '-I', '-s', '-S', 'main_script.py'],
+            capture_output=True, text=True, timeout=timeout, cwd=self.temp_dir.name, check=False
+        )
+
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_successful_execution(self, mock_temp_dir, mock_subprocess_run):
         # Mock TemporaryDirectory to control the path
-        mock_temp_dir_path = "/tmp/test_exec_dir"
+        mock_temp_dir_path = self.temp_dir.name
         mock_temp_dir.return_value.__enter__.return_value = mock_temp_dir_path
 
         mock_subprocess_run.return_value = subprocess.CompletedProcess(
@@ -45,12 +58,13 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
             capture_output=True, text=True, timeout=10, cwd=mock_temp_dir_path, check=False
         )
         self.assertEqual(result['executed_script_path'], expected_script_path)
+        self.assertTrue(os.path.isfile(expected_script_path))
 
 
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_execution_with_error_return_code(self, mock_temp_dir, mock_subprocess_run):
-        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test_exec_dir_error"
+        mock_temp_dir.return_value.__enter__.return_value = self.temp_dir.name
         mock_subprocess_run.return_value = subprocess.CompletedProcess(
             args=['python', '-I', '-s', '-S', 'main_script.py'],
             returncode=1,
@@ -66,11 +80,12 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['stdout'], "Output before error")
         self.assertEqual(result['stderr'], "Script error occurred")
         self.assertEqual(result['error_message'], "Script error occurred")
+        self.assert_subprocess_call(mock_subprocess_run)
 
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_execution_timeout(self, mock_temp_dir, mock_subprocess_run):
-        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test_exec_dir_timeout"
+        mock_temp_dir.return_value.__enter__.return_value = self.temp_dir.name
         mock_subprocess_run.side_effect = subprocess.TimeoutExpired(cmd="python main_script.py", timeout=5)
 
         script_content = "import time; time.sleep(10)"
@@ -81,11 +96,12 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['stdout'], "")
         self.assertIn("timed out after 5 seconds", result['stderr'])
         self.assertIn("timed out after 5 seconds", result['error_message'])
+        self.assert_subprocess_call(mock_subprocess_run, timeout=5)
 
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_python_interpreter_not_found(self, mock_temp_dir, mock_subprocess_run):
-        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test_exec_dir_notfound"
+        mock_temp_dir.return_value.__enter__.return_value = self.temp_dir.name
         mock_subprocess_run.side_effect = FileNotFoundError("python_custom_path not found")
 
         script_content = "print('test')"
@@ -95,6 +111,7 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['return_code'], -1)
         self.assertIn("Python interpreter 'python_custom_path' not found", result['stderr'])
         self.assertIn("Python interpreter 'python_custom_path' not found", result['error_message'])
+        self.assert_subprocess_call(mock_subprocess_run, python_executable='python_custom_path')
 
     def test_no_script_content(self):
         result = execute_sandboxed_python_script("")
@@ -115,7 +132,7 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_output_file_handling(self, mock_temp_dir, mock_subprocess_run, mock_isfile, mock_exists, mock_file_open):
-        mock_temp_dir_path = "/tmp/test_output_files"
+        mock_temp_dir_path = self.temp_dir.name
         mock_temp_dir.return_value.__enter__.return_value = mock_temp_dir_path
 
         # Simulate subprocess run successfully
@@ -150,7 +167,7 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
     @patch('subprocess.run')
     @patch('tempfile.TemporaryDirectory')
     def test_error_message_when_stderr_is_empty_but_return_code_is_not_zero(self, mock_temp_dir, mock_subprocess_run):
-        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test_exec_dir_no_stderr"
+        mock_temp_dir.return_value.__enter__.return_value = self.temp_dir.name
         mock_subprocess_run.return_value = subprocess.CompletedProcess(
             args=['python', '-I', '-s', '-S', 'main_script.py'],
             returncode=5, # Non-zero return code
@@ -166,6 +183,7 @@ class TestExecuteSandboxedPythonScript(unittest.TestCase):
         self.assertEqual(result['stdout'], "Process finished")
         self.assertEqual(result['stderr'], "") # Stderr is indeed empty
         self.assertEqual(result['error_message'], "Script exited with code 5 but no stderr.")
+        self.assert_subprocess_call(mock_subprocess_run)
 
 
 class TestRunTerminalCommand(unittest.TestCase):

@@ -9,8 +9,7 @@ from weebo.server.app import create_app
 @pytest.mark.asyncio
 async def test_mobile_final_reply_survives_queued_stream_paint_and_reload(app, fake_engine, tmp_path):
     playwright = pytest.importorskip("playwright.async_api")
-    conv = app.conversations.create(title="Comparison")
-    conv_id = conv["id"]
+    conv_id = app.conversations.main_id()  # the one chat the app opens
     final_text = (
         "Here is the **full comparison**.\n\n"
         "| Capability | Companion | Weebo |\n"

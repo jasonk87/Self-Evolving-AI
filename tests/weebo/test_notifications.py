@@ -101,7 +101,8 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
             await failed_row.wait_for()
             assert len(app.store.list_notifications(unread_only=True)) == 2
             assert await page.get_by_role("button", name="Acknowledge").count() == 0
-            await ready_row.get_by_role("button", name="Review", exact=True).click()
+            # No card for it in the chat, so "Show me" falls back to the Evolution panel.
+            await ready_row.get_by_role("button", name="Show me", exact=True).click()
             await page.locator("#drawer h3").get_by_text(proposal["title"], exact=True).wait_for()
             assert await page.evaluate("location.hash") == f"#evolution/{proposal['id']}"
             await page.wait_for_function("id => !weebo.notifications.unread.has(id)", arg=ready["id"])
@@ -114,7 +115,7 @@ async def test_completion_recovery_actions_races_and_browser_capability(app):
             assert await badge.inner_text() == "1"
             await banner.get_by_role("button", name="Notification inbox").click()
             await failed_row.wait_for()
-            await failed_row.get_by_role("button", name="Open", exact=True).click()
+            await failed_row.get_by_role("button", name="Show me", exact=True).click()
             await page.locator("#drawer h3").get_by_text(task["title"], exact=True).wait_for()
             await page.wait_for_function("() => weebo.notifications.unread.size === 0")
             assert not await badge.is_visible()

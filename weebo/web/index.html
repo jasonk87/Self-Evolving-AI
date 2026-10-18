@@ -27,15 +27,18 @@
         <span class="brand-name">Weebo</span>
         <span class="brand-ver">2.0</span>
       </div>
-      <button id="new-chat" class="btn btn-primary wide" type="button" data-icon="plus"><span>New chat</span><kbd>Ctrl K</kbd></button>
-      <nav id="conv-list" class="conv-list"></nav>
       <nav class="side-nav" aria-label="Weebo panels">
-        <button type="button" data-panel="agents" data-icon="bot"><span>Agents</span><b class="badge" hidden></b></button>
+        <button type="button" data-tab="chat" data-icon="chat"><span>Chat</span></button>
+        <button type="button" data-panel="feed" data-icon="sparkles"><span>Feed</span><b class="badge" hidden></b></button>
+        <button type="button" data-panel="manage_bots" data-icon="users"><span>Manage bots</span><b class="badge" hidden></b></button>
         <button type="button" data-panel="evolution" data-icon="dna"><span>Evolution</span><b class="badge" hidden></b></button>
+        <button type="button" data-panel="agents" data-icon="bot"><span>Agents</span><b class="badge" hidden></b></button>
         <button type="button" data-panel="memory" data-icon="brain"><span>Memory</span></button>
+        <button type="button" data-panel="capabilities" data-icon="plug"><span>Capabilities</span></button>
         <button type="button" data-panel="schedule" data-icon="clock"><span>Schedule</span></button>
         <button type="button" data-panel="activity" data-icon="pulse"><span>Activity</span><b class="badge" hidden></b></button>
         <button type="button" data-panel="settings" data-icon="gear"><span>Settings</span></button>
+        <button type="button" data-panel="archive" data-icon="inbox"><span>Older chats</span></button>
       </nav>
     </aside>
 
@@ -62,8 +65,15 @@
       <div id="drawer-body" class="drawer-body"></div>
     </aside>
     <div id="scrim"></div>
+    <nav id="tabbar" class="tabbar" aria-label="Weebo">
+      <button type="button" data-tab="chat" data-icon="chat" data-icon-size="22"><span>Chat</span></button>
+      <button type="button" data-panel="feed" data-icon="sparkles" data-icon-size="22"><span>Feed</span><b class="badge" hidden></b></button>
+      <button type="button" data-panel="bots" data-icon="users" data-icon-size="22"><span>Bots</span><b class="badge" hidden></b></button>
+      <button type="button" data-panel="evolution" data-icon="dna" data-icon-size="22"><span>Evolution</span><b class="badge" hidden></b></button>
+      <button type="button" data-panel="more" data-icon="menu" data-icon-size="22"><span>More</span><b class="badge" hidden></b></button>
+    </nav>
   </div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
-  <div class="offline-banner" role="status">Reconnecting to Weebo…</div>
+  <div class="offline-banner" role="status" aria-hidden="true">Reconnecting to Weebo…</div>
 </body>
 </html>

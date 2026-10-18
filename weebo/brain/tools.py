@@ -27,7 +27,9 @@ class ToolContext:
     turn_id: str = ""
     conversation_id: str | None = None
     task_id: str | None = None
-    trigger: str = "user"  # what started the turn: user | routine | brief | agent_report | event | agent
+    trigger: str = "user"  # what started the turn: user | routine | brief | agent_report | event | agent | job | ...
+    bot_id: str | None = None  # set when a bot's own turn (or an agent it started) calls the tool
+    hops: int = 0  # how many relays (chief -> bot -> chief ...) led to this turn
 
     @property
     def is_agent(self) -> bool:
@@ -55,7 +57,7 @@ class Tool:
     description: str | Callable[[], str]
     parameters: dict[str, Any]
     fn: ToolFn
-    scopes: tuple[str, ...] = ("chat",)  # chat | agent | background
+    scopes: tuple[str, ...] = ("chat",)  # chat | agent | background | bot (granted per bot, see weebo/bots)
 
     def spec(self) -> dict[str, Any]:
         description = self.description() if callable(self.description) else self.description
@@ -90,6 +92,11 @@ class ToolRegistry:
 
     def specs(self, scope: str) -> list[dict[str, Any]]:
         return [t.spec() for t in self._tools.values() if scope in t.scopes]
+
+    def specs_named(self, names: list[str] | set[str]) -> list[dict[str, Any]]:
+        """Specs for exactly these tools, in registration order (a bot's own tool set)."""
+        wanted = set(names)
+        return [t.spec() for t in self._tools.values() if t.name in wanted]
 
     async def call(self, ctx: ToolContext, name: str, arguments: Any) -> ToolResult:
         tool = self._tools.get(name)

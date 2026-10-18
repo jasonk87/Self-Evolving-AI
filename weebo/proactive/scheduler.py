@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .. import log
-from ..timeparse import TimeParseError, describe_recurrence, next_occurrence, normalize_recurrence, parse_when
+from ..timeparse import TimeParseError, describe_recurrence, next_occurrence, normalize_recurrence, parse_when, zone
 
 if TYPE_CHECKING:
     from ..app import WeeboApp
@@ -28,29 +28,33 @@ class Scheduler:
         self._task: asyncio.Task | None = None
 
     def add(self, text: str, when: str, recurrence: str = "", action: str = "notify",
-            conversation_id: str | None = None) -> dict[str, Any]:
+            conversation_id: str | None = None, meta: dict[str, Any] | None = None) -> dict[str, Any]:
         text = (text or "").strip()
         if not text:
             raise TimeParseError("Reminder text is empty.")
-        if action not in ("notify", "prompt"):
+        if action not in ("notify", "prompt", "workflow"):
             raise TimeParseError("action must be 'notify' or 'prompt'.")
-        due = parse_when(when).timestamp()
+        if action == "workflow" and not (meta or {}).get("workflow_id"):
+            raise TimeParseError("A workflow schedule needs its workflow.")
+        timezone = self.app.settings.get("user.timezone")
+        due = parse_when(when, timezone=timezone).timestamp()
         if due < time.time() - 60:
             raise TimeParseError(f"{datetime.fromtimestamp(due):%b %d %I:%M %p} is in the past.")
         rec = normalize_recurrence(recurrence)
-        if action == "prompt" and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
+        if action in ("prompt", "workflow") and rec.startswith("every ") and int(rec[6:-1]) < 15 * 60:
             raise TimeParseError("Routines can repeat at most every 15 minutes.")
-        reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action)
+        reminder = self.app.store.add_reminder(text, due, rec, conversation_id, action,
+                                               meta={**(meta or {}), "timezone": timezone, "anchor_at": due})
         self.app.bus.publish("reminder.updated", {"reminder": reminder})
         self.app.store.journal("schedule", f"Scheduled {'routine' if action == 'prompt' else 'reminder'}",
-                               f"{text[:200]} — {datetime.fromtimestamp(due):%a %b %d %I:%M %p}"
+                               f"{text[:200]} — {datetime.fromtimestamp(due, zone(timezone)):%a %b %d %I:%M %p}"
                                + (f", {describe_recurrence(rec)}" if rec else ""))
         self._wake.set()
         return reminder
 
     def cancel(self, reminder_id: str) -> bool:
         reminder = self.app.store.get_reminder(reminder_id)
-        if reminder is None or reminder["status"] != "pending":
+        if reminder is None or reminder["status"] not in ("pending", "paused"):
             return False
         reminder = self.app.store.update_reminder(reminder_id, status="cancelled")
         self.app.bus.publish("reminder.updated", {"reminder": reminder})
@@ -72,6 +76,7 @@ class Scheduler:
     async def stop(self) -> None:
         if self._task:
             self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
 
     async def _loop(self) -> None:
         while True:
@@ -101,6 +106,8 @@ class Scheduler:
                 occurrence["conversation_id"], data["prompt"], data["notice"], trigger="routine",
                 notice_kind="reminder", notice_data=data["notice_data"], occurrence_id=occurrence["id"],
             )
+        from ..integrations.sms import check_deliveries
+        await check_deliveries(self.app, now)
 
     def recover_after_restart(self) -> None:
         # Queued and confirmed failed starts remain retryable. Anything that may
@@ -172,6 +179,12 @@ class Scheduler:
         self.app.notify("routine", "Routine needs attention", text, {**data, "conversation_id": conv_id})
         self.app.store.update_routine(occurrence["id"], data={**occurrence["data"], "notice_status": status})
 
+    async def _run_workflow(self, reminder: dict[str, Any]) -> None:
+        try:
+            await self.app.growth.run_workflow((reminder.get("meta") or {}).get("workflow_id", ""), actor="schedule")
+        except ValueError as exc:
+            logger.info("Scheduled workflow didn't run: %s", exc)
+
     async def _fire(self, reminder: dict[str, Any], now: float) -> None:
         store = self.app.store
         current = store.get_reminder(reminder["id"])
@@ -184,8 +197,11 @@ class Scheduler:
         suffix = " (missed while Weebo was off)" if missed else ""
         if reminder["action"] == "prompt" and not (missed and reminder["recurrence"]):
             notice = f"Routine: {reminder['text'][:160]}{suffix}"
-            prompt = (f"[Event: a scheduled routine just fired{suffix}]\nRun this now: {reminder['text']}\n\n"
-                      "Do it, then report back briefly. If the result is important, also call notify_user.")
+            if self.app.bots.owns(conv_id):  # a bot's routine reports to the chief, who decides what reaches the user
+                close = "Do it, then call report_to_chief with the outcome if it matters (or if anything went wrong)."
+            else:
+                close = "Do it, then report back briefly. If the result is important, also call notify_user."
+            prompt = f"[Event: a scheduled routine just fired{suffix}]\nRun this now: {reminder['text']}\n\n{close}"
             occurrence = store.queue_routine(reminder, conv_id, {
                 "prompt": prompt, "notice": notice, "reminder": reminder,
                 "notice_data": {"reminder_id": reminder["id"], "due_at": reminder["due_at"],
@@ -194,14 +210,21 @@ class Scheduler:
             if occurrence:
                 store.journal("routine", "Queued a routine", reminder["text"][:300],
                               data={"occurrence_id": occurrence["id"]})
-        next_due = next_occurrence(reminder["due_at"], reminder["recurrence"], now)
+        meta = dict(reminder.get("meta") or {})
+        meta.setdefault("timezone", self.app.settings.get("user.timezone"))
+        meta.setdefault("anchor_at", reminder["due_at"])
+        next_due = next_occurrence(reminder["due_at"], reminder["recurrence"], now,
+                                   timezone=meta["timezone"], anchor_at=meta["anchor_at"])
         if next_due:
-            updated = store.update_reminder(reminder["id"], due_at=next_due, fired_at=now)
+            updated = store.update_reminder(reminder["id"], due_at=next_due, fired_at=now, meta=meta)
         else:
             updated = store.update_reminder(reminder["id"], status="done", fired_at=now)
         self.app.bus.publish("reminder.updated", {"reminder": updated})
         if missed and reminder["recurrence"]:
             return  # skip stale repeats quietly; the next one is already scheduled
+        if reminder["action"] == "workflow":  # runs deterministically: no model turn to decide to run it
+            self.app._start_job(self._run_workflow(reminder), "workflow")
+            return
         if reminder["action"] == "prompt":
             return
         message = store.add_message(conv_id, "event", reminder["text"] + suffix, kind="reminder",

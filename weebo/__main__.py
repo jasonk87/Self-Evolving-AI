@@ -3,6 +3,7 @@
     python -m weebo              run under the supervisor (recommended)
     python -m weebo --child      run the server directly (no auto-restart)
     python -m weebo --selftest   boot self-test used by self-evolution
+    python -m weebo --rehearse IN --out OUT   answer behavior eval cases with this checkout's code
 """
 
 from __future__ import annotations
@@ -18,11 +19,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", help="override server.host")
     parser.add_argument("--port", type=int, help="override server.port")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    parser.add_argument("--rehearse", metavar="IN", help="answer behavior eval cases from IN (used by self-evolution)")
+    parser.add_argument("--out", metavar="OUT", help="where --rehearse writes its answers")
     args = parser.parse_args(argv)
 
     if args.selftest:
         from .selftest import main as selftest
         return selftest()
+
+    if args.rehearse:
+        if not args.out:
+            parser.error("--rehearse needs --out")
+        from .evolution.evals import rehearse_main
+        return rehearse_main(args.rehearse, args.out)
 
     passthrough: list[str] = []
     if args.host:
