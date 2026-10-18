@@ -24,12 +24,14 @@ import (
 )
 
 type endpointStatus struct {
-	State   string `json:"state"`
-	AuthURL string `json:"authUrl,omitempty"`
-	Origin  string `json:"origin,omitempty"`
-	Owner   string `json:"owner,omitempty"`
-	Error   string `json:"error,omitempty"`
-	PID     int    `json:"pid"`
+	State    string `json:"state"`
+	AuthURL  string `json:"authUrl,omitempty"`
+	Origin   string `json:"origin,omitempty"`
+	Owner    string `json:"owner,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Target   string `json:"target"`
+	Hostname string `json:"hostname"`
+	PID      int    `json:"pid"`
 }
 type identify func(*http.Request) (string, error)
 
@@ -110,6 +112,8 @@ func main() {
 			return
 		}
 		s.PID = os.Getpid()
+		s.Target = target.String()
+		s.Hostname = *hostname
 		current = s
 		b, _ := json.MarshalIndent(s, "", "  ")
 		temp := statusPath + ".tmp"
