@@ -84,11 +84,20 @@ async def _run() -> list[str]:
 
 
 def main() -> int:
-    if not os.environ.get("WEEBO_DATA_DIR"):
-        os.environ["WEEBO_DATA_DIR"] = tempfile.mkdtemp(prefix="weebo-selftest-")
-    os.environ["WEEBO_DISABLE_LEGACY"] = "1"
-    os.environ["WEEBO_SKIP_LEGACY_IMPORT"] = "1"
-    failures = asyncio.run(_run())
+    keys = ("WEEBO_DATA_DIR", "WEEBO_DISABLE_LEGACY", "WEEBO_SKIP_LEGACY_IMPORT")
+    previous = {key: os.environ.get(key) for key in keys}
+    with tempfile.TemporaryDirectory(prefix="weebo-selftest-") as data_dir:
+        try:
+            os.environ["WEEBO_DATA_DIR"] = data_dir
+            os.environ["WEEBO_DISABLE_LEGACY"] = "1"
+            os.environ["WEEBO_SKIP_LEGACY_IMPORT"] = "1"
+            failures = asyncio.run(_run())
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
     if failures:
         print("SELFTEST FAILED")
         for failure in failures:
