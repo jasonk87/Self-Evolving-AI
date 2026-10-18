@@ -119,6 +119,19 @@ async def test_websocket_ignores_non_object_messages(client, body):
         assert not ws.closed
 
 
+async def test_websocket_hello_reconciles_live_status_on_every_connection(client, app, fake_engine):
+    for status in ("starting", "ready"):
+        fake_engine.status = status
+        app._restart_reason = "Applying upgrades" if status == "ready" else ""
+        async with client.ws_connect(f"/ws?token={client.token}", headers=HOST) as ws:
+            hello = (await ws.receive_json())["data"]
+            assert hello["engine"]["status"] == status
+            assert hello["activity"]["now"] is None
+            assert hello["restart_reason"] == app._restart_reason
+    snapshot = await (await client.get("/api/status", headers=client.h)).json()
+    assert snapshot["restart_reason"] == "Applying upgrades"
+
+
 async def test_memories_and_reminders_api(client):
     added = await client.post("/api/memories", json={"text": "User runs every Sunday", "kind": "fact"}, headers=client.h)
     memory = (await added.json())["memory"]

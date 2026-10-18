@@ -1,5 +1,5 @@
 // Weebo 2.0 — app controller: state, sidebar, live events, moods.
-import { api, connect, on, onConnection } from "./api.js";
+import { api, connect, on, onConnection, serverHasNewSession } from "./api.js";
 import { director, WeeboAvatar } from "./avatar.js";
 import { ChatView, ACTIVITY_MOODS } from "./chat.js";
 import { icon } from "./icons.js";
@@ -24,6 +24,8 @@ class App {
     this.readyProposals = 0;
     this.heartbeatBusy = null;
     this.lastInput = Date.now();
+    this.engineRevision = 0;
+    this.activityRevision = 0;
   }
 
   async start() {
@@ -47,9 +49,13 @@ class App {
   }
 
   async bootstrap() {
+    const engineRevision = this.engineRevision;
+    const activityRevision = this.activityRevision;
     const data = await api.get("/api/bootstrap");
     this.state.settings = data.settings;
-    this.state.engine = data.snapshot.engine;
+    // An engine/hello event may have arrived while the HTTP snapshot was in flight.
+    if (this.engineRevision === engineRevision) this.setEngine(data.snapshot.engine);
+    if (data.snapshot.restart_reason) this.showRestarting(data.snapshot.restart_reason);
     this.state.conversations = data.conversations;
     this.state.deskId = data.desk_id;
     this.state.lan = data.lan;
@@ -73,7 +79,7 @@ class App {
     for (const p of data.snapshot.pending_interactions || []) this.announceInteraction(p);
     this.mainId = data.desk_id;  // the one chat; older chats are read from the archive
     await this.openMain();
-    if (data.activity) this.setActivity(data.activity);
+    if (data.activity && this.activityRevision === activityRevision) this.setActivity(data.activity);
     this.routeProposal();
     director.setBase(this.restingMood());
   }
@@ -157,6 +163,7 @@ class App {
 
   /** The activity registry's snapshot drives the "now showing" slot and, when the open chat is quiet, the mood. */
   setActivity(snapshot) {
+    this.activityRevision++;
     this.state.activity = snapshot;
     this.chat.stage.setActivity(snapshot, (entry) => this.openActivity(entry));
     this.renderBadges();
@@ -292,6 +299,14 @@ class App {
 
   setUnread(n) { this.state.unread = n; this.renderBadges(); }
 
+  setEngine(snapshot) {
+    this.engineRevision++;
+    this.state.engine = snapshot;
+    this.renderEngine();
+    this.chat.updateChips();
+    this.panels.notify("engine.status");
+  }
+
   renderEngine() {
     const e = this.state.engine || {};
     const pill = $("#engine-pill");
@@ -307,6 +322,7 @@ class App {
     ring.classList.toggle("hot", used >= 80);
     ring.querySelector("span").textContent = e.rateLimits ? `${used}%` : "–";
     if (e.status !== "ready" && e.status) director.setBase(e.status === "login_required" || e.status === "error" ? "offline" : "thinking");
+    else if (!this.busyConvs.has(this.currentConvId)) director.setBase(this.restingMood());
     this.chat?.stage.setResting(this.restingCaption());
   }
 
@@ -332,6 +348,8 @@ class App {
   restingCaption() {
     const e = this.state.engine || {};
     if (e.status === "login_required") return "Sign in to Codex in Settings so I can think.";
+    if (e.status === "error") return "Codex is unavailable. Check Settings for details.";
+    if (e.status === "stopped") return "Codex is stopped.";
     if (e.status && !["ready"].includes(e.status)) return "Connecting to my Codex brain…";
     if (this.heartbeatBusy === "dream") return "Dreaming… tidying my memories.";
     if (this.heartbeatBusy === "audit") return "Reviewing my own code.";
@@ -368,7 +386,11 @@ class App {
 
   // ------------------------------------------------------------------ live events
   bindEvents() {
-    on("hello", () => {
+    on("hello", ({ engine, activity, restart_reason }) => {
+      // Events emitted while the socket was disconnected aren't replayed. Reconcile now.
+      if (engine) this.setEngine(engine);
+      if (activity) this.setActivity(activity);
+      if (restart_reason) this.showRestarting(restart_reason);
       if (this.connectedOnce && this.chat.convId) this.chat.open(this.chat.convId, { focus: false, refresh: true });
       this.connectedOnce = true;
       this.refreshTaskCount();
@@ -461,7 +483,7 @@ class App {
     on("notify", ({ notification }) => this.onNotification(notification));
     on("notifications.read", ({ ids }) => this.notifications.read(ids));
     on("interaction.pending", ({ interaction }) => this.announceInteraction(interaction));
-    on("engine.status", (snapshot) => { this.state.engine = snapshot; this.renderEngine(); this.chat.updateChips(); this.panels.notify("engine.status"); });
+    on("engine.status", (snapshot) => this.setEngine(snapshot));
     on("engine.usage", ({ rateLimits }) => { this.state.engine = { ...this.state.engine, rateLimits }; this.renderEngine(); });
     on("settings.updated", ({ settings }) => { this.applySettings(settings); this.panels.notify("settings.updated"); });
     on("weebo.mood", ({ mood, background, conversation_id }) => {
@@ -537,20 +559,24 @@ class App {
   }
 
   showRestarting(reason) {
-    const overlay = el("div", { class: "restart-overlay" });
+    if (this.restartOverlay) return; // A batch of upgrades must have only one screen and poller.
+    const overlay = this.restartOverlay = el("div", { class: "restart-overlay", role: "status", "aria-live": "polite" });
     const host = el("div", { class: "restart-weebo" });
-    overlay.append(host, el("h2", { text: "Weebo is restarting" }), el("p", { class: "muted", text: reason || "Back in a few seconds…" }));
+    const progress = el("p", { class: "muted", text: "Waiting for the new process…" });
+    overlay.append(host, el("h2", { text: "Weebo is restarting" }), el("p", { class: "muted", text: reason || "Applying the restart." }), progress);
     document.body.append(overlay);
-    new WeeboAvatar(host, { size: 140, track: false });
-    director.setBase("evolving");
-    // Wait for the old process to go away (or 10s), then for the new one to answer.
-    let sawDown = false;
+    // Connection losses, chat completions and background moods must not replace this pose.
+    const avatar = new WeeboAvatar(host, { size: 140, track: false, follow: false });
+    avatar.setMood("syncing");
     const started = Date.now();
     const poll = async () => {
-      let up = false;
-      try { up = (await fetch("/", { cache: "no-store" })).ok; } catch { up = false; }
-      if (!up) sawDown = true;
-      if (up && (sawDown || Date.now() - started > 10000)) { location.reload(); return; }
+      // A healthy old process (or a brief network outage) isn't a completed restart.
+      // Only a fresh per-launch session proves that the replacement is serving the page.
+      if (await serverHasNewSession()) { location.reload(); return; }
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      progress.textContent = seconds >= 30
+        ? `Still waiting for Weebo to restart · ${seconds}s. This page will reconnect automatically.`
+        : `Waiting for the new process · ${seconds}s`;
       setTimeout(poll, 1000);
     };
     setTimeout(poll, 1000);

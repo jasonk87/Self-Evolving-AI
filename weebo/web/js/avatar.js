@@ -171,7 +171,7 @@ function svgMarkup(id) {
 }
 
 export class WeeboAvatar {
-  constructor(host, { size = null, track = true, label = "Weebo" } = {}) {
+  constructor(host, { size = null, track = true, label = "Weebo", follow = true } = {}) {
     this.id = ++uid;
     this.host = host;
     this.root = document.createElement("div");
@@ -184,7 +184,7 @@ export class WeeboAvatar {
     this.track = track;
     this._blinkTimer = null;
     this._scheduleBlink();
-    director.register(this);
+    if (follow) director.register(this);
   }
 
   setMood(mood) {

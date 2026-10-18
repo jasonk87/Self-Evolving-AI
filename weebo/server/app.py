@@ -152,7 +152,10 @@ class Hub:
         self.clients[ws] = queue
         self.app.clients = len(self.clients)
         writer = asyncio.create_task(self._writer(ws, queue))
-        await ws.send_str(json.dumps({"type": "hello", "data": {"version": __version__}}))
+        await ws.send_str(json.dumps({"type": "hello", "data": {
+            "version": __version__, "engine": self.app.engine.snapshot(),
+            "activity": self.app.activity.snapshot(), "restart_reason": self.app._restart_reason,
+        }}))
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:

@@ -83,6 +83,9 @@ removed on their own. The **Capabilities** page lists all of it with who uses it
 tests · 3 min"), idle reads as resting, quiet hours as sleeping. New animations: typing on a laptop (coding and
 writing), a phone (calls), holding up a note (waiting on you), syncing arrows, plus the existing reading, research
 and hand-off props. Reduced motion (the setting or your system preference) keeps the props and drops the motion.
+Startup and reconnect refresh the live engine/activity state, so a stale snapshot cannot leave "Connecting"
+on screen after Codex is ready. Upgrade restarts show one stable syncing pose and elapsed time until a **new server
+session** answers; an old process still responding or a brief network outage does not count as a restart.
 
 **Reliability.** Facts about events, email, people and commitments come from the facts store with provenance and
 freshness, with instructions to look them up in the same turn (see the facts section below). Brief/idea responses

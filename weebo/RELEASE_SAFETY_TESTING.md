@@ -1,5 +1,25 @@
 # Release safety fixes and acceptance record
 
+## Restart/status regression checks (2026-10-18)
+
+The three user-approved in-app upgrades through `4d65999` are preserved. Restart fixes are limited to status
+reconciliation and UI lifecycle: expired captions release their timers, live engine/activity events supersede
+in-flight bootstrap snapshots, reconnect greetings carry current state, and ready/error/stopped states have
+accurate captions and moods. Repeated restart events reuse one screen with an independent syncing avatar.
+The screen waits for the **replacement session**, not ten elapsed seconds or an old process answering HTTP.
+Each probe has a five-second timeout and slow restarts show elapsed time instead of promising a few seconds.
+
+`tests/weebo/test_restart_ui.py` covers these in a mobile-sized Chromium browser, including a temporary outage
+followed by the old server returning, then a genuinely new session. `test_server.py` verifies live reconnect
+greetings and the restart marker in status. Quiet hours are pinned in these fixtures, not changed in user settings.
+All nine new browser cases were also run with the pre-fix JavaScript served from Git: all nine failed, then passed
+with the fixes. The CI unit job now installs Chromium too, so those regressions execute in both required lanes.
+Windows validation: selftest OK; all 13 JavaScript modules parse; Weebo lane 840 passed / 1 existing symlink skip;
+repository unit lane 1,601 passed / 2 existing platform skips / 7 integration-smoke deselections (13 subtests passed).
+For live acceptance after deployment: restart the existing supervised instance, verify a changed process/session,
+wait for `/api/status` engine `ready`, and verify the page has no restart overlay or stale Connecting caption.
+Native outward-action/Twilio acceptance below remains separate and is not enabled by these UI fixes.
+
 Base: `33be7ca` (including its time-independent quiet-hours tests). Scope: Weebo only; no keys, existing model
 settings, Weebo 1.x, user database or running application changed. Direct user-to-bot budget exemption is unchanged.
 

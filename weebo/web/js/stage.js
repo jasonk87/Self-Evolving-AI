@@ -102,8 +102,12 @@ export class Stage {
   /** Show a reaction for a while, then fall back to the resting caption. */
   say(text, ms = 5000) {
     clearTimeout(this._timer);
+    this._timer = null;
     this._show(text || this.resting);
-    if (text && ms) this._timer = setTimeout(() => this._show(this.resting), ms);
+    if (text && ms) this._timer = setTimeout(() => {
+      this._timer = null;
+      this._show(this.resting);
+    }, ms);
   }
 
   /** The caption shown when nothing in particular is happening (e.g. "2 agents working"). */

@@ -78,9 +78,9 @@ export function connect() {
   });
 }
 
-async function serverHasNewSession() {
+export async function serverHasNewSession() {
   try {
-    const res = await fetch("/", { cache: "no-store" });
+    const res = await fetch("/", { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!res.ok) return false;
     const html = await res.text();
     const match = html.match(/name="weebo-token" content="([^"]+)"/);

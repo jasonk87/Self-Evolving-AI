@@ -268,6 +268,7 @@ class WeeboApp:
         return {
             "version": __version__,
             "uptime": time.time() - self.started_at,
+            "restart_reason": self._restart_reason,
             "engine": self.engine.snapshot(),
             "heartbeat": self.heartbeat.status(),
             "integrations": self.integrations.snapshot(),
