@@ -70,6 +70,7 @@ async def test_quiet_work_says_so(app):
 
 
 async def test_idle_and_sleeping(app, monkeypatch):
+    app.settings.update({"autonomy.quiet_hours_start": "00:00", "autonomy.quiet_hours_end": "00:00"})  # no quiet hours: idle reads as idle at any time of day
     snap = app.activity.snapshot()
     assert (snap["state"], snap["now"], snap["entries"], snap["more"]) == ("idle", None, [], 0)
     monkeypatch.setattr(app.heartbeat, "quiet", lambda: True)
@@ -77,6 +78,7 @@ async def test_idle_and_sleeping(app, monkeypatch):
 
 
 async def test_agents_and_dreams_show_up(app):
+    app.settings.update({"autonomy.quiet_hours_start": "00:00", "autonomy.quiet_hours_end": "00:00"})  # no quiet hours: idle reads as idle at any time of day
     app.bus.publish("task.updated", {"task": {"id": "t1", "kind": "agent", "status": "running", "title": "Fix the build",
                                               "conversation_id": app.conversations.main_id()}})
     app.bus.publish("task.progress", {"task_id": "t1", "progress": "Running the tests", "activity": "reviewing"})

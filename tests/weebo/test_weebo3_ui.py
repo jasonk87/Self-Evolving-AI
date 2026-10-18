@@ -118,6 +118,7 @@ async def test_ideas_tab_discuss_opens_the_chat(app, fake_engine):
 
 async def test_activity_slot_is_honest(app, fake_engine):
     playwright = pytest.importorskip("playwright.async_api")
+    app.settings.update({"autonomy.quiet_hours_start": "00:00", "autonomy.quiet_hours_end": "00:00"})  # no quiet hours: idle reads as idle at any time of day
     bot = app.bots.approve(app.bots.propose({"name": "Coder", "job": "Code.", "tier": "fast", "why": "x"})["id"])
     errors = []
     async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
@@ -174,6 +175,7 @@ async def test_reduced_motion_is_calm(app):
 
 async def test_idle_activity_updates_when_a_bot_needs_approval(app):
     from playwright import async_api as playwright
+    app.settings.update({"autonomy.quiet_hours_start": "00:00", "autonomy.quiet_hours_end": "00:00"})  # no quiet hours: idle reads as idle at any time of day
     bot = app.bots.approve(app.bots.propose({"name": "Scout", "job": "Review examples.", "tier": "fast"})["id"])
     errors = []
     async with TestServer(create_app(app)) as server, playwright.async_playwright() as pw:
