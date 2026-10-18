@@ -8,7 +8,7 @@ connecting (after stripping any client-supplied copy), so the owner's phone open
 Weebo with no password. HTTPS is also what lets phones install Weebo as an app.
 
 The helper runs as its own process and survives Weebo restarts (self-upgrades),
-so the address never blips. Weebo reuses it when it's already running.
+so the address never blips. Weebo reuses it when its configuration still matches.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ class TailnetEndpoint:
             data = json.loads(self.status_path.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 return {}
-            for field in ("state", "origin", "owner", "authUrl", "error"):
+            for field in ("state", "origin", "owner", "authUrl", "error", "target", "hostname"):
                 if field in data and not isinstance(data[field], str):
                     data.pop(field)
             return data
@@ -181,12 +181,17 @@ class TailnetEndpoint:
         if helper is None:
             logger.warning("Tailscale address is on, but %s is missing (build weebo/tailnet_helper).", HELPER_NAME)
             return self.status()
+        hostname = self.app.settings.get("server.tailnet_hostname")
+        target = f"http://127.0.0.1:{self.app.bind_port}"
         if self.running_pid():
-            return self.status()  # survives Weebo restarts; reuse it
+            current = self._read_status()
+            if current.get("target") == target and current.get("hostname") == hostname:
+                return self.status()  # survives Weebo restarts; reuse matching configuration
+            await self.stop()
+            if self.running_pid():
+                raise RuntimeError("Tailscale helper did not stop before reconfiguration")
         (self.state_dir / "stop").unlink(missing_ok=True)
-        port = self.app.bind_port
-        args = [str(helper), f"--state={self.state_dir}", f"--hostname={self.app.settings.get('server.tailnet_hostname')}",
-                f"--target=http://127.0.0.1:{port}"]
+        args = [str(helper), f"--state={self.state_dir}", f"--hostname={hostname}", f"--target={target}"]
         flags = 0
         if os.name == "nt":
             flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
